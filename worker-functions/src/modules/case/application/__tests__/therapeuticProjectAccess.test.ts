@@ -37,6 +37,21 @@ import {
 
 const PROJETO_READ = `${THERAPEUTIC_PROJECT_RESOURCE}:read`;
 
+const PLANOS: NonNullable<TherapeuticProjectVersion['diagnosisPlans']> = [
+  {
+    diagnosisUri: 'uri-sintetica-1',
+    categoryCode: '6A02',
+    objectives: [{ id: 'o-1', label: 'Objetivo A', description: null }, { id: 'o-2', label: 'Objetivo B', description: 'desc B' }],
+    activities: [{ id: 'a-1', label: 'Atividade A', description: null, suggestedFrequency: '2x por semana' }],
+  },
+  {
+    diagnosisUri: 'uri-sintetica-2',
+    categoryCode: '6A05',
+    objectives: [{ id: 'o-2', label: 'Objetivo B', description: 'desc B' }, { id: 'o-3', label: 'Objetivo C', description: null }],
+    activities: [{ id: 'a-1', label: 'Atividade A', description: null, suggestedFrequency: '2x por semana' }, { id: 'a-2', label: 'Atividade B', description: null, suggestedFrequency: null }],
+  },
+];
+
 function versao(over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProjectVersion {
   return {
     id: 'v-1',
@@ -55,6 +70,8 @@ function versao(over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
     activities: [{ id: 'a-1', label: 'Acompañamiento escolar', segmentId: 'seg-1', segmentLabel: 'Salud mental' }],
     pathologyTypes: [{ id: '06', label: 'Trastornos mentales, del comportamiento y del neurodesarrollo' }],
     segment: { id: 'seg-ana-1', label: 'AT para Pacientes con TEA' },
+    diagnosisPlans: null,
+    objectivesLayout: 'flat',
     startDate: '2026-01-01',
     endDate: '2026-06-30',
     annulledAt: null,
@@ -229,7 +246,7 @@ describe('projectTherapeuticVersionForActor', () => {
   });
 
   it('paridade: os campos zerados sem a célula clínica são EXATAMENTE `THERAPEUTIC_CLINICAL_FIELDS` (campo novo não entra de um lado só)', () => {
-    const cheia = versao();
+    const cheia = versao({ diagnosisPlans: PLANOS, objectivesLayout: 'byDiagnosis' });
     const out = projectTherapeuticVersionForActor(cheia, ['patient_services:read']) as unknown as Record<string, unknown>;
     const zerados = Object.keys(out).filter((k) => out[k] === null && (cheia as unknown as Record<string, unknown>)[k] !== null);
     expect(zerados.sort()).toEqual([...THERAPEUTIC_CLINICAL_FIELDS].sort());
@@ -407,5 +424,53 @@ describe('containerOfContactKind', () => {
     ['CARE_TEAM', 'care_team'],
   ] as const)('%s → %s', (kind, container) => {
     expect(containerOfContactKind(kind)).toBe(container);
+  });
+});
+
+describe('091 — formato por diagnóstico (DD-8, DD-9, CA-10)', () => {
+  const porDiagnostico = (): TherapeuticProjectVersion =>
+    versao({ diagnosisPlans: PLANOS, objectivesLayout: 'byDiagnosis', specificObjectives: [], activities: [] });
+
+  it('CA-10: sem `patient_clinical:read` → diagnosisPlans null, lista plana derivada não vazia, objectivesLayout presente', () => {
+    const out = projectTherapeuticVersionForActor(porDiagnostico(), [PROJETO_READ, PATIENT_SERVICES_READ_CELL]);
+    expect(out.diagnosisPlans).toBeNull();
+    expect(out.objectivesLayout).toBe('byDiagnosis');
+    expect(out.redacted).toEqual({ clinical: true });
+    expect(out.specificObjectives.map((o) => o.id)).toEqual(['o-1', 'o-2', 'o-3']);
+    expect(out.activities.map((a) => a.id)).toEqual(['a-1', 'a-2']);
+    expect(JSON.stringify(out)).not.toContain('uri-sintetica');
+    expect(JSON.stringify(out)).not.toContain('6A02');
+  });
+
+  it('DD-8: com a célula clínica, diagnosisPlans sai íntegro e a lista plana é a união sem repetir id, ordem de aparição', () => {
+    const out = projectTherapeuticVersionForActor(porDiagnostico(), [PROJETO_READ, PATIENT_CLINICAL_READ_CELL, PATIENT_SERVICES_READ_CELL]);
+    expect(out.diagnosisPlans).toEqual(PLANOS);
+    expect(out.objectivesLayout).toBe('byDiagnosis');
+    expect(out.specificObjectives).toEqual([
+      { id: 'o-1', label: 'Objetivo A' },
+      { id: 'o-2', label: 'Objetivo B', description: 'desc B' },
+      { id: 'o-3', label: 'Objetivo C' },
+    ]);
+    expect(out.activities[0]).toEqual({ id: 'a-1', label: 'Atividade A', suggestedFrequency: '2x por semana' });
+    expect(out).not.toHaveProperty('redacted');
+  });
+
+  it('cells=null (D113) → mesma lista plana derivada, sem marcador', () => {
+    const out = projectTherapeuticVersionForActor(porDiagnostico(), null);
+    expect(out.diagnosisPlans).toEqual(PLANOS);
+    expect(out.specificObjectives).toHaveLength(3);
+    expect(out).not.toHaveProperty('redacted');
+  });
+
+  it('formato plano continua igual a hoje: lista gravada, diagnosisPlans null, segmento redigido por item', () => {
+    const out = projectTherapeuticVersionForActor(versao(), [PROJETO_READ, PATIENT_SERVICES_READ_CELL]);
+    expect(out.objectivesLayout).toBe('flat');
+    expect(out.diagnosisPlans).toBeNull();
+    expect(out.specificObjectives).toEqual([{ id: 'o-1', label: 'Vínculo terapéutico', segmentId: null, segmentLabel: null }]);
+    expect(out.activities).toEqual([{ id: 'a-1', label: 'Acompañamiento escolar', segmentId: null, segmentLabel: null }]);
+  });
+
+  it('lex C8: o marcador segue constante entre formatos — plano e por diagnóstico dão o mesmo `redacted` sem a célula', () => {
+    expect(projectTherapeuticVersionForActor(porDiagnostico(), []).redacted).toEqual(projectTherapeuticVersionForActor(versao(), []).redacted);
   });
 });

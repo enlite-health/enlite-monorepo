@@ -10,6 +10,7 @@
  * Os snapshots dos catálogos (`{ id, label }`) e do CID-11 (`{ uri, code, title }`) são o que a
  * versão guarda — renomear/desativar uma opção depois não reescreve o passado (lex C19).
  */
+import { flattenDiagnosisPlans, type DiagnosisPlanSnapshot } from './TherapeuticDiagnosisPlan';
 
 export interface TherapeuticDiagnosis {
   uri: string;
@@ -34,6 +35,8 @@ export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
   segmentLabel?: string | null;
   /** Descrição do item (spec 061, migration 547) — ausente em versão antiga e em item sem descrição. */
   description?: string;
+  /** Só atividade, e só na lista plana derivada do formato por diagnóstico (DD-8). */
+  suggestedFrequency?: string | null;
 }
 
 /**
@@ -111,6 +114,10 @@ export interface TherapeuticProjectVersion {
    * a projeção (`therapeuticProjectAccess.ts`) devolve `null` sem `patient_clinical:read`.
    */
   segment: CatalogSnapshotItem | null;
+  /** Blocos por diagnóstico (091, §9.6); `null` no formato plano (versão antiga). Dado CLÍNICO: a projeção devolve `null` sem `patient_clinical:read` (DD-9). */
+  diagnosisPlans: readonly DiagnosisPlanSnapshot[] | null;
+  /** Derivado de `diagnosis_plans IS NULL` (DD-8); presente mesmo redigido — o PDF e a tela decidem o desenho SÓ por ele (DD-21). */
+  objectivesLayout: ObjectivesLayoutName;
   startDate: string;
   endDate: string;
   annulledAt: string | null;
@@ -123,6 +130,60 @@ export interface TherapeuticProjectVersion {
   createdByName: string | null;
   createdAt: string;
   country: string;
+}
+
+export type ObjectivesLayoutName = 'flat' | 'byDiagnosis';
+
+/** O que a Strategy lê da versão para derivar a lista plana. */
+export interface ObjectivesLayoutSource {
+  readonly specificObjectives: readonly TherapeuticCatalogSnapshotItem[];
+  readonly activities: readonly TherapeuticCatalogSnapshotItem[];
+  readonly diagnosisPlans: readonly DiagnosisPlanSnapshot[] | null;
+}
+
+export interface DerivedObjectives {
+  specificObjectives: TherapeuticCatalogSnapshotItem[];
+  activities: TherapeuticCatalogSnapshotItem[];
+}
+
+/**
+ * Formato da versão (091, DD-8) — Strategy: uma classe por formato; `macroChanged`/`copyFromOrigin` entram na T213.
+ * `project(row)` devolve a lista plana que a leitura sempre expõe.
+ */
+export interface ObjectivesLayout {
+  readonly name: ObjectivesLayoutName;
+  project(row: ObjectivesLayoutSource): DerivedObjectives;
+}
+
+/** Formato antigo: a lista plana é a gravada, devolvida como está. */
+export class FlatLayout implements ObjectivesLayout {
+  readonly name = 'flat' as const;
+  project(row: ObjectivesLayoutSource): DerivedObjectives {
+    return { specificObjectives: [...row.specificObjectives], activities: [...row.activities] };
+  }
+}
+
+/** Formato novo: a lista plana é a união dos blocos (domínio `flattenDiagnosisPlans`), nunca gravada. */
+export class ByDiagnosisLayout implements ObjectivesLayout {
+  readonly name = 'byDiagnosis' as const;
+  project(row: ObjectivesLayoutSource): DerivedObjectives {
+    const flat = flattenDiagnosisPlans(row.diagnosisPlans ?? []);
+    const item = <T extends { id: string; label: string; description: string | null }>({ description, ...rest }: T) => ({
+      ...rest,
+      ...(description === null ? {} : { description }),
+    });
+    return { specificObjectives: flat.specificObjectives.map(item), activities: flat.activities.map(item) };
+  }
+}
+
+const LAYOUT_OF: Readonly<Record<ObjectivesLayoutName, ObjectivesLayout>> = {
+  flat: new FlatLayout(),
+  byDiagnosis: new ByDiagnosisLayout(),
+};
+
+/** Fábrica por tabela: a escolha do formato acontece UMA vez, por `objectivesLayout` (nunca `if (row.diagnosis_plans)`). */
+export function objectivesLayoutFor(name: ObjectivesLayoutName): ObjectivesLayout {
+  return LAYOUT_OF[name];
 }
 
 export const versionLabel = (major: number, minor: number): string => `V.${major}.${minor}`;
