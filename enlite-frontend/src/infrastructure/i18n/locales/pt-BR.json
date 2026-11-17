@@ -140,7 +140,9 @@
     "planIncomplete": "Escolha ao menos um objetivo e uma atividade neste diagnóstico.",
     "chooseServiceFirst": "Escolha o serviço para continuar.",
     "frequency": "Frequência: {{value}}",
-    "noCatalogAt": "Sem catálogo para este diagnóstico e serviço em {{date}}"
+    "noCatalogAt": "Sem catálogo para este diagnóstico e serviço em {{date}}",
+    "catalogChanged": "O catálogo deste diagnóstico mudou. Revise os objetivos e atividades marcados.",
+    "formatMismatch": "Esta versão usa outro formato de objetivos. Recarregue a página e tente de novo."
   },
   "topNavbar": {
     "greeting": "Olá",

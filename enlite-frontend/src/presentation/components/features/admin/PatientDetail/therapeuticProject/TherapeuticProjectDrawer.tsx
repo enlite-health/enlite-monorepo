@@ -16,7 +16,7 @@ import type { PatientDetail } from '@domain/entities/PatientDetail';
 import type { ByDiagnosisVersionBody, ContactStatusEntry, TherapeuticFieldClass, TherapeuticProjectVersion, TherapeuticProjectVersionBody } from '@domain/entities/TherapeuticProject';
 import type { TherapeuticCatalogGateway } from '@domain/repositories/TherapeuticCatalogGateway';
 import { AdminTherapeuticProjectsApiService } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
-import { saveRefusalMessage } from './saveRefusalMessage';
+import { saveRefusalBlock, saveRefusalMessage } from './saveRefusalMessage';
 import { useTherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { useContainerAccess } from '@presentation/hooks/useCellAccess';
@@ -67,6 +67,7 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
   const [target, setTarget] = useState<TherapeuticProjectTarget>(initial);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveBlockError, setSaveBlockError] = useState<{ diagnosisIndex: number; message: string } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -143,6 +144,7 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
     setPendingBody(null);
     setSaving(true);
     setSaveError(null);
+    setSaveBlockError(null);
     try {
       // 091: sem `segmentId` no corpo (o servidor recusa a chave). "Nuevo" é sempre por diagnóstico (o form só emite esse formato em `new`);
       // "Editar" manda o formato da origem, que o form já copia.
@@ -161,6 +163,7 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
       setTarget({ mode: 'view', version: { ...created, contacts: created.contacts ?? [], contactStatus: created.contactStatus ?? [] }, isCurrent: true });
     } catch (err: unknown) {
       setSaveError(saveRefusalMessage(err, t));
+      setSaveBlockError(saveRefusalBlock(err, t));
     } finally {
       setSaving(false);
     }
@@ -270,6 +273,7 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
               initialContactStatus={inheritedStatus}
               saving={saving}
               saveError={saveError}
+              saveBlockError={saveBlockError}
               onSubmit={handleFormSubmit}
               onCancel={requestClose}
               onDirty={() => setDirty(true)}

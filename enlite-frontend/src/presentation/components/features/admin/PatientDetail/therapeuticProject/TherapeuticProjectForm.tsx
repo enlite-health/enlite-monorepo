@@ -84,6 +84,8 @@ interface Props {
   initialContactStatus: ContactStatusEntry[];
   saving: boolean;
   saveError: string | null;
+  /** 422 de bloco (DD-21): a frase aparece NO bloco do `diagnosisIndex` (a posição em `toRequestBody`). */
+  saveBlockError?: { diagnosisIndex: number; message: string } | null;
   onSubmit: (body: TherapeuticProjectVersionBody) => void;
   onCancel: () => void;
   onDirty: () => void;
@@ -108,6 +110,7 @@ export function TherapeuticProjectForm({
   initialContactStatus,
   saving,
   saveError,
+  saveBlockError = null,
   onSubmit,
   onCancel,
   onDirty,
@@ -277,7 +280,7 @@ export function TherapeuticProjectForm({
         : (
           <>
             {cascadeApi.error && <Text size="sm" className="text-red-700" role="alert" data-testid="tp-cascade-error">{cascadeApi.error}</Text>}
-            {cascadeApi.blocks.map((block) => (
+            {cascadeApi.blocks.map((block, index) => (
               <TherapeuticProjectDiagnosisBlock
                 key={block.diagnosisUri}
                 title={diagnosisTitleOf(block.diagnosisUri)}
@@ -285,6 +288,7 @@ export function TherapeuticProjectForm({
                 cascade={cascade}
                 showIncomplete={touchedBlocks.includes(block.diagnosisUri) && !cascade.isBlockComplete(block.diagnosisUri)}
                 disabled={saving}
+                refusal={saveBlockError?.diagnosisIndex === index ? saveBlockError.message : undefined}
                 onToggleObjective={(id) => { touchBlock(block.diagnosisUri); cascadeApi.toggleObjective(block.diagnosisUri, id); onDirty(); }}
                 onToggleActivity={(id) => { touchBlock(block.diagnosisUri); cascadeApi.toggleActivity(block.diagnosisUri, id); onDirty(); }}
               />

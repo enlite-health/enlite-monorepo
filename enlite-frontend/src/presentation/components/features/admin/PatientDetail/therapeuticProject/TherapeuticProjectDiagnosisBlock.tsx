@@ -51,6 +51,8 @@ interface BlockProps {
   /** `planIncomplete` visível (o operador já mexeu neste bloco e ele ainda reprova). */
   showIncomplete: boolean;
   disabled?: boolean;
+  /** Frase da recusa do servidor para ESTE bloco (422 `ptp_plan_*`, DD-21). */
+  refusal?: string;
   onToggleObjective: (objectiveId: string) => void;
   onToggleActivity: (activityId: string) => void;
 }
@@ -118,6 +120,9 @@ export function TherapeuticProjectDiagnosisBlock(props: BlockProps): JSX.Element
       <Body {...props} tt={tt} />
       {props.showIncomplete && (
         <Text size="xs" className="text-red-600" role="alert" data-testid={`tp-plan-incomplete-${props.block.diagnosisUri}`}>{tt('planIncomplete')}</Text>
+      )}
+      {props.refusal && (
+        <Text size="xs" className="text-red-600" role="alert" data-testid={`tp-block-refusal-${props.block.diagnosisUri}`}>{props.refusal}</Text>
       )}
     </section>
   );

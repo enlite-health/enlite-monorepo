@@ -1,6 +1,23 @@
 /** A recusa do servidor ao salvar uma versão, em frase da tela (spec 017) — fora do componente pelo lint de fast refresh. */
 import { TherapeuticProjectApiError } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
 
+/** 091 (§9.4, DD-21): recusas do plano por diagnóstico — código → chave i18n da raiz `therapeuticProjectForm`; `block` = a frase também vai ao bloco do `details.diagnosisIndex`. Tabela, sem if por código. */
+const PLAN_REFUSAL: Readonly<Record<string, { key: string; block: boolean }>> = {
+  ptp_plan_block_incomplete: { key: 'therapeuticProjectForm.planIncomplete', block: true },
+  ptp_plan_objective_invalid: { key: 'therapeuticProjectForm.catalogChanged', block: true },
+  ptp_plan_activity_invalid: { key: 'therapeuticProjectForm.catalogChanged', block: true },
+  ptp_plan_block_without_catalog: { key: 'therapeuticProjectForm.catalogChanged', block: true },
+  ptp_format_mismatch: { key: 'therapeuticProjectForm.formatMismatch', block: false },
+};
+
+/** O bloco (índice do diagnóstico no corpo enviado) que o servidor apontou, com a frase da tela; `null` se a recusa não é de bloco. */
+export function saveRefusalBlock(err: unknown, t: (k: string) => string): { diagnosisIndex: number; message: string } | null {
+  if (!(err instanceof TherapeuticProjectApiError)) return null;
+  const entry = err.code ? PLAN_REFUSAL[err.code] : undefined;
+  const index = err.details?.diagnosisIndex;
+  return entry?.block && typeof index === 'number' ? { diagnosisIndex: index, message: t(entry.key) } : null;
+}
+
 /**
  * A recusa do servidor em frase da tela: célula clínica ausente, serviço de outro paciente, catálogo
  * desativado, CID que não resolve, catálogo CID-11 fora do ar, MACRO travado fora de `mode:'new'`,
@@ -25,6 +42,9 @@ export function saveRefusalMessage(err: unknown, t: (k: string, o?: Record<strin
     if (err.code === 'ptp_not_current') return t('admin.patients.detail.therapeuticProjectForm.errors.ptpNotCurrent');
     // lex #7 C7: nunca nome/telefone do contato — só a mensagem genérica.
     if (err.code === 'ptp_contact_inactive') return t('admin.patients.detail.therapeuticProjectForm.errors.ptpContactInactive');
+    // 091: nunca o texto cru do back, nem o URI/ids do `details`.
+    const plan = err.code ? PLAN_REFUSAL[err.code] : undefined;
+    if (plan) return t(plan.key);
   }
   return err instanceof Error ? err.message : String(err);
 }

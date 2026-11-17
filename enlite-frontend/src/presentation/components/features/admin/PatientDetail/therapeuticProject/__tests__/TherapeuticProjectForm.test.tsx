@@ -236,6 +236,7 @@ const montar = (over: Partial<Props> = {}) =>
       initialContactStatus={over.initialContactStatus ?? []}
       saving={over.saving ?? false}
       saveError={over.saveError ?? null}
+      saveBlockError={over.saveBlockError ?? null}
       onSubmit={over.onSubmit ?? onSubmit}
       onCancel={over.onCancel ?? onCancel}
       onDirty={over.onDirty ?? onDirty}
@@ -958,6 +959,14 @@ describe('091 — bloco sem catálogo e `planIncomplete`', () => {
 
     expect(screen.queryByTestId(`tp-plan-incomplete-${A_URI}`)).not.toBeInTheDocument();
     expect(salvar().disabled).toBe(false);
+  });
+
+  it('422 de bloco (DD-21): `planIncomplete` aparece NO bloco do `diagnosisIndex` 1 (o 2º), e só nele', async () => {
+    montar({ saveBlockError: { diagnosisIndex: 1, message: ptBR.therapeuticProjectForm.planIncomplete } });
+    await aguardarBlocos(2); // A (índice 0) e C (índice 1)
+
+    expect(within(screen.getByTestId(`tp-block-${C_URI}`)).getByTestId(`tp-block-refusal-${C_URI}`)).toHaveTextContent(ptBR.therapeuticProjectForm.planIncomplete);
+    expect(screen.queryByTestId(`tp-block-refusal-${A_URI}`)).not.toBeInTheDocument();
   });
 
   it('erro da porta (503 de terminologia, 422…): mensagem na tela e o salvar fica travado', async () => {

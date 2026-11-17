@@ -92,7 +92,7 @@ vi.mock('../../edit/IcdSearchCombobox', () => ({
 
 import { TherapeuticProjectApiError } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
 import { TherapeuticProjectDrawer, type TherapeuticProjectTarget } from '../TherapeuticProjectDrawer';
-import { saveRefusalMessage } from '../saveRefusalMessage';
+import { saveRefusalBlock, saveRefusalMessage } from '../saveRefusalMessage';
 
 // ── Insumos ──────────────────────────────────────────────────────────────────
 
@@ -664,6 +664,37 @@ describe('saveRefusalMessage — a recusa do servidor em frase de tela', () => {
   it('`ptp_macro_locked` SEM `details.fields` (formato inesperado) não quebra — a lista fica vazia', () => {
     const erro = new TherapeuticProjectApiError('nope', 422, { code: 'ptp_macro_locked' });
     expect(saveRefusalMessage(erro, t)).toBe(tfErr('ptpMacroLocked').replace('{{fields}}', ''));
+  });
+
+  // 091 (§9.4, DD-21): um caso por código; nunca o texto cru do back.
+  it.each([
+    ['ptp_plan_block_incomplete', 'planIncomplete'],
+    ['ptp_plan_objective_invalid', 'catalogChanged'],
+    ['ptp_plan_activity_invalid', 'catalogChanged'],
+    ['ptp_plan_block_without_catalog', 'catalogChanged'],
+    ['ptp_format_mismatch', 'formatMismatch'],
+  ])('091: `%s` vira `therapeuticProjectForm.%s` e NÃO mostra o texto do back', (code, chave) => {
+    const erro = new TherapeuticProjectApiError('Invalid diagnosis plan', 422, { code, details: { diagnosisIndex: 1 } });
+    const frase = saveRefusalMessage(erro, t);
+    expect(frase).toBe((ptBR.therapeuticProjectForm as Record<string, string>)[chave]);
+    expect(frase).not.toContain('Invalid diagnosis plan');
+  });
+
+  it.each([
+    ['ptp_plan_block_incomplete', 'planIncomplete'],
+    ['ptp_plan_objective_invalid', 'catalogChanged'],
+    ['ptp_plan_activity_invalid', 'catalogChanged'],
+    ['ptp_plan_block_without_catalog', 'catalogChanged'],
+  ])('091: `%s` aponta o bloco do `diagnosisIndex` com a mesma frase', (code, chave) => {
+    const erro = new TherapeuticProjectApiError('Invalid diagnosis plan', 422, { code, details: { diagnosisIndex: 1 } });
+    expect(saveRefusalBlock(erro, t)).toEqual({ diagnosisIndex: 1, message: (ptBR.therapeuticProjectForm as Record<string, string>)[chave] });
+  });
+
+  it('091: `ptp_format_mismatch`, código desconhecido, sem índice e não-API não apontam bloco algum', () => {
+    expect(saveRefusalBlock(new TherapeuticProjectApiError('x', 422, { code: 'ptp_format_mismatch', details: { diagnosisIndex: 0 } }), t)).toBeNull();
+    expect(saveRefusalBlock(new TherapeuticProjectApiError('x', 422, { code: 'algo_novo', details: { diagnosisIndex: 0 } }), t)).toBeNull();
+    expect(saveRefusalBlock(new TherapeuticProjectApiError('x', 422, { code: 'ptp_plan_block_incomplete' }), t)).toBeNull();
+    expect(saveRefusalBlock(new Error('x'), t)).toBeNull();
   });
 
   it('erro da API com `code` desconhecido cai na mensagem crua do servidor', () => {
