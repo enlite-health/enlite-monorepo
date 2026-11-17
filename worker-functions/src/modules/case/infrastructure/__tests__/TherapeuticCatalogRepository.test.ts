@@ -23,6 +23,7 @@ import {
   CatalogLabelTakenError,
   CatalogItemNeedsOwnerError,
   ActivityCategoriesOutsideObjectiveError,
+  CatalogObjectiveInvalidError,
 } from '../TherapeuticCatalogRepository';
 import { THERAPEUTIC_CATALOG_TABLE } from '../../domain/TherapeuticProject';
 
@@ -511,8 +512,19 @@ describe('TherapeuticCatalogRepository', () => {
       await expect(p).rejects.toMatchObject({ code: 'activity_categories_outside_objective' });
     });
 
+    it('091: 23503 da FK do objetivo (objectiveId inexistente) → CatalogObjectiveInvalidError code catalog_objective_invalid, no PATCH e no POST', async () => {
+      const patch = cliente(erroPg('23503', 'therapeutic_activities_objective_id_fkey'));
+      mockConnect.mockResolvedValue(patch.cli);
+      const p = new TherapeuticCatalogRepository().update('activities', 'item-1', { objectiveId: 'x', actorUid: 'uid-1' });
+      await expect(p).rejects.toBeInstanceOf(CatalogObjectiveInvalidError);
+      await expect(p).rejects.toMatchObject({ code: 'catalog_objective_invalid' });
+      const post = cliente(erroPg('23503', 'therapeutic_activities_objective_id_fkey'));
+      mockConnect.mockResolvedValue(post.cli);
+      await expect(new TherapeuticCatalogRepository().create('activities', { label: 'A', objectiveId: 'x', actorUid: 'uid-1' })).rejects.toBeInstanceOf(CatalogObjectiveInvalidError);
+    });
+
     it('091: 23503 de OUTRA FK propaga cru — não vira 409 mentiroso', async () => {
-      const { cli } = cliente(erroPg('23503', 'therapeutic_activities_objective_id_fkey'));
+      const { cli } = cliente(erroPg('23503', 'therapeutic_activity_icd_categories_atividade_fk'));
       mockConnect.mockResolvedValue(cli);
       await expect(
         new TherapeuticCatalogRepository().update('activities', 'item-1', { objectiveId: 'x', actorUid: 'uid-1' }),

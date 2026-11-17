@@ -21,8 +21,23 @@ import {
   TherapeuticCatalogRepository,
   CatalogItemsUnknownError,
   CatalogLabelTakenError,
-  CatalogSegmentInvalidError,
+  CatalogItemNeedsOwnerError,
+  ActivityCategoriesOutsideObjectiveError,
+  CatalogObjectiveInvalidError,
 } from '../../infrastructure/TherapeuticCatalogRepository';
+import { TherapeuticCatalogLinkRepository } from '../../infrastructure/TherapeuticCatalogLinkRepository';
+import { PgIcdCategoryLookup } from '../../infrastructure/PgIcdCategoryLookup';
+import { PgTherapeuticCatalogCascade } from '../../infrastructure/PgTherapeuticCatalogCascade';
+import { ResolveTherapeuticCatalogCascade } from '../../application/ResolveTherapeuticCatalogCascade';
+import { ResolveDiagnosisCategories } from '../../application/resolveDiagnosisCategories';
+import type { IcdCategoryLookupPort } from '../../application/ports/IcdCategoryLookupPort';
+import { InvalidIcdCategoryCodeError } from '../../domain/icdCategory';
+import {
+  CatalogLinkOwnerNotFoundError,
+  IcdCategoryAlreadyLinkedError,
+  IcdCategoryNotInObjectiveError,
+} from '../../domain/TherapeuticCatalogLinkErrors';
+import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
 import { PatientCoverageEmergencyContactRepository } from '../../infrastructure/PatientCoverageEmergencyContactRepository';
 import {
   missingTherapeuticClinicalWriteCell,
@@ -37,6 +52,11 @@ import {
   annulTherapeuticProjectSchema,
   createCatalogItemSchemaFor,
   updateCatalogItemSchemaFor,
+  parseCatalogListQuery,
+  cascadeRequestSchema,
+  icdCategorySearchQuerySchema,
+  categoryLinkBodySchema,
+  categoryLinkParamsSchema,
 } from '../validators/therapeuticProjectSchemas';
 import type { AdminCatalogKind } from '../../domain/serviceExitReason';
 import { catalogItemParamsSchema, invalidBody, actorUidOf } from './catalogControllerHelpers';
@@ -58,8 +78,11 @@ const versionParamsSchema = z.object({ id: z.string().uuid(), vid: z.string().uu
  *   POST /api/admin/patients/:id/therapeutic-projects              (…:create + patient_clinical:create no `new`; …:create + patient_clinical:update no `edit`)
  *   GET  /api/admin/patients/:id/therapeutic-projects/:vid         (…:read; `?purpose=export` → trilha export_pdf)
  *   POST /api/admin/patients/:id/therapeutic-projects/:vid/annul   (…:update)
- *   GET/POST  /api/admin/therapeutic-catalogs/:kind                (catalog_<kind>:read|write)
- *   PATCH     /api/admin/therapeutic-catalogs/:kind/:itemId        (catalog_<kind>:write)
+ *   GET/POST  /api/admin/therapeutic-catalogs/:kind                (catalog_<kind>:read|create)
+ *   PATCH     /api/admin/therapeutic-catalogs/:kind/:itemId        (catalog_<kind>:update)
+ *   POST      /api/admin/therapeutic-catalogs/cascade              (objectives:read + activities:read; spec 091, DD-10)
+ *   GET       /api/admin/therapeutic-catalogs/icd-categories?q=    (objectives:read)
+ *   GET/POST/DELETE …/specific-objectives/:itemId/categories[/:code], …/activities/:itemId/categories[/:code]
  *
  * Sem DELETE em lugar nenhum: versão é imutável (lex C5) e catálogo é soft delete.
  * `clinicalContext`/`generalObjective`/`diagnoses`/`pathologyTypes` (capítulo CID-11 derivado) saem só
@@ -82,7 +105,22 @@ export class AdminTherapeuticProjectsController {
     private readonly statusesInjected?: TherapeuticProjectContactStatusRepository,
     private readonly remindersInjected?: TherapeuticContactReminderRepository,
     private readonly serviceExitReasons: ServiceExitReasonReader = new ServiceExitReasonReader(),
+    // 091: injetados LAZY (molde acima) — `createTerminologyPort` lança sem env e o pool não pode abrir no construtor.
+    private readonly cascadeInjected?: ResolveTherapeuticCatalogCascade,
+    private readonly linksInjected?: TherapeuticCatalogLinkRepository,
+    private readonly icdCategoriesInjected?: IcdCategoryLookupPort,
   ) {}
+
+  private cascadeMemo?: ResolveTherapeuticCatalogCascade;
+  private linksMemo?: TherapeuticCatalogLinkRepository;
+  private icdMemo?: IcdCategoryLookupPort;
+  private get pool() { return DatabaseConnection.getInstance().getPool(); }
+  private get icdCategories(): IcdCategoryLookupPort { return (this.icdMemo ??= this.icdCategoriesInjected ?? new PgIcdCategoryLookup(this.pool)); }
+  private get links(): TherapeuticCatalogLinkRepository { return (this.linksMemo ??= this.linksInjected ?? new TherapeuticCatalogLinkRepository(this.icdCategories)); }
+  private get cascadeUseCase(): ResolveTherapeuticCatalogCascade {
+    return (this.cascadeMemo ??= this.cascadeInjected
+      ?? new ResolveTherapeuticCatalogCascade(new ResolveDiagnosisCategories(createTerminologyPort(process.env)), new PgTherapeuticCatalogCascade(this.pool)));
+  }
 
   private coverageContactsMemo?: PatientCoverageEmergencyContactRepository;
   /** lex-pr7 §alterado: só é criado (e só toca o pool) quando `create()` de fato precisa checar um `COVERAGE` ref. */
@@ -276,12 +314,6 @@ export class AdminTherapeuticProjectsController {
         res.status(422).json({ success: false, error: 'Unknown or inactive catalog item(s)', code: err.code, details: { kind: err.kind, ids: err.ids } });
         return;
       }
-      // spec 030 (lex C3/C7): segmento inexistente/inativo — 422 SEM `details` e sem ecoar o id; só o tipo do
-      // erro sai (molde do catálogo, `createCatalogItem`), e nada de segmento vai ao `reportError`.
-      if (err instanceof CatalogSegmentInvalidError) {
-        res.status(422).json({ success: false, error: 'Unknown or inactive segment', code: err.code });
-        return;
-      }
       // Sem `details`: a URI é dado clínico — só o tipo do erro sai (T7 da terminologia).
       if (err instanceof DiagnosisUnknownError) {
         res.status(422).json({ success: false, error: 'Unknown diagnosis', code: err.code });
@@ -325,61 +357,68 @@ export class AdminTherapeuticProjectsController {
 
   // ── Catálogos ───────────────────────────────────────────────────────────────────────────
 
-  /** GET /therapeutic-catalogs/<kind>?includeInactive=true — o `kind` vem da ROTA (célula literal), não de param. */
-  async listCatalog(kind: AdminCatalogKind, req: Request, res: Response): Promise<void> {
+  /**
+   * Roda UM handler de catálogo: só `try` + tabela erro→status (091, sem cadeia de `instanceof`). O que a tabela
+   * não conhece vai a `reportError` (sem corpo, sem URI) e vira 500.
+   */
+  private async guarded(res: Response, ctx: { source: string; failure: string } & Record<string, unknown>, run: () => Promise<void>): Promise<void> {
     try {
-      const items = await this.catalogs.list(kind, { includeInactive: req.query.includeInactive === 'true' });
-      res.status(200).json({ success: true, data: { kind, items } });
+      await run();
     } catch (err: unknown) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      reportError(e, { source: 'AdminTherapeuticProjectsController:listCatalog', kind });
-      res.status(500).json({ success: false, error: 'Failed to list catalog' });
+      const rule = CATALOG_ERROR_RULES.find((r) => err instanceof r.type);
+      if (rule) {
+        res.status(rule.status).json({ success: false, ...rule.describe(err as Error) });
+        return;
+      }
+      const { source, failure, ...rest } = ctx;
+      reportError(err instanceof Error ? err : new Error(String(err)), { source: `AdminTherapeuticProjectsController:${source}`, ...rest });
+      res.status(500).json({ success: false, error: failure });
     }
+  }
+
+  private static badParams(res: Response): void {
+    res.status(400).json({ success: false, error: 'Invalid params' });
+  }
+
+  /** GET /therapeutic-catalogs/<kind>?includeInactive&categoryCode&objectiveId — o `kind` vem da ROTA (célula literal), não de param. */
+  async listCatalog(kind: AdminCatalogKind, req: Request, res: Response): Promise<void> {
+    const query = parseCatalogListQuery(req.query);
+    if (!query.success) {
+      invalidBody(res, query.error);
+      return;
+    }
+    await this.guarded(res, { source: 'listCatalog', failure: 'Failed to list catalog', kind }, async () => {
+      const items = await this.catalogs.list(kind, query.data);
+      res.status(200).json({ success: true, data: { kind, items } });
+    });
   }
 
   /** GET /therapeutic-catalogs/service-exit-reasons/options — só ativos, para quem registra a troca (patient_services:read). */
   async listServiceExitReasonOptions(_req: Request, res: Response): Promise<void> {
-    try {
-      const items = await this.serviceExitReasons.listActiveOptions(DatabaseConnection.getInstance().getPool());
+    await this.guarded(res, { source: 'listServiceExitReasonOptions', failure: 'Failed to list service exit reason options' }, async () => {
+      const items = await this.serviceExitReasons.listActiveOptions(this.pool);
       res.status(200).json({ success: true, data: { items } });
-    } catch (err: unknown) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      reportError(e, { source: 'AdminTherapeuticProjectsController:listServiceExitReasonOptions' });
-      res.status(500).json({ success: false, error: 'Failed to list service exit reason options' });
-    }
+    });
   }
 
-  /** POST /therapeutic-catalogs/<kind> — `segmentId` (430) só entra no corpo de objetivos/atividades (schema por `kind`). */
+  /** POST /therapeutic-catalogs/<kind> — o schema vem do `kind` da rota (`serviceCode` em objetivos; `objectiveId`/`suggestedFrequency` em atividades). */
   async createCatalogItem(kind: AdminCatalogKind, req: Request, res: Response): Promise<void> {
     const body = createCatalogItemSchemaFor(kind).safeParse(req.body);
     if (!body.success) {
       invalidBody(res, body.error);
       return;
     }
-    try {
+    await this.guarded(res, { source: 'createCatalogItem', failure: 'Failed to create catalog item', kind }, async () => {
       const item = await this.catalogs.create(kind, { ...body.data, actorUid: this.actorUid(req) });
       res.status(201).json({ success: true, data: item });
-    } catch (err: unknown) {
-      if (err instanceof CatalogLabelTakenError) {
-        res.status(409).json({ success: false, error: 'An active item with this label already exists', code: err.code });
-        return;
-      }
-      // Segmento inexistente/inativo: 422 SEM ecoar o id (só o tipo do erro — molde de `DiagnosisUnknownError`).
-      if (err instanceof CatalogSegmentInvalidError) {
-        res.status(422).json({ success: false, error: 'Unknown or inactive segment', code: err.code });
-        return;
-      }
-      const e = err instanceof Error ? err : new Error(String(err));
-      reportError(e, { source: 'AdminTherapeuticProjectsController:createCatalogItem', kind });
-      res.status(500).json({ success: false, error: 'Failed to create catalog item' });
-    }
+    });
   }
 
   /** PATCH /therapeutic-catalogs/<kind>/:itemId */
   async updateCatalogItem(kind: AdminCatalogKind, req: Request, res: Response): Promise<void> {
     const params = catalogItemParamsSchema.safeParse(req.params);
     if (!params.success) {
-      res.status(400).json({ success: false, error: 'Invalid params' });
+      AdminTherapeuticProjectsController.badParams(res);
       return;
     }
     const body = updateCatalogItemSchemaFor(kind).safeParse(req.body);
@@ -387,25 +426,129 @@ export class AdminTherapeuticProjectsController {
       invalidBody(res, body.error);
       return;
     }
-    try {
+    await this.guarded(res, { source: 'updateCatalogItem', failure: 'Failed to update catalog item', kind, itemId: params.data.itemId }, async () => {
       const item = await this.catalogs.update(kind, params.data.itemId, { ...body.data, actorUid: this.actorUid(req) });
       if (!item) {
         res.status(404).json({ success: false, error: 'Catalog item not found' });
         return;
       }
       res.status(200).json({ success: true, data: item });
-    } catch (err: unknown) {
-      if (err instanceof CatalogLabelTakenError) {
-        res.status(409).json({ success: false, error: 'An active item with this label already exists', code: err.code });
-        return;
-      }
-      if (err instanceof CatalogSegmentInvalidError) {
-        res.status(422).json({ success: false, error: 'Unknown or inactive segment', code: err.code });
-        return;
-      }
-      const e = err instanceof Error ? err : new Error(String(err));
-      reportError(e, { source: 'AdminTherapeuticProjectsController:updateCatalogItem', kind, itemId: params.data.itemId });
-      res.status(500).json({ success: false, error: 'Failed to update catalog item' });
+    });
+  }
+
+  // ── Cascata e vínculos por categoria CID-11 (091, §9.4) ─────────────────────────────────
+
+  /** POST /therapeutic-catalogs/cascade — URIs no corpo (DD-10); o servidor resolve URI→categoria. Nunca loga o corpo. */
+  async cascade(req: Request, res: Response): Promise<void> {
+    const body = cascadeRequestSchema.safeParse(req.body);
+    if (!body.success) {
+      invalidBody(res, body.error);
+      return;
     }
+    await this.guarded(res, { source: 'cascade', failure: 'Failed to resolve catalog cascade' }, async () => {
+      res.status(200).json({ success: true, data: await this.cascadeUseCase.execute(body.data) });
+    });
+  }
+
+  /** GET /therapeutic-catalogs/icd-categories?q= — só categorias (stem de 4 caracteres) do release corrente, ≤20. */
+  async searchIcdCategories(req: Request, res: Response): Promise<void> {
+    const query = icdCategorySearchQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      invalidBody(res, query.error);
+      return;
+    }
+    await this.guarded(res, { source: 'searchIcdCategories', failure: 'Failed to search ICD categories' }, async () => {
+      res.status(200).json({ success: true, data: await this.icdCategories.search(query.data.q) });
+    });
+  }
+
+  /** GET …/<owner>/:itemId/categories */
+  async listCategoryLinks(owner: CategoryLinkOwner, req: Request, res: Response): Promise<void> {
+    const params = catalogItemParamsSchema.safeParse(req.params);
+    if (!params.success) {
+      AdminTherapeuticProjectsController.badParams(res);
+      return;
+    }
+    await this.guarded(res, { source: 'listCategoryLinks', failure: 'Failed to list category links', owner, itemId: params.data.itemId }, async () => {
+      const data = await CATEGORY_LINK_OPERATIONS[owner].list(this.links, params.data.itemId);
+      res.status(200).json({ success: true, data });
+    });
+  }
+
+  /** POST …/<owner>/:itemId/categories `{ code }` */
+  async addCategoryLink(owner: CategoryLinkOwner, req: Request, res: Response): Promise<void> {
+    const params = catalogItemParamsSchema.safeParse(req.params);
+    if (!params.success) {
+      AdminTherapeuticProjectsController.badParams(res);
+      return;
+    }
+    const body = categoryLinkBodySchema.safeParse(req.body);
+    if (!body.success) {
+      invalidBody(res, body.error);
+      return;
+    }
+    await this.guarded(res, { source: 'addCategoryLink', failure: 'Failed to link category', owner, itemId: params.data.itemId }, async () => {
+      const data = await CATEGORY_LINK_OPERATIONS[owner].add(this.links, params.data.itemId, body.data.code, this.actorUid(req));
+      res.status(201).json({ success: true, data });
+    });
+  }
+
+  /** DELETE …/<owner>/:itemId/categories/:code */
+  async removeCategoryLink(owner: CategoryLinkOwner, req: Request, res: Response): Promise<void> {
+    const params = categoryLinkParamsSchema.safeParse(req.params);
+    if (!params.success) {
+      AdminTherapeuticProjectsController.badParams(res);
+      return;
+    }
+    await this.guarded(res, { source: 'removeCategoryLink', failure: 'Failed to unlink category', owner, itemId: params.data.itemId }, async () => {
+      const data = await CATEGORY_LINK_OPERATIONS[owner].remove(this.links, params.data.itemId, params.data.code);
+      res.status(200).json({ success: true, data });
+    });
   }
 }
+
+// ── Tabelas (Strategy por entrada, sem cadeia de if) ────────────────────────────────────────
+
+/** De quem é o vínculo com a categoria: do objetivo ou da atividade (a rota decide; nunca o cliente). */
+export type CategoryLinkOwner = 'objective' | 'activity';
+
+const CATEGORY_LINK_OPERATIONS: Readonly<Record<CategoryLinkOwner, {
+  list: (links: TherapeuticCatalogLinkRepository, id: string) => Promise<unknown>;
+  add: (links: TherapeuticCatalogLinkRepository, id: string, code: string, actorUid: string) => Promise<unknown>;
+  remove: (links: TherapeuticCatalogLinkRepository, id: string, code: string) => Promise<unknown>;
+}>> = {
+  objective: {
+    list: (l, id) => l.listObjectiveCategories(id),
+    add: (l, id, code, uid) => l.addObjectiveCategory(id, code, uid),
+    remove: (l, id, code) => l.removeObjectiveCategory(id, code),
+  },
+  activity: {
+    list: (l, id) => l.listActivityCategories(id),
+    add: (l, id, code, uid) => l.addActivityCategory(id, code, uid),
+    remove: async (l, id, code) => l.removeActivityCategory(id, code),
+  },
+};
+
+/**
+ * Tabela erro→status do catálogo, da cascata e dos vínculos (091, §9.4). Corpo = só o tipo do erro: nenhum id, URI
+ * ou texto é ecoado (a URI é dado clínico). `describe` devolve `{ error, code }`.
+ */
+interface CatalogErrorRule {
+  readonly type: new (...args: never[]) => Error;
+  readonly status: number;
+  readonly describe: (err: Error) => { error: string; code: string };
+}
+const codeOf = (err: Error): string => (err as Error & { code: string }).code;
+const rule = (type: CatalogErrorRule['type'], status: number, error: string): CatalogErrorRule => ({ type, status, describe: (e) => ({ error, code: codeOf(e) }) });
+const CATALOG_ERROR_RULES: readonly CatalogErrorRule[] = [
+  rule(CatalogLabelTakenError, 409, 'An active item with this label already exists'),
+  rule(CatalogItemNeedsOwnerError, 422, 'An active item needs its owner (service or objective)'),
+  rule(CatalogObjectiveInvalidError, 422, 'Unknown objective'),
+  rule(ActivityCategoriesOutsideObjectiveError, 409, 'The activity has categories the new objective does not have'),
+  rule(IcdCategoryNotInObjectiveError, 422, 'Category is not among the objective categories'),
+  rule(IcdCategoryAlreadyLinkedError, 409, 'Category already linked'),
+  rule(InvalidIcdCategoryCodeError, 422, 'Invalid ICD category'),
+  rule(CatalogLinkOwnerNotFoundError, 404, 'Catalog item not found'),
+  rule(DiagnosisUnknownError, 422, 'Unknown diagnosis'),
+  { type: TerminologyUnavailableError, status: 503, describe: (e) => ({ error: e.message, code: 'TERMINOLOGY_UNAVAILABLE' }) },
+];

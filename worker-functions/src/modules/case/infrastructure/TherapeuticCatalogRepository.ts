@@ -99,6 +99,14 @@ export class ActivityCategoriesOutsideObjectiveError extends Error {
   }
 }
 
+/** `objectiveId` da atividade não existe (FK `therapeutic_activities_objective_id_fkey`, 23503) — POST/PATCH, 422 sem ecoar o id. */
+export class CatalogObjectiveInvalidError extends Error {
+  readonly code = 'catalog_objective_invalid';
+  constructor() {
+    super('catalog_objective_invalid');
+  }
+}
+
 /** Tabela por kind: os terapêuticos (domínio) + o de motivos de saída, que NÃO entra em `THERAPEUTIC_CATALOG_TABLE`. */
 const ADMIN_CATALOG_TABLE: Readonly<Record<AdminCatalogKind, string>> = {
   ...THERAPEUTIC_CATALOG_TABLE,
@@ -114,6 +122,7 @@ const PG_TRANSLATIONS: readonly PgTranslation[] = [
   { sqlstate: '23505', constraint: /_label_ativo/, make: () => new CatalogLabelTakenError() },
   { sqlstate: '23514', constraint: /^therapeutic_(specific_objectives_ativo_tem_servico|activities_ativa_tem_objetivo)$/, make: () => new CatalogItemNeedsOwnerError() },
   { sqlstate: '23503', constraint: /^therapeutic_activity_icd_categories_dentro_do_objetivo_fk$/, make: () => new ActivityCategoriesOutsideObjectiveError() },
+  { sqlstate: '23503', constraint: /^therapeutic_activities_objective_id_fkey$/, make: () => new CatalogObjectiveInvalidError() },
 ];
 
 const translatePgError = (err: unknown): unknown => {

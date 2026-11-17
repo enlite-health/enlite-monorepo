@@ -4,7 +4,6 @@ import { ADMIN_PATIENTS_FAMILY } from '@modules/identity/permissions';
 import { logResourceAccess } from '@shared/audit/resourceAccessLog';
 import { AdminTherapeuticProjectsController, type RequestWithTherapeuticContactContainers } from '../controllers/AdminTherapeuticProjectsController';
 import { THERAPEUTIC_PROJECT_RESOURCE, therapeuticTrailAction } from '../../application/therapeuticProjectAccess';
-import { THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_CATALOG_RESOURCE } from '../../domain/TherapeuticProject';
 import { SERVICE_EXIT_REASON_KIND } from '../../domain/serviceExitReason';
 import { SERVICE_SHIFT_TEMPLATE_KIND } from '../../domain/serviceShiftTemplate';
 import { AdminServiceShiftTemplatesController } from '../controllers/AdminServiceShiftTemplatesController';
@@ -17,10 +16,10 @@ import { AdminServiceShiftTemplatesController } from '../controllers/AdminServic
  * Células (design 1b: declarar É enforçar; o sync do catálogo publica no boot):
  *   · `patient_therapeutic_project:read|write` — o container da ficha (D286); `patient_clinical`
  *     é cumulativa e conferida no controller/projeção (lex C7).
- *   · `catalog_therapeutic_objectives|catalog_therapeutic_activities|catalog_therapeutic_segments :read|write`
- *     — uma célula por catálogo (Gabriel, 08/09; segmentos entraram na US-17/migration 430, mesmo
- *     molde). Tipo de patologia NÃO tem catálogo: deriva do CID-11 (D163/D164). A célula sai do `kind` da URL, por isso há UMA
- *     rota por catálogo em vez de `:kind` dinâmico: célula é declarada, nunca calculada em runtime.
+ *   · `catalog_therapeutic_objectives|catalog_therapeutic_activities :read|create|update` — uma célula por
+ *     catálogo (Gabriel, 08/09). O catálogo de segmentos acabou (spec 091): sem rota, sem célula (404). Tipo de
+ *     patologia NÃO tem catálogo: deriva do CID-11 (D163/D164). Há UMA rota por catálogo em vez de `:kind`
+ *     dinâmico: célula é declarada, LITERAL em cada `perm.require` (091, §9.4), nunca calculada em runtime.
  *
  * `untilEnforced: 'admin'` nas escritas: até a família virar, papel admin — o mesmo amortecedor
  * das outras rotas de escrita do paciente. Trilha (lex C9/C13): só nomes de container.
@@ -84,22 +83,60 @@ export function createAdminTherapeuticProjectsRoutes(
     (req: Request, res: Response) => controller.annul(req, res),
   );
 
-  // ── Catálogos: uma rota por catálogo, célula literal em cada uma ──────────────────────────
-  for (const kind of THERAPEUTIC_CATALOG_KINDS) {
-    const resource = THERAPEUTIC_CATALOG_RESOURCE[kind];
-    router.get(`/therapeutic-catalogs/${kind}`, staffOnly, perm.require(resource, 'read'), (req: Request, res: Response) =>
-      controller.listCatalog(kind, req, res),
-    );
-    router.post(`/therapeutic-catalogs/${kind}`, staffOnly, perm.require(resource, 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
-      controller.createCatalogItem(kind, req, res),
-    );
-    router.patch(`/therapeutic-catalogs/${kind}/:itemId`, staffOnly, perm.require(resource, 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
-      controller.updateCatalogItem(kind, req, res),
-    );
-  }
+  // ── Catálogos terapêuticos (091, §9.4): célula LITERAL em cada rota, fora de qualquer laço ──────────
+  // Rotas fixas (`cascade`, `icd-categories`) e `…/:itemId/categories` não colidem com `/:itemId` (path ou verbo distintos).
+  // `cascade` exige DUAS células, em guards encadeados: quem a chama lê objetivos E atividades (DD-10).
+  router.post(
+    '/therapeutic-catalogs/cascade',
+    staffOnly,
+    perm.require('catalog_therapeutic_objectives', 'read'),
+    perm.require('catalog_therapeutic_activities', 'read'),
+    (req: Request, res: Response) => controller.cascade(req, res),
+  );
+  router.get('/therapeutic-catalogs/icd-categories', staffOnly, perm.require('catalog_therapeutic_objectives', 'read'), (req: Request, res: Response) =>
+    controller.searchIcdCategories(req, res),
+  );
+
+  router.get('/therapeutic-catalogs/specific-objectives', staffOnly, perm.require('catalog_therapeutic_objectives', 'read'), (req: Request, res: Response) =>
+    controller.listCatalog('specific-objectives', req, res),
+  );
+  router.post('/therapeutic-catalogs/specific-objectives', staffOnly, perm.require('catalog_therapeutic_objectives', 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+    controller.createCatalogItem('specific-objectives', req, res),
+  );
+  router.patch('/therapeutic-catalogs/specific-objectives/:itemId', staffOnly, perm.require('catalog_therapeutic_objectives', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+    controller.updateCatalogItem('specific-objectives', req, res),
+  );
+  router.get('/therapeutic-catalogs/specific-objectives/:itemId/categories', staffOnly, perm.require('catalog_therapeutic_objectives', 'read'), (req: Request, res: Response) =>
+    controller.listCategoryLinks('objective', req, res),
+  );
+  router.post('/therapeutic-catalogs/specific-objectives/:itemId/categories', staffOnly, perm.require('catalog_therapeutic_objectives', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+    controller.addCategoryLink('objective', req, res),
+  );
+  router.delete('/therapeutic-catalogs/specific-objectives/:itemId/categories/:code', staffOnly, perm.require('catalog_therapeutic_objectives', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+    controller.removeCategoryLink('objective', req, res),
+  );
+
+  router.get('/therapeutic-catalogs/activities', staffOnly, perm.require('catalog_therapeutic_activities', 'read'), (req: Request, res: Response) =>
+    controller.listCatalog('activities', req, res),
+  );
+  router.post('/therapeutic-catalogs/activities', staffOnly, perm.require('catalog_therapeutic_activities', 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+    controller.createCatalogItem('activities', req, res),
+  );
+  router.patch('/therapeutic-catalogs/activities/:itemId', staffOnly, perm.require('catalog_therapeutic_activities', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+    controller.updateCatalogItem('activities', req, res),
+  );
+  router.get('/therapeutic-catalogs/activities/:itemId/categories', staffOnly, perm.require('catalog_therapeutic_activities', 'read'), (req: Request, res: Response) =>
+    controller.listCategoryLinks('activity', req, res),
+  );
+  router.post('/therapeutic-catalogs/activities/:itemId/categories', staffOnly, perm.require('catalog_therapeutic_activities', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+    controller.addCategoryLink('activity', req, res),
+  );
+  router.delete('/therapeutic-catalogs/activities/:itemId/categories/:code', staffOnly, perm.require('catalog_therapeutic_activities', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+    controller.removeCategoryLink('activity', req, res),
+  );
 
   // ── Motivos de saída (492): kind FORA de THERAPEUTIC_CATALOG_KINDS, então fora do laço acima.
-  // Célula LITERAL (o scanner só enxerga string literal). `/options` é rota irmã sem `:itemId`,
+  // Célula LITERAL. `/options` é rota irmã sem `:itemId`,
   // sem colisão com o PATCH `/:itemId` (outro verbo) nem com o GET da lista (path distinto).
   router.get(`/therapeutic-catalogs/${SERVICE_EXIT_REASON_KIND}`, staffOnly, perm.require('catalog_service_exit_reasons', 'read'), (req: Request, res: Response) =>
     controller.listCatalog(SERVICE_EXIT_REASON_KIND, req, res),
