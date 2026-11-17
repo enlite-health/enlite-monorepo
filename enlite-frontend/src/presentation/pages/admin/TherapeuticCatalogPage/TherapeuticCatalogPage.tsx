@@ -1,6 +1,6 @@
 /**
  * TherapeuticCatalogPage — administração de UM catálogo do projeto terapêutico (spec 017, D299):
- * objetivos específicos, rotina e atividades, (change itinerario-trocas) motivos de saída do serviço e segmentos Ana Care (spec 030) (o tipo de patologia NÃO é catálogo: deriva do CID-11, D303).
+ * objetivos específicos, atividades (091: com serviço, objetivo, frequência e vínculo a CID-11), (change itinerario-trocas) motivos de saída do serviço (o tipo de patologia NÃO é catálogo: deriva do CID-11, D303).
  * Uma TELA por lista e uma célula por lista (decisão do Gabriel, 08/09) — o componente é o mesmo, parametrizado por `kind`;
  * a rota, a célula e o título mudam.
  *
@@ -8,9 +8,10 @@
  * espelho dos segmentos do Ana Care, `2026-08-26a#DEC-09`); enum = migration + deploy a cada mudança.
  * Desativar nunca apaga: versões antigas do projeto guardam o id E o texto (snapshot, lex C19).
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { ListChecks, Edit2, Plus } from 'lucide-react';
 import { AdminTherapeuticProjectsApiService } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
 import {
@@ -26,26 +27,28 @@ import {
   type ShiftTemplateItem,
 } from '@domain/entities/TherapeuticProject';
 import { Heading } from '@presentation/components/atoms/Heading';
+import { Label } from '@presentation/components/atoms/Label';
 import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
 import { useActionGate, useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms/Table';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
-import { TherapeuticCatalogFormModal, type CatalogItemFormData } from './TherapeuticCatalogFormModal';
+import { TherapeuticCatalogFormModal, CATALOG_SERVICE_CODES, type CatalogItemFormData } from './TherapeuticCatalogFormModal';
+import { TherapeuticCatalogCidPanel, type CidPanelKind } from './TherapeuticCatalogCidPanel';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { catalogRefusalMessage } from './catalogRefusalMessage';
-import { segmentDisplayLabel } from './catalogSegment';
 import { shiftEndTime } from '@domain/scheduleHours';
 import { shiftRangeLabel } from '@presentation/components/features/admin/PatientDetail/itinerary/shiftRange';
 import { sortAlphabeticallyEs } from '@presentation/components/features/admin/PatientDetail/therapeuticProject/alphabeticalOrder';
 
 /**
- * Catálogos que esta tela administra: os 3 do projeto terapêutico (inclui `segments`, spec 030) e
- * (change itinerario-trocas) os motivos de saída do serviço — o mesmo conjunto de `AdminCatalogKind`.
+ * Catálogos que esta tela administra: os 2 do projeto terapêutico (objetivos e atividades; 091 tirou `segments`) e
+ * (change itinerario-trocas) os motivos de saída do serviço — o mesmo conjunto de `AdminCatalogKind` — mais a guardia predefinida.
  */
 type ManagedCatalogKind = TherapeuticCatalogKind | typeof SERVICE_EXIT_REASON_KIND | typeof SERVICE_SHIFT_TEMPLATE_KIND;
 
-/** Linha da tabela; a guardia predefinida (spec 074) chega com `items` e sem Ordem/descrição/segmento. */
+/** Linha da tabela; a guardia predefinida (spec 074) chega com `items` e sem Ordem/descrição. */
 type CatalogRow = TherapeuticCatalogItem & { items?: ShiftTemplateItem[] };
 
 const templateRow = (tpl: ShiftTemplate): CatalogRow => ({ id: tpl.id, label: tpl.label, active: tpl.active, items: tpl.items, sortOrder: 0, deactivatedAt: null, createdAt: '', updatedAt: '' });
@@ -53,10 +56,164 @@ const templateRow = (tpl: ShiftTemplate): CatalogRow => ({ id: tpl.id, label: tp
 const CATALOG_RESOURCE: Readonly<Record<ManagedCatalogKind, string>> = {
   'specific-objectives': THERAPEUTIC_CATALOG_RESOURCE['specific-objectives'],
   activities: THERAPEUTIC_CATALOG_RESOURCE.activities,
-  segments: THERAPEUTIC_CATALOG_RESOURCE.segments,
   [SERVICE_EXIT_REASON_KIND]: SERVICE_EXIT_REASON_RESOURCE,
   [SERVICE_SHIFT_TEMPLATE_KIND]: SERVICE_SHIFT_TEMPLATE_RESOURCE,
 };
+
+type Tr = (k: string, o?: Record<string, unknown>) => string;
+
+/** Tudo que uma célula precisa da tela (Strategy por coluna: a célula não conhece o `kind`). */
+interface CellCtx {
+  tr: Tr;
+  t: TFunction;
+  writeDenied: boolean;
+  onEdit(item: CatalogRow): void;
+  onToggle(item: CatalogRow): void;
+  onOpenCid(item: CatalogRow): void;
+}
+
+/** Uma coluna da tabela: cabeçalho + célula. `columnsByKind` é a tabela que decide quais colunas cada catálogo tem. */
+interface CatalogColumn {
+  id: string;
+  header(tr: Tr): string;
+  align?: 'right';
+  cell(item: CatalogRow, c: CellCtx): ReactNode;
+}
+
+const dash = <Text as="span" size="sm" color="muted">—</Text>;
+
+const orderColumn: CatalogColumn = {
+  id: 'order',
+  header: (tr) => tr('table.order'),
+  cell: (item) => <Text as="span" size="sm" color="muted" className="font-mono">{item.sortOrder}</Text>,
+};
+
+const labelColumn = (headerKey: 'table.title' | 'table.label'): CatalogColumn => ({
+  id: 'label',
+  header: (tr) => tr(headerKey),
+  cell: (item, { t }) => (
+    <>
+      <Text as="span" size="sm" color={item.active ? 'primary' : 'muted'} data-testid={`therapeutic-catalog-label-${item.id}`}>{item.label}</Text>
+      {item.items && (
+        <Text size="xs" color="tertiary" className="mt-0.5" data-testid={`therapeutic-catalog-shifts-${item.id}`}>
+          {item.items.map((it) => shiftRangeLabel(t, { startTime: it.startTime, endTime: shiftEndTime(it.startTime, it.durationMinutes), durationMinutes: it.durationMinutes }, 'full')).join(' · ')}
+        </Text>
+      )}
+    </>
+  ),
+});
+
+const descriptionColumn: CatalogColumn = {
+  id: 'description',
+  header: (tr) => tr('table.description'),
+  cell: (item) => item.description ? (
+    <Text size="xs" color="tertiary" className="line-clamp-2" title={item.description} data-testid={`therapeutic-catalog-description-${item.id}`}>
+      {item.description}
+    </Text>
+  ) : dash,
+};
+
+const serviceColumn: CatalogColumn = {
+  id: 'service',
+  header: (tr) => tr('service'),
+  cell: (item, { t }) => item.serviceCode ? (
+    <Text as="span" size="sm" color="muted" data-testid={`therapeutic-catalog-service-${item.id}`}>
+      {t(`admin.therapeuticCatalog.service${item.serviceCode}`, { defaultValue: item.serviceCode })}
+    </Text>
+  ) : dash,
+};
+
+const objectiveColumn: CatalogColumn = {
+  id: 'objective',
+  header: (tr) => tr('objective'),
+  cell: (item, { tr }) => item.objectiveLabel ? (
+    <Text as="span" size="sm" color="muted" data-testid={`therapeutic-catalog-objective-${item.id}`}>
+      {item.objectiveActive === false ? `${item.objectiveLabel} (${tr('inactive')})` : item.objectiveLabel}
+    </Text>
+  ) : dash,
+};
+
+const frequencyColumn: CatalogColumn = {
+  id: 'frequency',
+  header: (tr) => tr('frequency'),
+  cell: (item) => item.suggestedFrequency ? (
+    <Text as="span" size="sm" color="muted" data-testid={`therapeutic-catalog-frequency-${item.id}`}>{item.suggestedFrequency}</Text>
+  ) : dash,
+};
+
+/** CIE-11: chip "N categorías" que abre o painel de CIDs (§9.7). */
+const icdColumn: CatalogColumn = {
+  id: 'icd',
+  header: (tr) => tr('icdCategories'),
+  cell: (item, { tr, onOpenCid }) => (
+    <button
+      type="button"
+      onClick={() => onOpenCid(item)}
+      className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer"
+      data-testid={`therapeutic-catalog-icd-${item.id}`}
+    >
+      {tr('icdCount', { count: item.categoryCount ?? 0 })}
+    </button>
+  ),
+};
+
+const statusColumn: CatalogColumn = {
+  id: 'status',
+  header: (tr) => tr('table.status'),
+  cell: (item, { tr }) => (
+    <span
+      className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${item.active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}
+      data-testid={`therapeutic-catalog-status-${item.id}`}
+    >
+      {item.active ? tr('active') : tr('inactive')}
+    </span>
+  ),
+};
+
+const actionsColumn: CatalogColumn = {
+  id: 'actions',
+  header: (tr) => tr('table.actions'),
+  align: 'right',
+  // D269: renomear e (des)ativar fazem PATCH → célula de escrita deste catálogo; sem ela, as ações SOMEM.
+  cell: (item, { tr, writeDenied, onEdit, onToggle }) => writeDenied ? null : (
+    <div className="flex items-center justify-end gap-2">
+      <button
+        type="button"
+        onClick={() => onEdit(item)}
+        className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-primary transition-colors cursor-pointer"
+        aria-label={tr('editItem')}
+        data-testid={`therapeutic-catalog-edit-${item.id}`}
+      >
+        <Edit2 className="w-4 h-4" />
+      </button>
+      <button
+        type="button"
+        onClick={() => onToggle(item)}
+        className="px-2 py-1 rounded hover:bg-gray-100 text-xs text-gray-600 hover:text-primary transition-colors cursor-pointer"
+        data-testid={`therapeutic-catalog-toggle-${item.id}`}
+      >
+        {item.active ? tr('deactivate') : tr('activate')}
+      </button>
+    </div>
+  ),
+};
+
+/** Colunas por catálogo (§9.7). Kind novo = uma linha aqui, sem `if` na tela. */
+const columnsByKind: Readonly<Record<ManagedCatalogKind, readonly CatalogColumn[]>> = {
+  'specific-objectives': [labelColumn('table.title'), descriptionColumn, serviceColumn, icdColumn, statusColumn, actionsColumn],
+  activities: [labelColumn('table.title'), descriptionColumn, objectiveColumn, frequencyColumn, icdColumn, statusColumn, actionsColumn],
+  [SERVICE_EXIT_REASON_KIND]: [orderColumn, labelColumn('table.label'), statusColumn, actionsColumn],
+  [SERVICE_SHIFT_TEMPLATE_KIND]: [labelColumn('table.label'), statusColumn, actionsColumn],
+};
+
+/** Painel de CIDs por kind (só objetivo e atividade têm vínculo). */
+const CID_PANEL_KIND: Partial<Record<ManagedCatalogKind, CidPanelKind>> = {
+  'specific-objectives': 'objective',
+  activities: 'activity',
+};
+
+/** Filtro de CIE-11: só dispara com um código de categoria completo (4 caracteres, DD-20: "vínculo existe"). */
+const ICD_FILTER_LENGTH = 4;
 
 interface Props {
   kind: ManagedCatalogKind;
@@ -67,14 +224,13 @@ const KIND_KEY: Readonly<Record<ManagedCatalogKind, string>> = {
   'specific-objectives': 'specificObjectives',
   activities: 'activities',
   [SERVICE_EXIT_REASON_KIND]: 'serviceExitReasons',
-  segments: 'segments',
   [SERVICE_SHIFT_TEMPLATE_KIND]: 'serviceShiftTemplates',
 };
 
 export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const tr = (k: string, o?: Record<string, unknown>) => t(`admin.therapeuticCatalog.${k}`, o ?? {});
+  const tr: Tr = (k, o) => t(`admin.therapeuticCatalog.${k}`, o ?? {});
   const resource = CATALOG_RESOURCE[kind];
 
   // Trava de rota pela célula de LEITURA deste catálogo (defesa em profundidade; quem manda é o 403
@@ -89,24 +245,33 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
     'specific-objectives': useActionGate('catalog_therapeutic_objectives', 'update'),
     activities: useActionGate('catalog_therapeutic_activities', 'update'),
     'service-exit-reasons': useActionGate('catalog_service_exit_reasons', 'update'),
-    segments: useActionGate('catalog_therapeutic_segments', 'update'),
     'service-shift-templates': useActionGate('catalog_service_shift_templates', 'update'),
   } as const;
   const writeGate = writeGates[kind];
 
   const isTemplate = kind === SERVICE_SHIFT_TEMPLATE_KIND;
   const [items, setItems] = useState<CatalogRow[]>([]);
-  // Spec 061: objetivo/atividade não mostram nem editam a Ordem — a lista é A–Z; `segments` e motivos de saída seguem na ordem do servidor.
+  // Spec 061: objetivo/atividade não mostram nem editam a Ordem — a lista é A–Z; os motivos de saída seguem na ordem do servidor.
   // A guardia predefinida (spec 074) também não tem Ordem: lista A–Z, com os turnos sob o rótulo.
+  const [serviceFilter, setServiceFilter] = useState('');
   const showOrder = !catalogHasDescription(kind) && !isTemplate;
-  const shownItems = showOrder ? items : sortAlphabeticallyEs(items);
-  // Segmentos (spec 030): só objetivos/atividades se vinculam; `null` = sem célula (403) ou catálogo sem vínculo.
-  const [segments, setSegments] = useState<TherapeuticCatalogItem[] | null>(null);
-  const hasSegmentLink = kind === 'specific-objectives' || kind === 'activities';
-  const inactiveSegment = (label: string) => tr('form.segmentInactive', { label });
+  const sorted = showOrder ? items : sortAlphabeticallyEs(items);
+  const hasServiceFilter = kind === 'specific-objectives';
+  const shownItems = hasServiceFilter && serviceFilter ? sorted.filter((i) => i.serviceCode === serviceFilter) : sorted;
+  // 091: atividade escolhe o objetivo dono (select do modal + filtro); `null` = lista não veio (sem célula de objetivos ou falha).
+  const [objectives, setObjectives] = useState<TherapeuticCatalogItem[] | null>(null);
+  const hasObjectiveLink = kind === 'activities';
+  const cidPanelKind = CID_PANEL_KIND[kind];
+  // Filtros (§9.7): Servicio (objetivos, no front) · Objetivo (atividades, servidor) · CIE-11 (servidor: `categoryCode`, "vínculo existe", DD-20).
+  const [objectiveFilter, setObjectiveFilter] = useState('');
+  const [icdFilter, setIcdFilter] = useState('');
+  const categoryCode = cidPanelKind && icdFilter.trim().length === ICD_FILTER_LENGTH ? icdFilter.trim().toUpperCase() : undefined;
+  const objectiveIdFilter = hasObjectiveLink && objectiveFilter ? objectiveFilter : undefined;
+  const [cidPanel, setCidPanel] = useState<CatalogRow | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const columns = columnsByKind[kind];
   const [formModal, setFormModal] = useState<{ open: boolean; item: CatalogRow | null }>({ open: false, item: null });
 
   const fetchItems = useCallback(async () => {
@@ -114,22 +279,26 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
       setIsLoading(true);
       setLoadError(null);
       // includeInactive: quem administra precisa ver o que está desligado para poder reativar.
-      const [itemsRes, segmentsRes] = await Promise.allSettled([
+      const [itemsRes, objectivesRes] = await Promise.allSettled([
         isTemplate
           ? AdminTherapeuticProjectsApiService.listShiftTemplates({ includeInactive: true }).then((list) => list.map(templateRow))
-          : AdminTherapeuticProjectsApiService.listCatalog(kind as TherapeuticCatalogKind, { includeInactive: true }),
-        hasSegmentLink ? AdminTherapeuticProjectsApiService.listCatalog('segments', { includeInactive: true }) : Promise.resolve(null),
+          : AdminTherapeuticProjectsApiService.listCatalog(kind as TherapeuticCatalogKind, {
+              includeInactive: true,
+              ...(categoryCode ? { categoryCode } : {}),
+              ...(objectiveIdFilter ? { objectiveId: objectiveIdFilter } : {}),
+            }),
+        hasObjectiveLink ? AdminTherapeuticProjectsApiService.listCatalog('specific-objectives', { includeInactive: true }) : Promise.resolve(null),
       ]);
       if (itemsRes.status === 'rejected') throw itemsRes.reason;
       setItems(itemsRes.value);
-      // 403 (sem `catalog_therapeutic_segments:read`) ou qualquer falha → sem campo e sem coluna; o resto da tela segue.
-      setSegments(segmentsRes.status === 'fulfilled' ? segmentsRes.value : null);
+      // Falha na lista de objetivos → sem select no modal e sem filtro; o resto da tela segue.
+      setObjectives(objectivesRes.status === 'fulfilled' ? objectivesRes.value : null);
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
     }
-  }, [kind, hasSegmentLink, isTemplate]);
+  }, [kind, hasObjectiveLink, isTemplate, categoryCode, objectiveIdFilter]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
@@ -158,6 +327,15 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
       setActionError(catalogRefusalMessage(err, t));
     }
   }
+
+  const cellCtx: CellCtx = {
+    tr,
+    t,
+    writeDenied: writeGate.denied,
+    onEdit: (item) => setFormModal({ open: true, item }),
+    onToggle: handleToggleActive,
+    onOpenCid: setCidPanel,
+  };
 
   return (
     <PageContainer>
@@ -191,6 +369,52 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
         </div>
       )}
 
+      {(hasServiceFilter || hasObjectiveLink || cidPanelKind) && (
+        <div className="flex flex-wrap items-end gap-3 mb-4" data-testid="therapeutic-catalog-filters">
+          {hasServiceFilter && (
+            <div className="w-64">
+              <Label htmlFor="therapeutic-catalog-filter-service">{tr('service')}</Label>
+              <Combobox
+                id="therapeutic-catalog-filter-service"
+                value={serviceFilter}
+                onChange={setServiceFilter}
+                placeholder={t('common.all')}
+                options={[{ value: '', label: t('common.all') }, ...CATALOG_SERVICE_CODES.map((code) => ({ value: code, label: tr(`service${code}`) }))]}
+                data-testid="therapeutic-catalog-filter-service"
+              />
+            </div>
+          )}
+          {hasObjectiveLink && objectives !== null && (
+            <div className="w-72">
+              <Label htmlFor="therapeutic-catalog-filter-objective">{tr('objective')}</Label>
+              <Combobox
+                id="therapeutic-catalog-filter-objective"
+                value={objectiveFilter}
+                onChange={setObjectiveFilter}
+                placeholder={t('common.all')}
+                options={[{ value: '', label: t('common.all') }, ...objectives.map((o) => ({ value: o.id, label: o.label }))]}
+                data-testid="therapeutic-catalog-filter-objective"
+              />
+            </div>
+          )}
+          {cidPanelKind && (
+            <div className="w-64">
+              <Label htmlFor="therapeutic-catalog-filter-icd">{tr('filterIcd')}</Label>
+              <input
+                id="therapeutic-catalog-filter-icd"
+                type="search"
+                value={icdFilter}
+                onChange={(e) => setIcdFilter(e.target.value)}
+                maxLength={ICD_FILTER_LENGTH}
+                placeholder={tr('icdSearch')}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none"
+                data-testid="therapeutic-catalog-filter-icd"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {loadError ? (
         <div className="py-12 text-center" data-testid="therapeutic-catalog-load-error">
           <Text color="inherit" className="text-red-600">{loadError}</Text>
@@ -205,78 +429,14 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto" data-testid="therapeutic-catalog-table">
           <Table>
             <TableHeader>
-              {showOrder && <TableHead>{tr('table.order')}</TableHead>}
-              <TableHead>{tr(catalogHasDescription(kind) ? 'table.title' : 'table.label')}</TableHead>
-              {segments !== null && <TableHead>{tr('table.segment')}</TableHead>}
-              <TableHead>{tr('table.status')}</TableHead>
-              <TableHead align="right">{tr('table.actions')}</TableHead>
+              {columns.map((c) => <TableHead key={c.id} align={c.align}>{c.header(tr)}</TableHead>)}
             </TableHeader>
             <TableBody>
               {shownItems.map((item) => (
                 <TableRow key={item.id} clickable={false} data-testid={`therapeutic-catalog-row-${item.id}`}>
-                  {showOrder && (
-                    <TableCell unwrapped>
-                      <Text as="span" size="sm" color="muted" className="font-mono">{item.sortOrder}</Text>
-                    </TableCell>
-                  )}
-                  <TableCell unwrapped>
-                    <Text as="span" size="sm" color={item.active ? 'primary' : 'muted'} data-testid={`therapeutic-catalog-label-${item.id}`}>{item.label}</Text>
-                    {item.items && (
-                      <Text size="xs" color="tertiary" className="mt-0.5" data-testid={`therapeutic-catalog-shifts-${item.id}`}>
-                        {item.items.map((it) => shiftRangeLabel(t, { startTime: it.startTime, endTime: shiftEndTime(it.startTime, it.durationMinutes), durationMinutes: it.durationMinutes }, 'full')).join(' · ')}
-                      </Text>
-                    )}
-                    {!showOrder && item.description && (
-                      <Text
-                        size="xs"
-                        color="tertiary"
-                        className="mt-0.5 line-clamp-2"
-                        title={item.description}
-                        data-testid={`therapeutic-catalog-description-${item.id}`}
-                      >
-                        {item.description}
-                      </Text>
-                    )}
-                  </TableCell>
-                  {segments !== null && (
-                    <TableCell unwrapped>
-                      <Text as="span" size="sm" color="muted" data-testid={`therapeutic-catalog-segment-${item.id}`}>
-                        {segmentDisplayLabel(segments, item.segmentId, inactiveSegment) ?? '—'}
-                      </Text>
-                    </TableCell>
-                  )}
-                  <TableCell unwrapped>
-                    <span
-                      className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${item.active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}
-                      data-testid={`therapeutic-catalog-status-${item.id}`}
-                    >
-                      {item.active ? tr('active') : tr('inactive')}
-                    </span>
-                  </TableCell>
-                  <TableCell align="right" unwrapped>
-                    {/* D269: renomear e (des)ativar fazem PATCH → célula de escrita deste catálogo; sem ela, as ações SOMEM. */}
-                    {!writeGate.denied && (
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setFormModal({ open: true, item })}
-                          className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-primary transition-colors cursor-pointer"
-                          aria-label={tr('editItem')}
-                          data-testid={`therapeutic-catalog-edit-${item.id}`}
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleActive(item)}
-                          className="px-2 py-1 rounded hover:bg-gray-100 text-xs text-gray-600 hover:text-primary transition-colors cursor-pointer"
-                          data-testid={`therapeutic-catalog-toggle-${item.id}`}
-                        >
-                          {item.active ? tr('deactivate') : tr('activate')}
-                        </button>
-                      </div>
-                    )}
-                  </TableCell>
+                  {columns.map((c) => (
+                    <TableCell key={c.id} align={c.align} unwrapped>{c.cell(item, cellCtx)}</TableCell>
+                  ))}
                 </TableRow>
               ))}
             </TableBody>
@@ -288,9 +448,21 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
         <TherapeuticCatalogFormModal
           kind={kind}
           item={formModal.item}
-          segments={segments}
+          objectives={objectives}
           onSave={handleFormSave}
           onClose={() => setFormModal({ open: false, item: null })}
+        />
+      )}
+      {cidPanelKind && cidPanel && (
+        <TherapeuticCatalogCidPanel
+          kind={cidPanelKind}
+          itemId={cidPanel.id}
+          itemLabel={cidPanel.label}
+          objectiveId={cidPanel.objectiveId ?? undefined}
+          isOpen
+          onClose={() => setCidPanel(null)}
+          canWrite={!writeGate.denied}
+          onChanged={() => { void fetchItems(); }}
         />
       )}
     </PageContainer>

@@ -6568,7 +6568,8 @@
       "icdNotInRelease": "Não está na versão CID-11 vigente",
       "objective": "Objetivo",
       "frequency": "Frequência sugerida",
-      "filterIcd": "Vinculado a CID-11"
+      "filterIcd": "Vinculado a CID-11",
+      "icdError": "Não foi possível concluir a operação."
     },
     "notifications": {
       "mentioned": "{{actor}} mencionou você em {{patient}}",

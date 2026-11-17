@@ -39,6 +39,7 @@ const ADMIN_TC: Record<string, { es: string; ptBR: string }> = {
   objective: { es: 'Objetivo', ptBR: 'Objetivo' },
   frequency: { es: 'Frecuencia sugerida', ptBR: 'Frequência sugerida' },
   filterIcd: { es: 'Vinculado a CIE-11', ptBR: 'Vinculado a CID-11' },
+  icdError: { es: 'No se pudo completar la operación.', ptBR: 'Não foi possível concluir a operação.' },
 };
 
 describe('catálogo CID-11 (091 T305) — admin.therapeuticCatalog.* em es + pt-BR', () => {

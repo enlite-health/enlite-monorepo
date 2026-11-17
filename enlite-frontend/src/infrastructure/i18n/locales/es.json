@@ -6644,7 +6644,8 @@
       "icdNotInRelease": "No está en la versión CIE-11 vigente",
       "objective": "Objetivo",
       "frequency": "Frecuencia sugerida",
-      "filterIcd": "Vinculado a CIE-11"
+      "filterIcd": "Vinculado a CIE-11",
+      "icdError": "No se pudo completar la operación."
     },
     "notifications": {
       "mentioned": "{{actor}} mencionó a vos en {{patient}}",
