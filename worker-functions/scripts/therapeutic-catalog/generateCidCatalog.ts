@@ -265,6 +265,9 @@ export function main(argv: readonly string[]): void {
   const cat = normalize(readWorkbook(buf), { arquivo: xlsx.split('/').pop() as string, sha256 });
   fs.writeFileSync(argumento(argv, '--json'), JSON.stringify(cat, null, 2) + '\n');
   fs.writeFileSync(argumento(argv, '--sql'), renderSql(cat));
+  const soma = (xs: readonly { categorias: readonly Vinculo[] }[]) => xs.reduce((n, x) => n + x.categorias.length, 0);
+  console.log(`objetivos ${cat.objetivos.length} atividades ${cat.atividades.length} `
+    + `vinculos_obj ${soma(cat.objetivos)} vinculos_ativ ${soma(cat.atividades)}`);
 }
 
 if (require.main === module) {
