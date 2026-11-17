@@ -100,25 +100,32 @@ describe('416 — projeto terapêutico versionado e imutável (banco real)', () 
     serviceId = s.rows[0].id;
   });
 
-  it('1. seed dos 2 catálogos: 8 objetivos, 13 atividades; `pathology_types` DEPRECADA pela 418 (8 linhas, 0 ativas) — e sem "ICHOM"', async () => {
+  it('1. seed 415 (8 objetivos, 13 atividades) INATIVO desde a 586 (091); `pathology_types` DEPRECADA pela 418 (8 linhas, 0 ativas) — e sem "ICHOM"', async () => {
     const counts = await admin.query<{ t: string; n: number }>(
-      `SELECT 'obj' AS t, count(*)::int AS n FROM therapeutic_specific_objectives WHERE active
-       UNION ALL SELECT 'act', count(*)::int FROM therapeutic_activities WHERE active
+      `SELECT 'obj_415' AS t, count(*)::int AS n FROM therapeutic_specific_objectives WHERE created_by = 'seed:415'
+       UNION ALL SELECT 'obj_415_ativos', count(*)::int FROM therapeutic_specific_objectives WHERE created_by = 'seed:415' AND active
+       UNION ALL SELECT 'act_415', count(*)::int FROM therapeutic_activities WHERE created_by = 'seed:415'
+       UNION ALL SELECT 'act_415_ativas', count(*)::int FROM therapeutic_activities WHERE created_by = 'seed:415' AND active
        UNION ALL SELECT 'pat_total', count(*)::int FROM pathology_types
        UNION ALL SELECT 'pat_ativas', count(*)::int FROM pathology_types WHERE active`,
     );
+    // 091 (DF-1): o seed da 415 fica (versões antigas o citam), todo INATIVO — o catálogo vivo é o por CID (587). O total
+    // não-zero é o controle de medição: "0 ativos" só vale porque a consulta acharia as 8 e as 13 se estivessem ativas.
     // Tipo de patologia deriva do CID-11 (D163/D164): as 8 opções da 415 ficam (regra aditiva; DROP na fila), todas inativas.
-    expect(Object.fromEntries(counts.rows.map((r) => [r.t, r.n]))).toEqual({ obj: 8, act: 13, pat_total: 8, pat_ativas: 0 });
+    expect(Object.fromEntries(counts.rows.map((r) => [r.t, r.n]))).toEqual({
+      obj_415: 8, obj_415_ativos: 0, act_415: 13, act_415_ativas: 0, pat_total: 8, pat_ativas: 0,
+    });
     const comentario = await admin.query<{ c: string }>(`SELECT obj_description('pathology_types'::regclass, 'pg_class') AS c`);
     expect(comentario.rows[0].c).toMatch(/^DEPRECADA \(418/);
     const ichom = await admin.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM pathology_types WHERE label ILIKE '%ichom%'`,
     );
     expect(ichom.rows[0].n).toBe(0);
-    // Idempotência do seed dos catálogos vivos: inserir um rótulo já ativo cai no índice único parcial.
+    // Idempotência do catálogo vivo: repetir (rótulo, objetivo) de uma atividade ativa cai no índice único parcial.
     await expect(
-      admin.query(`INSERT INTO therapeutic_activities (label) VALUES ((SELECT label FROM therapeutic_activities WHERE active LIMIT 1))`),
-    ).rejects.toThrow(/uq_therapeutic_activities_label_ativo/);
+      admin.query(`INSERT INTO therapeutic_activities (label, description, objective_id, created_by, updated_by)
+         SELECT label, description, objective_id, 'e2e-416-dup', 'e2e-416-dup' FROM therapeutic_activities WHERE active AND objective_id IS NOT NULL LIMIT 1`),
+    ).rejects.toThrow(/uq_therapeutic_activities_.*label_ativo/);
   });
 
   it('2. country vem do paciente por trigger; (patient, major, minor) é único', async () => {
@@ -205,9 +212,9 @@ describe('416 — projeto terapêutico versionado e imutável (banco real)', () 
     }
   });
 
-  it('8. tetos: clinical_context > 4000 e lista vazia de objetivos são recusados pelo CHECK (lex C6)', async () => {
+  it('8. tetos: clinical_context > 4000 e lista plana vazia de objetivos (sem `diagnosis_plans`) é recusada pelo CHECK `ptp_formato_objetivos` (lex C6, 091)', async () => {
     await expect(insertVersion({ clinical_context: 'x'.repeat(4001) })).rejects.toThrow(/ptp_clinical_context_len/);
-    await expect(insertVersion({ specific_objectives: '[]' })).rejects.toThrow(/ptp_specific_objectives_lista/);
+    await expect(insertVersion({ specific_objectives: '[]' })).rejects.toThrow(/ptp_formato_objetivos/);
     await expect(insertVersion({ end_date: '2026-08-31' })).rejects.toThrow(/ptp_prazo_coerente/);
     // 417 (D301.3a): modalidade fechada no CHECK; NULL aceito (versão anterior à 417).
     await expect(insertVersion({ modality: 'presencial' })).rejects.toThrow(/ptp_modality_check/);

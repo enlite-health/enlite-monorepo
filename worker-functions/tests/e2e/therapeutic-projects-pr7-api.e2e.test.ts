@@ -1,5 +1,5 @@
 /**
- * Spec 018 PR-7 — API do Projeto Terapêutico com o D328 aplicado, catálogo de segmentos (US-17) e
+ * Spec 018 PR-7 — API do Projeto Terapêutico com o D328 aplicado, a redação do bloco por diagnóstico (091) e
  * a permissão da versão antiga, HTTP real, banco real, engine de permissão LIGADO (família
  * admin.patients). Complementa `therapeutic-projects-api.e2e.test.ts` (spec 017) e
  * `patient-therapeutic-project-contacts-db.e2e.test.ts` (429 no banco) — aqui é a CAMADA HTTP dos
@@ -19,16 +19,17 @@
  *      e a trilha grava `export_pdf:` (nunca `read_project:`).
  *   7. lex-pr7 C6: GET grava em `resource_access_log` os containers de contato EFETIVAMENTE
  *      servidos, só UUID — nunca nome/telefone do contato na trilha.
- *   8. lex-pr7 C3(b)/D303: `segmentId`/`segmentLabel` do objetivo saem só com `patient_clinical:read`;
- *      sem a célula, o item continua (id/label) mas o segmento vem `null`.
- *   9. Catálogo de segmentos (US-17): rótulo que parece dado pessoal é recusado pelo mesmo zod dos
- *      outros catálogos (`.strict()`/`containsLikelyPersonalData` → 400 — molde já provado em
- *      `therapeutic-projects-api.e2e.test.ts` teste 8 para `specific-objectives`).
+ *   8. 091 (DD-9, lex-pr7 C3(b)): `diagnosisPlans` (a ligação diagnóstico→plano) sai só com `patient_clinical:read`;
+ *      sem a célula vem `null`, e a lista plana derivada (id/label dos itens) continua.
+ *   9. 091: o catálogo de segmentos acabou (rotas → 404) e o rótulo de objetivo com cara de dado pessoal segue
+ *      recusado (`containsLikelyPersonalData` → 400), agora no objetivo por SERVIÇO.
+ * O CID-11 e o catálogo do serviço vêm de `helpers/ptiCatalogoCidSeed.ts` (linhas sintéticas deste teste).
  */
 import { Pool } from 'pg';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
+import { semearCatalogoCid, limparCatalogoPorPrefixo, planoTea, SERVICO_CID, type CatalogoCid } from './helpers/ptiCatalogoCidSeed';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -44,9 +45,7 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
   const PATIENT = 'ee018007-0a00-0001-0001-000000000001';
   const OUTRO_PACIENTE = 'ee018007-0a00-0001-0001-000000000099';
   let serviceId: string;
-  let objectiveIds: string[];
-  let activityIds: string[];
-  let ptiSegmentId: string;
+  let cat: CatalogoCid;
   let externalContactId: string;
   /** Ativo, mas do OUTRO paciente — 23503 (FK 429) tem de virar 404, não 500 (task do Gabriel, 14/09). */
   let externalContactDeOutroPacienteId: string;
@@ -88,38 +87,7 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     ['catalog_therapeutic_objectives', 'create'],
     ['catalog_therapeutic_objectives', 'update'],
     ['catalog_therapeutic_activities', 'read'],
-    ['catalog_therapeutic_segments', 'read'],
-    ['catalog_therapeutic_segments', 'create'],
-    ['catalog_therapeutic_segments', 'update'],
   ];
-
-  // Release-fixture do CID-11 (mesmo molde de `therapeutic-projects-api.e2e.test.ts`).
-  const FIX_RELEASE = 'PT018PR7-FIX';
-  const CAP06 = { code: '06', title: 'Trastornos mentales, del comportamiento y del neurodesarrollo' };
-  const URI_TEA = 'test://ptp018pr7/tea';
-  let releaseAnterior: string | null = null;
-  async function semearCid(): Promise<void> {
-    await pool.query(`INSERT INTO terminology.icd_releases (release, entity_count) VALUES ($1, 2) ON CONFLICT (release) DO NOTHING`, [FIX_RELEASE]);
-    await pool.query(
-      `INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf)
-       VALUES ('test://ptp018pr7/cap06', $1, $2, $3, NULL, $2, NULL, 'chapter', false) ON CONFLICT (icd_uri, release) DO NOTHING`,
-      [FIX_RELEASE, CAP06.code, CAP06.title],
-    );
-    await pool.query(
-      `INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf)
-       VALUES ($1, $2, '6A02', 'Trastorno del espectro autista', NULL, $3, NULL, 'stem', true) ON CONFLICT (icd_uri, release) DO NOTHING`,
-      [URI_TEA, FIX_RELEASE, CAP06.code],
-    );
-    releaseAnterior = (await pool.query<{ release: string }>(`SELECT release FROM terminology.icd_releases WHERE is_current LIMIT 1`)).rows[0]?.release ?? null;
-    await pool.query(`UPDATE terminology.icd_releases SET is_current = false, promoted_at = NULL, promoted_by = NULL WHERE is_current`);
-    await pool.query(`UPDATE terminology.icd_releases SET is_current = true, promoted_at = NOW(), promoted_by = 'pt018pr7-e2e' WHERE release = $1`, [FIX_RELEASE]);
-  }
-  async function restaurarCid(): Promise<void> {
-    await pool.query(`UPDATE terminology.icd_releases SET is_current = false, promoted_at = NULL, promoted_by = NULL WHERE release = $1`, [FIX_RELEASE]);
-    if (releaseAnterior) await pool.query(`UPDATE terminology.icd_releases SET is_current = true, promoted_at = NOW(), promoted_by = 'pt018pr7-e2e-restore' WHERE release = $1`, [releaseAnterior]);
-    await pool.query(`DELETE FROM terminology.icd_entities WHERE release = $1`, [FIX_RELEASE]);
-    await pool.query(`DELETE FROM terminology.icd_releases WHERE release = $1`, [FIX_RELEASE]);
-  }
 
   const envAnterior: Record<string, string | undefined> = {};
   const setEnv = (k: string, v: string): void => { envAnterior[k] = process.env[k]; process.env[k] = v; };
@@ -136,11 +104,10 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
   const versionBody = (over: Record<string, unknown> = {}) => ({
     contractedServiceId: serviceId,
     modality: 'IN_PERSON',
-    diagnoses: [{ uri: URI_TEA, code: '6A02', title: 'Diagnóstico sintético e2e' }],
+    diagnoses: [{ uri: cat.uris.tea, code: '6A02', title: 'Diagnóstico sintético e2e' }],
     clinicalContext: 'Síntesis sintética e2e — texto de teste sem dado de titular.',
     generalObjective: 'Objetivo general sintético e2e.',
-    specificObjectiveIds: objectiveIds.slice(0, 1),
-    activityIds: activityIds.slice(0, 1),
+    diagnosisPlans: planoTea(cat),
     startDate: '2026-09-01',
     endDate: '2026-12-31',
     contactRefs: [],
@@ -149,8 +116,8 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     ...over,
   });
 
-  // 030: `mode:'new'` leva `segmentId` (MACRO, obrigatório) de um segmento SEMEADO (495); `versionBody` é o corpo do `edit`.
-  const newVersionBody = (over: Record<string, unknown> = {}) => ({ ...versionBody(), segmentId: ptiSegmentId, ...over });
+  // 091: o corpo do `new` e o do `edit` de origem por diagnóstico são o mesmo (blocos por diagnóstico, sem segmento).
+  const newVersionBody = versionBody;
 
   // PR-8b (A3, achado A2): o comentário anterior (`limparCelulas`) estava CORRETO até a migration
   // 435 — mas 435 passou a seedar `create`/`update` (e a manter `write`, SUP-31) para estes
@@ -164,8 +131,7 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
     await pool.query(`DELETE FROM patients WHERE id = $1`, [PATIENT]);
     await pool.query(`DELETE FROM patients WHERE id = $1`, [OUTRO_PACIENTE]);
-    await pool.query(`DELETE FROM therapeutic_specific_objectives WHERE label LIKE 'E2E PR7 %'`);
-    await pool.query(`DELETE FROM therapeutic_segments WHERE label LIKE 'E2E PR7 %'`);
+    await limparCatalogoPorPrefixo(pool, 'E2E PR7 ');
   }
 
   beforeAll(async () => {
@@ -196,7 +162,6 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
         ['patient_care_team', 'read'],
         ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_objectives', 'create'], ['catalog_therapeutic_objectives', 'update'],
         ['catalog_therapeutic_activities', 'read'],
-        ['catalog_therapeutic_segments', 'read'], ['catalog_therapeutic_segments', 'create'], ['catalog_therapeutic_segments', 'update'],
       ],
     });
     // C8(a): lê o projeto e o clínico, mas NÃO vê a origem `family` — o contato EXTERNAL some.
@@ -220,12 +185,8 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
       [PATIENT],
     );
     serviceId = (await pool.query<{ id: string }>(
-      `INSERT INTO patient_contracted_services (patient_id, service_code, created_by, updated_by) VALUES ($1, 'CAREGIVER', 'e2e', 'e2e') RETURNING id`, [PATIENT],
+      `INSERT INTO patient_contracted_services (patient_id, service_code, created_by, updated_by) VALUES ($1, '${SERVICO_CID}', 'e2e', 'e2e') RETURNING id`, [PATIENT],
     )).rows[0].id;
-    objectiveIds = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_specific_objectives WHERE active ORDER BY sort_order`)).rows.map((r) => r.id);
-    activityIds = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_activities WHERE active ORDER BY sort_order`)).rows.map((r) => r.id);
-    // 030: o segmento vem do seed 495 (nunca criado aqui) — se a tabela estiver vazia o beforeAll falha alto.
-    ptiSegmentId = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_segments WHERE active AND created_by = 'seed:495' ORDER BY sort_order LIMIT 1`)).rows[0].id;
     externalContactId = (await pool.query<{ id: string }>(
       `INSERT INTO patient_external_contacts (patient_id, relation, name, phone_encrypted, created_by)
        VALUES ($1, 'NEIGHBOR', 'Vizinha Sintética PR7', $2, 'e2e-018pr7') RETURNING id`,
@@ -247,7 +208,7 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
       `INSERT INTO patient_responsibles (patient_id, first_name, last_name, is_primary, source) VALUES ($1, 'Responsável', 'Do Outro', true, 'e2e') RETURNING id`,
       [OUTRO_PACIENTE],
     )).rows[0].id;
-    await semearCid();
+    cat = await semearCatalogoCid(pool, { tag: 'PT018PR7', sufixo: '18', prefixo: 'E2E PR7 cid ' });
 
     setEnv('USE_MOCK_AUTH', 'true');
     setEnv('PERMISSION_ENGINE_ENABLED', 'true');
@@ -285,7 +246,8 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     await DatabaseConnection.getInstance().close();
     await limpar();
-    await restaurarCid();
+    await cat?.limpar();
+    await cat?.restaurar();
     await pool.end();
     for (const [k, v] of Object.entries(envAnterior)) {
       if (v === undefined) delete process.env[k]; else process.env[k] = v;
@@ -429,47 +391,31 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     expect(JSON.stringify(linha)).not.toContain('Vizinha');
   });
 
-  let segmentId: string;
-  let objetivoComSegmentoId: string;
-
-  it('8. lex-pr7 C3(b)/D303: `segmentId`/`segmentLabel` do objetivo saem só com `patient_clinical:read`', async () => {
-    const segCriado = await chamar('POST', '/api/admin/therapeutic-catalogs/segments', U.completa, { label: 'E2E PR7 Segmento Motor' });
-    expect(segCriado.status).toBe(201);
-    segmentId = segCriado.body.data.id;
-
-    const objCriado = await chamar('POST', '/api/admin/therapeutic-catalogs/specific-objectives', U.completa, { label: 'E2E PR7 Objetivo com segmento', segmentId });
-    expect(objCriado.status).toBe(201);
-    objetivoComSegmentoId = objCriado.body.data.id;
-    expect(objCriado.body.data).toMatchObject({ segmentId });
-
-    const versao = await chamar('POST', BASE(), U.completa, {
-      mode: 'new',
-      version: newVersionBody({ specificObjectiveIds: [objetivoComSegmentoId, ...objectiveIds.slice(0, 1)] }),
-    });
+  it('8. 091 (DD-9, lex-pr7 C3(b)): `diagnosisPlans` sai só com `patient_clinical:read`; sem a célula vem `null` e a lista plana derivada (id/label) continua', async () => {
+    const versao = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody() });
     expect(versao.status).toBe(201);
     const vid = versao.body.data.id;
 
     const comClinica = await chamar('GET', `${BASE()}/${vid}`, U.completa);
-    const itemComClinica = comClinica.body.data.specificObjectives.find((i: { id: string }) => i.id === objetivoComSegmentoId);
-    expect(itemComClinica).toMatchObject({ id: objetivoComSegmentoId, segmentId, segmentLabel: 'E2E PR7 Segmento Motor' });
+    expect(comClinica.body.data.diagnosisPlans).toHaveLength(1);
+    expect(comClinica.body.data.specificObjectives).toMatchObject([{ id: cat.objetivos.a, label: cat.rotulos.objetivoA }]);
 
     const semClinica = await chamar('GET', `${BASE()}/${vid}`, U.semClinica);
     expect(semClinica.body.data.redacted).toMatchObject({ clinical: true });
-    const itemSemClinica = semClinica.body.data.specificObjectives.find((i: { id: string }) => i.id === objetivoComSegmentoId);
-    // O ITEM continua (id/label) — só o segmento é redigido (lex-pr7 C3(b): não é o objetivo inteiro).
-    expect(itemSemClinica).toMatchObject({ id: objetivoComSegmentoId, segmentId: null, segmentLabel: null });
-    expect(itemSemClinica.label).toBeTruthy();
+    expect(semClinica.body.data.diagnosisPlans).toBeNull();
+    expect(JSON.stringify(semClinica.body)).not.toContain(cat.uris.tea);
+    // O ITEM continua (id/label) — só a ligação com o diagnóstico é redigida.
+    expect(semClinica.body.data.specificObjectives).toMatchObject([{ id: cat.objetivos.a, label: cat.rotulos.objetivoA }]);
   });
 
-  it('9. catálogo de segmentos: rótulo que parece dado pessoal é recusado (mesmo zod dos outros catálogos)', async () => {
-    const pii = await chamar('POST', '/api/admin/therapeutic-catalogs/segments', U.completa, { label: 'E2E PR7 llamar al 11 4463 5919' });
-    // `containsLikelyPersonalData` é o MESMO `.refine` de `catalogLabel` (therapeuticProjectSchemas.ts:95-101)
-    // que já vale para objetivos/atividades desde a spec 017 — falha no zod, não no repositório, e
-    // por isso é 400 (`invalidBody`), o mesmo código do teste 8 de `therapeutic-projects-api.e2e.test.ts`
-    // para o catálogo irmão (não 422: não existe verificação de PII depois do parse).
+  it('9. 091: rótulo de objetivo com cara de dado pessoal → 400 e nada gravado; as rotas de segmentos não existem (404)', async () => {
+    const pii = await chamar('POST', '/api/admin/therapeutic-catalogs/specific-objectives', U.completa, { label: 'E2E PR7 llamar al 11 4463 5919', serviceCode: SERVICO_CID });
+    // `containsLikelyPersonalData` é o MESMO `.refine` de `catalogLabel` — falha no zod (400, `invalidBody`), antes do repositório.
     expect(pii.status).toBe(400);
-    const total = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM therapeutic_segments WHERE label LIKE 'E2E PR7 llamar%'`);
+    const total = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM therapeutic_specific_objectives WHERE label LIKE 'E2E PR7 llamar%'`);
     expect(total.rows[0].n).toBe(0);
+    expect((await chamar('GET', '/api/admin/therapeutic-catalogs/segments', U.completa)).status).toBe(404);
+    expect((await chamar('POST', '/api/admin/therapeutic-catalogs/segments', U.completa, { label: 'E2E PR7 Segmento' })).status).toBe(404);
   });
 
   it('10. conserto 14/09 (achado do gate): GET devolve `contactRefs`/`careTeamIds` CRUS (lista e versão isolada), e editar a vigente reenviando os MESMOS refs lidos do GET mantém o contato na minor nova', async () => {
