@@ -101,6 +101,10 @@ describe('Escopo por pais — pacientes (lista, ficha, filhas, kanban) @integrat
     expect((await api.get(`/api/admin/patients/${patBR}/contracted-services`, authz(tAR))).status).toBe(404);
     expect((await api.get(`/api/admin/patients/${patBR}/status-history`, authz(tAR))).status).toBe(404);
     expect((await api.put(`/api/admin/patients/${patBR}/status`, { status: 'ACTIVE' }, authz(tAR))).status).toBe(404);
+    // Filhas montadas em OUTROS routers (conversa, equipe do servico, projeto terapeutico): o guard e global, nao por router.
+    expect((await api.get(`/api/admin/patients/${patBR}/conversation`, authz(tAR))).status).toBe(404);
+    expect((await api.get(`/api/admin/patients/${patBR}/therapeutic-projects`, authz(tAR))).status).toBe(404);
+    expect((await api.get(`/api/admin/patients/${patBR}/contracted-services/${randomUUID()}/team`, authz(tAR))).status).toBe(404);
     expect((await api.get(`/api/admin/patients/${patAR}/addresses`, authz(tAR))).status).toBe(200);
   });
 

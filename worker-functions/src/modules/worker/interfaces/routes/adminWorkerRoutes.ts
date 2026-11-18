@@ -1,5 +1,3 @@
-import { requireRecordInCountryScope } from '@modules/identity';
-import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { Router, Request, Response } from 'express';
 import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
 import { AdminWorkersController } from '../controllers/AdminWorkersController';
@@ -101,11 +99,6 @@ export function createAdminWorkerRoutes(
   router.post('/workers/sync-talentum', staffOnly, perm.require('talentum', 'create'), perm.require('talentum', 'update'), (req: Request, res: Response) => c.aux.syncTalentumWorkers(req, res));
   // export MUST be registered before /:id to avoid param capture
   router.get('/workers/export', staffOnly, perm.require('worker', 'export', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.workers.exportWorkers(req, res));
-  // Hotfix 18/11: escopo de pais de TUDO sob /workers/:id (e dos routers montados depois com o mesmo prefixo). Ponto unico;
-  // fora do escopo => 404 (nao confirma existencia); chave de servico passa direto (DECISAO PENDENTE, ver PR).
-  router.use('/workers/:id', staffOrApiKey, requireRecordInCountryScope(() => DatabaseConnection.getInstance().getPool(), {
-    table: 'workers', idParams: ['id'], notFoundBody: { success: false, error: 'Worker not found' },
-  }));
   // timeline MUST be registered before /:id to avoid param capture
   router.get('/workers/:id/timeline', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.timeline.getTimeline(req, res));
   // D286 fase 2: abrir a ficha é o OPERACIONAL; contato, dossiê, documentos e encuadres saem

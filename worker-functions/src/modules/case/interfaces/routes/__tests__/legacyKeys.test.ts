@@ -18,9 +18,6 @@ jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
   loggingAls: { getStore: () => undefined },
 }));
-jest.mock('../../middleware/patientCountryScopeGuard', () => ({
-  requirePatientInCountryScope: () => (_req: unknown, _res: unknown, next: () => void) => next(),
-}));
 jest.mock('@modules/identity/interfaces/middleware/countryScopeGuard', () => ({
   requireCountryScope: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));

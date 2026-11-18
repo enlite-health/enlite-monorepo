@@ -43,9 +43,6 @@ jest.mock('@shared/logging', () => ({
  * do arquivo com lógica de verdade ficaria sem cobertura.
  */
 let mockPaisVisto: string | undefined;
-jest.mock('../../middleware/patientCountryScopeGuard', () => ({
-  requirePatientInCountryScope: () => (_req: unknown, _res: unknown, next: () => void) => next(),
-}));
 jest.mock('@modules/identity/interfaces/middleware/countryScopeGuard', () => ({
   requireCountryScope:
     (extrator?: (req: unknown) => string | undefined) =>

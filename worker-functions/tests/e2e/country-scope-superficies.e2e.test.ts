@@ -90,6 +90,7 @@ describe('Escopo por pais — workers, vagas e agregados @integration', () => {
 
     expect((await api.get(`/api/admin/workers/${wBR}`, authz(tAR))).status).toBe(404);
     expect((await api.get(`/api/admin/workers/${wBR}/timeline`, authz(tAR))).status).toBe(404);
+    expect((await api.post(`/api/admin/workers/${wBR}/documents/view-url`, {}, authz(tAR))).status).toBe(404); // router de documentos
     expect((await api.get(`/api/admin/workers/${wAR}`, authz(tAR))).status).toBe(200);
 
     const both = await api.get('/api/admin/workers?limit=200', authz(tARBR));
@@ -115,6 +116,7 @@ describe('Escopo por pais — workers, vagas e agregados @integration', () => {
 
     expect((await api.get(`/api/admin/vacancies/${vBR}`, authz(tAR))).status).toBe(404);
     expect((await api.get(`/api/admin/vacancies/${vBR}/funnel`, authz(tAR))).status).toBe(404);
+    expect((await api.get(`/api/admin/vacancies/${vBR}/enquadre-events`, authz(tAR))).status).toBe(404); // router de encuadres (param :vacancyId)
     expect((await api.get(`/api/admin/vacancies/${vAR}`, authz(tAR))).status).toBe(200);
 
     const both = await api.get('/api/admin/vacancies?limit=200', authz(tARBR));

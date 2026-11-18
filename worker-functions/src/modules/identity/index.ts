@@ -93,6 +93,7 @@ export {
 export { requireCountryScope, hasLiveCountryGrant } from './interfaces/middleware/countryScopeGuard';
 export { resolveCountryScope, CountryScopeError } from './application/resolveCountryScope';
 export { requireRecordInCountryScope } from './interfaces/middleware/recordCountryScopeGuard';
+export { createAdminRecordCountryScopeRoutes } from './interfaces/routes/adminRecordCountryScopeRoutes';
 export { resolveCountriesOrRespond } from './interfaces/http/respondCountryScope';
 export type {
   CountryScopeRequested,

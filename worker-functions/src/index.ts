@@ -61,7 +61,7 @@ import { createPatientDocumentsRoutes } from '@modules/patient-documents/interfa
 import { createAdminNotificationRoutes } from '@modules/inapp-notification/interfaces/routes/adminNotificationRoutes';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
-import { UserController, resolveCountryScope, sealUnclassifiedRoutes } from '@modules/identity';
+import { UserController, resolveCountryScope, sealUnclassifiedRoutes, createAdminRecordCountryScopeRoutes } from '@modules/identity';
 import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createAdminAreaMembershipRoutes, AreaMembershipController, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createAdminPresenceRoutes } from '@modules/presence';
 import { routeClass, markRouteClass, createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
@@ -549,6 +549,8 @@ app.post('/api/admin/setup', systemContextMiddleware('bootstrap:admin-setup'), m
   }
   adminController.setup(req, res);
 }) as RequestHandler, 'staff'));
+// Hotfix 18/11/2026: escopo de pais do registro individual (paciente/worker/vaga e filhas) — ANTES de todo router admin.
+app.use('/api/admin', createAdminRecordCountryScopeRoutes(authMiddleware, () => DatabaseConnection.getInstance().getPool()));
 // Família `admin.users` — extraída para router próprio na task 3.5 (primeira a
 // declarar célula). Ver modules/identity/interfaces/routes/adminUsersRoutes.ts.
 app.use('/api/admin', createAdminUsersRoutes(adminController, authMiddleware, permissionMiddleware));
