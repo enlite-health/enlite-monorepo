@@ -17,6 +17,8 @@
 
 const mockQuery = jest.fn();
 
+// Hotfix 18/11: o escopo de pais e resolvido por resolveCountriesOrRespond (testado a parte).
+jest.mock('@modules/identity', () => ({ ...jest.requireActual('@modules/identity'), resolveCountriesOrRespond: jest.fn().mockResolvedValue(['AR']) }));
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: jest.fn().mockReturnValue({
@@ -194,7 +196,7 @@ describe('VacanciesAuxController.listInProgressForPatient', () => {
     // vacancies the operator already marked as SEARCHING/RAPID_RESPONSE/etc.
     expect(sql).not.toContain("jp.status = 'PENDING_ACTIVATION'");
     expect(sql).not.toContain('clickup_task_id'); // não existe em job_postings diretamente
-    expect(bindParams).toEqual([VALID_UUID]);
+    expect(bindParams).toEqual([VALID_UUID, ['AR']]); //  = escopo de paises (hotfix 18/11)
   });
 
   // ── cenário 9: erro de banco → 500 ────────────────────────────────────────

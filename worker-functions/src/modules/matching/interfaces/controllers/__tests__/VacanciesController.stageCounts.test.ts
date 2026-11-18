@@ -7,6 +7,8 @@
 
 const mockQuery = jest.fn();
 
+// Hotfix 18/11: o escopo de pais e resolvido por resolveCountriesOrRespond (testado a parte).
+jest.mock('@modules/identity', () => ({ ...jest.requireActual('@modules/identity'), resolveCountriesOrRespond: jest.fn().mockResolvedValue(['AR']) }));
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: jest.fn().mockReturnValue({

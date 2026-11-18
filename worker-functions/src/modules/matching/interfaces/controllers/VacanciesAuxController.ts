@@ -9,6 +9,7 @@
  *   - getFilterOptions  (GET /api/admin/vacancies/filter-options)
  */
 
+import { resolveCountriesOrRespond } from '@modules/identity';
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { z } from 'zod';
@@ -31,9 +32,11 @@ export class VacanciesAuxController {
   }
 
   async listPendingAddressReview(req: Request, res: Response): Promise<void> {
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'VacanciesAuxController:listPendingAddressReview');
+    if (!countries) return;
     try {
       const { status } = req.query;
-      const params: unknown[] = [];
+      const params: unknown[] = [countries];
 
       let query = `
         SELECT
@@ -52,7 +55,7 @@ export class VacanciesAuxController {
           WHERE job_posting_id = jp.id
           ORDER BY created_at DESC LIMIT 1
         ) audit ON TRUE
-        WHERE jp.patient_address_id IS NULL AND jp.deleted_at IS NULL
+        WHERE jp.patient_address_id IS NULL AND jp.deleted_at IS NULL AND jp.country = ANY($1::bpchar[])
       `;
 
       if (status) {
@@ -95,6 +98,8 @@ export class VacanciesAuxController {
     }
 
     const { patient_id } = parsed.data;
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'VacanciesAuxController:listInProgressForPatient');
+    if (!countries) return;
 
     try {
       const result = await this.db.query(
@@ -108,11 +113,12 @@ export class VacanciesAuxController {
         FROM job_postings jp
         LEFT JOIN job_postings_clickup_sync sync ON sync.job_posting_id = jp.id
         WHERE jp.patient_id = $1
+          AND jp.country = ANY($2::bpchar[])
           AND jp.is_draft = true
           AND jp.deleted_at IS NULL
           AND sync.job_posting_id IS NULL
         ORDER BY jp.updated_at DESC`,
-        [patient_id],
+        [patient_id, countries],
       );
 
       res.status(200).json({ success: true, data: result.rows });
@@ -146,6 +152,8 @@ export class VacanciesAuxController {
     }
 
     const { patient_address_id } = parsed.data;
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'VacanciesAuxController:listByAddress');
+    if (!countries) return;
 
     try {
       const result = await this.db.query(
@@ -160,10 +168,11 @@ export class VacanciesAuxController {
           jp.created_at
         FROM job_postings jp
         WHERE jp.patient_address_id = $1
+          AND jp.country = ANY($2::bpchar[])
           AND jp.deleted_at IS NULL
           AND jp.status NOT IN ('CLOSED', 'DE_BAJA')
         ORDER BY jp.created_at DESC`,
-        [patient_address_id],
+        [patient_address_id, countries],
       );
 
       res.status(200).json({ success: true, data: result.rows });
@@ -185,6 +194,8 @@ export class VacanciesAuxController {
    * Used by the frontend filter panel to populate the state/city dropdowns.
    */
   async getFilterOptions(req: Request, res: Response): Promise<void> {
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'VacanciesAuxController:getFilterOptions');
+    if (!countries) return;
     try {
       const [statesResult, citiesResult] = await Promise.all([
         this.db.query<{ state: string }>(`
@@ -193,20 +204,22 @@ export class VacanciesAuxController {
           JOIN patient_addresses pa ON jp.patient_address_id = pa.id
           WHERE jp.case_number IS NOT NULL
             AND jp.deleted_at IS NULL
+            AND jp.country = ANY($1::bpchar[])
             AND pa.state IS NOT NULL
             AND btrim(pa.state) <> ''
           ORDER BY pa.state
-        `),
+        `, [countries]),
         this.db.query<{ city: string }>(`
           SELECT DISTINCT pa.city
           FROM job_postings jp
           JOIN patient_addresses pa ON jp.patient_address_id = pa.id
           WHERE jp.case_number IS NOT NULL
             AND jp.deleted_at IS NULL
+            AND jp.country = ANY($1::bpchar[])
             AND pa.city IS NOT NULL
             AND btrim(pa.city) <> ''
           ORDER BY pa.city
-        `),
+        `, [countries]),
       ]);
 
       res.status(200).json({

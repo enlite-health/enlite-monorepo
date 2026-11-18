@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import { requireRecordInCountryScope } from '@modules/identity';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { VacanciesController } from '../controllers/VacanciesController';
 import { VacanciesAuxController } from '../controllers/VacanciesAuxController';
 import { VacancyTalentumController } from '../controllers/VacancyTalentumController';
@@ -106,6 +108,11 @@ export function createAdminVacanciesRoutes(
   router.get('/vacancies/by-address', authMiddleware.requireStaff(), perm.require('vacancy', 'read'), (req: Request, res: Response) =>
     auxController.listByAddress(req, res),
   );
+  // Hotfix 18/11: escopo de pais de TUDO sob /vacancies/:id (ponto unico, depois das rotas estaticas). Fora do escopo => 404;
+  // chave de servico passa direto (DECISAO PENDENTE, ver PR).
+  router.use('/vacancies/:id', authMiddleware.requireStaffOrApiKey(), requireRecordInCountryScope(() => DatabaseConnection.getInstance().getPool(), {
+    table: 'job_postings', idParams: ['id'], notFoundBody: { success: false, error: 'Vacancy not found' },
+  }));
   router.get('/vacancies/:id', authMiddleware.requireStaff(), perm.require('vacancy', 'read'), (req: Request, res: Response) =>
     vacanciesController.getVacancyById(req, res),
   );
