@@ -70,7 +70,7 @@ describe('PatientKanbanServicesReader', () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
     await reader.readKanbanServices(['AR', 'BR']);
-    for (const q of [svcCalls(), slotCalls(), assignmentCalls(), absenceCalls()]) expect(q[0].params).toEqual([null, null]);
+    for (const q of [svcCalls(), slotCalls(), assignmentCalls(), absenceCalls()]) expect(q[0].params).toEqual([['AR', 'BR'], null]);
 
     jest.clearAllMocks();
     queryImpl = async () => ({ rows: [], rowCount: 0 });
@@ -84,7 +84,7 @@ describe('PatientKanbanServicesReader', () => {
     await reader.readKanbanServices(['AR']);
 
     for (const { sql } of [slotCalls()[0], assignmentCalls()[0], absenceCalls()[0]]) {
-      expect(sql).toMatch(/\(p\.country = ANY\(\$1::bpchar\[\]\)\)/);
+      expect(sql).toMatch(/p\.country = ANY\(\$1::bpchar\[\]\)/);
       expect(sql).toMatch(/\(CURRENT_DATE - 1\)::date/);
       expect(sql).toMatch(/\(CURRENT_DATE \+ 7\)::date/); // UNCOVERED_HORIZON_DAYS = 7, teto do prefiltro
       expect(sql).toMatch(/pcs\.active/);
@@ -292,7 +292,7 @@ describe('PatientKanbanServicesReader', () => {
       expect(r).not.toHaveProperty('occurrences');
       expect(c.some((x) => /^(BEGIN|COMMIT|ROLLBACK)$/.test(x.sql))).toBe(false);
       expect(c[0].sql).toMatch(/\(\$2::uuid IS NULL OR p\.id = \$2\)/);
-      expect(c[0].params).toEqual([null, PID]);
+      expect(c[0].params).toEqual([['AR', 'BR'], PID]);
       expect(mockConnect).not.toHaveBeenCalled();
       expect(mockClient.query).not.toHaveBeenCalled();
       expect(rawPoolQuery).not.toHaveBeenCalled();
