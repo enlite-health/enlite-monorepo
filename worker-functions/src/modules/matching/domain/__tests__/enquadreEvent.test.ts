@@ -63,19 +63,20 @@ describe('participantColumn — aberto lê o estágio vigente, encerrado lê o c
 describe('eventCounters', () => {
   it('conta carimbos, marcados e não marcados', () => {
     const mk = (column: 'CONVOKED' | 'SELECTED' | 'REJECTED' | 'QUICK_RESPONSE_TEAM', outcome: EnquadreParticipantOutcome | null) => ({ column, outcome });
-    const c = eventCounters([
+    const { columns, ...rest } = eventCounters([
       mk('SELECTED', 'selected'),
       mk('SELECTED', 'selected'),
       mk('QUICK_RESPONSE_TEAM', 'quick_response'),
       mk('REJECTED', 'rejected'),
       mk('CONVOKED', 'returned'),
     ]);
-    expect(c).toEqual({
+    expect(rest).toEqual({
       convokedCount: 5,
       markedCount: 4,
       unmarkedCount: 1,
       outcome: { selected: 2, quickResponse: 1, rejected: 1, returned: 1 },
     });
+    expect(columns).toEqual({ CONVOKED: 1, SELECTED: 2, QUICK_RESPONSE_TEAM: 1, REJECTED: 1 });
   });
 
   it('evento aberto: sem carimbo, os contadores de outcome ficam em zero', () => {
@@ -83,6 +84,46 @@ describe('eventCounters', () => {
     expect(c.outcome).toEqual({ selected: 0, quickResponse: 0, rejected: 0, returned: 0 });
     expect(c.markedCount).toBe(1);
     expect(c.unmarkedCount).toBe(1);
+  });
+});
+
+describe('eventCounters.columns — contagem por coluna vigente (spec 094)', () => {
+  const rows = (status: 'open' | 'closed' | 'cancelled', items: Array<[string | null, EnquadreParticipantOutcome | null]>) =>
+    items.map(([currentStage, outcome]) => ({
+      column: participantColumn({ eventStatus: status, currentStage, outcome }),
+      outcome,
+    }));
+
+  it('evento ABERTO: conta pelo estágio vigente (outcome fica zerado)', () => {
+    const c = eventCounters(
+      rows('open', [['SELECTED', null], ['SELECTED', null], ['QUICK_RESPONSE_TEAM', null], ['REJECTED', null], [null, null], ['COMPLETED', null]]),
+    );
+    expect(c.columns).toEqual({ CONVOKED: 2, SELECTED: 2, QUICK_RESPONSE_TEAM: 1, REJECTED: 1 });
+    expect(c.outcome).toEqual({ selected: 0, quickResponse: 0, rejected: 0, returned: 0 });
+  });
+
+  it('evento ENCERRADO: columns == outcome nas 3 colunas e returned cai em CONVOKED (invariante)', () => {
+    const c = eventCounters(
+      rows('closed', [['REJECTED', 'selected'], ['SELECTED', 'selected'], ['SELECTED', 'quick_response'], ['SELECTED', 'rejected'], ['SELECTED', 'returned']]),
+    );
+    expect(c.columns.SELECTED).toBe(c.outcome.selected);
+    expect(c.columns.QUICK_RESPONSE_TEAM).toBe(c.outcome.quickResponse);
+    expect(c.columns.REJECTED).toBe(c.outcome.rejected);
+    expect(c.columns).toEqual({ CONVOKED: 1, SELECTED: 2, QUICK_RESPONSE_TEAM: 1, REJECTED: 1 });
+  });
+
+  it('evento CANCELADO: tudo em CONVOKED, mesmo com estágio de seleção', () => {
+    const c = eventCounters(rows('cancelled', [['SELECTED', null], ['REJECTED', null], ['QUICK_RESPONSE_TEAM', null]]));
+    expect(c.columns).toEqual({ CONVOKED: 3, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 0 });
+  });
+
+  it('lista vazia: zeros', () => {
+    expect(eventCounters([]).columns).toEqual({ CONVOKED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 0 });
+  });
+
+  it('a soma das colunas é o convokedCount', () => {
+    const c = eventCounters(rows('open', [['SELECTED', null], ['REJECTED', null], [null, null]]));
+    expect(Object.values(c.columns).reduce((a, b) => a + b, 0)).toBe(c.convokedCount);
   });
 });
 
