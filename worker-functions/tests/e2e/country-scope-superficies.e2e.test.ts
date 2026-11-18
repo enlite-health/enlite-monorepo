@@ -49,8 +49,8 @@ describe('Escopo por pais — workers, vagas e agregados @integration', () => {
   beforeAll(async () => {
     pool = new Pool({ connectionString: DATABASE_URL });
     await waitForBackend(api);
-    tAR = await getMockToken(api, { uid: UID_AR, email: `${UID_AR}@e2e.local`, role: 'admin' });
-    tARBR = await getMockToken(api, { uid: UID_ARBR, email: `${UID_ARBR}@e2e.local`, role: 'admin' });
+    tAR = await getMockToken(api, { uid: UID_AR, email: `${UID_AR}@e2e.local`, role: 'admin', countryGrant: false });
+    tARBR = await getMockToken(api, { uid: UID_ARBR, email: `${UID_ARBR}@e2e.local`, role: 'admin', countryGrant: false });
     for (const uid of [UID_AR, UID_ARBR]) {
       await pool.query(
         `INSERT INTO users (firebase_uid, email, role, is_active, tenant_id) VALUES ($1, $2, 'admin', true, $3) ON CONFLICT (firebase_uid) DO NOTHING`,
@@ -143,7 +143,7 @@ describe('Escopo por pais — workers, vagas e agregados @integration', () => {
   });
 
   it('sem pais: ficha de worker/vaga de usuario sem grupo => 403 COUNTRY_SCOPE_REQUIRED (nunca dado)', async () => {
-    const tNone = await getMockToken(api, { uid: `css-none-${RUN}`, email: `css-none-${RUN}@e2e.local`, role: 'admin' });
+    const tNone = await getMockToken(api, { uid: `css-none-${RUN}`, email: `css-none-${RUN}@e2e.local`, role: 'admin', countryGrant: false });
     for (const p of [`/api/admin/workers/${wAR}`, `/api/admin/vacancies/${vAR}`, '/api/admin/workers', '/api/admin/vacancies']) {
       const res = await api.get(p, authz(tNone));
       expect(res.status).toBe(403);

@@ -182,7 +182,8 @@ export async function limparIamFixtures(
  */
 export async function grupoComCelulas(
   pool: Pool,
-  args: { nome: string; uid: string; celulas: Array<[string, string]> },
+  /** `paises`: padrao AR+BR (hotfix 18/11 — o ator herda pais para a rota funcionar); `[]` = grupo SEM pais (teste de escopo). */
+  args: { nome: string; uid: string; celulas: Array<[string, string]>; paises?: Array<'AR' | 'BR'> },
 ): Promise<string> {
   const grupo = await pool.query(
     `INSERT INTO iam.permission_groups (tenant_id, name, description) VALUES ($1, $2, 'e2e') RETURNING id`,
@@ -200,6 +201,13 @@ export async function grupoComCelulas(
     if (inseriu.rowCount !== 1) {
       throw new Error(`célula ${resource}:${action} não existe em iam.permissions — o seed do teste está errado`);
     }
+  }
+
+  for (const pais of args.paises ?? ['AR', 'BR']) {
+    await pool.query(
+      `INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason) VALUES ($1, $2, 'e2e-default', 'padrao dos e2e')`,
+      [id, pais],
+    );
   }
 
   await pool.query(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [

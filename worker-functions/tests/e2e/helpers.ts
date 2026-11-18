@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import { Pool } from 'pg';
+import { grantDefaultCountries } from './helpers/countryGrant';
 
 const API_URL = process.env.API_URL || 'http://localhost:8080';
 const FIREBASE_EMULATOR_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || 'localhost:9099';
@@ -22,8 +23,11 @@ export function createApiClient(): AxiosInstance {
  */
 export async function getMockToken(
   api: AxiosInstance,
-  opts: { uid: string; email: string; role?: string; emailVerified?: boolean },
+  opts: { uid: string; email: string; role?: string; emailVerified?: boolean; countryGrant?: boolean },
 ): Promise<string> {
+  // Hotfix 18/11: ator staff herda AR+BR por grupo (helpers/countryGrant.ts). `countryGrant: false` = sem grant (testes de escopo).
+  const staff = (opts.role ?? 'worker') !== 'worker';
+  if (staff && opts.countryGrant !== false) await grantDefaultCountries(opts.uid);
   if (process.env.USE_FIREBASE_EMULATOR === 'true') {
     return getFirebaseEmulatorToken(opts);
   }

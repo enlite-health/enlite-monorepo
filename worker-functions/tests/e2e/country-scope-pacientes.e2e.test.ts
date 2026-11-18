@@ -44,12 +44,15 @@ describe('Escopo por pais — pacientes (lista, ficha, filhas, kanban) @integrat
     return id;
   }
 
+  const CHAT_AR = `${RUN}1@g.us`;
+  const CHAT_BR = `${RUN}2@g.us`;
+
   beforeAll(async () => {
     pool = new Pool({ connectionString: DATABASE_URL });
     await waitForBackend(api);
-    tAR = await getMockToken(api, { uid: UID_AR, email: `${UID_AR}@e2e.local`, role: 'admin' });
-    tARBR = await getMockToken(api, { uid: UID_ARBR, email: `${UID_ARBR}@e2e.local`, role: 'admin' });
-    tNone = await getMockToken(api, { uid: UID_NONE, email: `${UID_NONE}@e2e.local`, role: 'admin' });
+    tAR = await getMockToken(api, { uid: UID_AR, email: `${UID_AR}@e2e.local`, role: 'admin', countryGrant: false });
+    tARBR = await getMockToken(api, { uid: UID_ARBR, email: `${UID_ARBR}@e2e.local`, role: 'admin', countryGrant: false });
+    tNone = await getMockToken(api, { uid: UID_NONE, email: `${UID_NONE}@e2e.local`, role: 'admin', countryGrant: false });
     for (const uid of [UID_AR, UID_ARBR, UID_NONE]) {
       await pool.query(
         `INSERT INTO users (firebase_uid, email, role, is_active, tenant_id) VALUES ($1, $2, 'admin', true, $3) ON CONFLICT (firebase_uid) DO NOTHING`,
@@ -65,9 +68,13 @@ describe('Escopo por pais — pacientes (lista, ficha, filhas, kanban) @integrat
     );
     patAR = await seedPatient('AR', 'ar');
     patBR = await seedPatient('BR', 'br');
+    for (const [pid, chat] of [[patAR, CHAT_AR], [patBR, CHAT_BR]]) {
+      await pool.query(`INSERT INTO patient_chat_ids (patient_id, role, chat_id) VALUES ($1, 'FAMILY', $2)`, [pid, chat]);
+    }
   });
 
   afterAll(async () => {
+    await pool.query(`DELETE FROM patient_chat_ids WHERE chat_id = ANY($1::text[])`, [[CHAT_AR, CHAT_BR]]);
     await pool.query(`DELETE FROM patient_contracted_services WHERE created_by = 'csp-e2e'`);
     await pool.query(`DELETE FROM patients WHERE id = ANY($1::uuid[])`, [[patAR, patBR]]);
     await pool.query(`DELETE FROM group_country_scopes WHERE group_id = ANY($1::uuid[])`, [[G_AR, G_ARBR]]);
@@ -125,6 +132,18 @@ describe('Escopo por pais — pacientes (lista, ficha, filhas, kanban) @integrat
     const both = await api.get('/api/admin/patients/kanban/services', authz(tARBR));
     const bothIds: string[] = both.data.data.patients.map((p: { patientId: string }) => p.patientId);
     expect(bothIds).toEqual(expect.arrayContaining([patAR, patBR]));
+  });
+
+  it('(g) /patients/chat-map: so-AR nao recebe chat de paciente BR (lista e direcao reversa); AR+BR recebe os dois', async () => {
+    const ar = await api.get('/api/admin/patients/chat-map?limit=1000', authz(tAR));
+    expect(ar.status).toBe(200);
+    const arIds: string[] = ar.data.data.patients.map((p: { patientId: string }) => p.patientId);
+    expect(arIds).toContain(patAR);
+    expect(arIds).not.toContain(patBR);
+    expect((await api.get(`/api/admin/patients/chat-map?chatId=${CHAT_BR}`, authz(tAR))).data.data.patients).toEqual([]);
+    const both = await api.get('/api/admin/patients/chat-map?limit=1000', authz(tARBR));
+    expect(both.data.data.patients.map((p: { patientId: string }) => p.patientId)).toEqual(expect.arrayContaining([patAR, patBR]));
+    expect((await api.get(`/api/admin/patients/chat-map?chatId=${CHAT_BR}`, authz(tARBR))).data.data.patients.length).toBe(1);
   });
 
   it('(f) sem pais em nenhum grupo: lista, ficha e kanban -> 403 COUNTRY_SCOPE_REQUIRED (nunca "todos")', async () => {
