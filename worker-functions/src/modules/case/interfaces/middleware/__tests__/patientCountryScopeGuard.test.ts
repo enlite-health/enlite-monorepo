@@ -1,15 +1,16 @@
 const mockResolve = jest.fn();
-jest.mock('@modules/identity', () => ({
+let ctxKind: 'staff' | 'system' = 'staff';
+jest.mock('@modules/identity/application/resolveCountryScope', () => ({
   resolveCountryScope: (...a: unknown[]) => mockResolve(...a),
   CountryScopeError: class CountryScopeError extends Error {
     constructor(public status: number, public code: string, m: string) { super(m); }
   },
 }));
-jest.mock('@shared/database/requestDbSession', () => ({ currentDbContext: () => ({ uid: 'u1' }) }));
+jest.mock('@shared/database/requestDbSession', () => ({ currentDbContext: () => (ctxKind === 'staff' ? { kind: 'staff', uid: 'u1' } : { kind: 'system' }) }));
 jest.mock('@shared/logging', () => ({ reportError: jest.fn() }));
 
 import { requirePatientInCountryScope } from '../patientCountryScopeGuard';
-import { CountryScopeError } from '@modules/identity';
+import { CountryScopeError } from '@modules/identity/application/resolveCountryScope';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 
@@ -67,6 +68,15 @@ describe('requirePatientInCountryScope', () => {
     await b.done;
     expect(b.next).toHaveBeenCalledTimes(1);
     expect(b.query).not.toHaveBeenCalled();
+  });
+
+  it('principal de servico (API key, kind=system) passa direto, sem resolver escopo', async () => {
+    ctxKind = 'system';
+    const t = run({ id: ID }, [{ country: 'BR' }]);
+    await t.done;
+    ctxKind = 'staff';
+    expect(t.next).toHaveBeenCalledTimes(1);
+    expect(mockResolve).not.toHaveBeenCalled();
   });
 
   it('falha inesperada => 500 fechado, nunca next', async () => {

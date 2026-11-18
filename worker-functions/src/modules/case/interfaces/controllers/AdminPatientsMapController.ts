@@ -28,6 +28,7 @@
  * abertas. Há teste que falha se uma dessas colunas aparecer no SQL.
  */
 
+import { resolveCountriesOrRespond } from '@modules/identity';
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -238,6 +239,8 @@ export class AdminPatientsMapController {
   async getMapPoints(req: Request, res: Response): Promise<void> {
     const body = parseMapBody(PatientsMapBodySchema, req, res);
     if (!body) return;
+    // Hotfix 18/11: o `country` do corpo vem de quem pergunta — so vale dentro do escopo do ator (403 senao).
+    if (!(await resolveCountriesOrRespond(this.db, res, body.country, 'MapController:getMapPoints'))) return;
 
     // A busca por NOME é leitura de identidade: filtrar pelo nome em claro e devolver o pino
     // (coordenada do domicílio) com `NOME_REDIGIDO` seria um oráculo — "existe alguém chamado X, e

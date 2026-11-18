@@ -92,6 +92,8 @@ export {
 } from './interfaces/middleware/undeclaredRouteLists';
 export { requireCountryScope, hasLiveCountryGrant } from './interfaces/middleware/countryScopeGuard';
 export { resolveCountryScope, CountryScopeError } from './application/resolveCountryScope';
+export { requireRecordInCountryScope } from './interfaces/middleware/recordCountryScopeGuard';
+export { resolveCountriesOrRespond } from './interfaces/http/respondCountryScope';
 export type {
   CountryScopeRequested,
   CountryScopeResolution,

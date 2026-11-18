@@ -175,9 +175,9 @@ export function createAdminPatientsRoutes(
 
   // ── Escopo de pais de TUDO sob /patients/:id e /patients/:patientId (hotfix 18/11/2026) ─────────────────
   // Ponto unico, depois das rotas estaticas (stats/funnel/chat-map/map/kanban/POST) e antes de toda rota por id.
-  // staffOnly vem antes: o guard precisa do uid. Fora do escopo => 404 (nao confirma existencia).
+  // requireStaffOrApiKey vem antes: o guard precisa do uid (chave de servico passa direto). Fora do escopo => 404 (nao confirma existencia).
   const patientScope = requirePatientInCountryScope(() => DatabaseConnection.getInstance().getPool());
-  router.use(['/patients/:id', '/patients/:patientId'], staffOnly, patientScope);
+  router.use(['/patients/:id', '/patients/:patientId'], authMiddleware.requireStaffOrApiKey(), patientScope);
 
   // Manual creation of a native patient (admission team). No :id in the path,
   // so it is safe here; POST does not collide with the GET /:id capture.
