@@ -227,6 +227,8 @@ export const Combobox = forwardRef<HTMLButtonElement, ComboboxProps>(function Co
       if (!open) openPanel();
       else (searchRef.current ?? optionButtons()[0])?.focus();
     } else if (e.key === 'Escape') {
+      // Aberto: o Esc só fecha a lista, não o painel/modal que contém o combobox (igual a option/search).
+      if (open) e.stopPropagation();
       close();
     } else if (e.key === 'Tab') {
       close();
