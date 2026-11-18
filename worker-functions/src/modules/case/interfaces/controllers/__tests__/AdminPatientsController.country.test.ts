@@ -100,6 +100,19 @@ describe('AdminPatientsController — filtro país', () => {
     expect(mockList).not.toHaveBeenCalled();
   });
 
+  it('listPatients: falha INESPERADA ao resolver o escopo => 500 fechado (nunca lista), repo NAO chamado', async () => {
+    mockResolveCountryScope.mockRejectedValue(new Error('db down'));
+    const [req, res] = mockReqRes({});
+    await controller.listPatients(req, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    // rejeicao que NAO e Error (ramo String(err)) tambem fecha
+    mockResolveCountryScope.mockRejectedValue('rejeicao crua');
+    const [req2, res2] = mockReqRes({});
+    await controller.listPatients(req2, res2);
+    expect(res2.status).toHaveBeenCalledWith(500);
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
   it('listPatients `?country=BR` fora do escopo => 403 do resolvedor, repo NAO chamado', async () => {
     mockResolveCountryScope.mockRejectedValue(new CountryScopeError(403, 'COUNTRY_SCOPE_REQUIRED', 'fora do escopo'));
     const [req, res] = mockReqRes({ country: 'BR' });

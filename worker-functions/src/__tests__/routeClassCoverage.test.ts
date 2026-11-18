@@ -150,6 +150,8 @@ const FABRICAS = [
 const FORA_DO_ESCOPO: Record<string, string> = {
   'modules/matching/interfaces/routes/talentumRoutes':
     'exporta `router` default (`POST /prescreening`) que nenhum arquivo monta: só o índice do módulo reexporta (grep em src = 0 usos)',
+  'modules/identity/interfaces/routes/adminRecordCountryScopeRoutes':
+    'so `router.use` do guard global de escopo de pais (hotfix 18/11): nenhuma rota propria; a ordem de montagem e travada por adminRecordCountryScopeMountOrder.test.ts',
 };
 
 function arquivosComRouter(dir: string, out: string[] = []): string[] {
