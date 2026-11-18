@@ -85,3 +85,30 @@ export async function grantDefaultCountries(uid: string): Promise<void> {
     [uid, GROUP, TENANT],
   );
 }
+
+/**
+ * Pre-condicao dos testes de ESCOPO: o ator tem EXATAMENTE os paises esperados no banco (`iam.effective_countries`) e as
+ * linhas semeadas existem. Sem isso um teste de escopo passa (ou falha) pelo motivo errado: `tests/e2e/setup.ts` faz
+ * TRUNCATE de `workers`/`job_postings` no beforeAll de CADA arquivo, entao dois arquivos em paralelo
+ * (`--maxWorkers=2`) apagam a semente um do outro — e um "404" de registro INEXISTENTE parece o 404 do guard
+ * (e o `/workers/:id/timeline` de id inexistente devolve 200). Aqui isso vira erro explicito, nao falso verde/vermelho.
+ */
+export async function assertScopeFixture(
+  p: Pool,
+  actors: Record<string, Array<'AR' | 'BR'>>,
+  rows: Array<{ table: 'patients' | 'workers' | 'job_postings'; id: string }>,
+): Promise<void> {
+  for (const [uid, expected] of Object.entries(actors)) {
+    const r = await p.query<{ c: string[] }>(`SELECT iam.effective_countries($1, $2) AS c`, [uid, TENANT]);
+    const got = [...(r.rows[0]?.c ?? [])].map((x) => String(x).trim()).sort();
+    if (JSON.stringify(got) !== JSON.stringify([...expected].sort())) {
+      throw new Error(`fixture de escopo: ator ${uid} tem paises [${got}] no banco, esperado [${expected}] (efeito colateral de grant?)`);
+    }
+  }
+  for (const { table, id } of rows) {
+    const r = await p.query(`SELECT 1 FROM ${table} WHERE id = $1`, [id]);
+    if (r.rowCount !== 1) {
+      throw new Error(`fixture de escopo: ${table} ${id} sumiu (TRUNCATE de outro arquivo e2e em paralelo? rode com maxWorkers=1)`);
+    }
+  }
+}

@@ -11,6 +11,7 @@
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
 import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { assertScopeFixture } from './helpers/countryGrant';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -71,6 +72,14 @@ describe('Escopo por pais — pacientes (lista, ficha, filhas, kanban) @integrat
     for (const [pid, chat] of [[patAR, CHAT_AR], [patBR, CHAT_BR]]) {
       await pool.query(`INSERT INTO patient_chat_ids (patient_id, role, chat_id) VALUES ($1, 'FAMILY', $2)`, [pid, chat]);
     }
+  });
+
+  beforeEach(async () => {
+    await assertScopeFixture(
+      pool,
+      { [UID_AR]: ['AR'], [UID_ARBR]: ['AR', 'BR'], [UID_NONE]: [] },
+      [{ table: 'patients', id: patAR }, { table: 'patients', id: patBR }],
+    );
   });
 
   afterAll(async () => {

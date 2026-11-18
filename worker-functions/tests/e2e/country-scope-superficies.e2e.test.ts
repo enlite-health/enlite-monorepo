@@ -9,6 +9,7 @@
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
 import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { assertScopeFixture } from './helpers/countryGrant';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -30,20 +31,24 @@ describe('Escopo por pais — workers, vagas e agregados @integration', () => {
   let vBR: string;
   const authz = (t: string) => ({ headers: { Authorization: `Bearer ${t}` }, validateStatus: () => true });
 
-  async function seedWorker(country: 'AR' | 'BR'): Promise<string> {
-    const r = await pool.query(`INSERT INTO workers (auth_uid, email, country) VALUES ($1, $2, $3) RETURNING id`, [
-      `css-${RUN}-w-${country}`, `css-${RUN}-w-${country}@e2e.local`, country,
-    ]);
-    return r.rows[0].id as string;
-  }
+  // Ids fixos por execucao + ON CONFLICT DO NOTHING: `seedAll()` e idempotente e roda antes de CADA teste, porque o
+  // `tests/e2e/setup.ts` de outro arquivo em paralelo pode dar TRUNCATE em workers/job_postings (ver assertScopeFixture).
+  const ID = { wAR: randomUUID(), wBR: randomUUID(), vAR: randomUUID(), vBR: randomUUID() };
 
-  async function seedVacancy(country: 'AR' | 'BR'): Promise<string> {
-    const r = await pool.query(
-      `INSERT INTO job_postings (title, description, country, status, is_draft, case_number, case_ordinal, search_start_date)
-       VALUES ($1, 'desc', $2, 'SEARCHING', false, $3, 1, NOW() - interval '10 days') RETURNING id`,
-      [`css-${RUN}-v-${country}`, country, country === 'AR' ? 910001 : 910002],
-    );
-    return r.rows[0].id as string;
+  async function seedAll(): Promise<void> {
+    for (const [id, country] of [[ID.wAR, 'AR'], [ID.wBR, 'BR']] as const) {
+      await pool.query(
+        `INSERT INTO workers (id, auth_uid, email, country) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+        [id, `css-${RUN}-w-${country}`, `css-${RUN}-w-${country}@e2e.local`, country],
+      );
+    }
+    for (const [id, country] of [[ID.vAR, 'AR'], [ID.vBR, 'BR']] as const) {
+      await pool.query(
+        `INSERT INTO job_postings (id, title, description, country, status, is_draft, case_number, case_ordinal, search_start_date)
+         VALUES ($1, $2, 'desc', $3, 'SEARCHING', false, $4, 1, NOW() - interval '10 days') ON CONFLICT DO NOTHING`,
+        [id, `css-${RUN}-v-${country}`, country, country === 'AR' ? 910001 : 910002],
+      );
+    }
   }
 
   beforeAll(async () => {
@@ -64,10 +69,17 @@ describe('Escopo por pais — workers, vagas e agregados @integration', () => {
          ($1, $3, 'AR', 'css-e2e', 'teste'), ($2, $4, 'AR', 'css-e2e', 'teste'), ($5, $4, 'BR', 'css-e2e', 'teste')`,
       [randomUUID(), randomUUID(), G_AR, G_ARBR, randomUUID()],
     );
-    wAR = await seedWorker('AR');
-    wBR = await seedWorker('BR');
-    vAR = await seedVacancy('AR');
-    vBR = await seedVacancy('BR');
+    ({ wAR, wBR, vAR, vBR } = ID);
+    await seedAll();
+  });
+
+  beforeEach(async () => {
+    await seedAll();
+    await assertScopeFixture(
+      pool,
+      { [UID_AR]: ['AR'], [UID_ARBR]: ['AR', 'BR'] },
+      [{ table: 'workers', id: wAR }, { table: 'workers', id: wBR }, { table: 'job_postings', id: vAR }, { table: 'job_postings', id: vBR }],
+    );
   });
 
   afterAll(async () => {
