@@ -103,6 +103,10 @@ describe('Escopo por pais — workers, vagas e agregados @integration', () => {
     expect((await api.get(`/api/admin/workers/${wBR}`, authz(tAR))).status).toBe(404);
     expect((await api.get(`/api/admin/workers/${wBR}/timeline`, authz(tAR))).status).toBe(404);
     expect((await api.post(`/api/admin/workers/${wBR}/documents/view-url`, {}, authz(tAR))).status).toBe(404); // router de documentos
+    // Router montado em /api (createWorkerDocumentsRoutes) — era o bypass do gate: o guard tem de vir ANTES dele.
+    expect((await api.get(`/api/admin/workers/${wBR}/additional-documents`, authz(tAR))).status).toBe(404);
+    expect((await api.delete(`/api/admin/workers/${wBR}/additional-documents/${randomUUID()}`, authz(tAR))).status).toBe(404);
+    expect((await api.get(`/api/admin/workers/${wAR}/additional-documents`, authz(tAR))).status).not.toBe(404);
     expect((await api.get(`/api/admin/workers/${wAR}`, authz(tAR))).status).toBe(200);
 
     const both = await api.get('/api/admin/workers?limit=200', authz(tARBR));
