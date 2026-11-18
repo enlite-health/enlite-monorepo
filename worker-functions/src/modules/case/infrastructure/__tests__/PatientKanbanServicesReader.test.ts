@@ -44,7 +44,7 @@ describe('PatientKanbanServicesReader', () => {
   it('EXATAMENTE 4 queries dentro da transação (BEGIN…COMMIT): serviços + faixas + alocações + ausências, para TODOS os pacientes, sem N+1; o pool cru não recebe query', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
-    await reader.readKanbanServices('AR');
+    await reader.readKanbanServices(['AR']);
 
     expect(svcCalls()).toHaveLength(1);
     expect(slotCalls()).toHaveLength(1);
@@ -60,31 +60,31 @@ describe('PatientKanbanServicesReader', () => {
   it('paciente de teste (is_test) fora do quadro de todos; a leitura de UM paciente segue aberta (D664/D665)', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
-    await reader.readKanbanServices('AR');
+    await reader.readKanbanServices(['AR']);
 
     const sql = svcCalls()[0].sql.replace(/\s+/g, ' ');
     expect(sql).toContain(`AND ($2::uuid IS NOT NULL OR ${excludeTestPatientSql('p')})`);
   });
 
-  it('parâmetro: [null, null] sem país, [\'AR\', null] com país (nas 4 queries)', async () => {
+  it('parâmetro: [["AR","BR"], null] sem país, [\'AR\', null] com país (nas 4 queries)', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
-    await reader.readKanbanServices(null);
+    await reader.readKanbanServices(['AR', 'BR']);
     for (const q of [svcCalls(), slotCalls(), assignmentCalls(), absenceCalls()]) expect(q[0].params).toEqual([null, null]);
 
     jest.clearAllMocks();
     queryImpl = async () => ({ rows: [], rowCount: 0 });
-    await reader.readKanbanServices('AR');
-    for (const q of [svcCalls(), slotCalls(), assignmentCalls(), absenceCalls()]) expect(q[0].params).toEqual(['AR', null]);
+    await reader.readKanbanServices(['AR']);
+    for (const q of [svcCalls(), slotCalls(), assignmentCalls(), absenceCalls()]) expect(q[0].params).toEqual([["AR"], null]);
   });
 
   it('as consultas de ocorrência: filtro de país, janela SUPERCONJUNTO [CURRENT_DATE - 1, CURRENT_DATE + horizonte] (teto no prefiltro), ausência VIVA; nenhuma coluna de nome/telefone', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
-    await reader.readKanbanServices('AR');
+    await reader.readKanbanServices(['AR']);
 
     for (const { sql } of [slotCalls()[0], assignmentCalls()[0], absenceCalls()[0]]) {
-      expect(sql).toMatch(/\(\$1::text IS NULL OR p\.country = \$1\)/);
+      expect(sql).toMatch(/\(p\.country = ANY\(\$1::bpchar\[\]\)\)/);
       expect(sql).toMatch(/\(CURRENT_DATE - 1\)::date/);
       expect(sql).toMatch(/\(CURRENT_DATE \+ 7\)::date/); // UNCOVERED_HORIZON_DAYS = 7, teto do prefiltro
       expect(sql).toMatch(/pcs\.active/);
@@ -98,7 +98,7 @@ describe('PatientKanbanServicesReader', () => {
   it('a SQL contém a junção da vaga viva e as guardas de ativo/soft-delete; nenhuma coluna de PII/clínico', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
-    await reader.readKanbanServices('AR');
+    await reader.readKanbanServices(['AR']);
 
     const sql = svcCalls()[0].sql;
     expect(sql).toMatch(/DISTINCT ON \(jp\.contracted_service_id\)/);
@@ -198,7 +198,7 @@ describe('PatientKanbanServicesReader', () => {
       return { rows: [], rowCount: 0 };
     };
 
-    const result = await reader.readKanbanServices(null);
+    const result = await reader.readKanbanServices(['AR', 'BR']);
 
     expect(result).toHaveLength(2);
     const p1 = result.find((p) => p.patientId === 'p-1');
@@ -244,13 +244,13 @@ describe('PatientKanbanServicesReader', () => {
       }
       return { rows: [], rowCount: 0 };
     };
-    await expect(reader.readKanbanServices('AR')).resolves.toEqual([]);
+    await expect(reader.readKanbanServices(['AR'])).resolves.toEqual([]);
   });
 
   it('gate parcial #1: a ausência só conta sobre alocação ACTIVE e vigente na data (o MESMO fragmento `liveAbsencePredicate` do itinerário)', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
-    await reader.readKanbanServices('AR');
+    await reader.readKanbanServices(['AR']);
 
     const sql = absenceCalls()[0].sql;
     expect(sql).toMatch(/ab\.cancelled_at IS NULL/);

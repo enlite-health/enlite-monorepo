@@ -46,7 +46,7 @@ import { PatientQueryRepository } from '../PatientQueryRepository';
 import { DECRYPT_BATCH } from '@shared/security/decryptBatch';
 import type { AdminPatientsListParams } from '../../interfaces/validators/adminPatientsListSchema';
 
-const FILTERS = { limit: 20, offset: 0 } as AdminPatientsListParams;
+const FILTERS = { limit: 20, offset: 0, countries: ['AR'] } as unknown as AdminPatientsListParams & { countries: ('AR' | 'BR')[] };
 
 function row(overrides: Record<string, unknown> = {}) {
   return {
@@ -294,7 +294,7 @@ describe('B2 — o lote de KMS (trocar por MAX_SAFE_INTEGER não acusava nada)',
         row({ id: `l${i}`, contactEmailEnc: `enc(pessoa${i}@gmail.com)`, total_count: String(n) })),
     );
 
-    await new PatientQueryRepository().list({ ...FILTERS, limit: 500 } as AdminPatientsListParams);
+    await new PatientQueryRepository().list({ ...FILTERS, limit: 500 });
 
     expect(decryptSpy).toHaveBeenCalledTimes(n);
     expect(maxEmVoo).toBeGreaterThan(1);           // é paralelo DENTRO do lote

@@ -79,14 +79,33 @@ describe('AdminPatientsController — filtro país', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     controller = new AdminPatientsController();
+    mockResolveCountryScope.mockResolvedValue({ countries: ['AR'], requested: 'ALL' });
   });
 
-  it('listPatients repassa country=AR ao repo', async () => {
+  it('listPatients repassa scope.countries (resolvido) ao repo 2014 nunca null/todos; o `?country=` vai so ao resolvedor', async () => {
     mockList.mockResolvedValue({ rows: [], total: 0 });
+    mockResolveCountryScope.mockResolvedValue({ countries: ['AR'], requested: 'AR' });
     const [req, res] = mockReqRes({ country: 'AR' });
     await controller.listPatients(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ country: 'AR' }), expect.anything());
+    expect(mockResolveCountryScope).toHaveBeenCalledWith(expect.anything(), undefined, 'AR');
+    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ countries: ['AR'] }), expect.anything());
+  });
+
+  it('listPatients sem pais concedido => 403 COUNTRY_SCOPE_REQUIRED e o repo NAO e chamado', async () => {
+    mockResolveCountryScope.mockRejectedValue(new CountryScopeError(403, 'COUNTRY_SCOPE_REQUIRED', 'sem pais'));
+    const [req, res] = mockReqRes({});
+    await controller.listPatients(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mockList).not.toHaveBeenCalled();
+  });
+
+  it('listPatients `?country=BR` fora do escopo => 403 do resolvedor, repo NAO chamado', async () => {
+    mockResolveCountryScope.mockRejectedValue(new CountryScopeError(403, 'COUNTRY_SCOPE_REQUIRED', 'fora do escopo'));
+    const [req, res] = mockReqRes({ country: 'BR' });
+    await controller.listPatients(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mockList).not.toHaveBeenCalled();
   });
 
   it('lex 08/09 — `search` sem `patient_identity:read` → 403 nomeando campo e célula; filtro clínico sem `patient_clinical:read` → 403; com as células (ou sem engine) passa', async () => {

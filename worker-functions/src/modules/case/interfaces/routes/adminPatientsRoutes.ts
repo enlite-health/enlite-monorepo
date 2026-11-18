@@ -17,6 +17,8 @@ import { AdminTerminologySearchController } from '@modules/terminology/interface
 import { AdminPatientContactRowsController } from '../controllers/AdminPatientContactRowsController';
 import { AdminPatientExternalContactsController } from '../controllers/AdminPatientExternalContactsController';
 import { AdminPatientEmergencyContactController } from '../controllers/AdminPatientEmergencyContactController';
+import { requirePatientInCountryScope } from '../middleware/patientCountryScopeGuard';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 
 /**
  * Admin patients routes — mounted at /api/admin.
@@ -170,6 +172,12 @@ export function createAdminPatientsRoutes(
   router.get('/patients', staffOnly, perm.require('patient', 'read'), countryScope, (req: Request, res: Response) =>
     controller.listPatients(req, res),
   );
+
+  // ── Escopo de pais de TUDO sob /patients/:id e /patients/:patientId (hotfix 18/11/2026) ─────────────────
+  // Ponto unico, depois das rotas estaticas (stats/funnel/chat-map/map/kanban/POST) e antes de toda rota por id.
+  // staffOnly vem antes: o guard precisa do uid. Fora do escopo => 404 (nao confirma existencia).
+  const patientScope = requirePatientInCountryScope(() => DatabaseConnection.getInstance().getPool());
+  router.use(['/patients/:id', '/patients/:patientId'], staffOnly, patientScope);
 
   // Manual creation of a native patient (admission team). No :id in the path,
   // so it is safe here; POST does not collide with the GET /:id capture.

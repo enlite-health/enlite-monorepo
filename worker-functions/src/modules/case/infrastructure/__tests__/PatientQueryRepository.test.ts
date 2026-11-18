@@ -34,12 +34,13 @@ import type { AdminPatientsListParams } from '../../interfaces/validators/adminP
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function baseFilters(overrides: Partial<AdminPatientsListParams> = {}): AdminPatientsListParams {
+function baseFilters(overrides: Partial<AdminPatientsListParams & { countries: ('AR' | 'BR')[] }> = {}): AdminPatientsListParams & { countries: ('AR' | 'BR')[] } {
   return {
     limit: 20,
     offset: 0,
+    countries: ['AR'],
     ...overrides,
-  } as AdminPatientsListParams;
+  } as AdminPatientsListParams & { countries: ('AR' | 'BR')[] };
 }
 
 function baseListRow(overrides: Record<string, unknown> = {}) {
@@ -103,7 +104,6 @@ describe('PatientQueryRepository.list', () => {
         clinical_specialty: 'ASD',
         dependency_level: 'MILD',
         case_number: '766',
-        country: 'AR',
         limit: 20,
         offset: 0,
       }),
@@ -125,7 +125,7 @@ describe('PatientQueryRepository.list', () => {
     // $4 clinicalSpecialty, $5 dependencyLevel, $6 caseNumber, $7 country,
     // $8 reads.family (o ramo do nome do responsável), $9 limit, $10 offset,
     // $11 include_deactivated (checkbox "Mostrar desactivados" — ausente aqui → false), $12 exclude_discharged (ausente → false).
-    expect(params).toEqual(['Ana', true, 'MISSING_INFO', 'ASD', 'MILD', '766', 'AR', true, 20, 0, false, false]);
+    expect(params).toEqual(['Ana', true, 'MISSING_INFO', 'ASD', 'MILD', '766', ['AR'], true, 20, 0, false, false]);
     // lex 08/09: o ramo do responsável é gated pelo parâmetro, não por string SQL montada.
     expect(sql).toMatch(/\$8::boolean AND EXISTS \(\s*SELECT 1 FROM patient_responsibles/);
   });
@@ -133,11 +133,21 @@ describe('PatientQueryRepository.list', () => {
   it('a1b. sem `patient_family:read` o ramo da busca por nome de RESPONSÁVEL desliga (param false); com engine não decidido, liga', async () => {
     const repo = new PatientQueryRepository();
     mockPoolQuery.mockResolvedValue({ rows: [] });
-    await repo.list({ search: 'Ana', limit: 20, offset: 0 } as never, { ...ALL_PATIENT_CONTAINERS_READABLE, family: false });
+    await repo.list({ search: 'Ana', limit: 20, offset: 0, countries: ['AR'] } as never, { ...ALL_PATIENT_CONTAINERS_READABLE, family: false });
     expect(mockPoolQuery.mock.calls[0][1][7]).toBe(false);
     mockPoolQuery.mockClear();
-    await repo.list({ search: 'Ana', limit: 20, offset: 0 } as never);
+    await repo.list({ search: 'Ana', limit: 20, offset: 0, countries: ['AR'] } as never);
     expect(mockPoolQuery.mock.calls[0][1][7]).toBe(true);
+  });
+
+  it('a1c. escopo de pais: `= ANY($7::bpchar[])` e o array vai como param; lista vazia vai VAZIA (0 linhas), nunca null/todos', async () => {
+    mockPoolQuery.mockResolvedValue({ rows: [] });
+    const repo = new PatientQueryRepository();
+    await repo.list(baseFilters({ countries: [] }));
+    const [sql, params] = mockPoolQuery.mock.calls[0];
+    expect(sql).toMatch(/p\.country = ANY\(\$7::bpchar\[\]\)/);
+    expect(sql).not.toMatch(/\$7::text IS NULL/);
+    expect(params[6]).toEqual([]);
   });
 
   it('a2. isTest=true quando a linha marca is_test', async () => {

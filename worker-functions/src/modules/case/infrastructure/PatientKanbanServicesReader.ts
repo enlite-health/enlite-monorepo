@@ -16,6 +16,7 @@
  * das ausências — cadeia Fase 15.
  */
 import type { PoolClient } from 'pg';
+import { COUNTRY_CODES, type CountryCode } from '@shared/domain/countryCodes';
 import { inPatientTransaction } from '../application/patientTransaction';
 import type { ItinerarySlotRow } from './PatientItineraryReader';
 import { excludeTestPatientSql } from '@shared/database/testRealmSql';
@@ -70,9 +71,9 @@ interface KanbanJoinRow {
 }
 
 export class PatientKanbanServicesReader {
-  /** `country` filtra como a listagem (`null` = todos os países que a RLS deixa ver). */
-  async readKanbanServices(country: 'AR' | 'BR' | null): Promise<KanbanServicesRows[]> {
-    return inPatientTransaction((client) => this.run(client, country));
+  /** `countries` e o escopo JA RESOLVIDO (`resolveCountryScope`); lista vazia = 0 linhas, nunca "todos". */
+  async readKanbanServices(countries: readonly CountryCode[]): Promise<KanbanServicesRows[]> {
+    return inPatientTransaction((client) => this.run(client, countries));
   }
 
   /**
@@ -80,12 +81,12 @@ export class PatientKanbanServicesReader {
    * SEM a 2ª query (ausências): a derivação não as lê — a ausência datada nunca entra na conta.
    */
   async readForPatientWith(client: PoolClient, patientId: string): Promise<KanbanServicesRows | null> {
-    return (await this.run(client, null, patientId, false))[0] ?? null;
+    return (await this.run(client, COUNTRY_CODES, patientId, false))[0] ?? null;
   }
 
   private async run(
     client: PoolClient,
-    country: 'AR' | 'BR' | null,
+    countries: readonly CountryCode[],
     patientId: string | null = null,
     withAbsences = true,
   ): Promise<KanbanServicesRows[]> {
@@ -94,7 +95,7 @@ export class PatientKanbanServicesReader {
          SELECT pcs.id, pcs.patient_id, pcs.service_code, pcs.created_at, p.country
            FROM patient_contracted_services pcs
            JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL
-          WHERE pcs.active AND ($1::text IS NULL OR p.country = $1) AND ($2::uuid IS NULL OR p.id = $2)
+          WHERE pcs.active AND p.country = ANY($1::bpchar[]) AND ($2::uuid IS NULL OR p.id = $2)
             -- D664/D665: o quadro (todos os pacientes) não lista paciente de teste; a leitura de UM paciente
             -- ($2) segue aberta (PatientStatusDerivation deriva o status dele pela mesma leitura).
             AND ($2::uuid IS NOT NULL OR ${excludeTestPatientSql('p')})
@@ -111,7 +112,7 @@ export class PatientKanbanServicesReader {
          LEFT JOIN patient_itinerary_slot s ON s.contracted_service_id = svc.id AND ${slotVigenteSql('s')}
          LEFT JOIN patient_itinerary_assignment a ON a.slot_id = s.id
         ORDER BY svc.patient_id, svc.created_at, svc.id, s.weekday, s.start_time, a.valid_from`,
-      [country, patientId],
+      [[...countries], patientId],
     );
 
     const byPatient = new Map<string, KanbanServicesRows>();
@@ -161,11 +162,11 @@ export class PatientKanbanServicesReader {
     // tem teto em CURRENT_DATE + horizonte): só poda histórico e futuro distante; quem decide a janela exata é o caso de uso
     // com o `asOf` do país. Nenhuma coluna de nome/telefone.
     const occurrences = await readOccurrenceInputsByPatient(client, {
-      scopeSql: `pcs.active AND ($1::text IS NULL OR p.country = $1) AND ($2::uuid IS NULL OR p.id = $2)`,
+      scopeSql: `pcs.active AND p.country = ANY($1::bpchar[]) AND ($2::uuid IS NULL OR p.id = $2)`,
       extraJoin: 'JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL',
       fromSql: 'CURRENT_DATE - 1',
       toSql: `CURRENT_DATE + ${UNCOVERED_HORIZON_DAYS}`,
-      params: [country, patientId],
+      params: [[...countries], patientId],
     });
     for (const [pid, inputs] of occurrences) {
       const patient = byPatient.get(pid);
