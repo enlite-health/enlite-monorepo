@@ -30,7 +30,7 @@ import {
   AdminPatientAddressesController,
   AdminInsuranceProvidersController,
   AdminPatientContractedServicesController,
-  AdminTherapeuticProjectsController,
+  buildAdminTherapeuticProjectsController,
   createAdminTherapeuticProjectsRoutes,
   AdminServiceTeamController,
   createAdminServiceTeamRoutes,
@@ -776,7 +776,7 @@ app.use(
 // ========== Admin Therapeutic Projects (spec 017) ==========
 app.use(
   '/api/admin',
-  createAdminTherapeuticProjectsRoutes(new AdminTherapeuticProjectsController(), authMiddleware, permissionMiddleware),
+  createAdminTherapeuticProjectsRoutes(buildAdminTherapeuticProjectsController(), authMiddleware, permissionMiddleware),
 );
 
 // ========== Quadro C — time do serviço contratado (cadeia Fase 10) ==========

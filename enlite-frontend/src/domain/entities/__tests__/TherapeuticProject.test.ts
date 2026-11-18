@@ -12,6 +12,9 @@ import {
   THERAPEUTIC_CATALOG_KINDS,
   THERAPEUTIC_CATALOG_RESOURCE,
   THERAPEUTIC_TEXT_MAX,
+  SERVICE_CODE_PATTERN,
+  SUGGESTED_FREQUENCY_MAX,
+  CASCADE_MAX_DIAGNOSES,
   currentVersion,
   type TherapeuticProjectVersion,
 } from '../TherapeuticProject';
@@ -33,6 +36,8 @@ function versao(over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
     specificObjectives: [],
     activities: [],
     pathologyTypes: [],
+    objectivesLayout: 'flat',
+    diagnosisPlans: null,
     startDate: '2026-09-01',
     endDate: '2026-12-01',
     annulledAt: null,
@@ -89,17 +94,18 @@ describe('currentVersion — a versão "em andamento" do card (D299)', () => {
 });
 
 describe('constantes espelhadas do backend', () => {
-  it('os 3 kinds do catálogo — uma TELA e uma CÉLULA por lista; tipo de patologia NÃO é catálogo (deriva do CID-11, Gabriel 08/09)', () => {
-    expect(THERAPEUTIC_CATALOG_KINDS).toEqual(['specific-objectives', 'activities', 'segments']);
+  it('os 2 kinds do catálogo (091: `segments` saiu); tipo de patologia NÃO é catálogo (deriva do CID-11, Gabriel 08/09)', () => {
+    expect(THERAPEUTIC_CATALOG_KINDS).toEqual(['specific-objectives', 'activities']);
     expect(THERAPEUTIC_CATALOG_KINDS).not.toContain('pathology-types');
+    expect(THERAPEUTIC_CATALOG_KINDS).not.toContain('segments');
   });
 
   it('cada kind aponta para o recurso ABAC do backend (`THERAPEUTIC_CATALOG_RESOURCE`)', () => {
     expect(THERAPEUTIC_CATALOG_RESOURCE).toEqual({
       'specific-objectives': 'catalog_therapeutic_objectives',
       activities: 'catalog_therapeutic_activities',
-      segments: 'catalog_therapeutic_segments',
     });
+    expect(THERAPEUTIC_CATALOG_RESOURCE).not.toHaveProperty('segments');
     // Todo kind declarado tem recurso — senão a tela gatearia por `undefined`.
     for (const kind of THERAPEUTIC_CATALOG_KINDS) {
       expect(THERAPEUTIC_CATALOG_RESOURCE[kind]).toBeTruthy();
@@ -109,5 +115,19 @@ describe('constantes espelhadas do backend', () => {
   it('os tetos espelham os CHECK das migrations 415 e 416 (lex C6)', () => {
     expect(CATALOG_LABEL_MAX).toBe(200);
     expect(THERAPEUTIC_TEXT_MAX).toBe(4000);
+  });
+});
+
+describe('091: tetos e formato do código de serviço (espelho do zod do servidor, §9.4)', () => {
+  it.each([['CAREGIVER', true], ['AT_2', true], ['2AT', false], ['at', false], ['A-B', false], ['', false]] as const)(
+    'SERVICE_CODE_PATTERN(%s) = %s',
+    (code, ok) => {
+      expect(SERVICE_CODE_PATTERN.test(code)).toBe(ok);
+    },
+  );
+
+  it('frequência sugerida até 100 e cascata até 20 diagnósticos', () => {
+    expect(SUGGESTED_FREQUENCY_MAX).toBe(100);
+    expect(CASCADE_MAX_DIAGNOSES).toBe(20);
   });
 });

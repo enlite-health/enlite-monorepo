@@ -26,7 +26,9 @@ import {
   WaiveContactForbiddenError,
   type TherapeuticProjectVersionInput,
 } from '../TherapeuticProjectRepository';
-import { CatalogItemsUnknownError, CatalogSegmentInvalidError } from '../TherapeuticCatalogRepository';
+import { MacroFieldsLockedError, VersionNotCurrentError } from '../TherapeuticProjectRepository';
+import { PlanFormatMismatchError } from '../../domain/TherapeuticProject';
+import { PlanBlockIncompleteError, PlanObjectiveInvalidError } from '../../domain/TherapeuticDiagnosisPlan';
 import { DiagnosisUnknownError } from '../../application/pathologySegments';
 import type { TerminologyPort } from '@modules/terminology/domain/TerminologyPort';
 
@@ -40,12 +42,12 @@ function terminologia(over: Partial<TerminologyPort> = {}): TerminologyPort {
   return {
     search: jest.fn(),
     // Entidade "existe" para qualquer URI, salvo quando o teste sobrescreve (o "não existe" é `null`, pela porta).
-    getByUri: jest.fn(async (uri: string) => ({ uri })),
+    getByUri: jest.fn(async (uri: string) => ({ uri, code: { value: '6A02.0' } })),
     ancestorsOf: jest.fn(async () => ({ chapter: CAPITULO_06 })),
     ...over,
   } as unknown as TerminologyPort;
 }
-const repo = (term: TerminologyPort = terminologia()) => new TherapeuticProjectRepository(undefined, term);
+const repo = (term: TerminologyPort = terminologia()) => new TherapeuticProjectRepository(term);
 
 const PACIENTE = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
@@ -66,6 +68,7 @@ function row(over: Record<string, unknown> = {}) {
     activities: [{ id: 'a-1', label: 'Atividade A' }],
     pathology_types: [{ id: '06', label: CAPITULO_06.title }],
     segment: { id: 'seg-1', label: 'Segmento A' },
+    diagnosis_plans: null,
     start_date: '2026-01-01',
     end_date: '2026-06-30',
     annulled_at: null,
@@ -79,14 +82,12 @@ function row(over: Record<string, unknown> = {}) {
   };
 }
 
-const CORPO: TherapeuticProjectVersionInput = {
+const BASE = {
   contractedServiceId: 'svc-1',
-  modality: 'IN_PERSON',
+  modality: 'IN_PERSON' as const,
   diagnoses: [{ uri: 'u', code: '6A02', title: 'TEA' }],
   clinicalContext: 'contexto',
   generalObjective: 'objetivo',
-  specificObjectiveIds: ['o-1'],
-  activityIds: ['a-1'],
   startDate: '2026-01-01',
   endDate: '2026-06-30',
   contactRefs: [],
@@ -94,16 +95,36 @@ const CORPO: TherapeuticProjectVersionInput = {
   contactStatus: {},
 };
 
-/** `mode:'new'` leva `segmentId` (030, MACRO); `mode:'edit'` usa `CORPO` (sem a chave) e herda o segmento da origem. */
-const CORPO_NOVO = { ...CORPO, segmentId: 'seg-1' };
+/** `mode:'edit'` de origem PLANA (formato antigo): ids planos. */
+const CORPO: TherapeuticProjectVersionInput = { ...BASE, specificObjectiveIds: ['o-1'], activityIds: ['a-1'] };
+
+/** Um bloco por diagnóstico (091): o diagnóstico `u` marca o objetivo `o-1` e a atividade `a-1`. */
+const BLOCO_U = { diagnosisUri: 'u', specificObjectiveIds: ['o-1'], activityIds: ['a-1'] };
+/** `mode:'new'` (091): sempre por diagnóstico; `mode:'edit'` de origem por diagnóstico usa `CORPO_BLOCOS`. */
+const CORPO_NOVO = { ...BASE, diagnosisPlans: [BLOCO_U] };
+const CORPO_BLOCOS: TherapeuticProjectVersionInput = { ...BASE, diagnosisPlans: [BLOCO_U] };
+
+/** Snapshot congelado do bloco `u` (o que a versão por diagnóstico guarda). */
+const SNAPSHOT_U = {
+  diagnosisUri: 'u',
+  categoryCode: '6A02',
+  objectives: [{ id: 'o-1', label: 'Objetivo A', description: null }],
+  activities: [{ id: 'a-1', label: 'Atividade A', description: null, suggestedFrequency: null }],
+};
+/** Origem por diagnóstico: listas planas `[]`, segmento NULL, blocos gravados (DD-7). */
+const origemPorDiagnostico = (over: Record<string, unknown> = {}) =>
+  row({ specific_objectives: [], activities: [], segment: null, diagnosis_plans: [SNAPSHOT_U], ...over });
 
 interface Cenario {
   /** As versões que o paciente já tem (o SELECT dentro da transação). */
   existentes?: ReturnType<typeof row>[];
-  /** Segmentos ATIVOS do catálogo (030) — o que `snapshotSegment` encontra. Default: `seg-1`. */
-  segmentos?: Array<{ id: string; label: string }>;
-  /** Ids ATIVOS de cada catálogo — o que o snapshot encontra. */
-  catalogo?: Record<string, Array<{ id: string; label: string }>>;
+  /** `service_code` do serviço contratado do paciente; `null` = o serviço não é DESTE paciente (sem linha). Default `CAREGIVER`. */
+  servico?: string | null;
+  /** Catálogo ativo por categoria (cascata do serviço): linhas dos vínculos objetivo e atividade. Default: `o-1`/`a-1` em `6A02`. */
+  cascata?: {
+    objetivos: Array<{ category_code: string; id: string; label: string; description: string | null }>;
+    atividades: Array<{ category_code: string; objective_id: string; id: string; label: string; description: string | null; suggested_frequency: string | null }>;
+  };
   /** A linha relida depois do INSERT / do UPDATE de anulação. */
   criada?: ReturnType<typeof row>;
   /** Linhas devolvidas pelo UPDATE de anulação (vazio = versão inexistente ou já anulada). */
@@ -129,9 +150,9 @@ function cliente(cen: Cenario = {}) {
   // para a prova de ORDEM do SET CONSTRAINTS (429). `chamadas` continua só o SQL de negócio, como
   // antes, para não quebrar as asserções de `ordem[0]` já existentes.
   const todas: Array<{ sql: string; params: unknown[] }> = [];
-  const catalogo = cen.catalogo ?? {
-    therapeutic_specific_objectives: [{ id: 'o-1', label: 'Objetivo A' }],
-    therapeutic_activities: [{ id: 'a-1', label: 'Atividade A' }],
+  const cascata = cen.cascata ?? {
+    objetivos: [{ category_code: '6A02', id: 'o-1', label: 'Objetivo A', description: null }],
+    atividades: [{ category_code: '6A02', objective_id: 'o-1', id: 'a-1', label: 'Atividade A', description: null, suggested_frequency: null }],
   };
   const query = jest.fn(async (sql: string, params: unknown[] = []) => {
     todas.push({ sql, params });
@@ -143,16 +164,11 @@ function cliente(cen: Cenario = {}) {
     if (/FROM patient_therapeutic_project_contact_status/.test(sql)) return { rows: cen.statusDaVigente ?? [], rowCount: (cen.statusDaVigente ?? []).length };
     if (/FROM patient_tp_contact_reminder_cycles/.test(sql)) return cen.cicloAberto ? { rows: [{ '?column?': 1 }], rowCount: 1 } : { rows: [], rowCount: 0 };
     if (/^INSERT INTO patient_tp_contact_reminder_cycles/.test(sql)) return { rows: [{ id: 'ciclo-1' }], rowCount: 1 };
-    if (/FROM therapeutic_segments /.test(sql)) {
-      const achados = (cen.segmentos ?? [{ id: 'seg-1', label: 'Segmento A' }]).filter((s) => s.id === params[0]);
-      return { rows: achados, rowCount: achados.length };
+    if (/FROM patient_contracted_services/.test(sql)) {
+      return cen.servico === null ? { rows: [], rowCount: 0 } : { rows: [{ service_code: cen.servico ?? 'CAREGIVER' }], rowCount: 1 };
     }
-    const cat = Object.keys(catalogo).find((t) => new RegExp(`FROM ${t} `).test(sql));
-    if (cat) {
-      const pedidos = (params[0] as string[]) ?? [];
-      const achados = catalogo[cat].filter((i) => pedidos.includes(i.id));
-      return { rows: achados, rowCount: achados.length };
-    }
+    if (/FROM therapeutic_objective_icd_categories/.test(sql)) return { rows: cascata.objetivos, rowCount: cascata.objetivos.length };
+    if (/FROM therapeutic_activity_icd_categories/.test(sql)) return { rows: cascata.atividades, rowCount: cascata.atividades.length };
     if (/^INSERT INTO patient_therapeutic_projects/.test(sql)) return { rows: [{ id: 'v-novo' }], rowCount: 1 };
     if (/^\s*UPDATE patient_therapeutic_projects/.test(sql)) return { rows: cen.anuladas ?? [], rowCount: (cen.anuladas ?? []).length };
     if (/WHERE v\.id = \$1/.test(sql)) return { rows: [cen.criada ?? row({ id: 'v-novo' })], rowCount: 1 };
@@ -265,6 +281,8 @@ describe('TherapeuticProjectRepository', () => {
         activities: [{ id: 'a-1', label: 'Atividade A' }],
         pathologyTypes: [{ id: '06', label: CAPITULO_06.title }],
         segment: { id: 'seg-1', label: 'Segmento A' },
+        diagnosisPlans: null,
+        objectivesLayout: 'flat',
         startDate: '2026-01-01',
         endDate: '2026-06-30',
         annulledAt: null,
@@ -339,35 +357,53 @@ describe('TherapeuticProjectRepository', () => {
       expect(v.version).toBe('V.3.0');
     });
 
-    it('o snapshot é montado do CATÁLOGO no mesmo client (lex C19): o cliente manda id, a versão congela label', async () => {
-      const { cli, chamadas } = cliente();
-      mockConnect.mockResolvedValue(cli);
-      await repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: CORPO_NOVO });
-      const ins = chamadas.find((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))!;
-      expect(ins.params[8]).toBe(JSON.stringify([{ id: 'o-1', label: 'Objetivo A' }]));
-      expect(ins.params[9]).toBe(JSON.stringify([{ id: 'a-1', label: 'Atividade A' }]));
-      // os dois catálogos foram consultados dentro da transação, não pelo pool
-      expect(sqls(chamadas).filter((s) => /WHERE c\.active AND c\.id = ANY/.test(s))).toHaveLength(2);
-      expect(mockPoolQuery).not.toHaveBeenCalled();
-    });
-
-    describe('030 — segmento (spec 030, lex C4: o servidor congela {id,label} do catálogo ATIVO)', () => {
-      it('030 — `new` grava o `{id,label}` do CATÁLOGO (não o que o cliente mandaria), lido no MESMO client da transação', async () => {
-        const { cli, chamadas } = cliente({ segmentos: [{ id: 'seg-1', label: 'AT para Pacientes con TEA' }] });
+    describe('091 — `new` grava blocos por diagnóstico (§9.6, DD-7)', () => {
+      it('091 — `new` grava `diagnosis_plans` com o snapshot do catálogo, planas `[]` e `segment` NULL; tudo no MESMO client da transação', async () => {
+        const { cli, chamadas } = cliente();
         mockConnect.mockResolvedValue(cli);
         await repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: CORPO_NOVO });
         const ins = chamadas.find((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))!;
-        expect(ins.sql).toMatch(/\bsegment\b/);
-        expect(ins.params[15]).toBe(JSON.stringify({ id: 'seg-1', label: 'AT para Pacientes con TEA' }));
-        expect(sqls(chamadas).filter((s) => /FROM therapeutic_segments /.test(s))).toHaveLength(1);
+        expect(ins.sql).toMatch(/\bdiagnosis_plans\b/);
+        expect(ins.params[8]).toBe('[]');
+        expect(ins.params[9]).toBe('[]');
+        expect(ins.params[15]).toBeNull();
+        expect(ins.params[16]).toBe(JSON.stringify([SNAPSHOT_U]));
         expect(mockPoolQuery).not.toHaveBeenCalled();
       });
 
-      it('030 — segmento inativo/inexistente → CatalogSegmentInvalidError e NENHUM INSERT (nada gravado pela metade)', async () => {
-        const { cli, chamadas } = cliente({ segmentos: [] });
+      it('091 — o `service_code` é lido NA transação, filtrando por serviço E paciente, antes de qualquer consulta ao catálogo', async () => {
+        const { cli, chamadas } = cliente({ servico: 'AT' });
+        mockConnect.mockResolvedValue(cli);
+        await repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: CORPO_NOVO });
+        const ordem = sqls(chamadas);
+        const iServico = ordem.findIndex((q) => /FROM patient_contracted_services WHERE id = \$1 AND patient_id = \$2/.test(q));
+        const iCatalogo = ordem.findIndex((q) => /FROM therapeutic_objective_icd_categories/.test(q));
+        expect(iServico).toBeGreaterThan(-1);
+        expect(iCatalogo).toBeGreaterThan(iServico);
+        const consultaServico = chamadas.find((c) => /FROM patient_contracted_services/.test(c.sql))!;
+        expect(consultaServico.params).toEqual(['svc-1', PACIENTE]);
+        // o catálogo é consultado pelo serviço lido e pela categoria derivada do código CRU (6A02.0 → 6A02)
+        const consultaCascata = chamadas.find((c) => /FROM therapeutic_objective_icd_categories/.test(c.sql))!;
+        expect(consultaCascata.params).toEqual(['AT', ['6A02']]);
+      });
+
+      it('091 — serviço que não é do paciente (sem linha) → ServiceNotOfPatientError e NENHUM INSERT', async () => {
+        const { cli, chamadas } = cliente({ servico: null });
         mockConnect.mockResolvedValue(cli);
         await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: CORPO_NOVO }))
-          .rejects.toBeInstanceOf(CatalogSegmentInvalidError);
+          .rejects.toBeInstanceOf(ServiceNotOfPatientError);
+        expect(chamadas.some((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))).toBe(false);
+      });
+
+      it('091 — objetivo fora do catálogo da categoria → PlanObjectiveInvalidError (422) e NENHUM INSERT; bloco sem marcação → PlanBlockIncompleteError', async () => {
+        const { cli, chamadas } = cliente();
+        mockConnect.mockResolvedValue(cli);
+        const fora = { ...BASE, diagnosisPlans: [{ ...BLOCO_U, specificObjectiveIds: ['o-de-outra-categoria'] }] };
+        await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: fora }))
+          .rejects.toBeInstanceOf(PlanObjectiveInvalidError);
+        const vazio = { ...BASE, diagnosisPlans: [{ diagnosisUri: 'u', specificObjectiveIds: [], activityIds: [] }] };
+        await expect(repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: vazio }))
+          .rejects.toBeInstanceOf(PlanBlockIncompleteError);
         expect(chamadas.some((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))).toBe(false);
       });
     });
@@ -500,19 +536,6 @@ describe('TherapeuticProjectRepository', () => {
       expect(ins.params[13]).toBe('uid-99');
       expect(ins.params).not.toContainEqual(CORPO.diagnoses);
     });
-
-    it('id de catálogo desconhecido/inativo → CatalogItemsUnknownError propaga (o controller responde 422)', async () => {
-      const { cli } = cliente();
-      mockConnect.mockResolvedValue(cli);
-      const p = repo().createVersion({
-        mode: 'new',
-        patientId: PACIENTE,
-        actorUid: 'uid-1',
-        version: { ...CORPO_NOVO, activityIds: ['a-1', 'a-sumida'] },
-      });
-      await expect(p).rejects.toBeInstanceOf(CatalogItemsUnknownError);
-      await expect(p).rejects.toMatchObject({ kind: 'activities', ids: ['a-sumida'] });
-    });
   });
 
   describe('createVersion — mode `edit`', () => {
@@ -530,23 +553,93 @@ describe('TherapeuticProjectRepository', () => {
       expect(v.version).toBe('V.1.2');
     });
 
-    it('030 — `edit` HERDA o segmento da versão de origem (cópia do snapshot; o catálogo não é consultado de novo)', async () => {
-      const { cli, chamadas } = cliente({
-        existentes: [row({ id: 'v-10', major: 1, minor: 0, segment: { id: 'seg-9', label: 'Segmento herdado' } })],
-      });
-      mockConnect.mockResolvedValue(cli);
-      await repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: CORPO });
-      const ins = chamadas.find((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))!;
-      expect(ins.params[15]).toBe(JSON.stringify({ id: 'seg-9', label: 'Segmento herdado' }));
-      expect(sqls(chamadas).some((s) => /FROM therapeutic_segments /.test(s))).toBe(false);
-    });
+    describe('091 — `edit` COPIA o snapshot da origem, sem reler o catálogo (DD-6)', () => {
+      const releuCatalogo = (chamadas: Array<{ sql: string }>) =>
+        sqls(chamadas).some((q) => /FROM therapeutic_(objective|activity)_icd_categories|FROM patient_contracted_services|WHERE c\.active AND c\.id = ANY/.test(q));
 
-    it('030 — `edit` de origem ANTERIOR à 496 (segment NULL) grava `null` — nunca inventa segmento', async () => {
-      const { cli, chamadas } = cliente({ existentes: [row({ id: 'v-10', major: 1, minor: 0, segment: null })] });
-      mockConnect.mockResolvedValue(cli);
-      await repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: CORPO });
-      const ins = chamadas.find((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))!;
-      expect(ins.params[15]).toBeNull();
+      it('091 — origem PLANA: copia `specific_objectives`/`activities`/`segment` da origem, `diagnosis_plans` NULL, nenhuma consulta ao catálogo', async () => {
+        const { cli, chamadas } = cliente({
+          existentes: [row({
+            id: 'v-10', major: 1, minor: 0,
+            specific_objectives: [{ id: 'o-1', label: 'Rótulo congelado' }],
+            activities: [{ id: 'a-1', label: 'Atividade congelada' }],
+            segment: { id: 'seg-9', label: 'Segmento herdado' },
+          })],
+        });
+        mockConnect.mockResolvedValue(cli);
+        await repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: CORPO });
+        const ins = chamadas.find((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))!;
+        expect(ins.params[8]).toBe(JSON.stringify([{ id: 'o-1', label: 'Rótulo congelado' }]));
+        expect(ins.params[9]).toBe(JSON.stringify([{ id: 'a-1', label: 'Atividade congelada' }]));
+        expect(ins.params[15]).toBe(JSON.stringify({ id: 'seg-9', label: 'Segmento herdado' }));
+        expect(ins.params[16]).toBeNull();
+        expect(releuCatalogo(chamadas)).toBe(false);
+      });
+
+      it('091 — origem plana ANTERIOR à 496 (segment NULL) grava `null` — nunca inventa segmento', async () => {
+        const { cli, chamadas } = cliente({ existentes: [row({ id: 'v-10', major: 1, minor: 0, segment: null })] });
+        mockConnect.mockResolvedValue(cli);
+        await repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: CORPO });
+        const ins = chamadas.find((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))!;
+        expect(ins.params[15]).toBeNull();
+      });
+
+      it('091 — origem POR DIAGNÓSTICO: copia `diagnosis_plans` (rótulos congelados, mesmo com o catálogo mudado), planas `[]`, segment NULL', async () => {
+        const congelado = { ...SNAPSHOT_U, objectives: [{ id: 'o-1', label: 'Rótulo de ANTES do renomear', description: null }] };
+        const { cli, chamadas } = cliente({ existentes: [origemPorDiagnostico({ id: 'v-10', diagnosis_plans: [congelado] })] });
+        mockConnect.mockResolvedValue(cli);
+        await repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: CORPO_BLOCOS });
+        const ins = chamadas.find((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))!;
+        expect(ins.params[8]).toBe('[]');
+        expect(ins.params[9]).toBe('[]');
+        expect(ins.params[15]).toBeNull();
+        expect(ins.params[16]).toBe(JSON.stringify([congelado]));
+        expect(releuCatalogo(chamadas)).toBe(false);
+      });
+
+      it('091 — `edit` por diagnóstico compara por BLOCO: mudar a marcação de um bloco → ptp_macro_locked [diagnosisPlans]; reordenar ids não muda', async () => {
+        const origem = origemPorDiagnostico({
+          id: 'v-10',
+          diagnoses: [{ uri: 'u', title: 'TEA' }, { uri: 'w', title: 'Outro' }],
+          diagnosis_plans: [
+            { ...SNAPSHOT_U, objectives: [{ id: 'o-1', label: 'A', description: null }, { id: 'o-2', label: 'B', description: null }] },
+            { ...SNAPSHOT_U, diagnosisUri: 'w', objectives: [{ id: 'o-3', label: 'C', description: null }] },
+          ],
+        });
+        const base = { ...BASE, diagnoses: [{ uri: 'u', title: 'TEA' }, { uri: 'w', title: 'Outro' }] };
+        const mesmo = { ...base, diagnosisPlans: [
+          { diagnosisUri: 'w', specificObjectiveIds: ['o-3'], activityIds: ['a-1'] },
+          { diagnosisUri: 'u', specificObjectiveIds: ['o-2', 'o-1'], activityIds: ['a-1'] },
+        ] };
+        const trocado = { ...base, diagnosisPlans: [
+          { diagnosisUri: 'u', specificObjectiveIds: ['o-1', 'o-2'], activityIds: ['a-1'] },
+          { diagnosisUri: 'w', specificObjectiveIds: ['o-1'], activityIds: ['a-1'] },
+        ] };
+        const ok = cliente({ existentes: [origem] });
+        mockConnect.mockResolvedValue(ok.cli);
+        await repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: mesmo });
+        expect(ok.chamadas.some((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))).toBe(true);
+        const mudou = cliente({ existentes: [origem] });
+        mockConnect.mockResolvedValue(mudou.cli);
+        const p = repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: trocado });
+        await expect(p).rejects.toBeInstanceOf(MacroFieldsLockedError);
+        await expect(p).rejects.toMatchObject({ fields: ['diagnosisPlans'] });
+        expect(mudou.chamadas.some((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))).toBe(false);
+      });
+
+      it('091 — formato do corpo diferente do da origem → PlanFormatMismatchError (`ptp_format_mismatch`), nos dois sentidos, sem INSERT', async () => {
+        const plana = cliente({ existentes: [row({ id: 'v-10', major: 1, minor: 0 })] });
+        mockConnect.mockResolvedValue(plana.cli);
+        const p1 = repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: CORPO_BLOCOS });
+        await expect(p1).rejects.toBeInstanceOf(PlanFormatMismatchError);
+        await expect(p1).rejects.toMatchObject({ code: 'ptp_format_mismatch' });
+        expect(plana.chamadas.some((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))).toBe(false);
+        const nova = cliente({ existentes: [origemPorDiagnostico({ id: 'v-10' })] });
+        mockConnect.mockResolvedValue(nova.cli);
+        await expect(repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: CORPO }))
+          .rejects.toBeInstanceOf(PlanFormatMismatchError);
+        expect(nova.chamadas.some((c) => /^INSERT INTO patient_therapeutic_projects/.test(c.sql))).toBe(false);
+      });
     });
 
     it('editar a 2.0 não interfere na major 1 — a minor é contada DENTRO da major de origem', async () => {
@@ -595,7 +688,6 @@ describe('TherapeuticProjectRepository', () => {
         ],
       });
       mockConnect.mockResolvedValue(cli);
-      const { VersionNotCurrentError } = await import('../TherapeuticProjectRepository');
       await expect(
         repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: CORPO }),
       ).rejects.toBeInstanceOf(VersionNotCurrentError);
@@ -606,7 +698,6 @@ describe('TherapeuticProjectRepository', () => {
       const vigente = row({ id: 'v-10', major: 1, minor: 0, clinical_context: 'contexto ORIGINAL' });
       const { cli, chamadas } = cliente({ existentes: [vigente] });
       mockConnect.mockResolvedValue(cli);
-      const { MacroFieldsLockedError } = await import('../TherapeuticProjectRepository');
       const corpoMudouMacro = { ...CORPO, clinicalContext: 'contexto MUDOU' };
       const p = repo().createVersion({ mode: 'edit', patientId: PACIENTE, actorUid: 'uid-1', fromVersionId: 'v-10', version: corpoMudouMacro });
       await expect(p).rejects.toBeInstanceOf(MacroFieldsLockedError);

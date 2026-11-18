@@ -1,73 +1,103 @@
-import { execFileSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { Pool } from 'pg';
+import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 
 /**
- * Spec 030 (F1, T011/T012) — seed `495_seed_therapeutic_segments.sql` contra banco REAL.
+ * Spec 091 (DF-1, CA-11) — o segmento terapêutico SAIU DE VEZ; este arquivo nasceu na spec 030 (seed 495).
  *
- * A fixture `tests/fixtures/segmentos-ana-care.txt` tem SÓ a 1ª coluna da planilha do Javier (os
- * rótulos; lex C10 — as colunas 2-3 nunca entram) e "Segmento Personalizado" fica de fora (DEC-41).
- * O arquivo é lido DENTRO dos casos, não no topo: antes da migration existir, o caso (1) tem de
- * falhar por contagem (esperado 13, recebido 0), não por ENOENT na coleta.
+ * Antes: provava 13 linhas ativas semeadas pela migration 495. Agora prova o oposto, contra banco REAL:
+ *   1. `therapeutic_segments` tem 0 linha ativa (a 586 desativou, nunca apagou: as 13 do seed 495 seguem lá,
+ *      inativas, `updated_by = 'migration:586'`) — a tabela fica para o `SegmentLabelsReader` do resumo de admissão;
+ *   2. `GET|POST|PATCH /api/admin/therapeutic-catalogs/segments` → 404, MESMO com o usuário tendo as células
+ *      `catalog_therapeutic_segments:*` no banco (grant no banco não revive a rota) e com o controle vivo
+ *      (`specific-objectives` → 200 com o mesmo token: o 404 não é app quebrado).
+ *
+ * Não reaplica o `.sql` do 495: depois da 586 ele INSERIRIA 13 linhas ativas (o ON CONFLICT só olha rótulo ativo).
  */
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
-const SEED_FILE = join(__dirname, '..', '..', 'migrations', '495_seed_therapeutic_segments.sql');
 const FIXTURE_FILE = join(__dirname, '..', 'fixtures', 'segmentos-ana-care.txt');
 
 const fixtureLabels = (): string[] => readFileSync(FIXTURE_FILE, 'utf8').split('\n').filter((l) => l.length > 0);
 
-/** Aplica o .sql como o runner de migrations faz: um `psql` com ON_ERROR_STOP; devolve o rc. */
-function applySeed(): number {
-  try {
-    execFileSync('psql', [DATABASE_URL, '-v', 'ON_ERROR_STOP=1', '-q', '-f', SEED_FILE], { stdio: ['ignore', 'pipe', 'pipe'] });
-    return 0;
-  } catch (err) {
-    return (err as { status?: number }).status ?? 1;
-  }
-}
-
-describe('migration 495 — seed dos segmentos Ana Care (banco real) @integration', () => {
+describe('091 — segmento terapêutico fora de vez: 0 ativos no banco e a rota /segments dá 404 (banco real) @integration', () => {
   let pool: Pool;
+  let app: AppDeFamilia;
+  const UID = 'pt091-seg-catalogo';
+  const GRUPO = 'PT091 Segmento fora';
+  const CATALOGO = '/api/admin/therapeutic-catalogs';
+  const CELULAS: Array<[string, string]> = [
+    ['catalog_therapeutic_objectives', 'read'],
+    ['catalog_therapeutic_segments', 'read'], ['catalog_therapeutic_segments', 'create'], ['catalog_therapeutic_segments', 'update'],
+  ];
+  const envAnterior: Record<string, string | undefined> = {};
+  const setEnv = (k: string, v: string): void => { envAnterior[k] = process.env[k]; process.env[k] = v; };
 
-  const seeded = async (): Promise<{ label: string; sort_order: number }[]> =>
-    (await pool.query<{ label: string; sort_order: number }>(
-      `SELECT label, sort_order FROM therapeutic_segments WHERE active AND created_by = 'seed:495' ORDER BY sort_order, lower(label)`,
-    )).rows;
+  const chamar = async (metodo: string, caminho: string, body?: unknown): Promise<number> =>
+    (await fetch(`${app.url}${caminho}`, {
+      method: metodo,
+      headers: { Authorization: tokenMock(UID), 'Content-Type': 'application/json' },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    })).status;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     pool = new Pool({ connectionString: DATABASE_URL, max: 2 });
-  });
-  afterAll(async () => {
-    await pool.end();
-  });
-
-  it('(1) a fixture tem 13 rótulos e o banco tem 13 linhas ativas com created_by=seed:495', async () => {
-    expect(fixtureLabels()).toHaveLength(13);
-    const { rows } = await pool.query<{ n: number }>(
-      `SELECT count(*)::int AS n FROM therapeutic_segments WHERE active AND created_by = 'seed:495'`,
+    await limparIamFixtures(pool, { uids: [UID], grupos: [GRUPO] });
+    await pool.query(
+      `INSERT INTO users (firebase_uid, email, display_name, role, status, is_active, tenant_id)
+       VALUES ($1, 'pt091-seg@e2e.local', 'Segmento 091', 'admin', 'ACTIVE', true, $2)`,
+      [UID, TENANT_E2E],
     );
-    expect(rows[0].n).toBe(13);
+    for (const [resource, action] of CELULAS) await garantirCelula(pool, { resource, action, category: 'Pacientes' });
+    await grupoComCelulas(pool, { nome: GRUPO, uid: UID, celulas: CELULAS });
+
+    setEnv('USE_MOCK_AUTH', 'true');
+    setEnv('PERMISSION_ENGINE_ENABLED', 'true');
+    setEnv('PERMISSION_ENFORCED_ROUTES', 'admin.patients');
+    setEnv('PERMISSION_CACHE_TTL_MS', '0');
+    setEnv('DATABASE_URL', DATABASE_URL);
+    const caseModule = await import('@modules/case');
+    app = await montarAppDeFamilia({
+      enforcedRoutes: 'admin.patients',
+      montarRotas: ({ app: express, auth, permissions }) =>
+        express.use('/api/admin', caseModule.createAdminTherapeuticProjectsRoutes(caseModule.buildAdminTherapeuticProjectsController(), auth, permissions)),
+    });
+  }, 30000);
+
+  afterAll(async () => {
+    await app?.fechar();
+    const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
+    await DatabaseConnection.getInstance().close();
+    await limparIamFixtures(pool, { uids: [UID], grupos: [GRUPO] });
+    await pool.end();
+    for (const [k, v] of Object.entries(envAnterior)) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
   });
 
-  it('(2) rótulos e sort_order estão na ordem da fixture (estritamente crescente)', async () => {
-    const rows = await seeded();
-    expect(rows.map((r) => r.label)).toEqual(fixtureLabels());
-    const ordens = rows.map((r) => r.sort_order);
-    expect(ordens).toEqual([...ordens].sort((a, b) => a - b));
-    expect(new Set(ordens).size).toBe(13);
+  it('(1) `therapeutic_segments` tem 0 linha ativa; as 13 do seed 495 seguem lá, todas inativas pela 586', async () => {
+    expect(fixtureLabels()).toHaveLength(13);
+    const { rows } = await pool.query<{ ativos: number; seed: number; seed_inativos: number }>(
+      `SELECT count(*) FILTER (WHERE active)::int AS ativos,
+              count(*) FILTER (WHERE created_by = 'seed:495')::int AS seed,
+              count(*) FILTER (WHERE created_by = 'seed:495' AND NOT active AND updated_by = 'migration:586')::int AS seed_inativos
+         FROM therapeutic_segments`,
+    );
+    expect(rows[0]).toEqual({ ativos: 0, seed: 13, seed_inativos: 13 });
   });
 
-  it('(3) "Personalizado" não aparece no .sql nem no banco', async () => {
-    expect(readFileSync(SEED_FILE, 'utf8')).not.toMatch(/personalizado/i);
+  it('(2) "Personalizado" não aparece no .sql do seed nem no banco', async () => {
+    expect(readFileSync(join(__dirname, '..', '..', 'migrations', '495_seed_therapeutic_segments.sql'), 'utf8')).not.toMatch(/personalizado/i);
     const { rows } = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM therapeutic_segments WHERE label ILIKE '%personalizado%'`);
     expect(rows[0].n).toBe(0);
   });
 
-  it('(4) aplicar o .sql 2× (ON_ERROR_STOP=1) dá rc=0 nas duas e continua 13', async () => {
-    const rcs = [applySeed(), applySeed()];
-    expect(rcs).toEqual([0, 0]);
-    expect(await seeded()).toHaveLength(13);
+  it('(3) GET, POST e PATCH em …/segments → 404 mesmo com as células de segmento no grupo; o controle vivo (specific-objectives) → 200', async () => {
+    expect(await chamar('GET', `${CATALOGO}/specific-objectives`)).toBe(200);
+    expect(await chamar('GET', `${CATALOGO}/segments`)).toBe(404);
+    expect(await chamar('POST', `${CATALOGO}/segments`, { label: 'E2E 091 segmento' })).toBe(404);
+    expect(await chamar('PATCH', `${CATALOGO}/segments/00000000-0000-0000-0000-000000000000`, { label: 'E2E 091 segmento' })).toBe(404);
+    expect((await pool.query(`SELECT count(*)::int AS n FROM therapeutic_segments WHERE label = 'E2E 091 segmento'`)).rows[0].n).toBe(0);
   });
 });

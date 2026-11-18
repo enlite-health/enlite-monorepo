@@ -27,15 +27,14 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
-import { escolherSegmento, primeiroSegmento } from '../helpers/pti-segmento-helper';
 import { escolherNoCombo } from '../helpers/combobox';
+import { CATEGORIA_NA_PLANILHA, primeiroPlano, escolherDiagnostico, marcarPlano, semearCatalogoSintetico, diagnosisPlansDaVersao } from '../helpers/pti-cascata-091';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
-const ICD_URI = `http://id.who.int/icd/entity/e2e-048-${RUN_ID}`;
-const CAP06_URI = `http://id.who.int/icd/entity/e2e-048-cap06-${RUN_ID}`;
-const CAP06_TITLE = `Trastornos mentales, del comportamiento y del neurodesarrollo (e2e 048 ${RUN_ID})`;
+const RELEASE = 'E2E091-P48'; // release de teste corrente sob o advisory lock (`is_current` é global)
+const URI_BASE = 'test://e2e091p48';
+const ICD_URI = `${URI_BASE}/${CATEGORIA_NA_PLANILHA}`;
 const ICD_TITLE = `Trastorno sintético 048 ${RUN_ID}`;
-const RELEASE = `e048-${RUN_ID}`;
 const PROFISSIONAL_NOME = 'Profesional QA 048';
 const CASE_NUMBER = 1048;
 const INTERNAL_SECRET = process.env.INTERNAL_TOKEN_SECRET ?? 'test-secret-for-e2e-only';
@@ -57,16 +56,6 @@ async function digitar(page: Page, selector: string, texto: string): Promise<voi
   await campo.click();
   await expect(campo).toBeFocused();
   await page.keyboard.type(texto);
-}
-
-async function marcarPrimeiras(page: Page, id: string, n: number): Promise<void> {
-  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
-  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
-  await gatilhoDoCampo.click();
-  const opcoes = root.locator('[role="option"] button');
-  await expect(opcoes.first()).toBeVisible();
-  for (let i = 0; i < n; i++) await opcoes.nth(i).click();
-  await fecharLista(page);
 }
 
 /**
@@ -105,17 +94,11 @@ async function preencherNuevo(page: Page): Promise<void> {
   await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('tp-service')).toHaveText('Cuidador'); // serviceId = Cuidador (o seed não tem faixa de horário, então não há sufixo de h/sem)
   await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
-  // Segmento (MACRO, obrigatório no "Nuevo"): escolhido pelo gesto humano no Combobox (abrir, buscar, clicar a opção pelo rótulo).
-  await escolherSegmento(page, primeiroSegmento().label);
-  const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
-  await page.getByTestId('tp-icd-input').click();
-  await page.keyboard.type('sintetico 048');
-  expect((await search).status()).toBe(200);
-  await page.getByTestId('tp-icd-option-0').click();
+  // 091: Paso 1 (o único serviço já vem escolhido) → Paso 2 diagnóstico pela busca → Paso 3/4 objetivo e atividade do bloco.
+  await escolherDiagnostico(page, ICD_TITLE, 'sintetico 048');
   await digitar(page, '#tp-clinicalContext', 'Sintesis clinica 048 digitada por humano');
   await digitar(page, '#tp-generalObjective', 'Objetivo general 048 digitado por humano');
-  await marcarPrimeiras(page, 'tp-specificObjectives', 1);
-  await marcarPrimeiras(page, 'tp-activities', 1);
+  await marcarPlano(page, ICD_URI, primeiroPlano('CAREGIVER'));
   await page.locator('#tp-startDate').click();
   await page.keyboard.type('09012026');
   await page.locator('#tp-endDate').click();
@@ -147,16 +130,16 @@ test.describe('PT — "Todavía no hay registro" / "No necesita" nos contatos + 
     ['patient_services', 'read'], ['patient_family', 'read'], ['patient_care_team', 'read'],
     ['patient_clinical', 'read'], ['patient_clinical', 'write'],
     ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'create'], ['patient_therapeutic_project', 'update'],
-    ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'], ['catalog_therapeutic_segments', 'read'],
+    ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'],
     ['own_notifications', 'read'], ['own_notifications', 'update'],
   ];
 
-  test.beforeAll(() => {
+  let soltarCatalogo: () => void = () => undefined;
+
+  test.beforeAll(async () => {
     seed = seedActivatablePatient(720000, { withDiagnosis: false });
     safeSql(`UPDATE patients SET case_number = ${CASE_NUMBER} WHERE id = '${seed.patientId}'`);
-    runSQL(`INSERT INTO terminology.icd_releases (release, entity_count, is_current, promoted_at, promoted_by) VALUES ('${RELEASE}', 1, true, now(), 'e2e-048') ON CONFLICT (release) DO UPDATE SET is_current = true, promoted_at = now(), promoted_by = 'e2e-048'`);
-    runSQL(`INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf) VALUES ('${ICD_URI}', '${RELEASE}', '6E48', '${ICD_TITLE}', 'Synthetic disorder 048', '06', NULL, 'stem', true) ON CONFLICT (icd_uri, release) DO NOTHING`);
-    runSQL(`INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf) SELECT '${CAP06_URI}', '${RELEASE}', '06', '${CAP06_TITLE}', NULL, '06', NULL, 'chapter', false WHERE NOT EXISTS (SELECT 1 FROM terminology.icd_entities WHERE release = '${RELEASE}' AND kind = 'chapter' AND code = '06')`);
+    soltarCatalogo = await semearCatalogoSintetico(RELEASE, URI_BASE, [{ code: CATEGORIA_NA_PLANILHA, title: ICD_TITLE }]);
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-048', 'e2e-048') RETURNING id`).split('\n')[0].trim();
     profissionalId = runSQL(`INSERT INTO patient_professionals (patient_id, name, source, active, created_by, specialty) VALUES ('${seed.patientId}', '${PROFISSIONAL_NOME}', 'admin_manual', true, 'e2e-048', 'PHYSIOTHERAPIST') RETURNING id`).split('\n')[0].trim();
     expect(profissionalId).toMatch(/^[0-9a-f-]{36}$/);
@@ -172,8 +155,7 @@ test.describe('PT — "Todavía no hay registro" / "No necesita" nos contatos + 
     safeSql(`DELETE FROM notification_events WHERE patient_id = '${seed.patientId}'`);
     runSQL(`DELETE FROM patients WHERE id = '${seed.patientId}'`);
     cleanupPatientDeep(seed.patientId);
-    safeSql(`DELETE FROM terminology.icd_entities WHERE icd_uri IN ('${ICD_URI}', '${CAP06_URI}')`);
-    safeSql(`DELETE FROM terminology.icd_releases WHERE release = '${RELEASE}'`);
+    soltarCatalogo();
     cleanupStaffAndGroup(operadorUid, operadorGroupId);
     cleanupStaffAndGroup(masterUid, masterGroupId);
     safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name LIKE 'PT048 % ${RUN_ID}'`);
@@ -260,9 +242,7 @@ test.describe('PT — "Todavía no hay registro" / "No necesita" nos contatos + 
 
     // Forçando pela API: 403 nomeando a célula, e nada é gravado.
     const antes = scalar(`SELECT count(*) FROM patient_therapeutic_projects WHERE patient_id = '${seed.patientId}'`);
-    // O corpo é VÁLIDO (objetivos/atividades da V1.0, texto igual): o 403 vem da CÉLULA, não do schema.
-    const objetivos = scalar(`SELECT jsonb_path_query_array(specific_objectives, '$[*].id') #>> '{}' FROM patient_therapeutic_projects WHERE id = '${v10}'`);
-    const atividades = scalar(`SELECT jsonb_path_query_array(activities, '$[*].id') #>> '{}' FROM patient_therapeutic_projects WHERE id = '${v10}'`);
+    // O corpo é VÁLIDO (plano por diagnóstico da V1.0, texto igual): o 403 vem da CÉLULA, não do schema.
     const forcadoValido = await request.post(`${ABAC_API_URL}/api/admin/patients/${seed.patientId}/therapeutic-projects`, {
       headers: { Authorization: `Bearer ${tokenFor(operador)}` },
       data: {
@@ -270,7 +250,7 @@ test.describe('PT — "Todavía no hay registro" / "No necesita" nos contatos + 
         version: {
           contractedServiceId: serviceId, modality: 'ONLINE', diagnoses: [{ uri: ICD_URI, title: ICD_TITLE }],
           clinicalContext: 'Sintesis clinica 048 digitada por humano', generalObjective: 'Objetivo general 048 digitado por humano',
-          specificObjectiveIds: JSON.parse(objetivos), activityIds: JSON.parse(atividades), startDate: '2026-01-09', endDate: '2026-12-31',
+          diagnosisPlans: diagnosisPlansDaVersao(v10), startDate: '2026-01-09', endDate: '2026-12-31',
           contactRefs: [], careTeamIds: [], contactStatus: { RESPONSIBLE: 'PENDING', CARE_TEAM: 'PENDING', COVERAGE: 'NOT_NEEDED' },
         },
       },

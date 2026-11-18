@@ -18,6 +18,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { runSQL } from '../helpers/patient-detail-c-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
+import { escolherNoCombo } from '../helpers/combobox';
 import { tokenFor, type MockUser } from '../helpers/abac-stack-helper';
 
 const STAFF_EMAIL = `e2e.cat.${Date.now()}@enlite.health`;
@@ -51,7 +52,7 @@ test.describe('spec 017 — catálogo do projeto terapêutico: um HUMANO lista, 
     expect(seedAtivos).toBeGreaterThanOrEqual(8); // o seed da 415; outra suíte pode ter deixado mais
   });
   test.afterAll(() => {
-    runSQL(`DELETE FROM therapeutic_specific_objectives WHERE label = '${LABEL}'`);
+    runSQL(`DELETE FROM therapeutic_specific_objectives WHERE lower(btrim(label)) = lower('${LABEL}')`);
     try { runSQL(`DELETE FROM users WHERE email = '${STAFF_EMAIL}'`); } catch { /* limpeza não esconde o resultado */ }
   });
 
@@ -78,6 +79,7 @@ test.describe('spec 017 — catálogo do projeto terapêutico: um HUMANO lista, 
     const modal = page.getByTestId('therapeutic-catalog-form-modal');
     await expect(modal).toBeVisible();
     await expect(page.getByTestId('therapeutic-catalog-form-save')).toBeDisabled();
+    // Spec 091: o objetivo tem Servicio obrigatório — sem ele "Guardar" segue desabilitado.
     const input = page.getByTestId('therapeutic-catalog-label-input');
     await input.click();
     await expect(input).toBeFocused();
@@ -92,12 +94,16 @@ test.describe('spec 017 — catálogo do projeto terapêutico: um HUMANO lista, 
     await page.keyboard.type(DESCRIPTION);
     expect(await descricao.inputValue()).toBe(DESCRIPTION);
     await expect(page.getByTestId('therapeutic-catalog-description-count')).toContainText(`${DESCRIPTION.length}/1000`);
+    await expect(page.getByTestId('therapeutic-catalog-form-save')).toBeDisabled();
+    await escolherNoCombo(page, page.getByTestId('therapeutic-catalog-service-select'), 'Acompañante terapéutico');
+    await expect(page.getByTestId('therapeutic-catalog-form-save')).toBeEnabled();
     const created = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-catalogs\/specific-objectives$/.test(r.url()));
     await page.getByTestId('therapeutic-catalog-form-save').click();
     const body = (await (await created).json()) as { data: { id: string; label: string; description: string | null; active: boolean } };
     expect(body.data.label).toBe(LABEL);
     expect(body.data.description).toBe(DESCRIPTION);
     expect(body.data.active).toBe(true);
+    expect(runSQL(`SELECT service_code FROM therapeutic_specific_objectives WHERE id = '${body.data.id}'`).trim()).toBe('AT');
     novoId = body.data.id;
     await expect(modal).toHaveCount(0);
     await expect(page.getByTestId(`therapeutic-catalog-label-${novoId}`)).toHaveText(LABEL);
@@ -106,16 +112,21 @@ test.describe('spec 017 — catálogo do projeto terapêutico: um HUMANO lista, 
     await expect(page.getByTestId(`therapeutic-catalog-status-${novoId}`)).toContainText('Activa');
     expect(ativos()).toBe(seedAtivos + 1);
     expect(runSQL(`SELECT created_by = 'seed:415' FROM therapeutic_specific_objectives WHERE id = '${novoId}'`).trim()).toBe('f'); // autor real, não o seed
-    await expect(table).toHaveScreenshot('catalogo-objetivos-com-novo.png', {
-      mask: [page.getByTestId(`therapeutic-catalog-row-${novoId}`)],
-      maxDiffPixelRatio: 0.02,
-    });
+    // Spec 091: com o catálogo da planilha no banco a tabela tem >100 linhas — a foto é do CABEÇALHO (colunas: Servicio e CIE-11, sem Segmento) e da linha nova.
+    await expect(table.locator('thead')).toHaveScreenshot('catalogo-objetivos-cabecalho.png', { maxDiffPixelRatio: 0.02 });
+    await expect(page.getByTestId(`therapeutic-catalog-service-${novoId}`)).toHaveText('Acompañante terapéutico');
 
     // ── Caminho alternativo: o MESMO texto (caixa e espaços diferentes) → 409 ───────────────
     await page.getByTestId('therapeutic-catalog-new-btn').click();
     await expect(modal).toBeVisible();
     await page.getByTestId('therapeutic-catalog-label-input').click();
     await page.keyboard.type(`  ${LABEL.toUpperCase()}  `);
+    // Spec 091: a unicidade é por (serviço, título, descrição) entre os ativos — o duplicado repete as TRÊS.
+    const descDup = page.getByTestId('therapeutic-catalog-description-input');
+    await descDup.click();
+    await expect(descDup).toBeFocused();
+    await page.keyboard.type(DESCRIPTION);
+    await escolherNoCombo(page, page.getByTestId('therapeutic-catalog-service-select'), 'Acompañante terapéutico');
     const recusa = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-catalogs\/specific-objectives$/.test(r.url()));
     await page.getByTestId('therapeutic-catalog-form-save').click();
     expect((await recusa).status()).toBe(409);

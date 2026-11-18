@@ -130,6 +130,21 @@
     "profileLink": "Meu perfil",
     "profileAria": "Meu perfil — {{name}}"
   },
+  "therapeuticProjectForm": {
+    "stepService": "Passo 1 · Serviço",
+    "stepDiagnoses": "Passo 2 · Diagnósticos",
+    "stepObjectives": "Passo 3 · Objetivos específicos",
+    "stepActivities": "Passo 4 · Atividades",
+    "noCatalog": "Não há catálogo para este diagnóstico e serviço. Use Objetivo geral e Contexto clínico.",
+    "pickObjectiveFirst": "Escolha ao menos um objetivo para ver as atividades.",
+    "planIncomplete": "Escolha ao menos um objetivo e uma atividade neste diagnóstico.",
+    "chooseServiceFirst": "Escolha o serviço para continuar.",
+    "frequency": "Frequência: {{value}}",
+    "noCatalogAt": "Sem catálogo para este diagnóstico e serviço em {{date}}",
+    "catalogChanged": "O catálogo deste diagnóstico mudou. Revise os objetivos e atividades marcados.",
+    "formatMismatch": "Esta versão usa outro formato de objetivos. Recarregue a página e tente de novo.",
+    "cascadeError": "Não foi possível carregar o catálogo. Tente de novo."
+  },
   "topNavbar": {
     "greeting": "Olá",
     "mainPage": "essa é sua página principal",
@@ -1404,7 +1419,6 @@
       "templateDrafts": "Registrar mensagem",
       "catalogObjectives": "Objetivos específicos",
       "catalogActivities": "Rotina e atividades",
-      "catalogSegments": "Segmentos (Ana Care)",
       "catalogServiceExitReasons": "Motivos de saída",
       "catalogServiceShiftTemplates": "Guardias",
       "aiPrompts": "Prompts de IA",
@@ -4658,9 +4672,6 @@
             "ptpContactInactive": "Um dos contatos escolhidos já não está ativo. Escolha de novo."
           },
           "modalityPlaceholder": "Escolha a modalidade",
-          "segment": "Segmento (Ana Care)",
-          "segmentPlaceholder": "Escolha o segmento",
-          "segmentEmpty": "Não há segmentos ativos — peça ao administrador do catálogo",
           "responsibles": "Responsáveis",
           "externalContacts": "Contatos externos",
           "coverageContacts": "Contatos da cobertura",
@@ -5389,7 +5400,6 @@
             "catalog_therapeutic_activities": "Catálogo de rotina e atividades (projeto terapêutico)",
             "catalog_service_exit_reasons": "Catálogo de motivos de saída do serviço",
             "catalog_service_shift_templates": "Catálogo de guardias predefinidas",
-            "catalog_therapeutic_segments": "Catálogo de segmentos (Ana Care)",
             "anacare_hours": "Conferência de horas do Ana Care",
             "patient_conversation": "Conversa do paciente",
             "own_notifications": "Minhas notificações",
@@ -5879,9 +5889,6 @@
         },
         "patients.catalogActivities": {
           "label": "Pacientes: Catálogo de rotina e atividades"
-        },
-        "patients.catalogSegments": {
-          "label": "Pacientes: Catálogo de segmentos (Ana Care)"
         },
         "patients.catalogServiceExitReasons": {
           "label": "Pacientes: Catálogo de motivos de saída"
@@ -6491,10 +6498,6 @@
           "title": "Rotina e atividades do projeto terapêutico",
           "subtitle": "As opções de \"Rutina y Actividades\" do projeto terapêutico. Editadas aqui, sem deploy. Desativar não apaga: versões antigas guardam o texto que tinham."
         },
-        "segments": {
-          "title": "Segmentos do projeto terapêutico (Ana Care)",
-          "subtitle": "Os segmentos que a equipe escolhe para enquadrar o projeto terapêutico de cada paciente (os da planilha da Ana Care). Editados aqui, sem deploy. Desativar não apaga: versões antigas do projeto guardam o texto que tinham."
-        },
         "serviceExitReasons": {
           "title": "Motivos de saída",
           "subtitle": "As opções que a equipe escolhe ao registrar a saída de um prestador de um serviço. Editadas aqui, sem deploy. Desativar não apaga: registros anteriores guardam o motivo que tinham.",
@@ -6517,7 +6520,6 @@
         "label": "Texto",
         "title": "Título",
         "description": "Descrição",
-        "segment": "Segmento",
         "status": "Estado",
         "actions": "Ações"
       },
@@ -6532,17 +6534,28 @@
         "descriptionCounter": "{{count}}/{{max}} caracteres",
         "sortOrder": "Ordem",
         "sortOrderHelp": "Posição na lista (menor primeiro). Vazio = no fim.",
-        "segment": "Segmento (Ana Care)",
-        "segmentNone": "Sem segmento",
-        "segmentHelp": "Opcional. No projeto terapêutico, as opções do segmento escolhido aparecem primeiro.",
-        "segmentInactive": "{{label}} (inactivo)",
         "save": "Salvar",
         "saving": "Salvando…"
       },
       "errors": {
         "duplicate": "Já existe uma opção ativa com esse texto.",
         "invalidLabel": "O texto não pode ter dados de uma pessoa (e-mail, documento, telefone) nem passar de 200 caracteres."
-      }
+      },
+      "service": "Serviço",
+      "serviceAT": "Acompanhante terapêutico",
+      "serviceCAREGIVER": "Cuidado",
+      "icdCategories": "CID-11",
+      "icdCount": "{{count}} categorias",
+      "icdPanelTitle": "Diagnósticos CID-11 onde aparece",
+      "icdSearch": "Buscar código ou diagnóstico",
+      "icdAdd": "Adicionar",
+      "icdRemove": "Remover",
+      "icdRemoveCascade": "Também serão removidos {{count}} vínculos de atividades",
+      "icdNotInRelease": "Não está na versão CID-11 vigente",
+      "objective": "Objetivo",
+      "frequency": "Frequência sugerida",
+      "filterIcd": "Vinculado a CID-11",
+      "icdError": "Não foi possível concluir a operação."
     },
     "notifications": {
       "mentioned": "{{actor}} mencionou você em {{patient}}",

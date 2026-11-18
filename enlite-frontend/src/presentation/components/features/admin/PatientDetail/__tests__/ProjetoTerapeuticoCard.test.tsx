@@ -110,6 +110,8 @@ const versao = (over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
   specificObjectives: [],
   activities: [],
   pathologyTypes: [],
+  objectivesLayout: 'flat',
+  diagnosisPlans: null,
   startDate: '2026-09-01',
   endDate: '2026-12-01',
   annulledAt: null,

@@ -28,15 +28,16 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
-import { escolherSegmento, primeiroSegmento } from '../helpers/pti-segmento-helper';
 import { escolherNoCombo } from '../helpers/combobox';
+import {
+  CATEGORIA_NA_PLANILHA, primeiroPlano, type Plano, escolherDiagnostico, marcarPlano, semearCatalogoSintetico, diagnosisPlansDaVersao,
+} from '../helpers/pti-cascata-091';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
-const ICD_URI = `http://id.who.int/icd/entity/e2e-pr7-${RUN_ID}`;
-const CAP06_URI = `http://id.who.int/icd/entity/e2e-pr7-cap06-${RUN_ID}`;
-const CAP06_TITLE = `Trastornos mentales, del comportamiento y del neurodesarrollo (e2e pr7 ${RUN_ID})`;
+const RELEASE = 'E2E091-PR7'; // release de teste corrente sob o advisory lock (`is_current` é global)
+const URI_BASE = 'test://e2e091pr7';
+const ICD_URI = `${URI_BASE}/${CATEGORIA_NA_PLANILHA}`;
 const ICD_TITLE = `Trastorno sintético PR-7 ${RUN_ID}`;
-const RELEASE = `pr7-${RUN_ID}`;
 const FAMILIAR_NOME = 'Familiar QA';
 const PROFISSIONAL_NOME = 'Profesional QA';
 
@@ -47,17 +48,6 @@ async function digitar(page: Page, selector: string, texto: string): Promise<str
   await expect(campo).toBeFocused();
   await page.keyboard.type(texto);
   return campo.inputValue();
-}
-
-/** Abre um multi-select do DS e marca as N primeiras opções (catálogo de objetivos/atividades). */
-async function marcarPrimeiras(page: Page, id: string, n: number): Promise<void> {
-  const gatilhoDoCampo = page.locator(`#${id}`); // o `id` do Combobox é do GATILHO
-  const root = gatilhoDoCampo.locator('..'); // o painel mora no pai do gatilho
-  await gatilhoDoCampo.click();
-  const opcoes = root.locator('[role="option"] button');
-  await expect(opcoes.first()).toBeVisible();
-  for (let i = 0; i < n; i++) await opcoes.nth(i).click();
-  await page.keyboard.press('Escape');
 }
 
 /** Abre um multi-select do DS e marca a opção CUJO TEXTO contém `texto` (contatos/equipe — nunca "os N primeiros"). */
@@ -71,15 +61,8 @@ async function marcarPorTexto(page: Page, id: string, texto: string): Promise<vo
   await page.keyboard.press('Escape');
 }
 
-function seedIcd(): void {
-  runSQL(`INSERT INTO terminology.icd_releases (release, entity_count, is_current, promoted_at, promoted_by) VALUES ('${RELEASE}', 1, true, now(), 'e2e-018-pr7') ON CONFLICT (release) DO UPDATE SET is_current = true, promoted_at = now(), promoted_by = 'e2e-018-pr7'`);
-  runSQL(`INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf) VALUES ('${ICD_URI}', '${RELEASE}', '6EP7', '${ICD_TITLE}', 'Synthetic disorder PR-7', '06', NULL, 'stem', true) ON CONFLICT (icd_uri, release) DO NOTHING`);
-  runSQL(`INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf) SELECT '${CAP06_URI}', '${RELEASE}', '06', '${CAP06_TITLE}', NULL, '06', NULL, 'chapter', false WHERE NOT EXISTS (SELECT 1 FROM terminology.icd_entities WHERE release = '${RELEASE}' AND kind = 'chapter' AND code = '06')`);
-}
-function cleanupIcd(): void {
-  runSQL(`DELETE FROM terminology.icd_entities WHERE icd_uri IN ('${ICD_URI}', '${CAP06_URI}')`);
-  safeSql(`DELETE FROM terminology.icd_releases WHERE release = '${RELEASE}'`);
-}
+/** Semeia o release sintético (lock do release corrente); devolve o encerramento que restaura o anterior e solta o lock. */
+const seedIcd = (): Promise<() => void> => semearCatalogoSintetico(RELEASE, URI_BASE, [{ code: CATEGORIA_NA_PLANILHA, title: ICD_TITLE }]);
 
 test.use({ viewport: { width: 1600, height: 1000 }, video: 'on', acceptDownloads: true });
 
@@ -88,6 +71,7 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
   test.setTimeout(300_000);
 
   let seed: { patientId: string; addressId: string; stamp: string };
+  let soltarCatalogo: () => void = () => undefined;
   let serviceId: string;
   let familiarId = '';
   let profissionalId = '';
@@ -100,9 +84,9 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
   let completaGroupId = '';
   let semExportGroupId = '';
 
-  test.beforeAll(() => {
+  test.beforeAll(async () => {
     seed = seedActivatablePatient(710000, { withDiagnosis: false }); // faixa própria — 700000-709999 é do 017 humano
-    seedIcd();
+    soltarCatalogo = await seedIcd();
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
     expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
 
@@ -128,16 +112,15 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
             ('patient_address', 'read', 'e2e PR-7 humano', 'Pacientes'),
             ('patient_identity', 'read', 'e2e PR-7 humano', 'Pacientes'),
             ('catalog_therapeutic_objectives', 'read', 'e2e PR-7 humano', 'Pacientes'),
-            ('catalog_therapeutic_activities', 'read', 'e2e PR-7 humano', 'Pacientes'),
-            ('catalog_therapeutic_segments', 'read', 'e2e PR-7 humano', 'Pacientes')
+            ('catalog_therapeutic_activities', 'read', 'e2e PR-7 humano', 'Pacientes')
           ON CONFLICT DO NOTHING`);
 
     completaGroupId = seedStaffInGroup({ uid: completaUid, email: completaEmail, groupName: `PR7 Completa ${RUN_ID}`, country: 'AR' }).groupId;
     for (const [resource, action] of [
-      ['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_therapeutic_project', 'export'],
-      ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_family', 'read'], ['patient_family', 'write'],
+      ['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_therapeutic_project', 'create'], ['patient_therapeutic_project', 'export'],
+      ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_family', 'read'], ['patient_family', 'write'], ['patient_family', 'create'], ['patient_family', 'update'],
       ['patient_care_team', 'read'], ['patient_services', 'read'], ['patient_coverage', 'read'], ['patient_address', 'read'], ['patient_identity', 'read'],
-      ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'], ['catalog_therapeutic_segments', 'read'],
+      ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'],
     ]) grantCell(completaGroupId, resource, action);
 
     // Mesmo conjunto amplo do `completa`, MENOS `patient_therapeutic_project:export` — é a ÚNICA
@@ -150,14 +133,14 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
       ['patient', 'read'], ['patient_therapeutic_project', 'read'],
       ['patient_clinical', 'read'], ['patient_family', 'read'], ['patient_care_team', 'read'],
       ['patient_services', 'read'], ['patient_coverage', 'read'], ['patient_address', 'read'], ['patient_identity', 'read'],
-      ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'], ['catalog_therapeutic_segments', 'read'],
+      ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'],
     ]) grantCell(semExportGroupId, resource, action); // SEM `:export` — é o que o teste "extra" prova
   });
 
   test.afterAll(() => {
     runSQL(`DELETE FROM patients WHERE id = '${seed.patientId}'`);
     cleanupPatientDeep(seed.patientId);
-    cleanupIcd();
+    soltarCatalogo();
     cleanupStaffAndGroup(completaUid, completaGroupId);
     cleanupStaffAndGroup(semExportUid, semExportGroupId);
     safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name LIKE 'PR7 % ${RUN_ID}'`);
@@ -177,26 +160,15 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('tp-save')).toBeDisabled();
 
-    await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
+    await expect(page.getByTestId('tp-service')).toHaveText('Cuidador'); // Paso 1: o único serviço contratado (Cuidador) já vem escolhido
     await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Híbrida'); // HYBRID = Híbrida
     await expect(page.getByTestId('tp-modality')).toContainText('Híbrida');
-    // spec 030: segmento obrigatório no "Nuevo" — pelo teclado.
-    await escolherSegmento(page, primeiroSegmento().label);
 
-    const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
-    await page.getByTestId('tp-icd-input').click();
-    await page.keyboard.type('sintetico pr-7');
-    expect((await search).status()).toBe(200);
-    const opcaoIcd = page.getByTestId('tp-icd-option-0');
-    await expect(opcaoIcd).toBeVisible({ timeout: 10_000 });
-    await expect(opcaoIcd).toContainText(ICD_TITLE);
-    await opcaoIcd.click();
-    await expect(page.getByTestId('tp-diagnosis-chip')).toHaveCount(1);
+    await escolherDiagnostico(page, ICD_TITLE, 'sintetico pr-7');
 
     expect(await digitar(page, '#tp-clinicalContext', 'Sintesis clinica PR-7 digitada por humano')).toBe('Sintesis clinica PR-7 digitada por humano');
     expect(await digitar(page, '#tp-generalObjective', 'Objetivo general PR-7 digitado por humano')).toBe('Objetivo general PR-7 digitado por humano');
-    await marcarPrimeiras(page, 'tp-specificObjectives', 2);
-    await marcarPrimeiras(page, 'tp-activities', 3);
+    await marcarPlano(page, ICD_URI, primeiroPlano('CAREGIVER')); // Paso 3 e 4: 1 objetivo e 1 atividade do bloco
     await page.locator('#tp-startDate').click();
     await page.keyboard.type('09012026');
     await page.locator('#tp-endDate').click();
@@ -277,8 +249,9 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
     await expect(page.getByTestId('tp-service-locked')).toBeVisible();
     await expect(page.getByTestId('tp-clinicalContext-locked')).toContainText('Sintesis clinica PR-7 digitada por humano');
     await expect(page.getByTestId('tp-generalObjective-locked')).toContainText('Objetivo general PR-7 digitado por humano');
-    await expect(page.getByTestId('tp-specificObjectives-locked')).toBeVisible();
-    await expect(page.getByTestId('tp-activities-locked')).toBeVisible();
+    // 091: em versão por diagnóstico, objetivos e atividades são blocos SÓ LEITURA (um por diagnóstico).
+    await expect(page.getByTestId(`tp-objectives-locked-${ICD_URI}`)).toBeVisible();
+    await expect(page.getByTestId(`tp-activities-locked-${ICD_URI}`)).toBeVisible();
     // D328/R5, régua dura: NENHUM input/textarea/select desabilitado ou readonly no drawer inteiro.
     await expect(drawer.locator('input:disabled, textarea:disabled, select:disabled, [readonly]')).toHaveCount(0);
     // MICRO continua editável: modalidade é um <select> normal, sem trava.
@@ -299,8 +272,7 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
           diagnoses: [{ uri: ICD_URI, title: ICD_TITLE }],
           clinicalContext: 'Sintesis clinica PR-7 digitada por humano',
           generalObjective: 'Objetivo general PR-7 digitado por humano — TENTATIVA DE FRAUDE',
-          specificObjectiveIds: await specificObjectiveIdsDaV10(),
-          activityIds: await activityIdsDaV10(),
+          diagnosisPlans: diagnosisPlansDaVersao(v10),
           startDate: '2026-01-09',
           endDate: '2026-12-31',
           contactRefs: [],
@@ -388,12 +360,12 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
           diagnoses: [{ uri: ICD_URI, title: ICD_TITLE }],
           clinicalContext: 'Sintesis clinica PR-7 digitada por humano',
           generalObjective: 'Objetivo general PR-7 digitado por humano',
-          specificObjectiveIds: await specificObjectiveIdsDaV10(),
-          activityIds: await activityIdsDaV10(),
+          diagnosisPlans: diagnosisPlansDaVersao(v10),
           startDate: '2026-01-09',
           endDate: '2026-12-31',
           contactRefs: [],
           careTeamIds: [],
+          contactStatus: {},
         },
       },
     });
@@ -413,12 +385,12 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
           diagnoses: [{ uri: ICD_URI, title: ICD_TITLE }],
           clinicalContext: 'Sintesis clinica PR-7 digitada por humano',
           generalObjective: 'Objetivo general PR-7 digitado por humano',
-          specificObjectiveIds: await specificObjectiveIdsDaV10(),
-          activityIds: await activityIdsDaV10(),
+          diagnosisPlans: diagnosisPlansDaVersao(v10),
           startDate: '2026-01-09',
           endDate: '2026-12-31',
           contactRefs: [],
           careTeamIds: [],
+          contactStatus: {},
         },
       },
     });
@@ -441,17 +413,6 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
     await expect(drawer).toBeVisible();
     await expect(page.getByTestId('therapeutic-project-export-btn')).toHaveCount(0);
   });
-
-  // ── Helpers de dados (lidos do banco para reconstruir o corpo MACRO exato da V1.0 — `specific_objectives`/
-  // `activities` são snapshot JSONB `[{id,label}]` na própria linha, migration 416, não tabela de junção) ──
-  async function specificObjectiveIdsDaV10(): Promise<string[]> {
-    const out = runSQL(`SELECT string_agg(elem->>'id', ',') FROM patient_therapeutic_projects, jsonb_array_elements(specific_objectives) elem WHERE id = '${v10}'`).trim();
-    return out ? out.split(',') : [];
-  }
-  async function activityIdsDaV10(): Promise<string[]> {
-    const out = runSQL(`SELECT string_agg(elem->>'id', ',') FROM patient_therapeutic_projects, jsonb_array_elements(activities) elem WHERE id = '${v10}'`).trim();
-    return out ? out.split(',') : [];
-  }
 });
 
 /**
@@ -471,11 +432,11 @@ test.describe('spec 018/PR-7 — conserto 14/09: editar a vigente mantém contat
   test.setTimeout(300_000);
 
   let seed: { patientId: string; addressId: string; stamp: string };
+  let soltarCatalogo: () => void = () => undefined;
   let serviceId: string;
   let familiarId = '';
   let profissionalId = '';
-  let objId = '';
-  let actId = '';
+  let plano: Plano;
   let v10 = '';
   let v10CreatedAt = '';
   let v11 = '';
@@ -494,8 +455,7 @@ test.describe('spec 018/PR-7 — conserto 14/09: editar a vigente mantém contat
     diagnoses: [{ uri: ICD_URI, title: ICD_TITLE }],
     clinicalContext: 'Sintesis clinica conserto 14/09',
     generalObjective: 'Objetivo general conserto 14/09',
-    specificObjectiveIds: [objId],
-    activityIds: [actId],
+    diagnosisPlans: [{ diagnosisUri: ICD_URI, specificObjectiveIds: [plano.objetivo.id], activityIds: [plano.atividade.id] }],
     startDate: '2026-01-09',
     endDate: '2026-12-31',
     contactRefs: [{ kind: 'EXTERNAL', id: familiarId }],
@@ -506,17 +466,13 @@ test.describe('spec 018/PR-7 — conserto 14/09: editar a vigente mantém contat
 
   test.beforeAll(async ({ request }) => {
     seed = seedActivatablePatient(711000, { withDiagnosis: false }); // faixa própria — 700000-709999 e 710000-719999 são de outros arquivos
-    seedIcd(); // idempotente (ON CONFLICT) — reaproveita ICD_URI/RELEASE já seedados pelo describe acima
+    soltarCatalogo = await seedIcd();
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
     expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
     familiarId = runSQL(`INSERT INTO patient_external_contacts (patient_id, relation, name, active, created_by) VALUES ('${seed.patientId}', 'OTHER', '${FAMILIAR}', true, 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
     profissionalId = runSQL(`INSERT INTO patient_professionals (patient_id, name, source, active, created_by, specialty) VALUES ('${seed.patientId}', '${PROFISSIONAL}', 'admin_manual', true, 'e2e-018-pr7', 'PHYSIOTHERAPIST') RETURNING id`).split('\n')[0].trim();
-    // Catálogo GLOBAL (não por paciente) — qualquer item ATIVO serve; os outros describes deste
-    // arquivo já provam a seleção de catálogo em si.
-    objId = scalar(`SELECT id FROM therapeutic_specific_objectives WHERE active ORDER BY sort_order LIMIT 1`);
-    actId = scalar(`SELECT id FROM therapeutic_activities WHERE active ORDER BY sort_order LIMIT 1`);
-    expect(objId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(actId).toMatch(/^[0-9a-f-]{36}$/);
+    // Plano do catálogo (091): objetivo da categoria no serviço do paciente + uma atividade dele, lidos do banco.
+    plano = primeiroPlano('CAREGIVER');
 
     psql(`INSERT INTO iam.permissions (resource, action, description, category) VALUES
             ('patient', 'read', 'e2e PR-7 c14', 'Pacientes'),
@@ -532,21 +488,20 @@ test.describe('spec 018/PR-7 — conserto 14/09: editar a vigente mantém contat
             ('patient_address', 'read', 'e2e PR-7 c14', 'Pacientes'),
             ('patient_identity', 'read', 'e2e PR-7 c14', 'Pacientes'),
             ('catalog_therapeutic_objectives', 'read', 'e2e PR-7 c14', 'Pacientes'),
-            ('catalog_therapeutic_activities', 'read', 'e2e PR-7 c14', 'Pacientes'),
-            ('catalog_therapeutic_segments', 'read', 'e2e PR-7 c14', 'Pacientes')
+            ('catalog_therapeutic_activities', 'read', 'e2e PR-7 c14', 'Pacientes')
           ON CONFLICT DO NOTHING`);
     groupId = seedStaffInGroup({ uid, email, groupName: `PR7 Conserto14 ${RUN_ID}`, country: 'AR' }).groupId;
     for (const [resource, action] of [
-      ['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'],
-      ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_family', 'read'], ['patient_family', 'write'],
+      ['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_therapeutic_project', 'create'],
+      ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_family', 'read'], ['patient_family', 'write'], ['patient_family', 'create'], ['patient_family', 'update'],
       ['patient_care_team', 'read'], ['patient_services', 'read'], ['patient_coverage', 'read'], ['patient_address', 'read'], ['patient_identity', 'read'],
-      ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'], ['catalog_therapeutic_segments', 'read'],
+      ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'],
     ]) grantCell(groupId, resource, action);
 
     // V1.0 por API — setup (mesmo molde do `alt 1`/`alt 3` do describe acima), com os 2 contatos.
     const criado = await request.post(`${ABAC_API_URL}/api/admin/patients/${seed.patientId}/therapeutic-projects`, {
       headers: auth(),
-      data: { mode: 'new', version: { ...corpoBase(), segmentId: primeiroSegmento().id } }, // spec 030: segmento obrigatório no "Nuevo"
+      data: { mode: 'new', version: corpoBase() }, // 091: o "Nuevo" é por diagnóstico (sem segmento)
     });
     expect(criado.status()).toBe(201);
     const bodyCriado = (await criado.json()) as { data: { id: string; version: string; createdAt: string } };
@@ -558,7 +513,7 @@ test.describe('spec 018/PR-7 — conserto 14/09: editar a vigente mantém contat
   test.afterAll(() => {
     runSQL(`DELETE FROM patients WHERE id = '${seed.patientId}'`);
     cleanupPatientDeep(seed.patientId);
-    cleanupIcd();
+    soltarCatalogo();
     cleanupStaffAndGroup(uid, groupId);
     safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name = 'PR7 Conserto14 ${RUN_ID}'`);
   });
@@ -685,6 +640,7 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
   test.setTimeout(300_000);
 
   let seed: { patientId: string; addressId: string; stamp: string };
+  let soltarCatalogo: () => void = () => undefined;
   let serviceId: string;
   let familiarId = '';
   let profissionalId = '';
@@ -697,9 +653,9 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
   const email = `${uid}@e2e.test`;
   let groupId = '';
 
-  test.beforeAll(() => {
+  test.beforeAll(async () => {
     seed = seedActivatablePatient(712000, { withDiagnosis: false }); // faixa própria — 710000/711000 já usadas neste arquivo
-    seedIcd(); // idempotente (ON CONFLICT) — reaproveita ICD_URI/RELEASE já seedados acima
+    soltarCatalogo = await seedIcd();
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
     expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
     familiarId = runSQL(`INSERT INTO patient_external_contacts (patient_id, relation, name, active, created_by) VALUES ('${seed.patientId}', 'OTHER', '${FAMILIAR}', true, 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
@@ -720,22 +676,21 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
             ('patient_address', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
             ('patient_identity', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
             ('catalog_therapeutic_objectives', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
-            ('catalog_therapeutic_activities', 'read', 'e2e PR-7 imediato14', 'Pacientes'),
-            ('catalog_therapeutic_segments', 'read', 'e2e PR-7 imediato14', 'Pacientes')
+            ('catalog_therapeutic_activities', 'read', 'e2e PR-7 imediato14', 'Pacientes')
           ON CONFLICT DO NOTHING`);
     groupId = seedStaffInGroup({ uid, email, groupName: `PR7 Imediato14 ${RUN_ID}`, country: 'AR' }).groupId;
     for (const [resource, action] of [
-      ['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'],
-      ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_family', 'read'], ['patient_family', 'write'],
+      ['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_therapeutic_project', 'create'],
+      ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_family', 'read'], ['patient_family', 'write'], ['patient_family', 'create'], ['patient_family', 'update'],
       ['patient_care_team', 'read'], ['patient_services', 'read'], ['patient_coverage', 'read'], ['patient_address', 'read'], ['patient_identity', 'read'],
-      ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'], ['catalog_therapeutic_segments', 'read'],
+      ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'],
     ]) grantCell(groupId, resource, action);
   });
 
   test.afterAll(() => {
     runSQL(`DELETE FROM patients WHERE id = '${seed.patientId}'`);
     cleanupPatientDeep(seed.patientId);
-    cleanupIcd();
+    soltarCatalogo();
     cleanupStaffAndGroup(uid, groupId);
     safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name = 'PR7 Imediato14 ${RUN_ID}'`);
   });
@@ -752,23 +707,14 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('tp-save')).toBeDisabled();
 
-    await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
+    await expect(page.getByTestId('tp-service')).toHaveText('Cuidador'); // Paso 1: o único serviço contratado já vem escolhido
     await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
-    await escolherSegmento(page, primeiroSegmento().label); // spec 030: obrigatório no "Nuevo"
 
-    const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
-    await page.getByTestId('tp-icd-input').click();
-    await page.keyboard.type('sintetico pr-7');
-    expect((await search).status()).toBe(200);
-    const opcaoIcd = page.getByTestId('tp-icd-option-0');
-    await expect(opcaoIcd).toBeVisible({ timeout: 10_000 });
-    await opcaoIcd.click();
-    await expect(page.getByTestId('tp-diagnosis-chip')).toHaveCount(1);
+    await escolherDiagnostico(page, ICD_TITLE, 'sintetico pr-7');
 
     expect(await digitar(page, '#tp-clinicalContext', 'Sintesis clinica imediato14')).toBe('Sintesis clinica imediato14');
     expect(await digitar(page, '#tp-generalObjective', 'Objetivo general imediato14')).toBe('Objetivo general imediato14');
-    await marcarPrimeiras(page, 'tp-specificObjectives', 1);
-    await marcarPrimeiras(page, 'tp-activities', 1);
+    await marcarPlano(page, ICD_URI, primeiroPlano('CAREGIVER'));
     await page.locator('#tp-startDate').click();
     await page.keyboard.type('09012026');
     await page.locator('#tp-endDate').click();
@@ -833,28 +779,26 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
 });
 
 /**
- * Conserto do gate (achado do PR-7, 14/09): `useTherapeuticCatalogs` buscava os 3 catálogos no
- * MESMO `Promise.all` — sem a célula `catalog_therapeutic_segments:read` a API devolvia 403 SÓ em
- * `segments`, e isso derrubava `specific-objectives`/`activities` junto: o drawer mostrava só
- * `therapeutic-project-catalogs-error` e o form nunca abria, mesmo com o resto do grupo completo.
- * Cenário PRÓPRIO, self-contained: staff com o MESMO grupo completo do describe principal deste
- * arquivo, MENOS `catalog_therapeutic_segments:read` — prova que hoje o form abre, objetivos/
- * atividades aparecem, o filtro de segmento (que já era escondido com catálogo vazio, task 7.7)
- * fica escondido, e dá pra criar a V1.0 pela tela.
+ * Conserto do gate (achado do PR-7, 14/09), ajustado na 091: `useTherapeuticCatalogs` buscava os catálogos no MESMO `Promise.all` — a falta de
+ * UMA célula de catálogo (então `catalog_therapeutic_segments:read`) derrubava o form inteiro (`therapeutic-project-catalogs-error`).
+ * Na 091 o catálogo de segmentos saiu do "Nuevo"; o cenário segue valendo como regressão: staff com o grupo completo MENOS a célula de
+ * segmentos (que ainda existe no catálogo de permissões e pode estar em grupos antigos) abre o form, NÃO vê campo de segmento, completa a
+ * cascata (serviço → diagnóstico → objetivo → atividade) e SALVA a V1.0 pela tela.
  */
-test.describe('spec 018/PR-7 — conserto do gate: form abre SEM a célula de segmentos (catálogo de segmentos vira vazio) @integration', () => {
+test.describe('spec 018/PR-7 — conserto do gate: form abre SEM a célula de segmentos e a cascata salva a V1.0 @integration', () => {
   test.setTimeout(300_000);
 
   let seed: { patientId: string; addressId: string; stamp: string };
+  let soltarCatalogo: () => void = () => undefined;
   let serviceId: string;
 
   const uid = `e2e-pr7-semsegments-${RUN_ID}`;
   const email = `${uid}@e2e.test`;
   let groupId = '';
 
-  test.beforeAll(() => {
+  test.beforeAll(async () => {
     seed = seedActivatablePatient(713000, { withDiagnosis: false }); // faixa própria — 710000/711000/712000 já usadas neste arquivo
-    seedIcd(); // idempotente (ON CONFLICT) — reaproveita ICD_URI/RELEASE já seedados acima
+    soltarCatalogo = await seedIcd();
     serviceId = runSQL(`INSERT INTO patient_contracted_services (patient_id, service_code, weekly_hours, address_id, created_by, updated_by) VALUES ('${seed.patientId}', 'CAREGIVER', 20, '${seed.addressId}', 'e2e-018-pr7', 'e2e-018-pr7') RETURNING id`).split('\n')[0].trim();
     expect(serviceId).toMatch(/^[0-9a-f-]{36}$/);
 
@@ -871,13 +815,12 @@ test.describe('spec 018/PR-7 — conserto do gate: form abre SEM a célula de se
             ('patient_address', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
             ('patient_identity', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
             ('catalog_therapeutic_objectives', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
-            ('catalog_therapeutic_activities', 'read', 'e2e PR-7 semsegments', 'Pacientes'),
-            ('catalog_therapeutic_segments', 'read', 'e2e PR-7 semsegments', 'Pacientes')
+            ('catalog_therapeutic_activities', 'read', 'e2e PR-7 semsegments', 'Pacientes')
           ON CONFLICT DO NOTHING`);
     groupId = seedStaffInGroup({ uid, email, groupName: `PR7 SemSegments ${RUN_ID}`, country: 'AR' }).groupId;
     // Grupo COMPLETO (mesmo conjunto do describe principal), MENOS `catalog_therapeutic_segments:read`.
     for (const [resource, action] of [
-      ['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'],
+      ['patient', 'read'], ['patient_therapeutic_project', 'read'], ['patient_therapeutic_project', 'write'], ['patient_therapeutic_project', 'create'],
       ['patient_clinical', 'read'], ['patient_clinical', 'write'], ['patient_family', 'read'],
       ['patient_care_team', 'read'], ['patient_services', 'read'], ['patient_coverage', 'read'], ['patient_address', 'read'], ['patient_identity', 'read'],
       ['catalog_therapeutic_objectives', 'read'], ['catalog_therapeutic_activities', 'read'],
@@ -888,12 +831,13 @@ test.describe('spec 018/PR-7 — conserto do gate: form abre SEM a célula de se
   test.afterAll(() => {
     runSQL(`DELETE FROM patients WHERE id = '${seed.patientId}'`);
     cleanupPatientDeep(seed.patientId);
-    cleanupIcd();
+    soltarCatalogo();
     cleanupStaffAndGroup(uid, groupId);
     safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name = 'PR7 SemSegments ${RUN_ID}'`);
   });
 
-  test('staff sem catalog_therapeutic_segments:read abre "Nuevo", vê objetivos/atividades, vê o aviso de segmentos vazios e NÃO consegue salvar (segmento é obrigatório — spec 030)', async ({ page }) => {
+  test('staff sem catalog_therapeutic_segments:read abre "Nuevo", não vê campo de segmento, completa a cascata e salva a V1.0', async ({ page }) => {
+    const plano = primeiroPlano('CAREGIVER');
     await loginAs(page, { uid, email, role: 'admin', country: 'AR' });
     await page.goto(`/admin/patients/${seed.patientId}`);
     const card = page.getByTestId('projeto-terapeutico-card');
@@ -902,43 +846,31 @@ test.describe('spec 018/PR-7 — conserto do gate: form abre SEM a célula de se
 
     const drawer = page.getByTestId('therapeutic-project-drawer');
     await expect(drawer).toBeVisible();
-    // O achado do gate: SEM o conserto, esta linha nunca aparece — o drawer fica preso em
-    // `therapeutic-project-catalogs-error` (segments 403 derrubando objetivos/atividades junto).
+    // O achado do gate: SEM o conserto, esta linha nunca aparece — o drawer fica preso em `therapeutic-project-catalogs-error`.
     await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('therapeutic-project-catalogs-error')).toHaveCount(0);
     await expect(page.getByTestId('tp-save')).toBeDisabled();
+    await expect(page.getByTestId('tp-segment')).toHaveCount(0); // 091: o campo saiu do "Nuevo"; não há aviso de segmentos vazios
 
-    // Spec 030: o segmento é obrigatório no "Nuevo" e o catálogo veio vazio por 403 (falta de célula):
-    // o campo mostra o aviso "No hay segmentos activos" em vez de uma lista vazia muda.
-    await expect(page.getByTestId('tp-segment')).toBeVisible();
-    await expect(page.getByTestId('tp-segment-empty')).toContainText('No hay segmentos activos');
-
-    await expect(page.getByTestId('tp-service')).toContainText('Cuidador · 20 h/sem'); // serviceId = Cuidador, 20 h
+    await expect(page.getByTestId('tp-service')).toHaveText('Cuidador'); // Paso 1: o único serviço contratado já vem escolhido
     await escolherNoCombo(page, page.getByTestId('tp-modality'), 'Presencial'); // IN_PERSON = Presencial
-
-    const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
-    await page.getByTestId('tp-icd-input').click();
-    await page.keyboard.type('sintetico pr-7');
-    expect((await search).status()).toBe(200);
-    const opcaoIcd = page.getByTestId('tp-icd-option-0');
-    await expect(opcaoIcd).toBeVisible({ timeout: 10_000 });
-    await opcaoIcd.click();
-    await expect(page.getByTestId('tp-diagnosis-chip')).toHaveCount(1);
-
+    await escolherDiagnostico(page, ICD_TITLE, 'sintetico pr-7');
     expect(await digitar(page, '#tp-clinicalContext', 'Sintesis clinica semsegments')).toBe('Sintesis clinica semsegments');
     expect(await digitar(page, '#tp-generalObjective', 'Objetivo general semsegments')).toBe('Objetivo general semsegments');
-    // Objetivos/atividades aparecem e são selecionáveis — a prova de que o catálogo delas NÃO foi
-    // derrubado pela falha de `segments`.
-    await marcarPrimeiras(page, 'tp-specificObjectives', 1);
-    await marcarPrimeiras(page, 'tp-activities', 1);
+    // Objetivos/atividades aparecem e são marcáveis — o catálogo da cascata NÃO depende da célula de segmentos.
+    await marcarPlano(page, ICD_URI, plano);
     await page.locator('#tp-startDate').click();
     await page.keyboard.type('09012026');
     await page.locator('#tp-endDate').click();
     await page.keyboard.type('12312026');
     await expect(page.locator('#tp-endDate')).toHaveValue('2026-12-31');
 
-    // Tudo preenchido, menos o segmento (sem catálogo não há o que escolher): "Salvar" segue travado e nada é gravado.
-    await expect(page.getByTestId('tp-save')).toBeDisabled();
-    expect(Number(runSQL(`SELECT count(*) FROM patient_therapeutic_projects WHERE patient_id = '${seed.patientId}'`))).toBe(0);
+    await expect(page.getByTestId('tp-save')).toBeEnabled();
+    const criada = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
+    await page.getByTestId('tp-save').click();
+    const resp = await criada;
+    expect(resp.status(), await resp.text()).toBe(201);
+    expect(((await resp.json()) as { data: { version: string } }).data.version).toBe('V.1.0');
+    expect(Number(runSQL(`SELECT count(*) FROM patient_therapeutic_projects WHERE patient_id = '${seed.patientId}'`))).toBe(1);
   });
 });

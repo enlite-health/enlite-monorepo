@@ -27,8 +27,23 @@ import { reportError } from '@shared/logging';
 import type { Response } from 'express';
 import { AdminTherapeuticProjectsController } from '../AdminTherapeuticProjectsController';
 import { ServiceNotOfPatientError, SourceVersionNotFoundError, PatientNotFoundForProjectError, WaiveContactForbiddenError } from '../../../infrastructure/TherapeuticProjectRepository';
-import { CatalogItemsUnknownError, CatalogLabelTakenError, CatalogSegmentInvalidError } from '../../../infrastructure/TherapeuticCatalogRepository';
+import {
+  CatalogItemsUnknownError,
+  CatalogLabelTakenError,
+  CatalogItemNeedsOwnerError,
+  ActivityCategoriesOutsideObjectiveError,
+  CatalogObjectiveInvalidError,
+  CatalogServiceInvalidError,
+} from '../../../infrastructure/TherapeuticCatalogRepository';
+import { InvalidIcdCategoryCodeError } from '../../../domain/icdCategory';
+import {
+  CatalogLinkOwnerNotFoundError,
+  IcdCategoryAlreadyLinkedError,
+  IcdCategoryNotInObjectiveError,
+} from '../../../domain/TherapeuticCatalogLinkErrors';
 import { DiagnosisUnknownError } from '../../../application/pathologySegments';
+import { PlanFormatMismatchError } from '../../../domain/TherapeuticProject';
+import { PlanActivityInvalidError, PlanBlockIncompleteError, PlanBlockWithoutCatalogError, PlanObjectiveInvalidError } from '../../../domain/TherapeuticDiagnosisPlan';
 import { therapeuticTrailAction } from '../../../application/therapeuticProjectAccess';
 import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
 
@@ -53,17 +68,16 @@ const CORPO_NOVO = {
     diagnoses: [{ uri: 'http://id.who.int/icd/entity/1', code: '6A02', title: 'TEA' }],
     clinicalContext: TEXTO_CLINICO,
     generalObjective: 'mejorar autonomía',
-    specificObjectiveIds: [OBJ_ID],
-    activityIds: [ACT_ID],
+    diagnosisPlans: [{ diagnosisUri: 'http://id.who.int/icd/entity/1', specificObjectiveIds: [OBJ_ID], activityIds: [ACT_ID] }],
     startDate: '2026-01-01',
     endDate: '2026-06-30',
-    segmentId: SEGMENT_ID,
     contactStatus: {},
   },
 };
 
-/** O corpo do `mode:'edit'`: a mesma forma SEM `segmentId` (030: MACRO, só muda com "Nuevo"; o `.strict()` o recusa). */
-const { segmentId: _segmentIdDoNovo, ...VERSAO_DO_EDIT } = CORPO_NOVO.version;
+/** O corpo do `mode:'edit'` de origem PLANA (091, §9.4): a forma-base + ids planos, SEM `diagnosisPlans`. */
+const { diagnosisPlans: _blocosDoNovo, ...VERSAO_DO_EDIT_BASE } = CORPO_NOVO.version;
+const VERSAO_DO_EDIT = { ...VERSAO_DO_EDIT_BASE, specificObjectiveIds: [OBJ_ID], activityIds: [ACT_ID] };
 
 const VERSAO = {
   id: VERSION_ID,
@@ -82,6 +96,8 @@ const VERSAO = {
   activities: [{ id: ACT_ID, label: 'Atividade A' }],
   pathologyTypes: [{ id: '06', label: 'Trastornos mentales, del comportamiento y del neurodesarrollo' }],
   segment: { id: SEGMENT_ID, label: 'AT para Pacientes con TEA' },
+  diagnosisPlans: null,
+  objectivesLayout: 'flat',
   startDate: '2026-01-01',
   endDate: '2026-06-30',
   annulledAt: null,
@@ -94,6 +110,16 @@ const VERSAO = {
 };
 
 const ITEM = { id: ITEM_ID, label: 'Vínculo terapéutico', sortOrder: 10, active: true, deactivatedAt: null, createdAt: 'x', updatedAt: 'x' };
+
+/** Portas da 091 (obrigatórias no construtor): fakes inertes quando o teste não as usa. */
+const PORTAS_091 = [{ execute: jest.fn() }, {}, { search: jest.fn() }] as const;
+/** Monta o controller com as 7 posições antigas + as 3 portas da 091. */
+function novoController(antigas: unknown[] = [], portas: readonly unknown[] = PORTAS_091) {
+  const [repo, catalogs, contacts, coverage, statuses, reminders, exitReasons] = antigas;
+  return new (AdminTherapeuticProjectsController as unknown as new (...a: unknown[]) => AdminTherapeuticProjectsController)(
+    repo, catalogs, contacts, coverage, statuses, reminders, exitReasons, ...portas,
+  );
+}
 
 function mockReq(overrides: Record<string, unknown> = {}) {
   return { params: {}, body: {}, query: {}, ...overrides } as never;
@@ -125,7 +151,7 @@ function ctrl(
   statuses: Record<string, unknown> = stubStatuses(),
   reminders: Record<string, unknown> = { remainingReminderDates: jest.fn().mockResolvedValue(null) },
 ) {
-  return new AdminTherapeuticProjectsController(repo as never, catalogs as never, contacts as never, coverageContacts as never, statuses as never, reminders as never);
+  return novoController([repo, catalogs, contacts, coverageContacts, statuses, reminders]);
 }
 const corpoDaResposta = (res: { json: jest.Mock }) => res.json.mock.calls[0][0];
 
@@ -136,7 +162,7 @@ describe('AdminTherapeuticProjectsController', () => {
   });
 
   it('sem repos injetados, constrói os dois de produção — e nenhum toca o pool no construtor', () => {
-    expect(() => new AdminTherapeuticProjectsController()).not.toThrow();
+    expect(() => novoController()).not.toThrow();
   });
 
   describe('list', () => {
@@ -185,7 +211,7 @@ describe('AdminTherapeuticProjectsController', () => {
       const res = mockRes();
       await ctrl(repo).list(mockReq({ params: { id: PATIENT_ID } }), res);
       expect(corpoDaResposta(res).data.fieldClass).toEqual({
-        macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds', 'segmentId'],
+        macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds', 'diagnosisPlans'],
         micro: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'],
       });
     });
@@ -445,7 +471,7 @@ describe('AdminTherapeuticProjectsController', () => {
         '../../../infrastructure/PatientCoverageEmergencyContactRepository',
       ) as { PatientCoverageEmergencyContactRepository: jest.Mock };
       const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
-      const controller = new AdminTherapeuticProjectsController(repo as never, {} as never, stubContacts() as never);
+      const controller = novoController([repo, {}, stubContacts()]);
       const corpo = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, contactRefs: [{ kind: 'COVERAGE', id: PAT_ID }] } };
       // SEM `patient_care_team:read`: força o código a consultar o kind (getKind) — é essa consulta
       // que toca o getter `coverageContacts` e materializa a instância (o stub devolve `null`, não
@@ -622,7 +648,7 @@ describe('AdminTherapeuticProjectsController', () => {
     });
 
     describe('030 — segmento (lex C3, C7)', () => {
-      it('030 — o `segmentId` do corpo chega ao repositório no `new` (o `{id,label}` é do repositório, nunca do corpo)', async () => {
+      it('091 — os `diagnosisPlans` do corpo chegam ao repositório no `new` (o snapshot é do repositório, nunca do corpo)', async () => {
         const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
         const res = mockRes();
         await ctrl(repo).create(
@@ -630,18 +656,8 @@ describe('AdminTherapeuticProjectsController', () => {
           res,
         );
         expect(res.status).toHaveBeenCalledWith(201);
-        expect(repo.createVersion.mock.calls[0][0].version.segmentId).toBe(SEGMENT_ID);
-        expect(corpoDaResposta(res).data.segment).toEqual({ id: SEGMENT_ID, label: 'AT para Pacientes con TEA' });
-      });
-
-      it('030 — 422 `catalog_segment_invalid` SEM `details`: o corpo inteiro não contém o uuid enviado, e não há reportError', async () => {
-        const repo = { createVersion: jest.fn().mockRejectedValue(new CatalogSegmentInvalidError()) };
-        const res = mockRes();
-        await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_clinical:write'] }), res);
-        expect(res.status).toHaveBeenCalledWith(422);
-        expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Unknown or inactive segment', code: 'catalog_segment_invalid' });
-        expect(JSON.stringify(corpoDaResposta(res))).not.toContain(SEGMENT_ID);
-        expect(reportError).not.toHaveBeenCalled();
+        expect(repo.createVersion.mock.calls[0][0].version.diagnosisPlans).toEqual(CORPO_NOVO.version.diagnosisPlans);
+        expect(repo.createVersion.mock.calls[0][0].version).not.toHaveProperty('segmentId');
       });
 
       it('030 — 403 sem `patient_clinical:create` mesmo com `segmentId` válido: nomeia a célula e o repo nem é chamado', async () => {
@@ -797,6 +813,27 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(reportError).not.toHaveBeenCalled();
     });
 
+    it('091 — 422 nomeado dos blocos por diagnóstico e do formato: só índice/ids, nunca a URI, sem reportError', async () => {
+      const casos: Array<[Error, string, unknown]> = [
+        [new PlanObjectiveInvalidError(1, [OBJ_ID]), 'ptp_plan_objective_invalid', { diagnosisIndex: 1, ids: [OBJ_ID] }],
+        [new PlanActivityInvalidError(0, [ACT_ID]), 'ptp_plan_activity_invalid', { diagnosisIndex: 0, ids: [ACT_ID] }],
+        [new PlanBlockIncompleteError(2), 'ptp_plan_block_incomplete', { diagnosisIndex: 2 }],
+        [new PlanBlockWithoutCatalogError(0), 'ptp_plan_block_without_catalog', { diagnosisIndex: 0 }],
+      ];
+      for (const [erro, code, details] of casos) {
+        const res = mockRes();
+        await ctrl({ createVersion: jest.fn().mockRejectedValue(erro) }).create(mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO }), res);
+        expect(res.status).toHaveBeenCalledWith(422);
+        expect(corpoDaResposta(res)).toMatchObject({ success: false, code, details });
+        for (const d of CORPO_NOVO.version.diagnoses) expect(JSON.stringify(corpoDaResposta(res))).not.toContain(d.uri);
+      }
+      const res = mockRes();
+      await ctrl({ createVersion: jest.fn().mockRejectedValue(new PlanFormatMismatchError()) }).create(mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(corpoDaResposta(res)).toMatchObject({ code: 'ptp_format_mismatch' });
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
     it('503 `TERMINOLOGY_UNAVAILABLE` quando a porta de terminologia está fora — nunca 500 mudo, sem reportError', async () => {
       const repo = { createVersion: jest.fn().mockRejectedValue(new TerminologyUnavailableError('catálogo indisponível')) };
       const res = mockRes();
@@ -923,7 +960,7 @@ describe('AdminTherapeuticProjectsController', () => {
 
   describe('listServiceExitReasonOptions (492)', () => {
     const exitCtrl = (reader: Record<string, unknown>) =>
-      new AdminTherapeuticProjectsController({} as never, {} as never, stubContacts() as never, stubCoverageContacts() as never, undefined, undefined, reader as never);
+      novoController([{}, {}, stubContacts(), stubCoverageContacts(), undefined, undefined, reader]);
 
     it('200 com `{ items: [{ code, label }] }` vindo só dos ativos (o reader é quem filtra `active`)', async () => {
       const reader = { listActiveOptions: jest.fn().mockResolvedValue([{ code: 'OTHER', label: 'Otro' }]) };
@@ -947,7 +984,7 @@ describe('AdminTherapeuticProjectsController', () => {
     it('400 quando o rótulo carrega dado de pessoa (lex C18) — só o nome do campo volta', async () => {
       const catalogs = { create: jest.fn() };
       const res = mockRes();
-      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'contato 11 98765-4321' } }), res);
+      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'contato 11 98765-4321', objectiveId: OBJ_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(400);
       expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Invalid body', details: { fields: ['label'] } });
       expect(catalogs.create).not.toHaveBeenCalled();
@@ -957,12 +994,12 @@ describe('AdminTherapeuticProjectsController', () => {
       const catalogs = { create: jest.fn().mockResolvedValue(ITEM) };
       const ok = mockRes();
       const dentro = 'DESCRIPCION-SINTETICA-' + 'a'.repeat(1000 - 'DESCRIPCION-SINTETICA-'.length);
-      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'TITULO-SINTETICO-1', description: dentro } }), ok);
+      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'TITULO-SINTETICO-1', description: dentro, objectiveId: OBJ_ID } }), ok);
       expect(ok.status).toHaveBeenCalledWith(201);
-      expect(catalogs.create).toHaveBeenCalledWith('activities', { label: 'TITULO-SINTETICO-1', description: dentro, actorUid: 'uid-1' });
+      expect(catalogs.create).toHaveBeenCalledWith('activities', { label: 'TITULO-SINTETICO-1', description: dentro, objectiveId: OBJ_ID, actorUid: 'uid-1' });
       const ruim = mockRes();
       const fora = 'DESCRIPCION-SINTETICA-' + 'b'.repeat(1001 - 'DESCRIPCION-SINTETICA-'.length);
-      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'TITULO-SINTETICO-1', description: fora } }), ruim);
+      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'TITULO-SINTETICO-1', description: fora, objectiveId: OBJ_ID } }), ruim);
       expect(ruim.status).toHaveBeenCalledWith(400);
       expect(corpoDaResposta(ruim)).toEqual({ success: false, error: 'Invalid body', details: { fields: ['description'] } });
       expect(JSON.stringify(corpoDaResposta(ruim))).not.toContain('DESCRIPCION-SINTETICA');
@@ -972,35 +1009,35 @@ describe('AdminTherapeuticProjectsController', () => {
     it('201 com o rótulo e o ator carimbado', async () => {
       const catalogs = { create: jest.fn().mockResolvedValue(ITEM) };
       const res = mockRes();
-      await ctrl({}, catalogs).createCatalogItem('specific-objectives', mockReq({ body: { label: 'Vínculo terapéutico', sortOrder: 30 } }), res);
+      await ctrl({}, catalogs).createCatalogItem('specific-objectives', mockReq({ body: { label: 'Vínculo terapéutico', sortOrder: 30, serviceCode: 'AT' } }), res);
       expect(res.status).toHaveBeenCalledWith(201);
-      expect(catalogs.create).toHaveBeenCalledWith('specific-objectives', { label: 'Vínculo terapéutico', sortOrder: 30, actorUid: 'uid-1' });
+      expect(catalogs.create).toHaveBeenCalledWith('specific-objectives', { label: 'Vínculo terapéutico', sortOrder: 30, serviceCode: 'AT', actorUid: 'uid-1' });
       expect(corpoDaResposta(res)).toEqual({ success: true, data: ITEM });
     });
 
     it('409 quando o rótulo já existe entre os ATIVOS', async () => {
       const catalogs = { create: jest.fn().mockRejectedValue(new CatalogLabelTakenError()) };
       const res = mockRes();
-      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'Repetido' } }), res);
+      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'Repetido', objectiveId: OBJ_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(409);
       expect(corpoDaResposta(res)).toMatchObject({ code: 'catalog_label_taken' });
       expect(reportError).not.toHaveBeenCalled();
     });
 
-    it('US-17/430: 422 quando `segmentId` é de segmento inativo/inexistente — SEM ecoar o id, sem reportError', async () => {
-      const catalogs = { create: jest.fn().mockRejectedValue(new CatalogSegmentInvalidError()) };
+    it('091: `segmentId` no corpo → 400 (strict: o catálogo de segmentos acabou), sem ecoar o valor, e o repositório nem é chamado', async () => {
+      const catalogs = { create: jest.fn() };
       const res = mockRes();
-      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'X', segmentId: PAT_ID } }), res);
-      expect(res.status).toHaveBeenCalledWith(422);
-      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Unknown or inactive segment', code: 'catalog_segment_invalid' });
+      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'X', objectiveId: ITEM_ID, segmentId: PAT_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(corpoDaResposta(res)).toMatchObject({ success: false, error: 'Invalid body' });
       expect(JSON.stringify(corpoDaResposta(res))).not.toContain(PAT_ID);
-      expect(reportError).not.toHaveBeenCalled();
+      expect(catalogs.create).not.toHaveBeenCalled();
     });
 
     it('500 no erro genérico', async () => {
       const catalogs = { create: jest.fn().mockRejectedValue(new Error('boom')) };
       const res = mockRes();
-      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'X' } }), res);
+      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'X', objectiveId: OBJ_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
       expect(reportError).toHaveBeenCalledWith(expect.any(Error), {
         source: 'AdminTherapeuticProjectsController:createCatalogItem',
@@ -1011,7 +1048,7 @@ describe('AdminTherapeuticProjectsController', () => {
     it('500 quando a rejeição não é Error', async () => {
       const catalogs = { create: jest.fn().mockRejectedValue('rejeição crua') };
       const res = mockRes();
-      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'X' } }), res);
+      await ctrl({}, catalogs).createCatalogItem('activities', mockReq({ body: { label: 'X', objectiveId: OBJ_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(500);
       expect((reportError as jest.Mock).mock.calls[0][0].message).toBe('rejeição crua');
     });
@@ -1071,14 +1108,12 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(reportError).not.toHaveBeenCalled();
     });
 
-    it('US-17/430: 422 quando `segmentId` é de segmento inativo/inexistente — SEM ecoar o id, sem reportError', async () => {
-      const catalogs = { update: jest.fn().mockRejectedValue(new CatalogSegmentInvalidError()) };
+    it('091: `segmentId` no PATCH → 400 e o repositório nem é chamado', async () => {
+      const catalogs = { update: jest.fn() };
       const res = mockRes();
       await ctrl({}, catalogs).updateCatalogItem('activities', mockReq({ params: { itemId: ITEM_ID }, body: { segmentId: PAT_ID } }), res);
-      expect(res.status).toHaveBeenCalledWith(422);
-      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Unknown or inactive segment', code: 'catalog_segment_invalid' });
-      expect(JSON.stringify(corpoDaResposta(res))).not.toContain(PAT_ID);
-      expect(reportError).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(catalogs.update).not.toHaveBeenCalled();
     });
 
     it('500 no erro genérico — o log leva kind e itemId', async () => {
@@ -1102,6 +1137,237 @@ describe('AdminTherapeuticProjectsController', () => {
     });
   });
 
+  // ── 091: catálogo por CID — cascata, busca, vínculos e tabela erro→status (§9.4) ─────────────
+  describe('091 — catálogo por CID', () => {
+    const URI_CLINICA = 'http://id.who.int/icd/entity/URI-SINTETICA-1';
+    /** Controller com os três colaboradores novos injetados (a fronteira; o SQL é do e2e). */
+    const ctrl091 = (parts: { catalogs?: Record<string, unknown>; cascade?: Record<string, unknown>; links?: Record<string, unknown>; icd?: Record<string, unknown> }) =>
+      novoController(
+        [{}, parts.catalogs ?? {}, stubContacts(), stubCoverageContacts(), stubStatuses(), { remainingReminderDates: jest.fn().mockResolvedValue(null) }],
+        [parts.cascade ?? PORTAS_091[0], parts.links ?? PORTAS_091[1], parts.icd ?? PORTAS_091[2]],
+      );
+
+    describe('tabela erro→status (um caso por linha da tabela)', () => {
+      it.each([
+        ['catalog_label_taken', new CatalogLabelTakenError(), 409],
+        ['catalog_item_needs_owner', new CatalogItemNeedsOwnerError(), 422],
+        ['catalog_objective_invalid', new CatalogObjectiveInvalidError(), 422],
+        ['catalog_service_invalid', new CatalogServiceInvalidError(), 422],
+        ['activity_categories_outside_objective', new ActivityCategoriesOutsideObjectiveError(), 409],
+      ])('POST/PATCH de catálogo: %s → %i, só o tipo do erro, sem reportError', async (code, erro, status) => {
+        const res = mockRes();
+        await ctrl091({ catalogs: { create: jest.fn().mockRejectedValue(erro) } }).createCatalogItem('activities', mockReq({ body: { label: 'X', objectiveId: OBJ_ID } }), res);
+        expect(res.status).toHaveBeenCalledWith(status);
+        expect(corpoDaResposta(res)).toMatchObject({ success: false, code });
+        expect(JSON.stringify(corpoDaResposta(res))).not.toContain(OBJ_ID);
+        expect(reportError).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['icd_category_not_in_objective', new IcdCategoryNotInObjectiveError(), 422],
+        ['icd_category_already_linked', new IcdCategoryAlreadyLinkedError(), 409],
+        ['icd_category_invalid', new InvalidIcdCategoryCodeError(), 422],
+        ['catalog_item_not_found', new CatalogLinkOwnerNotFoundError(), 404],
+      ])('POST de vínculo: %s → %i', async (code, erro, status) => {
+        const res = mockRes();
+        await ctrl091({ links: { addActivityCategory: jest.fn().mockRejectedValue(erro) } }).addCategoryLink('activity', mockReq({ params: { itemId: ITEM_ID }, body: { code: '6A02' } }), res);
+        expect(res.status).toHaveBeenCalledWith(status);
+        expect(corpoDaResposta(res)).toMatchObject({ success: false, code });
+        expect(reportError).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('create/update com os campos novos', () => {
+      it('objetivo sem `serviceCode` → 400 (obrigatório); com `segmentId` → 400 (strict); serviceCode minúsculo → 400', async () => {
+        const catalogs = { create: jest.fn() };
+        for (const body of [{ label: 'X' }, { label: 'X', serviceCode: 'AT', segmentId: PAT_ID }, { label: 'X', serviceCode: 'at' }]) {
+          const res = mockRes();
+          await ctrl091({ catalogs }).createCatalogItem('specific-objectives', mockReq({ body }), res);
+          expect(res.status).toHaveBeenCalledWith(400);
+        }
+        expect(catalogs.create).not.toHaveBeenCalled();
+      });
+
+      it('atividade sem `objectiveId` → 400; `suggestedFrequency` 101 chars → 400; `null` e 100 chars passam e chegam ao repositório', async () => {
+        const catalogs = { create: jest.fn().mockResolvedValue(ITEM) };
+        for (const body of [{ label: 'X' }, { label: 'X', objectiveId: OBJ_ID, suggestedFrequency: 'f'.repeat(101) }]) {
+          const res = mockRes();
+          await ctrl091({ catalogs }).createCatalogItem('activities', mockReq({ body }), res);
+          expect(res.status).toHaveBeenCalledWith(400);
+        }
+        expect(catalogs.create).not.toHaveBeenCalled();
+        const ok = mockRes();
+        await ctrl091({ catalogs }).createCatalogItem('activities', mockReq({ body: { label: 'X', objectiveId: OBJ_ID, suggestedFrequency: null } }), ok);
+        expect(ok.status).toHaveBeenCalledWith(201);
+        expect(catalogs.create).toHaveBeenCalledWith('activities', { label: 'X', objectiveId: OBJ_ID, suggestedFrequency: null, actorUid: 'uid-1' });
+      });
+
+      it('PATCH de atividade aceita `objectiveId`/`suggestedFrequency`; PATCH de objetivo aceita `serviceCode` e recusa `objectiveId`', async () => {
+        const catalogs = { update: jest.fn().mockResolvedValue(ITEM) };
+        const a = mockRes();
+        await ctrl091({ catalogs }).updateCatalogItem('activities', mockReq({ params: { itemId: ITEM_ID }, body: { objectiveId: OBJ_ID, suggestedFrequency: '3x por semana' } }), a);
+        expect(a.status).toHaveBeenCalledWith(200);
+        const o = mockRes();
+        await ctrl091({ catalogs }).updateCatalogItem('specific-objectives', mockReq({ params: { itemId: ITEM_ID }, body: { serviceCode: 'AT' } }), o);
+        expect(o.status).toHaveBeenCalledWith(200);
+        const bad = mockRes();
+        await ctrl091({ catalogs }).updateCatalogItem('specific-objectives', mockReq({ params: { itemId: ITEM_ID }, body: { objectiveId: OBJ_ID } }), bad);
+        expect(bad.status).toHaveBeenCalledWith(400);
+        expect(catalogs.update).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    describe('listCatalog com filtros', () => {
+      it('`categoryCode` e `objectiveId` válidos chegam ao repositório; `includeInactive` só vale como "true"', async () => {
+        const catalogs = { list: jest.fn().mockResolvedValue([]) };
+        await ctrl091({ catalogs }).listCatalog('activities', mockReq({ query: { categoryCode: '6A02', objectiveId: OBJ_ID, includeInactive: 'true' } }), mockRes());
+        expect(catalogs.list).toHaveBeenCalledWith('activities', { includeInactive: true, categoryCode: '6A02', objectiveId: OBJ_ID });
+        await ctrl091({ catalogs }).listCatalog('activities', mockReq({ query: {} }), mockRes());
+        expect(catalogs.list).toHaveBeenLastCalledWith('activities', { includeInactive: false });
+      });
+
+      it('`categoryCode` que não tem 4 caracteres → 400 e o repositório não é chamado', async () => {
+        const catalogs = { list: jest.fn() };
+        const res = mockRes();
+        await ctrl091({ catalogs }).listCatalog('specific-objectives', mockReq({ query: { categoryCode: '6A0' } }), res);
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(catalogs.list).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('cascade (DD-10)', () => {
+      const VIEW = { serviceCode: 'AT', serviceHasCatalog: true, blocks: [] };
+      const CORPO = { serviceCode: 'AT', diagnosisUris: [URI_CLINICA] };
+
+      it('200 com o resultado do caso de uso, repassando o corpo validado', async () => {
+        const cascade = { execute: jest.fn().mockResolvedValue(VIEW) };
+        const res = mockRes();
+        await ctrl091({ cascade }).cascade(mockReq({ body: CORPO }), res);
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(cascade.execute).toHaveBeenCalledWith(CORPO);
+        expect(corpoDaResposta(res)).toEqual({ success: true, data: VIEW });
+      });
+
+      it.each([
+        ['sem URIs', { serviceCode: 'AT', diagnosisUris: [] }],
+        ['21 URIs', { serviceCode: 'AT', diagnosisUris: Array.from({ length: 21 }, (_, i) => `u${i}`) }],
+        ['URI de 501 chars', { serviceCode: 'AT', diagnosisUris: ['u'.repeat(501)] }],
+        ['serviceCode inválido', { serviceCode: 'at-x', diagnosisUris: ['u'] }],
+        ['chave extra (strict)', { serviceCode: 'AT', diagnosisUris: ['u'], segmentId: PAT_ID }],
+      ])('400 %s — só nomes de campo, a URI nunca volta', async (_nome, body) => {
+        const cascade = { execute: jest.fn() };
+        const res = mockRes();
+        await ctrl091({ cascade }).cascade(mockReq({ body }), res);
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(cascade.execute).not.toHaveBeenCalled();
+      });
+
+      it('422 ptp_diagnosis_unknown SEM ecoar a URI; 503 com a terminologia fora; nenhum dos dois vai a reportError', async () => {
+        const unknown = mockRes();
+        await ctrl091({ cascade: { execute: jest.fn().mockRejectedValue(new DiagnosisUnknownError()) } }).cascade(mockReq({ body: CORPO }), unknown);
+        expect(unknown.status).toHaveBeenCalledWith(422);
+        expect(corpoDaResposta(unknown)).toMatchObject({ code: 'ptp_diagnosis_unknown' });
+        expect(JSON.stringify(corpoDaResposta(unknown))).not.toContain('URI-SINTETICA');
+        const fora = mockRes();
+        await ctrl091({ cascade: { execute: jest.fn().mockRejectedValue(new TerminologyUnavailableError('terminology down')) } }).cascade(mockReq({ body: CORPO }), fora);
+        expect(fora.status).toHaveBeenCalledWith(503);
+        expect(corpoDaResposta(fora)).toMatchObject({ code: 'TERMINOLOGY_UNAVAILABLE' });
+        expect(reportError).not.toHaveBeenCalled();
+      });
+
+      it('500 no erro desconhecido: o contexto do log não carrega URI nem corpo', async () => {
+        const res = mockRes();
+        await ctrl091({ cascade: { execute: jest.fn().mockRejectedValue(new Error('boom')) } }).cascade(mockReq({ body: CORPO }), res);
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect((reportError as jest.Mock).mock.calls[0][1]).toEqual({ source: 'AdminTherapeuticProjectsController:cascade' });
+      });
+    });
+
+    describe('icd-categories?q=', () => {
+      it('q com menos de 2 caracteres (após o trim) → 400; com 2+ → 200 e a porta recebe o q aparado', async () => {
+        const icd = { search: jest.fn().mockResolvedValue([{ code: '6A02', title: 'TEA' }]) };
+        const curto = mockRes();
+        await ctrl091({ icd }).searchIcdCategories(mockReq({ query: { q: ' a ' } }), curto);
+        expect(curto.status).toHaveBeenCalledWith(400);
+        expect(icd.search).not.toHaveBeenCalled();
+        const ok = mockRes();
+        await ctrl091({ icd }).searchIcdCategories(mockReq({ query: { q: ' 6a ' } }), ok);
+        expect(icd.search).toHaveBeenCalledWith('6a');
+        expect(corpoDaResposta(ok)).toEqual({ success: true, data: [{ code: '6A02', title: 'TEA' }] });
+      });
+    });
+
+    describe('vínculos com categoria (o dono vem da rota)', () => {
+      const LISTA = { total: 1, items: [{ code: '6A02', title: 'TEA', activityLinks: 0 }] };
+
+      it('objetivo: GET lista, POST 201 com o ator, DELETE 200 com removedActivityLinks', async () => {
+        const links = {
+          listObjectiveCategories: jest.fn().mockResolvedValue(LISTA),
+          addObjectiveCategory: jest.fn().mockResolvedValue({ code: '6A02', title: 'TEA' }),
+          removeObjectiveCategory: jest.fn().mockResolvedValue({ removedActivityLinks: 2 }),
+        };
+        const c = ctrl091({ links });
+        const l = mockRes();
+        await c.listCategoryLinks('objective', mockReq({ params: { itemId: ITEM_ID } }), l);
+        expect(corpoDaResposta(l)).toEqual({ success: true, data: LISTA });
+        const a = mockRes();
+        await c.addCategoryLink('objective', mockReq({ params: { itemId: ITEM_ID }, body: { code: '6A02' } }), a);
+        expect(a.status).toHaveBeenCalledWith(201);
+        expect(links.addObjectiveCategory).toHaveBeenCalledWith(ITEM_ID, '6A02', 'uid-1');
+        const d = mockRes();
+        await c.removeCategoryLink('objective', mockReq({ params: { itemId: ITEM_ID, code: '6A02' } }), d);
+        expect(d.status).toHaveBeenCalledWith(200);
+        expect(corpoDaResposta(d)).toEqual({ success: true, data: { removedActivityLinks: 2 } });
+      });
+
+      it('atividade: usa os métodos de atividade (nunca os do objetivo)', async () => {
+        const links = {
+          listActivityCategories: jest.fn().mockResolvedValue({ total: 0, items: [] }),
+          addActivityCategory: jest.fn().mockResolvedValue({ code: '6A02', title: null }),
+          removeActivityCategory: jest.fn().mockResolvedValue({ removed: true }),
+          listObjectiveCategories: jest.fn(),
+          addObjectiveCategory: jest.fn(),
+          removeObjectiveCategory: jest.fn(),
+        };
+        const c = ctrl091({ links });
+        await c.listCategoryLinks('activity', mockReq({ params: { itemId: ITEM_ID } }), mockRes());
+        await c.addCategoryLink('activity', mockReq({ params: { itemId: ITEM_ID }, body: { code: '6A02' } }), mockRes());
+        await c.removeCategoryLink('activity', mockReq({ params: { itemId: ITEM_ID, code: '6A02' } }), mockRes());
+        expect(links.listActivityCategories).toHaveBeenCalledWith(ITEM_ID);
+        expect(links.addActivityCategory).toHaveBeenCalledWith(ITEM_ID, '6A02', 'uid-1');
+        expect(links.removeActivityCategory).toHaveBeenCalledWith(ITEM_ID, '6A02');
+        expect(links.listObjectiveCategories).not.toHaveBeenCalled();
+        expect(links.addObjectiveCategory).not.toHaveBeenCalled();
+        expect(links.removeObjectiveCategory).not.toHaveBeenCalled();
+      });
+
+      it('400 com :itemId que não é UUID, corpo sem `code` ou com chave extra; `code` malformado vai ao domínio (422), não ao zod', async () => {
+        const links = { addObjectiveCategory: jest.fn().mockRejectedValue(new InvalidIcdCategoryCodeError()), removeObjectiveCategory: jest.fn() };
+        const c = ctrl091({ links });
+        const r1 = mockRes();
+        await c.addCategoryLink('objective', mockReq({ params: { itemId: 'nao-uuid' }, body: { code: '6A02' } }), r1);
+        const r2 = mockRes();
+        await c.addCategoryLink('objective', mockReq({ params: { itemId: ITEM_ID }, body: {} }), r2);
+        const r3 = mockRes();
+        await c.addCategoryLink('objective', mockReq({ params: { itemId: ITEM_ID }, body: { code: '6A02', objectiveId: OBJ_ID } }), r3);
+        const r4 = mockRes();
+        await c.removeCategoryLink('objective', mockReq({ params: { itemId: 'nao-uuid', code: '6A02' } }), r4);
+        for (const r of [r1, r2, r3, r4]) expect(r.status).toHaveBeenCalledWith(400);
+        const r5 = mockRes();
+        await c.addCategoryLink('objective', mockReq({ params: { itemId: ITEM_ID }, body: { code: 'xx' } }), r5);
+        expect(r5.status).toHaveBeenCalledWith(422);
+        expect(corpoDaResposta(r5)).toMatchObject({ code: 'icd_category_invalid' });
+      });
+
+      it('500 no erro desconhecido: o log leva owner e itemId, nunca o `code` nem o corpo', async () => {
+        const res = mockRes();
+        await ctrl091({ links: { addObjectiveCategory: jest.fn().mockRejectedValue(new Error('boom')) } }).addCategoryLink('objective', mockReq({ params: { itemId: ITEM_ID }, body: { code: '6A02' } }), res);
+        expect(res.status).toHaveBeenCalledWith(500);
+        expect((reportError as jest.Mock).mock.calls[0][1]).toEqual({ source: 'AdminTherapeuticProjectsController:addCategoryLink', owner: 'objective', itemId: ITEM_ID });
+      });
+    });
+  });
+
   /**
    * A prova POSITIVA da lex C6, e não a leitura do código: TODAS as rotas que recebem corpo são
    * exercitadas com um `req.body` que carrega texto clínico, e nenhuma chamada de `reportError`
@@ -1121,7 +1387,7 @@ describe('AdminTherapeuticProjectsController', () => {
       await c.create(req({ params: { id: PATIENT_ID }, body: CORPO_NOVO }), mockRes());
       await c.annul(req({ params: { id: PATIENT_ID, vid: VERSION_ID }, body: { reason: 'carga errada' } }), mockRes());
       await c.listCatalog('activities', req({}), mockRes());
-      await c.createCatalogItem('activities', req({ body: { label: 'Rótulo válido' } }), mockRes());
+      await c.createCatalogItem('activities', req({ body: { label: 'Rótulo válido', objectiveId: OBJ_ID } }), mockRes());
       await c.updateCatalogItem('activities', req({ params: { itemId: ITEM_ID }, body: { label: 'Rótulo válido' } }), mockRes());
 
       const contextos = (reportError as jest.Mock).mock.calls.map((c2) => c2[1]);

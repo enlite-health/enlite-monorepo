@@ -4,7 +4,16 @@
  */
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import type {
+  AddedCategoryLink,
+  CascadeRequestBody,
+  CascadeResponse,
+  CatalogItemBody,
+  CatalogListOptions,
+  CategoryLinkList,
   CreateTherapeuticProjectBody,
+  IcdCategory,
+  RemovedActivityCategory,
+  RemovedObjectiveCategory,
   TherapeuticCatalogItem,
   AdminCatalogKind,
   ServiceExitReasonOption,
@@ -13,6 +22,7 @@ import type {
   TherapeuticFieldClass,
   TherapeuticProjectVersion,
 } from '@domain/entities/TherapeuticProject';
+import type { TherapeuticCatalogGateway } from '@domain/repositories/TherapeuticCatalogGateway';
 
 /** `contactReminderDates` (spec 048): dias locais (`YYYY-MM-DD`) dos lembretes que FALTAM no ciclo aberto; `null` = sem ciclo. */
 export interface TherapeuticProjectList {
@@ -47,7 +57,7 @@ interface ApiErrorResponse {
 }
 type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
-class AdminTherapeuticProjectsApiServiceClass {
+class AdminTherapeuticProjectsApiServiceClass implements TherapeuticCatalogGateway {
   private readonly authService = new FirebaseAuthService();
   private readonly baseURL: string;
 
@@ -110,8 +120,13 @@ class AdminTherapeuticProjectsApiServiceClass {
   }
 
   /** GET /api/admin/therapeutic-catalogs/<kind> */
-  async listCatalog(kind: AdminCatalogKind, opts: { includeInactive?: boolean } = {}): Promise<TherapeuticCatalogItem[]> {
-    const qs = opts.includeInactive ? '?includeInactive=true' : '';
+  async listCatalog(kind: AdminCatalogKind, opts: CatalogListOptions = {}): Promise<TherapeuticCatalogItem[]> {
+    const params = new URLSearchParams();
+    if (opts.includeInactive) params.set('includeInactive', 'true');
+    if (opts.categoryCode) params.set('categoryCode', opts.categoryCode);
+    if (opts.objectiveId) params.set('objectiveId', opts.objectiveId);
+    const query = params.toString();
+    const qs = query ? `?${query}` : '';
     const { items } = await this.request<{ kind: AdminCatalogKind; items: TherapeuticCatalogItem[] }>('GET', `/api/admin/therapeutic-catalogs/${kind}${qs}`);
     return items;
   }
@@ -145,18 +160,60 @@ class AdminTherapeuticProjectsApiServiceClass {
     return this.request<ShiftTemplate>('PATCH', `/api/admin/therapeutic-catalogs/service-shift-templates/${itemId}`, body);
   }
 
-  /** POST /api/admin/therapeutic-catalogs/<kind> */
-  async createCatalogItem(kind: AdminCatalogKind, body: { label: string; sortOrder?: number; segmentId?: string | null; description?: string | null }): Promise<TherapeuticCatalogItem> {
+  /** POST /api/admin/therapeutic-catalogs/<kind> — objetivo leva `serviceCode`, atividade leva `objectiveId`; sem `segmentId`. */
+  async createCatalogItem(kind: AdminCatalogKind, body: CatalogItemBody): Promise<TherapeuticCatalogItem> {
     return this.request<TherapeuticCatalogItem>('POST', `/api/admin/therapeutic-catalogs/${kind}`, body);
   }
 
-  /** PATCH /api/admin/therapeutic-catalogs/<kind>/:itemId — Merge Patch; sem DELETE (soft delete por `active`). */
-  async updateCatalogItem(
-    kind: AdminCatalogKind,
-    itemId: string,
-    body: { label?: string; sortOrder?: number; active?: boolean; segmentId?: string | null; description?: string | null },
-  ): Promise<TherapeuticCatalogItem> {
+  /** PATCH /api/admin/therapeutic-catalogs/<kind>/:itemId — Merge Patch (DD-24: `null` limpa, chave ausente não toca); sem DELETE. */
+  async updateCatalogItem(kind: AdminCatalogKind, itemId: string, body: CatalogItemBody): Promise<TherapeuticCatalogItem> {
     return this.request<TherapeuticCatalogItem>('PATCH', `/api/admin/therapeutic-catalogs/${kind}/${itemId}`, body);
+  }
+
+  /** POST /api/admin/therapeutic-catalogs/cascade — leitura que usa POST (corpo com até 20 URIs). */
+  async cascade(body: CascadeRequestBody): Promise<CascadeResponse> {
+    return this.request<CascadeResponse>('POST', '/api/admin/therapeutic-catalogs/cascade', body);
+  }
+
+  /** GET /api/admin/therapeutic-catalogs/icd-categories?q= */
+  async searchIcdCategories(q: string): Promise<IcdCategory[]> {
+    return this.request<IcdCategory[]>('GET', `/api/admin/therapeutic-catalogs/icd-categories?q=${encodeURIComponent(q)}`);
+  }
+
+  /** Vínculos objetivo/atividade ↔ categoria CID-11: mesma rota-base, dono escolhido pelo kind (tabela, sem if). */
+  private categoriesPath(owner: 'specific-objectives' | 'activities', itemId: string, code?: string): string {
+    const base = `/api/admin/therapeutic-catalogs/${owner}/${itemId}/categories`;
+    return code === undefined ? base : `${base}/${encodeURIComponent(code)}`;
+  }
+
+  /** GET …/specific-objectives/:itemId/categories */
+  async listObjectiveCategories(objectiveId: string): Promise<CategoryLinkList> {
+    return this.request<CategoryLinkList>('GET', this.categoriesPath('specific-objectives', objectiveId));
+  }
+
+  /** POST …/specific-objectives/:itemId/categories `{ code }` */
+  async addObjectiveCategory(objectiveId: string, code: string): Promise<AddedCategoryLink> {
+    return this.request<AddedCategoryLink>('POST', this.categoriesPath('specific-objectives', objectiveId), { code });
+  }
+
+  /** DELETE …/specific-objectives/:itemId/categories/:code — leva junto os vínculos das atividades dele. */
+  async removeObjectiveCategory(objectiveId: string, code: string): Promise<RemovedObjectiveCategory> {
+    return this.request<RemovedObjectiveCategory>('DELETE', this.categoriesPath('specific-objectives', objectiveId, code));
+  }
+
+  /** GET …/activities/:itemId/categories */
+  async listActivityCategories(activityId: string): Promise<CategoryLinkList> {
+    return this.request<CategoryLinkList>('GET', this.categoriesPath('activities', activityId));
+  }
+
+  /** POST …/activities/:itemId/categories `{ code }` — fora das categorias do objetivo: 422 `icd_category_not_in_objective`. */
+  async addActivityCategory(activityId: string, code: string): Promise<AddedCategoryLink> {
+    return this.request<AddedCategoryLink>('POST', this.categoriesPath('activities', activityId), { code });
+  }
+
+  /** DELETE …/activities/:itemId/categories/:code */
+  async removeActivityCategory(activityId: string, code: string): Promise<RemovedActivityCategory> {
+    return this.request<RemovedActivityCategory>('DELETE', this.categoriesPath('activities', activityId, code));
   }
 }
 

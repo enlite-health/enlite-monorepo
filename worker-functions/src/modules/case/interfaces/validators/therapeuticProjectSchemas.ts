@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { containsLikelyPersonalData } from '@modules/identity/permissions';
 import { CONTACT_REF_KINDS, THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_MODALITIES } from '../../domain/TherapeuticProject';
+import { ICD_CATEGORY_CODE_PATTERN } from '../../domain/icdCategory';
 import type { AdminCatalogKind } from '../../domain/serviceExitReason';
 import { SHIFT_TEMPLATE_MAX_ITEMS } from '../../domain/serviceShiftTemplate';
 import { CONTACT_STATUS_VALUES } from '../../domain/TherapeuticContactStatus';
@@ -72,8 +73,6 @@ const versionBodyShape = {
   diagnoses: z.array(diagnosisSchema).min(1).max(20),
   clinicalContext: z.string().trim().min(1).max(THERAPEUTIC_TEXT_MAX),
   generalObjective: z.string().trim().min(1).max(THERAPEUTIC_TEXT_MAX),
-  specificObjectiveIds: z.array(z.string().uuid()).min(1).max(50),
-  activityIds: z.array(z.string().uuid()).min(1).max(50),
   // Sem `pathologyTypeIds`: o tipo de patologia deriva dos `diagnoses` no servidor (D163/D164).
   startDate: z.string().regex(ISO_DATE),
   endDate: z.string().regex(ISO_DATE),
@@ -101,22 +100,46 @@ const STATUS_WITH_CONTACTS = { message: 'a contact field cannot have both contac
 const endNotBeforeStart = (b: { startDate: string; endDate: string }): boolean => b.endDate >= b.startDate;
 const END_NOT_BEFORE_START = { message: 'endDate must be on or after startDate', path: ['endDate'] };
 
-/** Corpo do "Editar": a forma-base, SEM `segmentId` — o segmento é MACRO (só muda com "Nuevo"). */
-const editVersionBodySchema = z
-  .object(versionBodyShape)
-  .strict()
-  .refine(endNotBeforeStart, END_NOT_BEFORE_START)
-  .refine(noStatusWithContacts, STATUS_WITH_CONTACTS);
+/** Objetivos/atividades do formato plano (versão antiga, só na edição): ids de catálogo, 1..50 (§9.4). */
+const flatObjectivesShape = {
+  specificObjectiveIds: z.array(z.string().uuid()).min(1).max(50),
+  activityIds: z.array(z.string().uuid()).min(1).max(50),
+};
+
+/** Bloco de um diagnóstico (091): 0..50 ids — "vazio" só é válido sem catálogo (conferido no domínio, 422 nomeado). */
+const diagnosisPlanSchema = z
+  .object({
+    diagnosisUri: z.string().min(1).max(500),
+    specificObjectiveIds: z.array(z.string().uuid()).max(50),
+    activityIds: z.array(z.string().uuid()).max(50),
+  })
+  .strict();
+const diagnosisPlansField = z.array(diagnosisPlanSchema).min(1).max(20);
+
+/** Os blocos cobrem os diagnósticos na MESMA ordem, posição a posição (a CHECK `ptp_diagnosis_plans_forma` da 586 exige `[i].diagnosisUri = diagnoses[i].uri`; fora de ordem seria 23514 → 500), sem repetição (400, §9.4). */
+const plansMatchDiagnoses = (b: { diagnoses: { uri: string }[]; diagnosisPlans: { diagnosisUri: string }[] }): boolean => {
+  const planUris = b.diagnosisPlans.map((p) => p.diagnosisUri);
+  const diagUris = b.diagnoses.map((d) => d.uri);
+  return new Set(diagUris).size === diagUris.length
+    && planUris.length === diagUris.length && planUris.every((u, i) => u === diagUris[i]);
+};
+const PLANS_MATCH_DIAGNOSES = { message: 'diagnosisPlans must cover exactly the diagnoses, once each, in the same order', path: ['diagnosisPlans'] };
+
+const refinedBody = <T extends z.ZodTypeAny>(schema: T) =>
+  schema.refine(endNotBeforeStart, END_NOT_BEFORE_START).refine(noStatusWithContacts, STATUS_WITH_CONTACTS);
 
 /**
- * Corpo do "Novo": a forma-base + `segmentId` (spec 030, MACRO, obrigatório — lex C4). O cliente manda só o
- * id; `{id,label}` é congelado no SERVIDOR a partir do catálogo ativo, e o `.strict()` recusa `segment:{…}`.
+ * Corpo do "Editar": a forma-base + OU os ids planos OU os blocos por diagnóstico (união zod). Qual dos dois vale é do formato da
+ * versão de origem (422 `ptp_format_mismatch` no repositório); `segmentId` não existe mais (`.strict()` → 400).
  */
-const newVersionBodySchema = z
-  .object({ ...versionBodyShape, segmentId: z.string().uuid() })
-  .strict()
-  .refine(endNotBeforeStart, END_NOT_BEFORE_START)
-  .refine(noStatusWithContacts, STATUS_WITH_CONTACTS);
+const editFlatBodySchema = refinedBody(z.object({ ...versionBodyShape, ...flatObjectivesShape }).strict());
+const editByDiagnosisBodySchema = refinedBody(z.object({ ...versionBodyShape, diagnosisPlans: diagnosisPlansField }).strict())
+  .refine(plansMatchDiagnoses as (b: unknown) => boolean, PLANS_MATCH_DIAGNOSES);
+const editVersionBodySchema = z.union([editFlatBodySchema, editByDiagnosisBodySchema]);
+
+/** Corpo do "Novo" (091): a forma-base SEM ids planos/`segmentId` + `diagnosisPlans`; os rótulos são congelados no SERVIDOR, do catálogo do serviço. */
+const newVersionBodySchema = refinedBody(z.object({ ...versionBodyShape, diagnosisPlans: diagnosisPlansField }).strict())
+  .refine(plansMatchDiagnoses as (b: unknown) => boolean, PLANS_MATCH_DIAGNOSES);
 
 /** `mode: 'new'` → major seguinte; `mode: 'edit'` → minor seguinte da versão de origem. */
 export const createTherapeuticProjectSchema = z.discriminatedUnion('mode', [
@@ -171,22 +194,28 @@ const catalogDescriptionPatch = z.preprocess(
   catalogDescription.nullable().optional(),
 );
 
-/**
- * `segmentId` (migration 430, US-17): filtro por segmento da Ana Care — só em `specific-objectives`/
- * `activities` (contract `therapeutic-project.md` §Catálogo de segmentos). O catálogo `segments`
- * NÃO recebe `segmentId` de si mesmo — por isso o campo entra por schema À PARTE, escolhido pelo
- * `kind` da ROTA (nunca do corpo), e `.strict()` recusa (400) quem mandar `segmentId` para `segments`.
- * `null` explícito limpa o vínculo; ausente não toca a coluna (Merge Patch, molde do resto do PATCH).
- */
-const segmentIdField = z.string().uuid().nullable();
+/** Código do serviço contratado (spec 091, §9.4): maiúsculas, dígitos e `_`, até 40. */
+const SERVICE_CODE_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+const serviceCodeField = z.string().regex(SERVICE_CODE_PATTERN).max(40);
+/** Frequência sugerida da atividade (091): texto curto do operador, mesma guarda de dado pessoal; `null` limpa. */
+const suggestedFrequencyField = catalogLabelWithMax(100).nullable();
 
 const createCatalogItemBase = {
   label: catalogLabel,
   sortOrder: z.number().int().min(0).max(100000).optional(),
 };
 export const createCatalogItemSchema = z.object(createCatalogItemBase).strict();
-const createCatalogItemWithSegmentSchema = z
-  .object({ ...createCatalogItemBase, label: catalogTitle, description: catalogDescription.optional(), segmentId: segmentIdField.optional() })
+const createObjectiveSchema = z
+  .object({ ...createCatalogItemBase, label: catalogTitle, description: catalogDescription.optional(), serviceCode: serviceCodeField })
+  .strict();
+const createActivitySchema = z
+  .object({
+    ...createCatalogItemBase,
+    label: catalogTitle,
+    description: catalogDescription.optional(),
+    objectiveId: z.string().uuid(),
+    suggestedFrequency: suggestedFrequencyField.optional(),
+  })
   .strict();
 
 /** PATCH parcial: rótulo, ordem, e `active:false` para desativar (reativar também é permitido). */
@@ -195,27 +224,75 @@ const updateCatalogItemBase = {
   sortOrder: z.number().int().min(0).max(100000).optional(),
   active: z.boolean().optional(),
 };
-export const updateCatalogItemSchema = z.object(updateCatalogItemBase).strict().refine((b) => Object.keys(b).length > 0, { message: 'empty patch' });
-const updateCatalogItemWithSegmentSchema = z
-  .object({ ...updateCatalogItemBase, label: catalogTitle.optional(), description: catalogDescriptionPatch, segmentId: segmentIdField.optional() })
+const notEmptyPatch = (b: object): boolean => Object.keys(b).length > 0;
+const EMPTY_PATCH = { message: 'empty patch' };
+export const updateCatalogItemSchema = z.object(updateCatalogItemBase).strict().refine(notEmptyPatch, EMPTY_PATCH);
+const updateObjectiveSchema = z
+  .object({ ...updateCatalogItemBase, label: catalogTitle.optional(), description: catalogDescriptionPatch, serviceCode: serviceCodeField.optional() })
   .strict()
-  .refine((b) => Object.keys(b).length > 0, { message: 'empty patch' });
+  .refine(notEmptyPatch, EMPTY_PATCH);
+const updateActivitySchema = z
+  .object({
+    ...updateCatalogItemBase,
+    label: catalogTitle.optional(),
+    description: catalogDescriptionPatch,
+    objectiveId: z.string().uuid().optional(),
+    suggestedFrequency: suggestedFrequencyField.optional(),
+  })
+  .strict()
+  .refine(notEmptyPatch, EMPTY_PATCH);
 
-export type CreateCatalogItemBody = z.infer<typeof createCatalogItemWithSegmentSchema>;
-export type UpdateCatalogItemBody = z.infer<typeof updateCatalogItemWithSegmentSchema>;
+export type CreateCatalogItemBody = z.infer<typeof createObjectiveSchema> | z.infer<typeof createActivitySchema>;
+export type UpdateCatalogItemBody = z.infer<typeof updateObjectiveSchema> | z.infer<typeof updateActivitySchema>;
 
-/** Só objetivos e atividades têm `segment_id` (430); `segments` e o catálogo de motivos de saída (492) não. */
-const kindHasSegment = (kind: AdminCatalogKind): boolean => kind === 'specific-objectives' || kind === 'activities';
+/** Schema por `kind` da rota (Strategy por tabela, sem if): `segmentId` não existe em nenhum (`.strict()` → 400, §9.4). */
+const CREATE_SCHEMA_BY_KIND: Readonly<Partial<Record<AdminCatalogKind, z.ZodTypeAny>>> = {
+  'specific-objectives': createObjectiveSchema,
+  activities: createActivitySchema,
+};
+const UPDATE_SCHEMA_BY_KIND: Readonly<Partial<Record<AdminCatalogKind, z.ZodTypeAny>>> = {
+  'specific-objectives': updateObjectiveSchema,
+  activities: updateActivitySchema,
+};
 
-/** Schema de CRIAÇÃO pelo `kind` da rota (célula literal, D299.3) — só objetivos/atividades aceitam `segmentId`. */
-export function createCatalogItemSchemaFor(kind: AdminCatalogKind): typeof createCatalogItemSchema | typeof createCatalogItemWithSegmentSchema {
-  return kindHasSegment(kind) ? createCatalogItemWithSegmentSchema : createCatalogItemSchema;
+/** Schema de CRIAÇÃO pelo `kind` da rota (célula literal, D299.3); kind sem schema próprio (motivos de saída) usa o base. */
+export function createCatalogItemSchemaFor(kind: AdminCatalogKind): z.ZodType<CreateCatalogItemBody | z.infer<typeof createCatalogItemSchema>> {
+  return CREATE_SCHEMA_BY_KIND[kind] ?? createCatalogItemSchema;
 }
 
 /** Schema de PATCH pelo `kind` da rota — mesma régua do de criação. */
-export function updateCatalogItemSchemaFor(kind: AdminCatalogKind): typeof updateCatalogItemSchema | typeof updateCatalogItemWithSegmentSchema {
-  return kindHasSegment(kind) ? updateCatalogItemWithSegmentSchema : updateCatalogItemSchema;
+export function updateCatalogItemSchemaFor(kind: AdminCatalogKind): z.ZodType<UpdateCatalogItemBody | z.infer<typeof updateCatalogItemSchema>> {
+  return UPDATE_SCHEMA_BY_KIND[kind] ?? updateCatalogItemSchema;
 }
+
+/** Query das listas (091): `includeInactive` e, por kind, `categoryCode` (4 chars) e `objectiveId`. Chave desconhecida é ignorada (como antes). */
+const listQueryShape = {
+  includeInactive: z.string().optional().transform((v) => v === 'true'),
+  categoryCode: z.string().regex(ICD_CATEGORY_CODE_PATTERN).optional(),
+  objectiveId: z.string().uuid().optional(),
+};
+const listQuerySchema = z.object(listQueryShape);
+export type CatalogListQuery = z.infer<typeof listQuerySchema>;
+export const parseCatalogListQuery = (query: unknown) => listQuerySchema.safeParse(query);
+
+// ── Cascata e vínculos com categoria CID-11 (091, §9.4) ───────────────────────────────────
+
+/** `POST /therapeutic-catalogs/cascade` (DD-10): URIs no corpo, nunca na query (não vão a log de URL). */
+export const cascadeRequestSchema = z
+  .object({
+    serviceCode: serviceCodeField,
+    diagnosisUris: z.array(z.string().min(1).max(500)).min(1).max(20),
+  })
+  .strict();
+export type CascadeRequestBody = z.infer<typeof cascadeRequestSchema>;
+
+/** `GET /therapeutic-catalogs/icd-categories?q=` — 2..100 após o trim. */
+export const icdCategorySearchQuerySchema = z.object({ q: z.string().trim().min(2).max(100) });
+
+/** `{ code }` do vínculo: a forma do código (4 chars) é checada pelo domínio → 422 `icd_category_invalid`, não 400. */
+const linkCodeField = z.string().min(1).max(20);
+export const categoryLinkBodySchema = z.object({ code: linkCodeField }).strict();
+export const categoryLinkParamsSchema = z.object({ itemId: z.string().uuid(), code: linkCodeField });
 
 // ── Guardias predefinidas (migration 550, spec 074) ──────────────────────────
 /** Turno da guardia: início 'HH:MM' + duração em minutos (1..1440). A sobreposição é barrada no banco (422). */

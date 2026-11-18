@@ -66,6 +66,8 @@ const VERSAO: TherapeuticProjectVersion = {
   specificObjectives: [{ id: 'so1', label: 'Objetivo 1' }],
   activities: [{ id: 'ac1', label: 'Atividade 1' }],
   pathologyTypes: [{ id: 'pt1', label: 'Neurológica' }],
+  objectivesLayout: 'flat',
+  diagnosisPlans: null,
   startDate: '2026-09-01',
   endDate: '2026-12-01',
   annulledAt: null,

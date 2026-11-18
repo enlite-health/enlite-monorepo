@@ -41,26 +41,38 @@ const PROJETO_READ = 'patient_therapeutic_project:read';
 // update na versão MINOR ("Editar") e no annul (pr8b-mapa-rotas.tsv linhas 38-39).
 const PROJETO_CREATE = 'patient_therapeutic_project:create';
 const PROJETO_UPDATE = 'patient_therapeutic_project:update';
+const OBJ_READ = 'catalog_therapeutic_objectives:read';
+const OBJ_UPDATE = 'catalog_therapeutic_objectives:update';
+const ACT_READ = 'catalog_therapeutic_activities:read';
+const ACT_UPDATE = 'catalog_therapeutic_activities:update';
 
 /**
  * O mapa esperado, escrito à mão a partir da D299.3 e do cabeçalho do router:
- * o container do paciente para as versões, e UMA célula por catálogo (Gabriel, 08/09).
+ * o container do paciente para as versões, UMA célula por catálogo (Gabriel, 08/09) e as rotas da 091 (§9.4,
+ * célula LITERAL em cada uma; `cascade` exige DUAS, na ordem dos guards: `A + B`).
  */
 const ESPERADO: Record<string, string> = {
   'GET /patients/:id/therapeutic-projects': PROJETO_READ,
   'POST /patients/:id/therapeutic-projects': PROJETO_CREATE,
   'GET /patients/:id/therapeutic-projects/:vid': PROJETO_READ,
   'POST /patients/:id/therapeutic-projects/:vid/annul': PROJETO_UPDATE,
-  'GET /therapeutic-catalogs/specific-objectives': 'catalog_therapeutic_objectives:read',
+  // 091 (§9.4) — cascata e busca de categoria.
+  'POST /therapeutic-catalogs/cascade': `${OBJ_READ} + ${ACT_READ}`,
+  'GET /therapeutic-catalogs/icd-categories': OBJ_READ,
+  // Objetivos: lista, escrita, e vínculo com categoria CID-11 (escrever vínculo = `update` do objetivo).
+  'GET /therapeutic-catalogs/specific-objectives': OBJ_READ,
   'POST /therapeutic-catalogs/specific-objectives': 'catalog_therapeutic_objectives:create',
-  'PATCH /therapeutic-catalogs/specific-objectives/:itemId': 'catalog_therapeutic_objectives:update',
-  'GET /therapeutic-catalogs/activities': 'catalog_therapeutic_activities:read',
+  'PATCH /therapeutic-catalogs/specific-objectives/:itemId': OBJ_UPDATE,
+  'GET /therapeutic-catalogs/specific-objectives/:itemId/categories': OBJ_READ,
+  'POST /therapeutic-catalogs/specific-objectives/:itemId/categories': OBJ_UPDATE,
+  'DELETE /therapeutic-catalogs/specific-objectives/:itemId/categories/:code': OBJ_UPDATE,
+  // Atividades: idem, com as células de atividade.
+  'GET /therapeutic-catalogs/activities': ACT_READ,
   'POST /therapeutic-catalogs/activities': 'catalog_therapeutic_activities:create',
-  'PATCH /therapeutic-catalogs/activities/:itemId': 'catalog_therapeutic_activities:update',
-  // US-17 (migration 430) — mesmo molde, célula literal própria.
-  'GET /therapeutic-catalogs/segments': 'catalog_therapeutic_segments:read',
-  'POST /therapeutic-catalogs/segments': 'catalog_therapeutic_segments:create',
-  'PATCH /therapeutic-catalogs/segments/:itemId': 'catalog_therapeutic_segments:update',
+  'PATCH /therapeutic-catalogs/activities/:itemId': ACT_UPDATE,
+  'GET /therapeutic-catalogs/activities/:itemId/categories': ACT_READ,
+  'POST /therapeutic-catalogs/activities/:itemId/categories': ACT_UPDATE,
+  'DELETE /therapeutic-catalogs/activities/:itemId/categories/:code': ACT_UPDATE,
   // Motivos de saída (492) — kind fora do laço terapêutico, célula literal própria; `/options` lê sob patient_services:read.
   'GET /therapeutic-catalogs/service-exit-reasons': 'catalog_service_exit_reasons:read',
   'POST /therapeutic-catalogs/service-exit-reasons': 'catalog_service_exit_reasons:create',
@@ -79,6 +91,9 @@ function controllerDuble(): AdminTherapeuticProjectsController {
     res.json({ m: nome, id: req.params.id, vid: req.params.vid, itemId: req.params.itemId });
   const respondeCatalogo = (nome: string) => (kind: string, req: express.Request, res: express.Response) =>
     res.json({ m: nome, kind, itemId: req.params.itemId });
+  // Vínculo com categoria: o `owner` (objective|activity) vem da ROTA, nunca do cliente.
+  const respondeVinculo = (nome: string) => (owner: string, req: express.Request, res: express.Response) =>
+    res.json({ m: nome, owner, itemId: req.params.itemId, code: req.params.code });
   return {
     list: responde('list'),
     create: responde('create'),
@@ -88,6 +103,11 @@ function controllerDuble(): AdminTherapeuticProjectsController {
     createCatalogItem: respondeCatalogo('createCatalogItem'),
     updateCatalogItem: respondeCatalogo('updateCatalogItem'),
     listServiceExitReasonOptions: responde('listServiceExitReasonOptions'),
+    cascade: responde('cascade'),
+    searchIcdCategories: responde('searchIcdCategories'),
+    listCategoryLinks: respondeVinculo('listCategoryLinks'),
+    addCategoryLink: respondeVinculo('addCategoryLink'),
+    removeCategoryLink: respondeVinculo('removeCategoryLink'),
   } as unknown as AdminTherapeuticProjectsController;
 }
 
@@ -127,22 +147,45 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  it('cada uma das 21 rotas declara a célula do mapa (D299.3)', () => {
+  it('cada uma das 26 rotas declara a célula LITERAL do mapa (D299.3, §9.4 da 091)', () => {
     const declarado = Object.fromEntries(
       scanExpressRouter(build()).map((route) => [
         `${route.method} ${route.path}`,
-        route.cell ? cellKey(route.cell.resource, route.cell.action) : null,
+        (route.cells ?? []).map((c) => cellKey(c.resource, c.action)).join(' + ') || null,
       ]),
     );
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('são exatamente 21 rotas: 4 do projeto + 3 catálogos × 3 verbos + motivos de saída (3 + options) + guardias (3 + options)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(21);
+  it('são exatamente 26 rotas: 4 do projeto + cascade + icd-categories + 2 catálogos × 6 + motivos de saída (3 + options) + guardias (3 + options)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(26);
   });
 
-  it('não existe DELETE em lugar nenhum — versão é imutável (lex C5) e catálogo é baixa lógica', () => {
-    expect(scanExpressRouter(build()).map((r) => r.method)).not.toContain('DELETE');
+  it('DELETE só existe nos vínculos de categoria (…/categories/:code) — versão é imutável (lex C5) e item de catálogo é baixa lógica', () => {
+    const deletes = scanExpressRouter(build()).filter((r) => r.method === 'DELETE').map((r) => r.path);
+    expect(deletes).toEqual([
+      '/therapeutic-catalogs/specific-objectives/:itemId/categories/:code',
+      '/therapeutic-catalogs/activities/:itemId/categories/:code',
+    ]);
+  });
+
+  it('091: `segments` NÃO existe — nenhuma rota, nenhuma célula `catalog_therapeutic_segments`', () => {
+    const rotas = scanExpressRouter(build());
+    expect(rotas.some((r) => r.path.includes('segments'))).toBe(false);
+    expect(rotas.some((r) => (r.cells ?? []).some((c) => c.resource === 'catalog_therapeutic_segments'))).toBe(false);
+  });
+
+  it.each([
+    ['get', '/api/admin/therapeutic-catalogs/segments'],
+    ['post', '/api/admin/therapeutic-catalogs/segments'],
+    ['patch', '/api/admin/therapeutic-catalogs/segments/i-1'],
+  ] as const)('091: %s %s → 404 (rota removida)', async (metodo, caminho) => {
+    await request(app())[metodo](caminho).expect(404);
+  });
+
+  it('091: `cascade` declara as DUAS células, objetivos:read e atividades:read, nesta ordem', () => {
+    const cascade = scanExpressRouter(build()).find((r) => r.method === 'POST' && r.path === '/therapeutic-catalogs/cascade');
+    expect((cascade?.cells ?? []).map((c) => cellKey(c.resource, c.action))).toEqual([OBJ_READ, ACT_READ]);
   });
 
   it('a célula do catálogo é LITERAL por rota — não há `:kind` dinâmico que a calcule em runtime', () => {
@@ -176,9 +219,14 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     ['get', '/api/admin/therapeutic-catalogs/activities', 'listCatalog'],
     ['post', '/api/admin/therapeutic-catalogs/activities', 'createCatalogItem'],
     ['patch', '/api/admin/therapeutic-catalogs/activities/i-1', 'updateCatalogItem'],
-    ['get', '/api/admin/therapeutic-catalogs/segments', 'listCatalog'],
-    ['post', '/api/admin/therapeutic-catalogs/segments', 'createCatalogItem'],
-    ['patch', '/api/admin/therapeutic-catalogs/segments/i-1', 'updateCatalogItem'],
+    ['post', '/api/admin/therapeutic-catalogs/cascade', 'cascade'],
+    ['get', '/api/admin/therapeutic-catalogs/icd-categories', 'searchIcdCategories'],
+    ['get', '/api/admin/therapeutic-catalogs/specific-objectives/i-1/categories', 'listCategoryLinks'],
+    ['post', '/api/admin/therapeutic-catalogs/specific-objectives/i-1/categories', 'addCategoryLink'],
+    ['delete', '/api/admin/therapeutic-catalogs/specific-objectives/i-1/categories/6A02', 'removeCategoryLink'],
+    ['get', '/api/admin/therapeutic-catalogs/activities/i-1/categories', 'listCategoryLinks'],
+    ['post', '/api/admin/therapeutic-catalogs/activities/i-1/categories', 'addCategoryLink'],
+    ['delete', '/api/admin/therapeutic-catalogs/activities/i-1/categories/6A02', 'removeCategoryLink'],
     ['get', '/api/admin/therapeutic-catalogs/service-exit-reasons', 'listCatalog'],
     ['post', '/api/admin/therapeutic-catalogs/service-exit-reasons', 'createCatalogItem'],
     ['patch', '/api/admin/therapeutic-catalogs/service-exit-reasons/i-1', 'updateCatalogItem'],
@@ -191,11 +239,23 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
   it.each([
     ['specific-objectives'],
     ['activities'],
-    ['segments'],
     ['service-exit-reasons'],
   ])('o kind `%s` chega ao controller pela ROTA, não por param do cliente', async (kind) => {
     const res = await request(app()).get(`/api/admin/therapeutic-catalogs/${kind}`).expect(200);
     expect(res.body.kind).toBe(kind);
+  });
+
+  it.each([
+    ['get', '/api/admin/therapeutic-catalogs/specific-objectives/i-1/categories', 'objective'],
+    ['post', '/api/admin/therapeutic-catalogs/specific-objectives/i-1/categories', 'objective'],
+    ['delete', '/api/admin/therapeutic-catalogs/specific-objectives/i-1/categories/6A02', 'objective'],
+    ['get', '/api/admin/therapeutic-catalogs/activities/i-1/categories', 'activity'],
+    ['post', '/api/admin/therapeutic-catalogs/activities/i-1/categories', 'activity'],
+    ['delete', '/api/admin/therapeutic-catalogs/activities/i-1/categories/6A02', 'activity'],
+  ] as const)('091: %s %s → o dono do vínculo (%s) vem da ROTA e `:code` chega como param', async (metodo, caminho, dono) => {
+    const res = await request(app())[metodo](caminho).expect(200);
+    expect(res.body.owner).toBe(dono);
+    expect(res.body.itemId).toBe('i-1');
   });
 
   it('R1 rotas de guardias exigem a célula certa', async () => {

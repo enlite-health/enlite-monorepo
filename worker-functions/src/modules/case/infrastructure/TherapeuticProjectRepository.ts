@@ -7,17 +7,22 @@ import {
   sortByCreatedDesc,
   versionLabel,
   currentVersionOf,
-  macroFieldsChanged,
+  layoutNameOf,
+  objectivesLayoutFor,
   type CatalogSnapshotItem,
   type ContactRef,
   type PathologySegment,
   type TherapeuticCatalogSnapshotItem,
   type TherapeuticDiagnosis,
-  type TherapeuticMacroField,
   type TherapeuticModality,
   type TherapeuticProjectVersion,
+  type VersionObjectivesBody,
+  type SnapshotColumns,
 } from '../domain/TherapeuticProject';
-import { TherapeuticCatalogRepository } from './TherapeuticCatalogRepository';
+import type { DiagnosisPlanInput, DiagnosisPlanSnapshot } from '../domain/TherapeuticDiagnosisPlan';
+import { BuildDiagnosisPlans } from '../application/buildDiagnosisPlans';
+import { ResolveDiagnosisCategories } from '../application/resolveDiagnosisCategories';
+import { PgTherapeuticCatalogCascade } from './PgTherapeuticCatalogCascade';
 import { TherapeuticProjectContactStatusRepository } from './TherapeuticProjectContactStatusRepository';
 import { TherapeuticContactReminderRepository } from './TherapeuticContactReminderRepository';
 import { planContactStatuses, type ContactStatusMap } from '../domain/TherapeuticContactStatus';
@@ -41,8 +46,10 @@ interface VersionRow {
   specific_objectives: TherapeuticCatalogSnapshotItem[];
   activities: TherapeuticCatalogSnapshotItem[];
   pathology_types: PathologySegment[];
-  /** `NULL` em versão anterior à 496 (spec 030). */
+  /** `NULL` em versão anterior à 496 (spec 030) e em todo versão do formato por diagnóstico (091). */
   segment: CatalogSnapshotItem | null;
+  /** Blocos por diagnóstico (091); `NULL` = formato plano (antigo). */
+  diagnosis_plans?: DiagnosisPlanSnapshot[] | null;
   start_date: string;
   end_date: string;
   annulled_at: string | null;
@@ -55,14 +62,12 @@ interface VersionRow {
   created_at: string;
 }
 
-export interface TherapeuticProjectVersionInput {
+export interface TherapeuticProjectBaseInput {
   contractedServiceId: string;
   modality: TherapeuticModality;
   diagnoses: TherapeuticDiagnosis[];
   clinicalContext: string;
   generalObjective: string;
-  specificObjectiveIds: string[];
-  activityIds: string[];
   startDate: string;
   endDate: string;
   /** MICRO (D328/SUP-24) — só ids; a linha de origem tem de estar ATIVA (trigger 429). */
@@ -72,8 +77,11 @@ export interface TherapeuticProjectVersionInput {
   contactStatus: ContactStatusMap;
 }
 
-/** `mode:'new'` carrega o `segmentId` (MACRO, spec 030) — o `{id,label}` é congelado AQUI, do catálogo ativo. */
-export type NewTherapeuticProjectVersionInput = TherapeuticProjectVersionInput & { segmentId: string };
+/** `mode:'edit'` (091, §9.4): a forma-base + ids planos OU blocos por diagnóstico, no formato da origem (senão 422 `ptp_format_mismatch`). */
+export type TherapeuticProjectVersionInput = TherapeuticProjectBaseInput & VersionObjectivesBody;
+
+/** `mode:'new'` (091): sempre por diagnóstico — o `{id,label}` dos itens é congelado AQUI, do catálogo ativo do serviço. */
+export type NewTherapeuticProjectVersionInput = TherapeuticProjectBaseInput & { diagnosisPlans: DiagnosisPlanInput[] };
 
 /** `cells`: células do ator (D113: `null`/ausente = o engine não decidiu → passa). Só decide `NOT_NEEDED` novo. */
 export type CreateVersionCommand =
@@ -125,6 +133,8 @@ function toVersion(r: VersionRow): TherapeuticProjectVersion {
     activities: r.activities,
     pathologyTypes: r.pathology_types,
     segment: r.segment ?? null,
+    diagnosisPlans: r.diagnosis_plans ?? null,
+    objectivesLayout: layoutNameOf(r.diagnosis_plans),
     startDate: isoDate(r.start_date),
     endDate: isoDate(r.end_date),
     annulledAt: isoTs(r.annulled_at),
@@ -148,7 +158,6 @@ export class TherapeuticProjectRepository {
   private poolMemo?: Pool;
 
   constructor(
-    private readonly catalogs: TherapeuticCatalogRepository = new TherapeuticCatalogRepository(),
     /** Resolve o capítulo CID-11 de cada diagnóstico — o "tipo de patologia" é derivado, não escolhido. */
     private readonly terminology: TerminologyPort = createTerminologyPort(process.env),
     private readonly statuses: TherapeuticProjectContactStatusRepository = new TherapeuticProjectContactStatusRepository(),
@@ -200,12 +209,12 @@ export class TherapeuticProjectRepository {
 
         let number: { major: number; minor: number };
         let editedFrom: string | null = null;
-        // Segmento (030): `new` congela o do catálogo ATIVO; `edit` COPIA o da origem (MACRO não muda;
-        // origem anterior à 496 → `null`).
-        let segment: CatalogSnapshotItem | null;
+        // Snapshot de objetivos/atividades/segmento/blocos: `new` monta do catálogo ativo DO SERVIÇO (091, §9.6);
+        // `edit` COPIA o da origem pela Strategy do formato dela (DD-6), sem reler o catálogo.
+        let columns: SnapshotColumns;
         if (cmd.mode === 'new') {
           number = nextMajor(existing);
-          segment = await this.catalogs.snapshotSegment(cmd.version.segmentId, cli);
+          columns = await this.newSnapshot(cli, cmd.patientId, cmd.version);
         } else {
           const source = existing.find((v) => v.id === cmd.fromVersionId && v.annulledAt === null);
           if (!source) throw new SourceVersionNotFoundError();
@@ -213,52 +222,33 @@ export class TherapeuticProjectRepository {
           // editada — 409, nunca "edita como se fosse a última minor da major".
           const current = currentVersionOf(existing);
           if (!current || current.id !== source.id) throw new VersionNotCurrentError();
+          const layout = objectivesLayoutFor(source.objectivesLayout);
+          layout.assertAccepts(cmd.version);
           // D328: MACRO só muda em versão NOVA — edição recusa alteração de MACRO (422, só nomes).
-          const changedMacro = macroFieldsChanged(
-            {
-              contractedServiceId: source.contractedServiceId,
-              diagnosisUris: source.diagnoses.map((d) => d.uri),
-              clinicalContext: source.clinicalContext,
-              generalObjective: source.generalObjective,
-              specificObjectiveIds: source.specificObjectives.map((o) => o.id),
-              activityIds: source.activities.map((a) => a.id),
-            },
-            {
-              contractedServiceId: cmd.version.contractedServiceId,
-              diagnoses: cmd.version.diagnoses,
-              clinicalContext: cmd.version.clinicalContext,
-              generalObjective: cmd.version.generalObjective,
-              specificObjectiveIds: cmd.version.specificObjectiveIds,
-              activityIds: cmd.version.activityIds,
-            },
-          );
+          const changedMacro = layout.macroChanged(source, cmd.version);
           if (changedMacro.length > 0) throw new MacroFieldsLockedError(changedMacro);
           number = nextMinorOf(existing, source.major);
           editedFrom = source.id;
-          segment = source.segment;
+          columns = layout.copyFromOrigin(source);
         }
 
-        // Snapshot montado AQUI, do catálogo (lex C19): o cliente manda ids, a versão congela texto.
         // O tipo de patologia é DERIVADO dos CID-11 (capítulo, via porta de terminologia) — D163/D164.
-        const [specificObjectives, activities, pathologyTypes] = await Promise.all([
-          this.catalogs.snapshotOf('specific-objectives', cmd.version.specificObjectiveIds, cli),
-          this.catalogs.snapshotOf('activities', cmd.version.activityIds, cli),
-          derivePathologySegments(this.terminology, cmd.version.diagnoses),
-        ]);
+        const pathologyTypes = await derivePathologySegments(this.terminology, cmd.version.diagnoses);
 
         const ins = await cli.query<{ id: string }>(
           `INSERT INTO patient_therapeutic_projects
              (patient_id, major, minor, edited_from_version_id, contracted_service_id, diagnoses,
               clinical_context, general_objective, specific_objectives, activities, pathology_types,
-              start_date, end_date, created_by, modality, segment)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13, $14, $15, $16::jsonb)
+              start_date, end_date, created_by, modality, segment, diagnosis_plans)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13, $14, $15, $16::jsonb, $17::jsonb)
            RETURNING id`,
           [
             cmd.patientId, number.major, number.minor, editedFrom, cmd.version.contractedServiceId,
             JSON.stringify(cmd.version.diagnoses), cmd.version.clinicalContext, cmd.version.generalObjective,
-            JSON.stringify(specificObjectives), JSON.stringify(activities), JSON.stringify(pathologyTypes),
+            JSON.stringify(columns.specificObjectives), JSON.stringify(columns.activities), JSON.stringify(pathologyTypes),
             cmd.version.startDate, cmd.version.endDate, cmd.actorUid, cmd.version.modality,
-            segment === null ? null : JSON.stringify(segment),
+            columns.segment === null ? null : JSON.stringify(columns.segment),
+            columns.diagnosisPlans === null ? null : JSON.stringify(columns.diagnosisPlans),
           ],
         );
         // SUP-26: a ligação só nasce NESTA transação, com a versão já gravada — nunca "adicionar
@@ -284,6 +274,22 @@ export class TherapeuticProjectRepository {
       if (isServiceOfOtherPatient(err)) throw new ServiceNotOfPatientError();
       throw err;
     }
+  }
+
+  /**
+   * `mode:'new'` (§9.6): o `service_code` é lido AQUI, na transação, filtrando por paciente (sem o filtro burlaria a posse que
+   * o trigger 417 confere); os blocos nascem de `BuildDiagnosisPlans` sobre a cascata ligada ao client da transação.
+   * As listas planas ficam `[]` e `segment` NULL (formato exclusivo, DD-7).
+   */
+  private async newSnapshot(cli: PoolClient, patientId: string, input: NewTherapeuticProjectVersionInput): Promise<SnapshotColumns> {
+    const svc = await cli.query<{ service_code: string }>(
+      'SELECT service_code FROM patient_contracted_services WHERE id = $1 AND patient_id = $2',
+      [input.contractedServiceId, patientId],
+    );
+    if (svc.rows.length === 0) throw new ServiceNotOfPatientError();
+    const build = new BuildDiagnosisPlans(new ResolveDiagnosisCategories(this.terminology), new PgTherapeuticCatalogCascade(cli));
+    const diagnosisPlans = await build.execute(svc.rows[0].service_code, input.diagnosisPlans);
+    return { specificObjectives: [], activities: [], segment: null, diagnosisPlans };
   }
 
   /**

@@ -4,6 +4,12 @@
  * existente, REQ-21: código invisível), síntese clínica, objetivo geral (texto livre — Obs3), os 3
  * multi-selects do catálogo, prazo. Sem `major`/`minor`: a numeração é do servidor.
  *
+ * 091 (§9.8, DF-6): em "Nuevo" o plano é uma cascata Paso 1 serviço → Paso 2 diagnósticos → um
+ * `TherapeuticProjectDiagnosisBlock` por diagnóstico (objetivos → atividades); a regra mora em
+ * `TherapeuticCascade` (via `useTherapeuticCascade`). Em "Editar" o formato é o da origem, escolhido SÓ por
+ * `objectivesLayout` (DD-21) numa tabela (Strategy): `flat` = listas de hoje, `byDiagnosis` = blocos só leitura.
+ * O segmento saiu do form.
+ *
  * PR-7 (task 7.7, D328/ADR-4): editando a VIGENTE (`from !== null`), os campos MACRO de
  * `fieldClass.macro` (dono único: `THERAPEUTIC_FIELD_CLASS` no backend) renderizam como TEXTO, nunca
  * como input desabilitado — a lista de QUAIS campos é MACRO vem da API, não é copiada aqui.
@@ -31,6 +37,8 @@ import {
   type ContactStatusKind,
   type ContactStatusMap,
   type ContactStatusValue,
+  type DiagnosisPlanInput,
+  type ObjectivesLayoutName,
   type ResolvedTherapeuticContactKind,
   type TherapeuticDiagnosis,
   type TherapeuticFieldClass,
@@ -39,6 +47,8 @@ import {
   type TherapeuticProjectVersionBody,
 } from '@domain/entities/TherapeuticProject';
 import type { TherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
+import { useTherapeuticCascade } from '@hooks/admin/useTherapeuticCascade';
+import type { TherapeuticCatalogGateway } from '@domain/repositories/TherapeuticCatalogGateway';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { Combobox } from '@presentation/components/atoms/Combobox';
 import { TherapeuticProjectContactField } from './TherapeuticProjectContactField';
@@ -47,8 +57,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { ClinicalTextareaField } from '../edit/ClinicalTextareaField';
 import { IcdSearchCombobox } from '../edit/IcdSearchCombobox';
-import { TherapeuticProjectSegmentField } from './TherapeuticProjectSegmentField';
-import { segmentOptions } from './segmentOptions';
+import { TherapeuticProjectDiagnosisBlock, TherapeuticProjectDiagnosisBlockReadOnly } from './TherapeuticProjectDiagnosisBlock';
 import { sortAlphabeticallyEs } from './alphabeticalOrder';
 import { keptCareTeamIds, keptIdsOfKind, removedInactiveByKind } from './contactSelection';
 import { todayInOperationZone } from '@presentation/utils/dateTimeFormat';
@@ -75,9 +84,13 @@ interface Props {
   initialContactStatus: ContactStatusEntry[];
   saving: boolean;
   saveError: string | null;
+  /** 422 de bloco (DD-21): a frase aparece NO bloco do `diagnosisIndex` (a posição em `toRequestBody`). */
+  saveBlockError?: { diagnosisIndex: number; message: string } | null;
   onSubmit: (body: TherapeuticProjectVersionBody) => void;
   onCancel: () => void;
   onDirty: () => void;
+  /** Porta da cascata (091); o default é a infraestrutura. Testes injetam um fake da porta. */
+  catalogGateway?: TherapeuticCatalogGateway;
 }
 
 // Dia civil de -03 (Buenos Aires), não o dia UTC: depois das 21h o `toISOString()` já devolvia amanhã.
@@ -97,13 +110,17 @@ export function TherapeuticProjectForm({
   initialContactStatus,
   saving,
   saveError,
+  saveBlockError = null,
   onSubmit,
   onCancel,
   onDirty,
+  catalogGateway,
 }: Props): JSX.Element {
   const { t } = useTranslation();
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.therapeuticProjectCard.${k}`, o ?? {});
   const tf = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.therapeuticProjectForm.${k}`, o ?? {});
+  /** Textos da cascata 091 (§9.8): vivem sob `therapeuticProjectForm.` na raiz do i18n. */
+  const tt = (k: string, o?: Record<string, unknown>) => t(`therapeuticProjectForm.${k}`, o ?? {});
 
   // D328/ADR-4: só em `mode:'edit'` (from !== null) os campos MACRO travam; "Novo" (from === null)
   // nunca trava nada. `fieldClass.macro` é a lista da API — nenhum nome de campo hardcoded aqui.
@@ -119,6 +136,7 @@ export function TherapeuticProjectForm({
   );
   const [clinicalContext, setClinicalContext] = useState(from?.clinicalContext ?? '');
   const [generalObjective, setGeneralObjective] = useState(from?.generalObjective ?? '');
+  // Só o "Editar" de versão `flat` usa estas duas listas; o "Nuevo" escolhe pela cascata (DD-13: nasce vazio).
   const [specificObjectiveIds, setSpecificObjectiveIds] = useState<string[]>(from?.specificObjectives.map((o) => o.id) ?? []);
   const [activityIds, setActivityIds] = useState<string[]>(from?.activities.map((a) => a.id) ?? []);
   const [startDate, setStartDate] = useState(from?.startDate ?? today());
@@ -141,20 +159,44 @@ export function TherapeuticProjectForm({
     const { [kind]: _old, ...rest } = contactStatus;
     touch(setContactStatus)(v === null ? rest : { ...rest, [kind]: v });
   };
-  const [segmentId, setSegmentId] = useState(from?.segment?.id ?? ''); // spec 030: MACRO, escolhido só no "Nuevo"; filtra objetivos/atividades
 
   const touch = <T,>(setter: (v: T) => void) => (v: T) => { setter(v); onDirty(); };
 
+  // DD-21: o formato vem SÓ de `objectivesLayout`; "Nuevo" é sempre por diagnóstico.
+  const layout: ObjectivesLayoutName = from?.objectivesLayout ?? 'byDiagnosis';
+  // Serviço da cascata = código do serviço escolhido (T401 a). `services` redigido = [] → sem código → não chama.
+  const serviceCode = isEditing ? null : services.find((s) => s.id === contractedServiceId)?.serviceCode ?? null;
+  const cascadeApi = useTherapeuticCascade(serviceCode, isEditing ? [] : diagnoses.map((d) => d.uri), catalogGateway);
+  const { cascade } = cascadeApi;
+  const [touchedBlocks, setTouchedBlocks] = useState<readonly string[]>([]);
+  const touchBlock = (uri: string): void => setTouchedBlocks((cur) => (cur.includes(uri) ? cur : [...cur, uri]));
+  const originPlans: DiagnosisPlanInput[] = (from?.diagnosisPlans ?? []).map((p) => ({
+    diagnosisUri: p.diagnosisUri,
+    specificObjectiveIds: p.objectives.map((o) => o.id),
+    activityIds: p.activities.map((a) => a.id),
+  }));
+  const diagnosisTitleOf = (uri: string): string => diagnoses.find((d) => d.uri === uri)?.title ?? '';
+
+  // Strategy por formato (DD-21): erro de plano, campos do corpo e painel. Sem `if (diagnosisPlans)`.
+  const planErrors: Record<ObjectivesLayoutName, () => string[]> = {
+    flat: () => [...(specificObjectiveIds.length === 0 ? ['specificObjectives'] : []), ...(activityIds.length === 0 ? ['activities'] : [])],
+    byDiagnosis: () => (isEditing || cascadeApi.canSubmit ? [] : ['plan']),
+  };
+  const planFields: Record<ObjectivesLayoutName, () => { specificObjectiveIds: string[]; activityIds: string[] } | { diagnosisPlans: DiagnosisPlanInput[] }> = {
+    flat: () => ({ specificObjectiveIds, activityIds }),
+    byDiagnosis: () => ({ diagnosisPlans: isEditing ? originPlans : cascadeApi.toRequestBody() }),
+  };
+
   const clinicalRedacted = from?.redacted?.clinical === true;
+  /** Paso 2 só habilita com o Paso 1 (DF-6); em "Editar" o serviço é MACRO e a cascata não roda. */
+  const diagnosesBlocked = !isEditing && !cascade.canChooseDiagnoses();
   const errors: string[] = [];
   if (!contractedServiceId) errors.push('service');
   if (!modality) errors.push('modality');
   if (diagnoses.length === 0) errors.push('diagnoses');
   if (clinicalContext.trim().length === 0) errors.push('clinicalContext');
   if (generalObjective.trim().length === 0) errors.push('generalObjective');
-  if (specificObjectiveIds.length === 0) errors.push('specificObjectives');
-  if (activityIds.length === 0) errors.push('activities');
-  if (!isEditing && !segmentId) errors.push('segment');
+  errors.push(...planErrors[layout]());
   if (!startDate || !endDate || endDate < startDate) errors.push('dates');
   const canSave = errors.length === 0 && !saving && !clinicalRedacted;
 
@@ -163,9 +205,12 @@ export function TherapeuticProjectForm({
     touch(setDiagnoses)([...diagnoses, { uri: c.uri, title: c.title }]);
   };
 
-  /** Escolhidos (da versão antiga, já desativados, ou fora do segmento atual) continuam visíveis como opção. */
-  const optionsOf = (kind: 'specific-objectives' | 'activities', chosen: { id: string; label: string }[] | undefined, picked: string[]) =>
-    segmentOptions(catalogs[kind], segmentId, [...(chosen ?? []), ...catalogs[kind].filter((i) => picked.includes(i.id))], kind === 'activities');
+  /** Escolhidos da versão antiga (já desativados no catálogo) continuam visíveis como opção. Atividades A–Z (spec 060). */
+  const optionsOf = (kind: 'specific-objectives' | 'activities', chosen: { id: string; label: string }[] | undefined) => {
+    const live = catalogs[kind];
+    const merged = [...live, ...(chosen ?? []).filter((c) => !live.some((i) => i.id === c.id))];
+    return (kind === 'activities' ? sortAlphabeticallyEs(merged) : merged).map((i) => ({ value: i.id, label: i.label }));
+  };
 
   const contactOptionsOf = (items: { id: string; label: string }[]) => items.map((i) => ({ value: i.id, label: i.label }));
   /**
@@ -209,6 +254,53 @@ export function TherapeuticProjectForm({
         </ul>
       );
 
+  const flatPanel = (): JSX.Element => (
+    <>
+      <FormField label={tc('specificObjectives')} htmlFor="tp-specificObjectives" labelSize="compact" required={!isMacroLocked('specificObjectiveIds')}>
+        {/* `isMacroLocked` só é `true` com `isEditing` (⇒ `from !== null`, checado ali em cima) — `from!` fecha o tipo sem reabrir um `?? []` de fato inatingível. */}
+        {isMacroLocked('specificObjectiveIds')
+          ? lockedList(from!.specificObjectives, 'tp-specificObjectives-locked')
+          : <Combobox multiple id="tp-specificObjectives" options={optionsOf('specific-objectives', from?.specificObjectives)} value={specificObjectiveIds} onChange={touch(setSpecificObjectiveIds)} placeholder={tf('selectPlaceholder')} inputSize="compact" />}
+      </FormField>
+      <FormField label={tc('activitiesPlan')} htmlFor="tp-activities" labelSize="compact" required={!isMacroLocked('activityIds')}>
+        {isMacroLocked('activityIds')
+          ? lockedList(sortAlphabeticallyEs(from!.activities), 'tp-activities-locked')
+          : <Combobox multiple id="tp-activities" options={optionsOf('activities', from?.activities)} value={activityIds} onChange={touch(setActivityIds)} placeholder={tf('selectPlaceholder')} inputSize="compact" />}
+      </FormField>
+    </>
+  );
+
+  /** "Editar" de versão `byDiagnosis`: blocos só leitura (MACRO); "Nuevo": blocos da cascata (Paso 3 e 4). */
+  const byDiagnosisPanel = (): JSX.Element => (
+    <div className="flex flex-col gap-4" data-testid="tp-diagnosis-blocks">
+      {isEditing
+        ? (from?.diagnosisPlans ?? []).map((plan) => (
+          <TherapeuticProjectDiagnosisBlockReadOnly key={plan.diagnosisUri} title={diagnosisTitleOf(plan.diagnosisUri)} plan={plan} />
+        ))
+        : (
+          <>
+            {cascadeApi.error && <Text size="sm" className="text-red-700" role="alert" data-testid="tp-cascade-error">{tt('cascadeError')}</Text>}
+            {cascadeApi.blocks.map((block, index) => (
+              <TherapeuticProjectDiagnosisBlock
+                key={block.diagnosisUri}
+                title={diagnosisTitleOf(block.diagnosisUri)}
+                block={block}
+                cascade={cascade}
+                showIncomplete={touchedBlocks.includes(block.diagnosisUri) && !cascade.isBlockComplete(block.diagnosisUri)}
+                disabled={saving}
+                refusal={saveBlockError?.diagnosisIndex === index ? saveBlockError.message : undefined}
+                onToggleObjective={(id) => { touchBlock(block.diagnosisUri); cascadeApi.toggleObjective(block.diagnosisUri, id); onDirty(); }}
+                onToggleActivity={(id) => { touchBlock(block.diagnosisUri); cascadeApi.toggleActivity(block.diagnosisUri, id); onDirty(); }}
+              />
+            ))}
+          </>
+        )}
+    </div>
+  );
+
+  /** Strategy por `objectivesLayout` (DD-21): um painel por formato. */
+  const planPanels: Record<ObjectivesLayoutName, () => JSX.Element> = { flat: flatPanel, byDiagnosis: byDiagnosisPanel };
+
   return (
     <form
       className="flex flex-col gap-6"
@@ -228,9 +320,7 @@ export function TherapeuticProjectForm({
           diagnoses,
           clinicalContext: clinicalContext.trim(),
           generalObjective: generalObjective.trim(),
-          specificObjectiveIds,
-          activityIds,
-          ...(segmentId ? { segmentId } : {}),
+          ...planFields[layout](),
           startDate,
           endDate,
           contactRefs,
@@ -251,7 +341,7 @@ export function TherapeuticProjectForm({
       )}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-12 gap-y-6">
         <div className="flex flex-col gap-6">
-          <FormField label={tf('service')} htmlFor="tp-service" labelSize="compact" required={!isMacroLocked('contractedServiceId')}>
+          <FormField label={isEditing ? tf('service') : tt('stepService')} htmlFor="tp-service" labelSize="compact" required={!isMacroLocked('contractedServiceId')}>
             {isMacroLocked('contractedServiceId')
               ? lockedText(lockedServiceLabel(), 'tp-service-locked')
               : (
@@ -294,9 +384,10 @@ export function TherapeuticProjectForm({
           </FormField>
 
           <div className="flex flex-col gap-2" data-testid="tp-diagnoses">
-            <FormField label={tc('cid')} htmlFor="tp-icd" labelSize="compact" required={!isMacroLocked('diagnoses')}>
-              {!isMacroLocked('diagnoses') && <IcdSearchCombobox id="tp-icd" onSelect={addDiagnosis} disabled={saving} />}
+            <FormField label={isEditing ? tc('cid') : tt('stepDiagnoses')} htmlFor="tp-icd" labelSize="compact" required={!isMacroLocked('diagnoses')}>
+              {!isMacroLocked('diagnoses') && <IcdSearchCombobox id="tp-icd" onSelect={addDiagnosis} disabled={saving || diagnosesBlocked} />}
             </FormField>
+            {diagnosesBlocked && <Text size="xs" className="text-amber-700" data-testid="tp-choose-service-first">{tt('chooseServiceFirst')}</Text>}
             <ul className="flex flex-wrap gap-2" data-clarity-mask="True">
               {diagnoses.map((d) => (
                 <li key={d.uri} className="inline-flex items-center gap-2 rounded-lg border border-gray-600 px-3 py-1.5" data-testid="tp-diagnosis-chip">
@@ -310,9 +401,6 @@ export function TherapeuticProjectForm({
               ))}
             </ul>
           </div>
-
-          <TherapeuticProjectSegmentField segments={catalogs.segments} value={segmentId} onChange={touch(setSegmentId)}
-            locked={isMacroLocked('segmentId')} lockedSegment={from?.segment} redacted={clinicalRedacted} />
 
           {isMacroLocked('clinicalContext')
             ? <FormField label={tc('currentClinicalContext')} labelSize="compact">{lockedText(clinicalContext, 'tp-clinicalContext-locked')}</FormField>
@@ -328,17 +416,7 @@ export function TherapeuticProjectForm({
         </div>
 
         <div className="flex flex-col gap-6">
-          <FormField label={tc('specificObjectives')} htmlFor="tp-specificObjectives" labelSize="compact" required={!isMacroLocked('specificObjectiveIds')}>
-            {/* `isMacroLocked` só é `true` com `isEditing` (⇒ `from !== null`, checado ali em cima) — `from!` fecha o tipo sem reabrir um `?? []` de fato inatingível. */}
-            {isMacroLocked('specificObjectiveIds')
-              ? lockedList(from!.specificObjectives, 'tp-specificObjectives-locked')
-              : <Combobox multiple id="tp-specificObjectives" options={optionsOf('specific-objectives', from?.specificObjectives, specificObjectiveIds)} value={specificObjectiveIds} onChange={touch(setSpecificObjectiveIds)} placeholder={tf('selectPlaceholder')} inputSize="compact" />}
-          </FormField>
-          <FormField label={tc('activitiesPlan')} htmlFor="tp-activities" labelSize="compact" required={!isMacroLocked('activityIds')}>
-            {isMacroLocked('activityIds')
-              ? lockedList(sortAlphabeticallyEs(from!.activities), 'tp-activities-locked')
-              : <Combobox multiple id="tp-activities" options={optionsOf('activities', from?.activities, activityIds)} value={activityIds} onChange={touch(setActivityIds)} placeholder={tf('selectPlaceholder')} inputSize="compact" />}
-          </FormField>
+          {planPanels[layout]()}
           {/* Sem "Tipo de patología": deriva dos CID-11 no servidor (Gabriel 08/09; D163/D164) — máscara invisível na tela (DEC-09). */}
           <div className="grid grid-cols-2 gap-4">
             <FormField label={tf('startDate')} htmlFor="tp-startDate" labelSize="compact" required>

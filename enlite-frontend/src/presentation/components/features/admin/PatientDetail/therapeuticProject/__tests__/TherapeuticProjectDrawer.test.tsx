@@ -17,11 +17,11 @@ import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } fr
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import type { PatientContractedServiceDetail, PatientDetail } from '@domain/entities/PatientDetail';
-import type { TherapeuticCatalogItem, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
+import type { CascadeBlock, CascadeRequestBody, CascadeResponse, TherapeuticCatalogItem, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
+import type { TherapeuticCatalogGateway } from '@domain/repositories/TherapeuticCatalogGateway';
 import type { AuthzContract } from '@domain/entities/Authz';
 import type { ContactStatusEntry } from '@domain/entities/TherapeuticProject';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import { chooseCombo } from '@presentation/components/atoms/Combobox/testUtils';
 import { patientDetailFixture } from '../../__tests__/patientDetailFixture';
 
 // ── i18n mock (molde `PatientDetailCards.gate.test.tsx`) ─────────────────────
@@ -92,7 +92,7 @@ vi.mock('../../edit/IcdSearchCombobox', () => ({
 
 import { TherapeuticProjectApiError } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
 import { TherapeuticProjectDrawer, type TherapeuticProjectTarget } from '../TherapeuticProjectDrawer';
-import { saveRefusalMessage } from '../saveRefusalMessage';
+import { saveRefusalBlock, saveRefusalMessage } from '../saveRefusalMessage';
 
 // ── Insumos ──────────────────────────────────────────────────────────────────
 
@@ -157,6 +157,8 @@ const VERSAO: TherapeuticProjectVersion = {
   specificObjectives: [{ id: 'so1', label: 'Objetivo 1' }],
   activities: [{ id: 'ac1', label: 'Atividade 1' }],
   pathologyTypes: [{ id: 'pt1', label: 'Neurológica' }],
+  objectivesLayout: 'flat',
+  diagnosisPlans: null,
   startDate: '2026-01-10',
   endDate: '2026-06-10',
   annulledAt: null,
@@ -182,9 +184,32 @@ let cliqueNoAncora: MockInstance<[], void>;
 // Espelho de `THERAPEUTIC_FIELD_CLASS` (task 7.7) — o teste do form cobre o comportamento do
 // campo travado; aqui só precisa de uma lista não-vazia para o form renderizar o modo travado.
 const FIELD_CLASS = {
-  macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds', 'segmentId'],
+  macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds', 'diagnosisPlans'],
   micro: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'],
 };
+
+// ── Fake da porta da cascata (091): o "Nuevo" é cascata; o Drawer repassa a porta ao Form ─────────────
+
+const A_URI = 'urn:icd:A';
+const OBJ_A = `${A_URI}-o1`;
+const ACT_A = `${A_URI}-a1`;
+
+const blocoA: CascadeBlock = {
+  diagnosisUri: A_URI,
+  categoryCode: 'AB12',
+  status: 'ok',
+  objectives: [{ id: OBJ_A, label: 'Objetivo um', description: null, activities: [{ id: ACT_A, label: 'Atividade um', description: null, suggestedFrequency: null }] }],
+};
+
+class FakeGateway {
+  calls: CascadeRequestBody[] = [];
+  async cascade(body: CascadeRequestBody): Promise<CascadeResponse> {
+    this.calls.push(body);
+    return { serviceCode: body.serviceCode, serviceHasCatalog: true, blocks: body.diagnosisUris.map(() => blocoA) };
+  }
+}
+
+let fake: FakeGateway;
 
 const montar = (
   target: TherapeuticProjectTarget,
@@ -197,6 +222,7 @@ const montar = (
       fieldClass={FIELD_CLASS}
       currentContactStatus={over.currentContactStatus}
       contactReminderDates={over.contactReminderDates}
+      catalogGateway={fake as unknown as TherapeuticCatalogGateway}
       onClose={onClose}
       onSaved={onSaved}
     />,
@@ -230,6 +256,7 @@ function alternarNoMulti(id: string, label: string): void {
 }
 
 beforeEach(() => {
+  fake = new FakeGateway();
   vi.clearAllMocks();
   useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
   Object.defineProperty(URL, 'createObjectURL', { value: criarObjectURL, writable: true, configurable: true });
@@ -516,11 +543,10 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
     await esperarFormulario();
 
     escolherNoCombo('tp-modality', 'Presencial'); // IN_PERSON = Presencial
-    chooseCombo(screen.getByTestId('tp-segment'), 'Rótulo segments');
     fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: 'contexto novo' } });
     fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: 'objetivo novo' } });
-    alternarNoMulti('tp-specificObjectives', 'Rótulo specific-objectives');
-    alternarNoMulti('tp-activities', 'Rótulo activities');
+    fireEvent.click(await screen.findByTestId(`tp-obj-${A_URI}-${OBJ_A}`));
+    fireEvent.click(screen.getByTestId(`tp-act-${A_URI}-${OBJ_A}-${ACT_A}`));
     fireEvent.change(screen.getByTestId('tp-startDate'), { target: { value: '2026-09-01' } });
     fireEvent.change(screen.getByTestId('tp-endDate'), { target: { value: '2026-12-01' } });
 
@@ -534,9 +560,7 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
         diagnoses: [{ uri: 'urn:icd:A', title: 'Diagnóstico A' }],
         clinicalContext: 'contexto novo',
         generalObjective: 'objetivo novo',
-        specificObjectiveIds: ['specific-objectives-1'],
-        activityIds: ['activities-1'],
-        segmentId: 'segments-1',
+        diagnosisPlans: [{ diagnosisUri: A_URI, specificObjectiveIds: [OBJ_A], activityIds: [ACT_A] }],
         startDate: '2026-09-01',
         endDate: '2026-12-01',
         contactRefs: [],
@@ -549,12 +573,12 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
     expect(screen.getByTestId('therapeutic-project-subtitle')).toHaveTextContent('V.1.1 - Criado por: Gabriel QA');
   });
 
-  it('spec 030 — `edit` NÃO manda a chave `segmentId` (o servidor herda o segmento da origem), mesmo com a origem tendo segmento', async () => {
+  it('091 — `edit` NÃO manda a chave `segmentId` (sai do corpo; o form não tem campo de segmento), mesmo com a origem legada tendo segmento', async () => {
     catalogosOk();
     mockCreateVersion.mockResolvedValue(CRIADA);
     montar({ mode: 'edit', version: { ...VERSAO, segment: { id: 'segments-1', label: 'Rótulo segments' } } });
     await esperarFormulario();
-    expect(screen.getByTestId('tp-segment-locked')).toHaveTextContent('Rótulo segments');
+    expect(screen.queryByTestId('tp-segment-locked')).not.toBeInTheDocument();
 
     await act(async () => { fireEvent.click(screen.getByTestId('tp-save')); });
 
@@ -563,7 +587,7 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
     expect(Object.keys(corpo.version)).not.toContain('segmentId');
   });
 
-  it('spec 030 — `new` sem escolher segmento não chama a API (o form trava antes)', async () => {
+  it('091 — `new` sem escolher objetivo e atividade não chama a API (o form trava antes)', async () => {
     catalogosOk();
     montar({ mode: 'new' });
     await esperarFormulario();
@@ -640,6 +664,37 @@ describe('saveRefusalMessage — a recusa do servidor em frase de tela', () => {
   it('`ptp_macro_locked` SEM `details.fields` (formato inesperado) não quebra — a lista fica vazia', () => {
     const erro = new TherapeuticProjectApiError('nope', 422, { code: 'ptp_macro_locked' });
     expect(saveRefusalMessage(erro, t)).toBe(tfErr('ptpMacroLocked').replace('{{fields}}', ''));
+  });
+
+  // 091 (§9.4, DD-21): um caso por código; nunca o texto cru do back.
+  it.each([
+    ['ptp_plan_block_incomplete', 'planIncomplete'],
+    ['ptp_plan_objective_invalid', 'catalogChanged'],
+    ['ptp_plan_activity_invalid', 'catalogChanged'],
+    ['ptp_plan_block_without_catalog', 'catalogChanged'],
+    ['ptp_format_mismatch', 'formatMismatch'],
+  ])('091: `%s` vira `therapeuticProjectForm.%s` e NÃO mostra o texto do back', (code, chave) => {
+    const erro = new TherapeuticProjectApiError('Invalid diagnosis plan', 422, { code, details: { diagnosisIndex: 1 } });
+    const frase = saveRefusalMessage(erro, t);
+    expect(frase).toBe((ptBR.therapeuticProjectForm as Record<string, string>)[chave]);
+    expect(frase).not.toContain('Invalid diagnosis plan');
+  });
+
+  it.each([
+    ['ptp_plan_block_incomplete', 'planIncomplete'],
+    ['ptp_plan_objective_invalid', 'catalogChanged'],
+    ['ptp_plan_activity_invalid', 'catalogChanged'],
+    ['ptp_plan_block_without_catalog', 'catalogChanged'],
+  ])('091: `%s` aponta o bloco do `diagnosisIndex` com a mesma frase', (code, chave) => {
+    const erro = new TherapeuticProjectApiError('Invalid diagnosis plan', 422, { code, details: { diagnosisIndex: 1 } });
+    expect(saveRefusalBlock(erro, t)).toEqual({ diagnosisIndex: 1, message: (ptBR.therapeuticProjectForm as Record<string, string>)[chave] });
+  });
+
+  it('091: `ptp_format_mismatch`, código desconhecido, sem índice e não-API não apontam bloco algum', () => {
+    expect(saveRefusalBlock(new TherapeuticProjectApiError('x', 422, { code: 'ptp_format_mismatch', details: { diagnosisIndex: 0 } }), t)).toBeNull();
+    expect(saveRefusalBlock(new TherapeuticProjectApiError('x', 422, { code: 'algo_novo', details: { diagnosisIndex: 0 } }), t)).toBeNull();
+    expect(saveRefusalBlock(new TherapeuticProjectApiError('x', 422, { code: 'ptp_plan_block_incomplete' }), t)).toBeNull();
+    expect(saveRefusalBlock(new Error('x'), t)).toBeNull();
   });
 
   it('erro da API com `code` desconhecido cai na mensagem crua do servidor', () => {

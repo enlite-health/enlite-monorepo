@@ -5,7 +5,7 @@
  */
 import { useTranslation } from 'react-i18next';
 import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
-import type { TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
+import type { DiagnosisPlanSnapshot, ObjectivesLayoutName, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
 import { Text } from '@presentation/components/atoms/Text';
 import { formatIsoDateEsAr } from './pdf/therapeuticProjectPdfInput';
 import { sortAlphabeticallyEs } from './alphabeticalOrder';
@@ -91,6 +91,109 @@ function ContactStatusValue({ entries, tf }: { entries: TherapeuticProjectVersio
   );
 }
 
+type Translate = (k: string, o?: Record<string, unknown>) => string;
+
+/** O que cada formato precisa para desenhar objetivos, atividades e o Segmento. */
+interface LayoutCtx {
+  v: TherapeuticProjectVersion;
+  compact: boolean;
+  redacted: boolean;
+  tc: Translate;
+  tf: Translate;
+  t: Translate;
+}
+
+/**
+ * Strategy por formato da versão (DD-21: escolhida SÓ por `objectivesLayout`, nunca por `diagnosisPlans === null`).
+ * `FlatLayoutView` = lista plana de sempre; `ByDiagnosisLayoutView` = grupos por diagnóstico, como o PDF (§9.9).
+ */
+interface LayoutView {
+  segmentRow(ctx: LayoutCtx): JSX.Element | null;
+  objectives(ctx: LayoutCtx): JSX.Element;
+  activities(ctx: LayoutCtx): JSX.Element;
+}
+
+class FlatLayoutView implements LayoutView {
+  segmentRow({ v, redacted, tc }: LayoutCtx): JSX.Element {
+    // Spec 030: `redacted` (sem `patient_clinical:read`) ≠ `null` sem marcador (versão anterior à 496 → "—").
+    return (
+      <Row label={tc('segment')} testId="tpv-segment" mask>
+        {redacted
+          ? <Text as="span" size="sm" color="muted">{tc('redacted')}</Text>
+          : <Text as="span" size="sm" color="primary">{v.segment?.label ?? '—'}</Text>}
+      </Row>
+    );
+  }
+  objectives({ v, compact }: LayoutCtx): JSX.Element {
+    return <ListValue testPrefix="tpv-specific" items={compact ? v.specificObjectives.slice(0, 3) : v.specificObjectives} />;
+  }
+  activities({ v, compact }: LayoutCtx): JSX.Element {
+    return <ListValue testPrefix="tpv-activities" items={compact ? sortAlphabeticallyEs(v.activities).slice(0, 3) : sortAlphabeticallyEs(v.activities)} />;
+  }
+}
+
+type PlanItem = { id: string; label: string; description: string | null; suggestedFrequency?: string | null };
+
+/** `título — descrição · Frecuencia: valor` (§9.9); o texto clínico do catálogo vai mascarado no Clarity (C6). */
+function PlanGroups({ ctx, plans, testPrefix, pick }: { ctx: LayoutCtx; plans: DiagnosisPlanSnapshot[]; testPrefix: string; pick: (p: DiagnosisPlanSnapshot) => PlanItem[] }): JSX.Element {
+  const { v, t } = ctx;
+  // Chaves do formulário em cascata (T405) moram na RAIZ do i18n, não sob `admin.patients.detail`.
+  const tp = (k: string, o?: Record<string, unknown>): string => t(`therapeuticProjectForm.${k}`, o);
+  return (
+    <div className="flex flex-col gap-3">
+      {plans.map((plan) => {
+        const title = v.diagnoses?.find((d) => d.uri === plan.diagnosisUri)?.title ?? plan.categoryCode ?? '—';
+        return (
+          <div key={plan.diagnosisUri} className="flex flex-col gap-1" data-testid={`${testPrefix}-group-${plan.diagnosisUri}`}>
+            <Text as="span" size="sm" weight="medium" color="secondary">{`${t('admin.patients.detail.diagnosisCard.title')}: ${title}`}</Text>
+            {plan.objectives.length === 0
+              // DD-22: o vazio carrega a data da versão (`createdAt`), nunca só "sin catálogo".
+              ? <Text size="xs" color="muted" data-testid={`${testPrefix}-empty-${plan.diagnosisUri}`}>{tp('noCatalogAt', { date: formatIsoDateEsAr(v.createdAt) ?? '—' })}</Text>
+              : (
+                <ul className="list-disc pl-5" data-clarity-mask="True">
+                  {pick(plan).map((i) => (
+                    <li key={i.id} data-testid={`${testPrefix}-item-${i.id}`}>
+                      <Text as="span" size="sm" color="primary">
+                        {i.label}{i.description ? ` — ${i.description}` : ''}{i.suggestedFrequency ? ` · ${tp('frequency', { value: i.suggestedFrequency })}` : ''}
+                      </Text>
+                    </li>
+                  ))}
+                </ul>
+              )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * `byDiagnosis`: grupos por diagnóstico, sem o campo Segmento (§9.9). Redigido (`redacted.clinical`, sem `diagnosisPlans`)
+ * e o resumo compacto do card mostram a lista plana DERIVADA (DD-8), que a projeção sempre devolve.
+ */
+class ByDiagnosisLayoutView implements LayoutView {
+  private readonly derivedFlat = new FlatLayoutView();
+  private plansOf({ v, redacted, compact }: LayoutCtx): DiagnosisPlanSnapshot[] | null {
+    return redacted || compact ? null : v.diagnosisPlans;
+  }
+  segmentRow(): null {
+    return null;
+  }
+  objectives(ctx: LayoutCtx): JSX.Element {
+    const plans = this.plansOf(ctx);
+    return plans ? <PlanGroups ctx={ctx} plans={plans} testPrefix="tpv-specific" pick={(p) => p.objectives} /> : this.derivedFlat.objectives(ctx);
+  }
+  activities(ctx: LayoutCtx): JSX.Element {
+    const plans = this.plansOf(ctx);
+    return plans ? <PlanGroups ctx={ctx} plans={plans} testPrefix="tpv-activities" pick={(p) => p.activities} /> : this.derivedFlat.activities(ctx);
+  }
+}
+
+const LAYOUT_VIEWS: Record<ObjectivesLayoutName, LayoutView> = {
+  flat: new FlatLayoutView(),
+  byDiagnosis: new ByDiagnosisLayoutView(),
+};
+
 export function TherapeuticProjectVersionView({ version: v, services, compact = false, servicesRedacted = false }: Props): JSX.Element {
   const { t } = useTranslation();
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.therapeuticProjectCard.${k}`, o ?? {});
@@ -102,6 +205,9 @@ export function TherapeuticProjectVersionView({ version: v, services, compact = 
   const serviceLabel = service
     ? t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode)
     : servicesRedacted ? tc('redacted') : tc('serviceUnknown');
+
+  const layout = LAYOUT_VIEWS[v.objectivesLayout];
+  const ctx: LayoutCtx = { v, compact, redacted, tc, tf, t: t as Translate };
 
   const clinical = (text: string | null, testId: string): JSX.Element =>
     redacted || text === null
@@ -116,12 +222,7 @@ export function TherapeuticProjectVersionView({ version: v, services, compact = 
             ? <Text as="span" size="sm" color="muted">{tc('redacted')}</Text>
             : <ListValue testPrefix="tpv-diagnoses" items={v.diagnoses.map((d) => ({ id: d.uri, label: d.title }))} />}
         </Row>
-        {/* Spec 030: `redacted` (sem `patient_clinical:read`) ≠ `null` sem marcador (versão anterior à 496 → "—"). */}
-        <Row label={tc('segment')} testId="tpv-segment" mask>
-          {redacted
-            ? <Text as="span" size="sm" color="muted">{tc('redacted')}</Text>
-            : <Text as="span" size="sm" color="primary">{v.segment?.label ?? '—'}</Text>}
-        </Row>
+        {layout.segmentRow(ctx)}
         <Row label={tc('service')} testId="tpv-service"><Text as="span" size="sm" color="primary">{serviceLabel}</Text></Row>
         <Row label={tc('modality')} testId="tpv-modality">
           {/* Enum do backend: fallback para o valor cru (régua do CLAUDE.md), nunca a chave de i18n. */}
@@ -129,10 +230,10 @@ export function TherapeuticProjectVersionView({ version: v, services, compact = 
         </Row>
         <Row label={tc('currentClinicalContext')} testId="tpv-clinical">{clinical(v.clinicalContext, 'tpv-clinical-text')}</Row>
         <Row label={tc('generalObjective')} testId="tpv-objective">{clinical(v.generalObjective, 'tpv-objective-text')}</Row>
-        <Row label={tc('specificObjectives')} testId="tpv-specific"><ListValue testPrefix="tpv-specific" items={compact ? v.specificObjectives.slice(0, 3) : v.specificObjectives} /></Row>
+        <Row label={tc('specificObjectives')} testId="tpv-specific">{layout.objectives(ctx)}</Row>
       </div>
       <div className="flex flex-col gap-4">
-        <Row label={tc('activitiesPlan')} testId="tpv-activities"><ListValue testPrefix="tpv-activities" items={compact ? sortAlphabeticallyEs(v.activities).slice(0, 3) : sortAlphabeticallyEs(v.activities)} /></Row>
+        <Row label={tc('activitiesPlan')} testId="tpv-activities">{layout.activities(ctx)}</Row>
         {/* "Tipo de patología" não aparece na tela: é máscara derivada do CID-11 para o Ana Care (DEC-09) — sai só no PDF. */}
         {!compact && (
           <Row label={tc('contacts')} testId="tpv-contacts">

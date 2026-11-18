@@ -84,11 +84,17 @@ describe('SPLIT_RESOURCES / isSplitResource', () => {
     ];
     const porVariavel = [
       'patient_therapeutic_project', 'catalog_therapeutic_objectives',
-      'catalog_therapeutic_activities', 'catalog_therapeutic_segments', 'catalog_service_exit_reasons',
+      'catalog_therapeutic_activities', 'catalog_service_exit_reasons',
       'catalog_service_shift_templates',
     ];
     expect([...SPLIT_RESOURCES].sort()).toEqual([...literais, ...porVariavel].sort());
-    expect(SPLIT_RESOURCES.size).toBe(23);
+    expect(SPLIT_RESOURCES.size).toBe(22);
+    // 091 (DF-1): a célula do segmento saiu do código, como `catalog_pathology_types` (F-cod-3).
+    expect(SPLIT_RESOURCES.has('catalog_therapeutic_segments')).toBe(false);
+    expect(Object.keys(RESOURCE_CATEGORY)).not.toContain('catalog_therapeutic_segments');
+    expect(CELL_DESCRIPTION['catalog_therapeutic_segments:read']).toBeUndefined();
+    expect(CELL_DESCRIPTION['catalog_therapeutic_segments:create']).toBeUndefined();
+    expect(CELL_DESCRIPTION['catalog_therapeutic_segments:update']).toBeUndefined();
     // `recruitment` saiu com o dashboard de recrutamento (sem rota nem create/update no catálogo).
     expect(SPLIT_RESOURCES.has('recruitment')).toBe(false);
     expect(CELL_DESCRIPTION['recruitment:create']).toBeUndefined();

@@ -48,7 +48,7 @@ const onClose = vi.fn();
 
 /** Renderiza e espera o `requestAnimationFrame` do slide-in (o painel entra em `show`). */
 async function renderModal(alvo: TherapeuticCatalogItem | null = null) {
-  const utils = render(<TherapeuticCatalogFormModal kind="segments" item={alvo} onSave={onSave} onClose={onClose} />);
+  const utils = render(<TherapeuticCatalogFormModal kind="service-exit-reasons" item={alvo} onSave={onSave} onClose={onClose} />);
   await waitFor(() => expect(utils.container.querySelector('form')).toHaveClass('translate-x-0'));
   return utils;
 }
@@ -91,7 +91,7 @@ describe('TherapeuticCatalogFormModal — criar × editar', () => {
 
   it('o `requestAnimationFrame` do slide-in é cancelado ao desmontar (nada roda depois)', async () => {
     const cancel = vi.spyOn(window, 'cancelAnimationFrame');
-    const { unmount } = render(<TherapeuticCatalogFormModal kind="segments" item={null} onSave={onSave} onClose={onClose} />);
+    const { unmount } = render(<TherapeuticCatalogFormModal kind="service-exit-reasons" item={null} onSave={onSave} onClose={onClose} />);
     // Antes do frame: o painel está fora da tela e o fundo transparente.
     expect(document.querySelector('form')).toHaveClass('translate-x-full');
     unmount();
@@ -281,16 +281,18 @@ describe('TherapeuticCatalogFormModal — fechar', () => {
   });
 });
 
-// ── Spec 030 (F4) — vínculo OPCIONAL de segmento (objetivo/atividade) ───────────────────────────────
+// ── 091 — Servicio (objetivo), Objetivo + Frecuencia (atividade); sem Segmento ──────────────────────
 
-describe('TherapeuticCatalogFormModal — segmento opcional (spec 030)', () => {
-  const SEG_A = item({ id: 'seg-a', label: 'AT para Pacientes con TEA', sortOrder: 1 });
-  const SEG_B = item({ id: 'seg-b', label: 'AT para Salud Mental', sortOrder: 2 });
-  const SEG_OFF = item({ id: 'seg-off', label: 'Segmento viejo', sortOrder: 3, active: false });
-  const segmentoSelect = () => screen.getByTestId('therapeutic-catalog-segment-select');
+describe('TherapeuticCatalogFormModal — serviço, objetivo e frequência (091, DD-24)', () => {
+  const OBJ_A = item({ id: 'o-a', label: 'Objetivo A SINTETICO', sortOrder: 1 });
+  const OBJ_B = item({ id: 'o-b', label: 'Objetivo B SINTETICO', sortOrder: 2 });
+  const OBJ_OFF = item({ id: 'o-off', label: 'Objetivo viejo SINTETICO', sortOrder: 3, active: false });
+  const servicoSelect = () => screen.getByTestId('therapeutic-catalog-service-select');
+  const objetivoSelect = () => screen.getByTestId('therapeutic-catalog-objective-select');
+  const frecuencia = () => screen.getByTestId('therapeutic-catalog-frequency-input');
 
-  async function renderComSegmentos(alvo: TherapeuticCatalogItem | null, segments: TherapeuticCatalogItem[] | null) {
-    const utils = render(<TherapeuticCatalogFormModal kind="specific-objectives" item={alvo} segments={segments} onSave={onSave} onClose={onClose} />);
+  async function renderKind091(kind: 'specific-objectives' | 'activities', alvo: TherapeuticCatalogItem | null) {
+    const utils = render(<TherapeuticCatalogFormModal kind={kind} item={alvo} objectives={[OBJ_A, OBJ_B, OBJ_OFF]} onSave={onSave} onClose={onClose} />);
     await waitFor(() => expect(utils.container.querySelector('form')).toHaveClass('translate-x-0'));
     return utils;
   }
@@ -300,49 +302,117 @@ describe('TherapeuticCatalogFormModal — segmento opcional (spec 030)', () => {
     onSave.mockResolvedValue(undefined);
   });
 
-  it('com a lista de segmentos o campo "Segmento" aparece e oferece "sem segmento" + os ATIVOS', async () => {
-    await renderComSegmentos(null, [SEG_A, SEG_B, SEG_OFF]);
-    expect(screen.getByLabelText(COPY.form.segment)).toBe(segmentoSelect());
-    expect(segmentoSelect()).toHaveTextContent(COPY.form.segmentNone); // vazio mostra "Sem segmento"
-    fireEvent.click(segmentoSelect());
+  it('objetivo: o campo Servicio existe com os 2 serviços, e NÃO há Segmento, Objetivo nem Frecuencia', async () => {
+    await renderKind091('specific-objectives', null);
+    expect(screen.getByLabelText(COPY.service)).toBe(servicoSelect());
+    fireEvent.click(servicoSelect());
     const rotulos = within(screen.getByRole('listbox')).getAllByRole('option').map((o) => o.textContent);
-    expect(rotulos).toEqual([COPY.form.segmentNone, SEG_A.label, SEG_B.label]);
-  });
-
-  it('`null` (conta sem a célula de segmentos) esconde o campo, e o resto salva sem `segmentId`', async () => {
-    await renderComSegmentos(null, null);
+    expect(rotulos).toEqual([COPY.serviceAT, COPY.serviceCAREGIVER]);
     expect(screen.queryByTestId('therapeutic-catalog-segment-select')).toBeNull();
-    fireEvent.change(textoInput(), { target: { value: 'Aseo personal' } });
-    fireEvent.click(salvar());
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Aseo personal' }));
-    expect(Object.keys(onSave.mock.calls[0][0])).not.toContain('segmentId');
+    expect(screen.queryByTestId('therapeutic-catalog-objective-select')).toBeNull();
+    expect(screen.queryByTestId('therapeutic-catalog-frequency-input')).toBeNull();
   });
 
-  it('vínculo a segmento INATIVO aparece como "<rótulo> (inactivo)" e pode ser limpo (`segmentId: null`)', async () => {
-    await renderComSegmentos(item({ segmentId: 'seg-off' }), [SEG_A, SEG_OFF]);
-    expect(segmentoSelect()).toHaveTextContent('Segmento viejo (inactivo)'); // seg-off
-    fireEvent.click(segmentoSelect());
-    expect(screen.getByRole('option', { name: 'Segmento viejo (inactivo)' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('option', { name: COPY.form.segmentNone }).querySelector('button')!);
+  it('objetivo: o serviço é OBRIGATÓRIO — sem ele Salvar fica desabilitado; com ele o corpo leva `serviceCode`', async () => {
+    await renderKind091('specific-objectives', null);
+    fireEvent.change(textoInput(), { target: { value: 'TITULO-SINTETICO-6' } });
+    expect(salvar()).toBeDisabled();
+    await selectCombo(servicoSelect(), COPY.serviceCAREGIVER);
+    expect(salvar()).not.toBeDisabled();
     fireEvent.click(salvar());
-    // Spec 061: objetivo/atividade em edição manda SÓ o que mudou (sem label inalterado, sem ordem).
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ segmentId: null }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'TITULO-SINTETICO-6', serviceCode: 'CAREGIVER' }));
   });
 
-  it('submit envia o `segmentId` escolhido; sem mexer no campo NÃO envia (o inativo vinculado não é re-mandado)', async () => {
-    const primeira = await renderComSegmentos(null, [SEG_A, SEG_B]);
-    fireEvent.change(textoInput(), { target: { value: 'Aseo personal' } });
-    await selectCombo(segmentoSelect(), SEG_B.label); // seg-b = AT para Salud Mental
+  it('objetivo em edição: serviço não alterado = chave AUSENTE; trocado = viaja', async () => {
+    const { unmount } = await renderKind091('specific-objectives', item({ serviceCode: 'AT' }));
+    expect(servicoSelect()).toHaveTextContent(COPY.serviceAT);
+    fireEvent.change(textoInput(), { target: { value: 'Otro titulo SINTETICO' } });
     fireEvent.click(salvar());
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Aseo personal', segmentId: 'seg-b' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Otro titulo SINTETICO' }));
+    expect(Object.keys(onSave.mock.calls[0][0])).not.toContain('serviceCode');
+    unmount();
 
     onSave.mockClear();
-    primeira.unmount();
-    const { unmount } = await renderComSegmentos(item({ segmentId: 'seg-off', label: 'Otro' }), [SEG_OFF]);
-    fireEvent.change(textoInput(), { target: { value: 'Otro 2' } });
-    fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Otro 2' }));
-    unmount();
+    await renderKind091('specific-objectives', item({ serviceCode: 'AT' }));
+    await selectCombo(servicoSelect(), COPY.serviceCAREGIVER);
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ serviceCode: 'CAREGIVER' }));
+  });
+
+  it('atividade: Objetivo (só ativos) + Frecuencia; sem Servicio e sem Segmento', async () => {
+    await renderKind091('activities', null);
+    expect(screen.getByLabelText(COPY.objective)).toBe(objetivoSelect());
+    expect(screen.getByLabelText(COPY.frequency)).toBe(frecuencia());
+    fireEvent.click(objetivoSelect());
+    const rotulos = within(screen.getByRole('listbox')).getAllByRole('option').map((o) => o.textContent);
+    expect(rotulos).toEqual([OBJ_A.label, OBJ_B.label]);
+    expect(screen.queryByTestId('therapeutic-catalog-service-select')).toBeNull();
+    expect(screen.queryByTestId('therapeutic-catalog-segment-select')).toBeNull();
+  });
+
+  it('atividade: o objetivo é OBRIGATÓRIO; criar manda `objectiveId` e a frequência digitada (trimada)', async () => {
+    await renderKind091('activities', null);
+    fireEvent.change(textoInput(), { target: { value: 'ATIVIDADE-SINTETICA-1' } });
+    expect(salvar()).toBeDisabled();
+    await selectCombo(objetivoSelect(), OBJ_B.label);
+    expect(salvar()).not.toBeDisabled();
+    fireEvent.change(frecuencia(), { target: { value: '  3 veces por semana  ' } });
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'ATIVIDADE-SINTETICA-1', objectiveId: 'o-b', suggestedFrequency: '3 veces por semana' }));
+  });
+
+  it('atividade: criar sem mexer na frequência = chave AUSENTE (não manda null à toa)', async () => {
+    await renderKind091('activities', null);
+    fireEvent.change(textoInput(), { target: { value: 'ATIVIDADE-SINTETICA-2' } });
+    await selectCombo(objetivoSelect(), OBJ_A.label);
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'ATIVIDADE-SINTETICA-2', objectiveId: 'o-a' }));
+    expect(Object.keys(onSave.mock.calls[0][0])).not.toContain('suggestedFrequency');
+  });
+
+  it('DD-24: esvaziar a frequência de uma atividade que tinha manda `suggestedFrequency: null` EXPLÍCITO (só ela viaja)', async () => {
+    await renderKind091('activities', item({ objectiveId: 'o-a', suggestedFrequency: 'Diaria' }));
+    expect(frecuencia()).toHaveValue('Diaria');
+    fireEvent.change(frecuencia(), { target: { value: '   ' } });
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ suggestedFrequency: null }));
+    expect(onSave.mock.calls[0][0]).toHaveProperty('suggestedFrequency', null);
+  });
+
+  it('DD-24: frequência e objetivo não alterados = chaves AUSENTES; editar sem mudar nada = Salvar desabilitado', async () => {
+    await renderKind091('activities', item({ objectiveId: 'o-a', suggestedFrequency: 'Diaria', description: 'DESCRIPCION-SINTETICA-6' }));
+    expect(salvar()).toBeDisabled();
+    fireEvent.change(textoInput(), { target: { value: 'Otro titulo SINTETICO' } });
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Otro titulo SINTETICO' }));
+    const chaves = Object.keys(onSave.mock.calls[0][0]);
+    expect(chaves).not.toContain('suggestedFrequency');
+    expect(chaves).not.toContain('objectiveId');
+  });
+
+  it('atividade em edição: trocar o objetivo viaja `objectiveId`; objetivo INATIVO atual aparece com a marca de inativo', async () => {
+    await renderKind091('activities', item({ objectiveId: 'o-off', suggestedFrequency: 'Diaria' }));
+    expect(objetivoSelect()).toHaveTextContent(`${OBJ_OFF.label} (${COPY.inactive})`);
+    await selectCombo(objetivoSelect(), OBJ_A.label);
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ objectiveId: 'o-a' }));
+  });
+
+  it('a frequência passa de 100: contador vermelho e Salvar desabilitado; 100 ainda salva', async () => {
+    await renderKind091('activities', item({ objectiveId: 'o-a', suggestedFrequency: null }));
+    fireEvent.change(frecuencia(), { target: { value: 'f'.repeat(101) } });
+    expect(screen.getByTestId('therapeutic-catalog-frequency-count')).toHaveTextContent('101/100');
+    expect(screen.getByTestId('therapeutic-catalog-frequency-count')).toHaveClass('text-red-600');
+    expect(salvar()).toBeDisabled();
+    fireEvent.change(frecuencia(), { target: { value: 'f'.repeat(100) } });
+    expect(salvar()).not.toBeDisabled();
+  });
+
+  it('motivos de saída: sem Servicio, Objetivo, Frecuencia nem Segmento', async () => {
+    await renderModal(null);
+    for (const id of ['service-select', 'objective-select', 'frequency-input', 'segment-select']) {
+      expect(screen.queryByTestId(`therapeutic-catalog-${id}`)).toBeNull();
+    }
   });
 });
 
@@ -353,9 +423,14 @@ describe('TherapeuticCatalogFormModal — título e descrição (spec 061)', () 
   const descCount = () => screen.getByTestId('therapeutic-catalog-description-count');
   const labelCount = () => screen.getByTestId('therapeutic-catalog-label-count');
 
-  async function renderKind(kind: 'activities' | 'specific-objectives' | 'segments', alvo: TherapeuticCatalogItem | null) {
-    const utils = render(<TherapeuticCatalogFormModal kind={kind} item={alvo} onSave={onSave} onClose={onClose} />);
+  // 091: objetivo/atividade exigem dono — item existente já o traz (inalterado = chave ausente); criação escolhe pelo select.
+  const OBJ_DONO = item({ id: 'o1', label: 'Objetivo dono SINTETICO' });
+  async function renderKind(kind: 'activities' | 'specific-objectives' | 'service-exit-reasons', alvo: TherapeuticCatalogItem | null) {
+    const comDono = alvo && { serviceCode: 'AT', objectiveId: 'o1', ...alvo };
+    const utils = render(<TherapeuticCatalogFormModal kind={kind} item={comDono} objectives={[OBJ_DONO]} onSave={onSave} onClose={onClose} />);
     await waitFor(() => expect(utils.container.querySelector('form')).toHaveClass('translate-x-0'));
+    if (!comDono && kind === 'activities') await selectCombo(screen.getByTestId('therapeutic-catalog-objective-select'), OBJ_DONO.label);
+    if (!comDono && kind === 'specific-objectives') await selectCombo(screen.getByTestId('therapeutic-catalog-service-select'), COPY.serviceAT);
     return utils;
   }
 
@@ -372,8 +447,8 @@ describe('TherapeuticCatalogFormModal — título e descrição (spec 061)', () 
     expect(screen.getByLabelText(COPY.form.description)).toBe(descInput());
   });
 
-  it('segments: o input de ordem continua e NÃO há descrição', async () => {
-    await renderKind('segments', item());
+  it('motivos de saída: o input de ordem continua e NÃO há descrição', async () => {
+    await renderKind('service-exit-reasons', item());
     expect(ordemInput()).toHaveValue(7);
     expect(screen.queryByTestId('therapeutic-catalog-description-input')).toBeNull();
   });
@@ -386,7 +461,7 @@ describe('TherapeuticCatalogFormModal — título e descrição (spec 061)', () 
     fireEvent.change(descInput(), { target: { value: '  DESCRIPCION-SINTETICA-1  ' } });
     expect(descCount()).toHaveTextContent('23/1000');
     fireEvent.click(salvar());
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'TITULO-SINTETICO-1', description: 'DESCRIPCION-SINTETICA-1' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'TITULO-SINTETICO-1', description: 'DESCRIPCION-SINTETICA-1', objectiveId: 'o1' }));
     expect(onSave.mock.calls[0][0]).not.toHaveProperty('sortOrder');
   });
 

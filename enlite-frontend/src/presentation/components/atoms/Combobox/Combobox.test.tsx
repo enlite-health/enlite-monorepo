@@ -152,6 +152,19 @@ describe('Combobox múltipla (herdada do atom antigo)', () => {
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
 
+  it('Escape no trigger com a lista aberta fecha a lista e NÃO propaga ao pai (painel/modal)', () => {
+    const onParentKey = vi.fn();
+    document.addEventListener('keydown', onParentKey);
+    renderMultiSelect();
+    const btn = trigger();
+    fireEvent.keyDown(btn, { key: 'Enter' });
+    onParentKey.mockClear();
+    fireEvent.keyDown(btn, { key: 'Escape' });
+    document.removeEventListener('keydown', onParentKey);
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(onParentKey).not.toHaveBeenCalled();
+  });
+
   it('toggles option on Enter keydown on option button', () => {
     const onChange = vi.fn();
     renderMultiSelect({ value: [], onChange });

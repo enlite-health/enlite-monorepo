@@ -20,10 +20,9 @@ export interface CatalogSnapshotItem {
 }
 
 /**
- * Item de objetivo/atividade no snapshot da versão, com o segmento (migration 430, PR-7) do
- * momento do congelamento — espelho de `TherapeuticCatalogSnapshotItem` do backend.
- * `segmentId`/`segmentLabel` são dado CLÍNICO (lex-pr7 C3(b)): `undefined`/`null` numa versão sem
- * `patient_clinical:read`, e a tela não mostra segmento nesse caso (mesma régua do CID-11).
+ * Item de objetivo/atividade no snapshot da versão FLAT (formato antigo) — espelho de
+ * `TherapeuticCatalogSnapshotItem` do backend. `segmentId`/`segmentLabel` são LEGADO (migration 430):
+ * versão antiga pode trazê-los congelados; versão nova (091) não grava segmento.
  */
 export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
   segmentId?: string | null;
@@ -104,11 +103,17 @@ export interface TherapeuticProjectVersion {
    */
   pathologyTypes: CatalogSnapshotItem[] | null;
   /**
-   * "Segmento (Ana Care)" (migration 496, spec 030) — `{id,label}` CONGELADO na versão, escolhido
-   * no "Nuevo". Dado clínico: `null` + `redacted.clinical` sem `patient_clinical:read`; `null` SEM
-   * marcador = versão anterior à 496 (a tela mostra "—"). `undefined` só em resposta antiga do cache.
+   * LEGADO (migration 496, spec 030): segmento congelado em versão antiga. Spec 091 tirou o segmento do
+   * "Nuevo"/"Editar"; a tela só o lê se vier, nunca o manda.
    */
   segment?: CatalogSnapshotItem | null;
+  /**
+   * Formato da versão (DD-21): é a ÚNICA fonte para escolher o renderizador. `diagnosisPlans === null`
+   * nunca é lido sozinho (null também é "redigido"). `'flat'` = lista plana antiga; `'byDiagnosis'` = blocos por CID.
+   */
+  objectivesLayout: ObjectivesLayoutName;
+  /** Blocos congelados por diagnóstico (091); `null` em versão `flat` ou sem `patient_clinical:read` (`redacted.clinical`). */
+  diagnosisPlans: DiagnosisPlanSnapshot[] | null;
   startDate: string;
   endDate: string;
   annulledAt: string | null;
@@ -128,16 +133,13 @@ export interface TherapeuticProjectVersion {
   contactStatus: ContactStatusEntry[];
 }
 
-export interface TherapeuticProjectVersionBody {
+/** Campos comuns da versão, nos dois formatos. */
+export interface TherapeuticProjectVersionBaseBody {
   contractedServiceId: string;
   modality: TherapeuticModality;
   diagnoses: TherapeuticDiagnosis[];
   clinicalContext: string;
   generalObjective: string;
-  specificObjectiveIds: string[];
-  activityIds: string[];
-  /** Só no `mode:'new'` (obrigatório lá); o `mode:'edit'` NÃO manda a chave — o servidor herda da origem (spec 030). */
-  segmentId?: string;
   startDate: string;
   endDate: string;
   contactRefs: ContactRef[];
@@ -146,6 +148,26 @@ export interface TherapeuticProjectVersionBody {
   contactStatus: ContactStatusMap;
 }
 
+/** O que foi marcado num bloco por diagnóstico (091, §9.4): ids de objetivos e de atividades daquele CID. */
+export interface DiagnosisPlanInput {
+  diagnosisUri: string;
+  specificObjectiveIds: string[];
+  activityIds: string[];
+}
+
+/** Formato antigo (lista plana). Só o `mode:'edit'` de versão `flat` ainda o manda. Sem `segmentId` (091: strict → 400). */
+export interface FlatVersionBody extends TherapeuticProjectVersionBaseBody {
+  specificObjectiveIds: string[];
+  activityIds: string[];
+}
+
+/** Formato novo (091): um bloco por diagnóstico; o conjunto de `diagnosisUri` é o de `diagnoses[].uri`, sem repetição. */
+export interface ByDiagnosisVersionBody extends TherapeuticProjectVersionBaseBody {
+  diagnosisPlans: DiagnosisPlanInput[];
+}
+
+export type TherapeuticProjectVersionBody = FlatVersionBody | ByDiagnosisVersionBody;
+
 /** `data.fieldClass` da LISTA (task 7.7) — espelho de `THERAPEUTIC_FIELD_CLASS` do backend (dono
  * único: `worker-functions/.../domain/TherapeuticProject.ts`). O front NÃO copia a lista de nomes. */
 export interface TherapeuticFieldClass {
@@ -153,24 +175,20 @@ export interface TherapeuticFieldClass {
   micro: string[];
 }
 
+/** `mode:'new'` é sempre por diagnóstico; `mode:'edit'` segue o formato da origem (formato diferente → 422 `ptp_format_mismatch`). */
 export type CreateTherapeuticProjectBody =
-  | { mode: 'new'; version: TherapeuticProjectVersionBody }
+  | { mode: 'new'; version: ByDiagnosisVersionBody }
   | { mode: 'edit'; fromVersionId: string; version: TherapeuticProjectVersionBody };
 
-/**
- * `segments` (migration 430, US-17, PR-7): catálogo GLOBAL dos segmentos da Ana Care — filtro dos
- * objetivos/atividades, não recorte do que pode ser gravado (#REQ-16). Tipo de patología continua
- * fora (deriva do CID-11, sem tela/célula/menu).
- */
-export type TherapeuticCatalogKind = 'specific-objectives' | 'activities' | 'segments';
+/** Os 2 catálogos terapêuticos (091: `segments` saiu — a rota responde 404). Tipo de patología deriva do CID-11, sem tela. */
+export type TherapeuticCatalogKind = 'specific-objectives' | 'activities';
 
-export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities', 'segments'];
+export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities'];
 
 /** Recurso da célula ABAC de cada catálogo — espelho do backend (`THERAPEUTIC_CATALOG_RESOURCE`). */
 export const THERAPEUTIC_CATALOG_RESOURCE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'catalog_therapeutic_objectives',
   activities: 'catalog_therapeutic_activities',
-  segments: 'catalog_therapeutic_segments',
 };
 
 /**
@@ -183,8 +201,8 @@ export const SERVICE_EXIT_REASON_RESOURCE = 'catalog_service_exit_reasons';
 export type AdminCatalogKind = TherapeuticCatalogKind | typeof SERVICE_EXIT_REASON_KIND;
 
 /**
- * Spec 061: só estes kinds têm descrição (migration 547) e lista A–Z sem Ordem. `segments` e o catálogo de
- * motivos de saída ficam como eram: Ordem, sem descrição. Espelho de `catalogHasDescription` do backend
+ * Spec 061: só estes kinds têm descrição (migration 547) e lista A–Z sem Ordem. O catálogo de
+ * motivos de saída fica como era: Ordem, sem descrição. Espelho de `catalogHasDescription` do backend
  * (checagem POSITIVA — kind novo nasce sem descrição).
  */
 export const CATALOG_KINDS_WITH_DESCRIPTION: readonly string[] = ['activities', 'specific-objectives'];
@@ -224,11 +242,137 @@ export interface TherapeuticCatalogItem {
   deactivatedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  /** Só objetivos/atividades têm (migration 430, US-17); `segments` não referencia a si mesmo. */
-  segmentId?: string | null;
-  segmentLabel?: string | null;
   /** Spec 061: só objetivos/atividades; `null`/ausente = sem descrição. */
   description?: string | null;
+  /** 091, só objetivo: serviço dono (`null`/ausente = sem dono). */
+  serviceCode?: string | null;
+  /** 091, objetivo e atividade: quantas categorias CID-11 estão vinculadas. */
+  categoryCount?: number;
+  /** 091, só atividade: objetivo dono e o estado dele. */
+  objectiveId?: string | null;
+  objectiveLabel?: string | null;
+  objectiveActive?: boolean | null;
+  /** 091, só atividade: texto livre 1..100; `null`/ausente = sem frequência sugerida. */
+  suggestedFrequency?: string | null;
+}
+
+// ---- 091: catálogo por CID-11 e serviço -------------------------------------------------------------------------------
+
+/** `serviceCode` do objetivo: `/^[A-Z][A-Z0-9_]*$/`, até 40 (espelha o zod do servidor, §9.4). */
+export const SERVICE_CODE_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+export const SERVICE_CODE_MAX = 40;
+/** Teto da frequência sugerida da atividade (§9.4: 1..100). */
+export const SUGGESTED_FREQUENCY_MAX = 100;
+/** Quantos diagnósticos a cascata aceita por chamada (§9.4: 1..20). */
+export const CASCADE_MAX_DIAGNOSES = 20;
+/** Tamanho do `q` da busca de categoria (§9.4: 2..100). */
+export const ICD_CATEGORY_QUERY_MIN = 2;
+export const ICD_CATEGORY_QUERY_MAX = 100;
+
+export type ObjectivesLayoutName = 'flat' | 'byDiagnosis';
+
+/** Categoria CID-11 de 4 caracteres do release corrente (resposta de `icd-categories?q=`). */
+export interface IcdCategory {
+  code: string;
+  title: string;
+}
+
+/** Status de um bloco da cascata — o front habilita o "salvar" por ele (DD-21). */
+export type CascadeBlockStatus = 'ok' | 'no_category' | 'no_catalog';
+
+export interface CascadeActivity {
+  id: string;
+  label: string;
+  description: string | null;
+  suggestedFrequency: string | null;
+}
+
+export interface CascadeObjective {
+  id: string;
+  label: string;
+  description: string | null;
+  activities: CascadeActivity[];
+}
+
+export interface CascadeBlock {
+  diagnosisUri: string;
+  categoryCode: string | null;
+  status: CascadeBlockStatus;
+  objectives: CascadeObjective[];
+}
+
+/** Corpo de `POST /therapeutic-catalogs/cascade`. */
+export interface CascadeRequestBody {
+  serviceCode: string;
+  diagnosisUris: string[];
+}
+
+/** Resposta da cascata: blocos na ORDEM das URIs enviadas. */
+export interface CascadeResponse {
+  serviceCode: string;
+  serviceHasCatalog: boolean;
+  blocks: CascadeBlock[];
+}
+
+/** Bloco CONGELADO na versão `byDiagnosis` (espelho de `DiagnosisPlanSnapshot` do backend). */
+export interface DiagnosisPlanSnapshot {
+  diagnosisUri: string;
+  categoryCode: string | null;
+  objectives: Array<{ id: string; label: string; description: string | null }>;
+  activities: Array<{ id: string; label: string; description: string | null; suggestedFrequency: string | null }>;
+}
+
+/** Item de `…/:itemId/categories` — `title: null` = código ausente do release corrente. */
+export interface CategoryLink {
+  code: string;
+  title: string | null;
+  /** Só objetivo: quantas atividades dele também têm esta categoria. */
+  activityLinks?: number;
+}
+
+export interface CategoryLinkList {
+  total: number;
+  items: CategoryLink[];
+}
+
+export interface AddedCategoryLink {
+  code: string;
+  title: string;
+}
+
+/** DELETE de categoria do OBJETIVO leva junto os vínculos das atividades dele. */
+export interface RemovedObjectiveCategory {
+  removedActivityLinks: number;
+}
+
+/** DELETE de categoria da ATIVIDADE; categoria ausente = 200 idempotente. */
+export interface RemovedActivityCategory {
+  removed: boolean;
+}
+
+export interface CatalogListOptions {
+  includeInactive?: boolean;
+  /** 4 chars. */
+  categoryCode?: string;
+  /** Só `activities`. */
+  objectiveId?: string;
+}
+
+/**
+ * Corpo de criar/editar item. DD-24: campo vazio no modal = `null` EXPLÍCITO (limpa); campo não alterado = chave
+ * AUSENTE. Sem `segmentId` (091: strict → 400).
+ */
+export interface CatalogItemBody {
+  label?: string;
+  sortOrder?: number;
+  active?: boolean;
+  description?: string | null;
+  /** Só objetivo; obrigatório no POST. */
+  serviceCode?: string | null;
+  /** Só atividade; obrigatório no POST. */
+  objectiveId?: string;
+  /** Só atividade; `null` limpa. */
+  suggestedFrequency?: string | null;
 }
 
 /** Teto do rótulo — espelha o CHECK da migration 415 e o zod do servidor (`segments`). */

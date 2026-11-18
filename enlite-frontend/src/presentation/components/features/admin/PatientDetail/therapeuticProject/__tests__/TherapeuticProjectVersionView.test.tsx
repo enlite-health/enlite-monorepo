@@ -95,6 +95,8 @@ const VERSAO: TherapeuticProjectVersion = {
     { id: 'ac4', label: 'Atividade 4' },
   ],
   pathologyTypes: [{ id: 'pt1', label: 'Neurológica' }, { id: 'pt2', label: 'Psiquiátrica' }],
+  objectivesLayout: 'flat',
+  diagnosisPlans: null,
   startDate: '2026-09-01',
   endDate: '2026-12-01',
   annulledAt: null,
@@ -419,3 +421,85 @@ describe('título + descrição do catálogo congelados na versão (spec 061)', 
     expect(screen.getByTestId('tpv-specific')).toHaveTextContent('TITULO-SINTETICO-OBJ');
   });
 });
+
+// ── 091 (§9.9, DD-21, DD-22): visão `byDiagnosis` agrupada como o PDF ─────────────────────────
+
+const PLANOS = [
+  {
+    diagnosisUri: 'urn:icd:1',
+    categoryCode: 'AB12',
+    objectives: [{ id: 'o-um', label: 'OBJETIVO-SINTETICO-UM', description: 'DESCRICAO-OBJ-UM' }],
+    activities: [{ id: 'a-um', label: 'ATIVIDADE-SINTETICA-UM', description: 'DESCRICAO-ATIV-UM', suggestedFrequency: '2x por semana' }],
+  },
+  { diagnosisUri: 'urn:icd:2', categoryCode: 'ZZ99', objectives: [], activities: [] },
+];
+
+const POR_DIAGNOSTICO: Partial<TherapeuticProjectVersion> = {
+  objectivesLayout: 'byDiagnosis',
+  diagnosisPlans: PLANOS,
+  // Lista plana derivada (DD-8): existe sempre, mas com blocos a tela mostra os blocos.
+  specificObjectives: [{ id: 'plano-o', label: 'OBJ-PLANO-DERIVADO' }],
+  activities: [{ id: 'plano-a', label: 'ATIV-PLANO-DERIVADA' }],
+  segment: { id: 'seg-1', label: 'SEGMENTO-LEGADO' },
+};
+
+const diagnosticoLabel = ptBR.admin.patients.detail.diagnosisCard.title;
+const semCatalogoEm = (data: string) => ptBR.therapeuticProjectForm.noCatalogAt.replace('{{date}}', data);
+
+describe('091 — `byDiagnosis`: objetivos e atividades agrupados por diagnóstico', () => {
+  it('um grupo por diagnóstico (título vindo de `diagnoses` pela URI), com título — descrição e a frequência da atividade', () => {
+    montar(POR_DIAGNOSTICO);
+
+    const objetivos = screen.getByTestId('tpv-specific-group-urn:icd:1');
+    expect(objetivos).toHaveTextContent(`${diagnosticoLabel}: Trastorno del espectro autista`);
+    expect(within(objetivos).getByTestId('tpv-specific-item-o-um')).toHaveTextContent('OBJETIVO-SINTETICO-UM — DESCRICAO-OBJ-UM');
+
+    const atividades = screen.getByTestId('tpv-activities-group-urn:icd:1');
+    expect(within(atividades).getByTestId('tpv-activities-item-a-um'))
+      .toHaveTextContent(`ATIVIDADE-SINTETICA-UM — DESCRICAO-ATIV-UM · ${ptBR.therapeuticProjectForm.frequency.replace('{{value}}', '2x por semana')}`);
+    expect(screen.getByTestId('tpv-specific-group-urn:icd:2')).toHaveTextContent(`${diagnosticoLabel}: TDAH`);
+    // A lista plana derivada não é desenhada quando há blocos.
+    expect(screen.queryByText('OBJ-PLANO-DERIVADO')).not.toBeInTheDocument();
+    expect(screen.queryByText('ATIV-PLANO-DERIVADA')).not.toBeInTheDocument();
+  });
+
+  it('DD-22: bloco com `objectives: []` diz "sin catálogo … al <data da versão>" nas duas seções', () => {
+    montar(POR_DIAGNOSTICO); // createdAt 2026-09-01T10:00Z
+
+    expect(screen.getByTestId('tpv-specific-empty-urn:icd:2')).toHaveTextContent(semCatalogoEm('01/09/2026'));
+    expect(screen.getByTestId('tpv-activities-empty-urn:icd:2')).toHaveTextContent(semCatalogoEm('01/09/2026'));
+    expect(screen.queryByTestId('tpv-specific-empty-urn:icd:1')).not.toBeInTheDocument();
+  });
+
+  it('`byDiagnosis` NÃO mostra o campo Segmento, nem com `segment` no objeto', () => {
+    montar(POR_DIAGNOSTICO);
+
+    expect(screen.queryByTestId('tpv-segment')).not.toBeInTheDocument();
+    expect(screen.queryByText('SEGMENTO-LEGADO')).not.toBeInTheDocument();
+  });
+
+  it('🔒 redigido (`redacted.clinical`): lista plana derivada, sem grupos nem diagnóstico', () => {
+    montar({ ...POR_DIAGNOSTICO, diagnosisPlans: null, diagnoses: null, redacted: { clinical: true } });
+
+    expect(screen.getByTestId('tpv-specific')).toHaveTextContent('OBJ-PLANO-DERIVADO');
+    expect(screen.getByTestId('tpv-activities')).toHaveTextContent('ATIV-PLANO-DERIVADA');
+    expect(screen.queryByTestId('tpv-specific-group-urn:icd:1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('tpv-segment')).not.toBeInTheDocument();
+  });
+
+  it('DD-21: o formato vem SÓ de `objectivesLayout` — `flat` com `diagnosisPlans` preenchido segue plano, com Segmento', () => {
+    montar({ ...POR_DIAGNOSTICO, objectivesLayout: 'flat' });
+
+    expect(screen.getByTestId('tpv-specific')).toHaveTextContent('OBJ-PLANO-DERIVADO');
+    expect(screen.queryByTestId('tpv-specific-group-urn:icd:1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('tpv-segment')).toHaveTextContent('SEGMENTO-LEGADO');
+  });
+
+  it('resumo compacto do card: lista plana derivada (até 3), também em `byDiagnosis`', () => {
+    montar(POR_DIAGNOSTICO, { compact: true });
+
+    expect(screen.getByTestId('tpv-specific')).toHaveTextContent('OBJ-PLANO-DERIVADO');
+    expect(screen.queryByTestId('tpv-specific-group-urn:icd:1')).not.toBeInTheDocument();
+  });
+});
+

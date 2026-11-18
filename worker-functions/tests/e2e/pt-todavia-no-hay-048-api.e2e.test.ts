@@ -14,6 +14,7 @@
 import { Pool } from 'pg';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
+import { semearCatalogoCid, limparCatalogoPorPrefixo, planoTea, SERVICO_CID, type CatalogoCid } from './helpers/ptiCatalogoCidSeed';
 import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 
 const DATABASE_URL =
@@ -25,9 +26,7 @@ describe('spec 048 — PT com "Todavía no hay registro": API sob engine de perm
   let app: AppDeFamilia;
   const PATIENT = 'ee048001-0a00-0001-0001-000000000001';
   let serviceId: string;
-  let objectiveIds: string[];
-  let activityIds: string[];
-  let ptiSegmentId: string;
+  let cat: CatalogoCid;
   let externalContactId: string;
 
   const U = { master: 'pt048-master', operador: 'pt048-operador' };
@@ -39,33 +38,6 @@ describe('spec 048 — PT com "Todavía no hay registro": API sob engine de perm
     ['patient_services', 'read'],
     ['patient_family', 'read'], ['patient_coverage', 'read'], ['patient_care_team', 'read'],
   ];
-
-  const FIX_RELEASE = 'PT048-FIX';
-  const CAP06 = { code: '06', title: 'Trastornos mentales, del comportamiento y del neurodesarrollo' };
-  const URI_TEA = 'test://pt048/tea';
-  let releaseAnterior: string | null = null;
-  async function semearCid(): Promise<void> {
-    await pool.query(`INSERT INTO terminology.icd_releases (release, entity_count) VALUES ($1, 2) ON CONFLICT (release) DO NOTHING`, [FIX_RELEASE]);
-    await pool.query(
-      `INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf)
-       VALUES ('test://pt048/cap06', $1, $2, $3, NULL, $2, NULL, 'chapter', false) ON CONFLICT (icd_uri, release) DO NOTHING`,
-      [FIX_RELEASE, CAP06.code, CAP06.title],
-    );
-    await pool.query(
-      `INSERT INTO terminology.icd_entities (icd_uri, release, code, title_es, title_en, chapter, parent_uri, kind, is_leaf)
-       VALUES ($1, $2, '6A02', 'Trastorno del espectro autista', NULL, $3, NULL, 'stem', true) ON CONFLICT (icd_uri, release) DO NOTHING`,
-      [URI_TEA, FIX_RELEASE, CAP06.code],
-    );
-    releaseAnterior = (await pool.query<{ release: string }>(`SELECT release FROM terminology.icd_releases WHERE is_current LIMIT 1`)).rows[0]?.release ?? null;
-    await pool.query(`UPDATE terminology.icd_releases SET is_current = false, promoted_at = NULL, promoted_by = NULL WHERE is_current`);
-    await pool.query(`UPDATE terminology.icd_releases SET is_current = true, promoted_at = NOW(), promoted_by = 'pt048-e2e' WHERE release = $1`, [FIX_RELEASE]);
-  }
-  async function restaurarCid(): Promise<void> {
-    await pool.query(`UPDATE terminology.icd_releases SET is_current = false, promoted_at = NULL, promoted_by = NULL WHERE release = $1`, [FIX_RELEASE]);
-    if (releaseAnterior) await pool.query(`UPDATE terminology.icd_releases SET is_current = true, promoted_at = NOW(), promoted_by = 'pt048-e2e-restore' WHERE release = $1`, [releaseAnterior]);
-    await pool.query(`DELETE FROM terminology.icd_entities WHERE release = $1`, [FIX_RELEASE]);
-    await pool.query(`DELETE FROM terminology.icd_releases WHERE release = $1`, [FIX_RELEASE]);
-  }
 
   const envAnterior: Record<string, string | undefined> = {};
   const setEnv = (k: string, v: string): void => { envAnterior[k] = process.env[k]; process.env[k] = v; };
@@ -82,11 +54,10 @@ describe('spec 048 — PT com "Todavía no hay registro": API sob engine de perm
   const versionBody = (over: Record<string, unknown> = {}) => ({
     contractedServiceId: serviceId,
     modality: 'IN_PERSON',
-    diagnoses: [{ uri: URI_TEA, code: '6A02', title: 'Diagnóstico sintético e2e' }],
+    diagnoses: [{ uri: cat.uris.tea, code: '6A02', title: 'Diagnóstico sintético e2e' }],
     clinicalContext: 'Síntesis sintética e2e — texto de teste sem dado de titular.',
     generalObjective: 'Objetivo general sintético e2e.',
-    specificObjectiveIds: objectiveIds.slice(0, 1),
-    activityIds: activityIds.slice(0, 1),
+    diagnosisPlans: planoTea(cat),
     startDate: '2026-09-01',
     endDate: '2026-12-31',
     contactRefs: [],
@@ -94,18 +65,20 @@ describe('spec 048 — PT com "Todavía no hay registro": API sob engine de perm
     contactStatus: {},
     ...over,
   });
-  const newVersionBody = (over: Record<string, unknown> = {}) => ({ ...versionBody(), segmentId: ptiSegmentId, ...over });
+  // 091: o corpo do `new` e o do `edit` por diagnóstico são o mesmo (blocos por diagnóstico, sem segmento).
+  const newVersionBody = versionBody;
 
   async function limpar(): Promise<void> {
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
     await pool.query(`DELETE FROM patients WHERE id = $1`, [PATIENT]);
+    await limparCatalogoPorPrefixo(pool, 'E2E 048 ');
   }
   // O trigger recusa DELETE de versão com paciente vivo: cada cenário usa um PACIENTE novo recriado aqui.
   async function recriarPaciente(): Promise<void> {
     await pool.query(`DELETE FROM patients WHERE id = $1`, [PATIENT]);
     await pool.query(`INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, is_test) VALUES ($1, 'e2e-048-api', 'Paciente', 'Sintético', 'AR', true)`, [PATIENT]);
     serviceId = (await pool.query<{ id: string }>(
-      `INSERT INTO patient_contracted_services (patient_id, service_code, created_by, updated_by) VALUES ($1, 'CAREGIVER', 'e2e', 'e2e') RETURNING id`, [PATIENT],
+      `INSERT INTO patient_contracted_services (patient_id, service_code, created_by, updated_by) VALUES ($1, '${SERVICO_CID}', 'e2e', 'e2e') RETURNING id`, [PATIENT],
     )).rows[0].id;
     externalContactId = (await pool.query<{ id: string }>(
       `INSERT INTO patient_external_contacts (patient_id, relation, name, phone_encrypted, created_by)
@@ -128,10 +101,7 @@ describe('spec 048 — PT com "Todavía no hay registro": API sob engine de perm
     await grupoComCelulas(pool, { nome: GRUPOS.master, uid: U.master, celulas: [...BASE_CELULAS, ['patient_therapeutic_project', 'waive_contact']] });
     await grupoComCelulas(pool, { nome: GRUPOS.operador, uid: U.operador, celulas: [...BASE_CELULAS] });
 
-    objectiveIds = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_specific_objectives WHERE active ORDER BY sort_order`)).rows.map((r) => r.id);
-    activityIds = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_activities WHERE active ORDER BY sort_order`)).rows.map((r) => r.id);
-    ptiSegmentId = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_segments WHERE active AND created_by = 'seed:495' ORDER BY sort_order LIMIT 1`)).rows[0].id;
-    await semearCid();
+    cat = await semearCatalogoCid(pool, { tag: 'PT048', sufixo: '48', prefixo: 'E2E 048 cid ' });
 
     setEnv('USE_MOCK_AUTH', 'true');
     setEnv('PERMISSION_ENGINE_ENABLED', 'true');
@@ -143,7 +113,7 @@ describe('spec 048 — PT com "Todavía no hay registro": API sob engine de perm
     app = await montarAppDeFamilia({
       enforcedRoutes: 'admin.patients',
       montarRotas: ({ app: express, auth, permissions }) => {
-        express.use('/api/admin', caseModule.createAdminTherapeuticProjectsRoutes(new caseModule.AdminTherapeuticProjectsController(), auth, permissions));
+        express.use('/api/admin', caseModule.createAdminTherapeuticProjectsRoutes(caseModule.buildAdminTherapeuticProjectsController(), auth, permissions));
         express.use(
           '/api/admin',
           caseModule.createAdminPatientsRoutes(
@@ -169,7 +139,8 @@ describe('spec 048 — PT com "Todavía no hay registro": API sob engine de perm
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     await DatabaseConnection.getInstance().close();
     await limpar();
-    await restaurarCid();
+    await cat?.limpar();
+    await cat?.restaurar();
     await pool.end();
     for (const [k, v] of Object.entries(envAnterior)) {
       if (v === undefined) delete process.env[k]; else process.env[k] = v;

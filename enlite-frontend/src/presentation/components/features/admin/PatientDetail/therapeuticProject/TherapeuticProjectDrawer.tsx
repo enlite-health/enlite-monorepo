@@ -13,9 +13,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, FileDown, Pencil } from 'lucide-react';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
-import type { ContactStatusEntry, TherapeuticFieldClass, TherapeuticProjectVersion, TherapeuticProjectVersionBody } from '@domain/entities/TherapeuticProject';
+import type { ByDiagnosisVersionBody, ContactStatusEntry, TherapeuticFieldClass, TherapeuticProjectVersion, TherapeuticProjectVersionBody } from '@domain/entities/TherapeuticProject';
+import type { TherapeuticCatalogGateway } from '@domain/repositories/TherapeuticCatalogGateway';
 import { AdminTherapeuticProjectsApiService } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
-import { saveRefusalMessage } from './saveRefusalMessage';
+import { saveRefusalBlock, saveRefusalMessage } from './saveRefusalMessage';
 import { useTherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { useContainerAccess } from '@presentation/hooks/useCellAccess';
@@ -49,6 +50,8 @@ interface Props {
   currentContactStatus?: ContactStatusEntry[];
   /** spec 048: datas reais dos lembretes que faltam no ciclo aberto (`null` = sem ciclo) — a confirmação mostra. */
   contactReminderDates?: string[] | null;
+  /** Porta da cascata (091), repassada ao form; o default do form é a infraestrutura. Testes injetam um fake da porta. */
+  catalogGateway?: TherapeuticCatalogGateway;
   onClose: () => void;
   /** Uma versão foi criada — o pai recarrega a lista. */
   onSaved: () => void;
@@ -57,13 +60,14 @@ interface Props {
 const CLOSE_MS = 300;
 
 
-export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass, currentContactStatus = [], contactReminderDates = null, onClose, onSaved }: Props): JSX.Element {
+export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass, currentContactStatus = [], contactReminderDates = null, catalogGateway, onClose, onSaved }: Props): JSX.Element {
   const { t } = useTranslation();
   const tf = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.therapeuticProjectForm.${k}`, o ?? {});
   const [show, setShow] = useState(false);
   const [target, setTarget] = useState<TherapeuticProjectTarget>(initial);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveBlockError, setSaveBlockError] = useState<{ diagnosisIndex: number; message: string } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -140,12 +144,13 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
     setPendingBody(null);
     setSaving(true);
     setSaveError(null);
+    setSaveBlockError(null);
     try {
-      // Spec 030: o segmento é MACRO — "Editar" NÃO manda a chave (o servidor recusa com 400 e herda da origem).
-      const { segmentId: _herdado, ...bodySemSegmento } = body;
+      // 091: sem `segmentId` no corpo (o servidor recusa a chave). "Nuevo" é sempre por diagnóstico (o form só emite esse formato em `new`);
+      // "Editar" manda o formato da origem, que o form já copia.
       const created = target.mode === 'edit'
-        ? await AdminTherapeuticProjectsApiService.createVersion(patient.id, { mode: 'edit', fromVersionId: target.version.id, version: bodySemSegmento })
-        : await AdminTherapeuticProjectsApiService.createVersion(patient.id, { mode: 'new', version: body });
+        ? await AdminTherapeuticProjectsApiService.createVersion(patient.id, { mode: 'edit', fromVersionId: target.version.id, version: body })
+        : await AdminTherapeuticProjectsApiService.createVersion(patient.id, { mode: 'new', version: body as ByDiagnosisVersionBody });
       setDirty(false);
       onSaved();
       // A versão recém-criada é sempre a vigente (é a de `created_at` mais recente, D328).
@@ -158,6 +163,7 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
       setTarget({ mode: 'view', version: { ...created, contacts: created.contacts ?? [], contactStatus: created.contactStatus ?? [] }, isCurrent: true });
     } catch (err: unknown) {
       setSaveError(saveRefusalMessage(err, t));
+      setSaveBlockError(saveRefusalBlock(err, t));
     } finally {
       setSaving(false);
     }
@@ -267,9 +273,11 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
               initialContactStatus={inheritedStatus}
               saving={saving}
               saveError={saveError}
+              saveBlockError={saveBlockError}
               onSubmit={handleFormSubmit}
               onCancel={requestClose}
               onDirty={() => setDirty(true)}
+              catalogGateway={catalogGateway}
             />
           )}
         </div>

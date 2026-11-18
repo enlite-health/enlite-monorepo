@@ -16,7 +16,7 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 import type { TherapeuticCatalogItem, TherapeuticCatalogKind } from '@domain/entities/TherapeuticProject';
 
-// Mesmo conjunto da tela: os 3 catálogos do projeto terapêutico (inclui `segments`, spec 030) + motivos de saída.
+// Mesmo conjunto da tela: objetivos e atividades (091 tirou `segments`) + motivos de saída + guardias.
 type ManagedCatalogKind = TherapeuticCatalogKind | 'service-exit-reasons' | 'service-shift-templates';
 
 const translations = ptBR as Record<string, any>;
@@ -37,6 +37,9 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
 const listCatalog = vi.fn();
 const createCatalogItem = vi.fn();
 const updateCatalogItem = vi.fn();
+const listObjectiveCategories = vi.fn();
+const removeObjectiveCategory = vi.fn();
+const listActivityCategories = vi.fn();
 // Guardia predefinida (spec 074): 3 turnos, o último atravessa a meia-noite.
 const TEMPLATE = {
   id: 'ativa', code: 'G6_6_12', label: 'Guardia 6 + 6 + 12', active: true,
@@ -49,6 +52,11 @@ vi.mock('@infrastructure/http/AdminTherapeuticProjectsApiService', () => ({
     createCatalogItem: (...a: unknown[]) => createCatalogItem(...a),
     updateCatalogItem: (...a: unknown[]) => updateCatalogItem(...a),
     listShiftTemplates: (...a: unknown[]) => listShiftTemplates(...a),
+    // 091: o painel de CIDs (aberto pelo chip) fala com a porta pelo mesmo serviço.
+    listObjectiveCategories: (...a: unknown[]) => listObjectiveCategories(...a),
+    removeObjectiveCategory: (...a: unknown[]) => removeObjectiveCategory(...a),
+    listActivityCategories: (...a: unknown[]) => listActivityCategories(...a),
+    searchIcdCategories: vi.fn().mockResolvedValue([]),
   },
 }));
 
@@ -57,8 +65,8 @@ const TherapeuticCatalogPageDefault = (await import('../TherapeuticCatalogPage')
 
 const COPY = ptBR.admin.therapeuticCatalog;
 
-/** Chamadas de `listCatalog` ao catálogo da própria tela (a carga dos segmentos, spec 030, não conta). */
-const itemListCalls = () => listCatalog.mock.calls.filter(([k]) => k !== 'segments');
+/** Chamadas de `listCatalog` ao catálogo da própria tela (a carga dos objetivos que a atividade usa, 091, não conta). */
+const itemListCalls = (kind: string = 'specific-objectives') => listCatalog.mock.calls.filter(([k]) => k === kind);
 
 function item(over: Partial<TherapeuticCatalogItem> = {}): TherapeuticCatalogItem {
   return {
@@ -73,7 +81,11 @@ function item(over: Partial<TherapeuticCatalogItem> = {}): TherapeuticCatalogIte
   };
 }
 
-const ATIVA = item({ id: 'ativa', label: 'Mejorar autonomía', sortOrder: 1 });
+// 091: item com dono (serviço/objetivo) e vínculo; na tela de atividades a mesma lista serve de lista de objetivos (id 'ativa').
+const ATIVA = item({
+  id: 'ativa', label: 'Mejorar autonomía', sortOrder: 1,
+  serviceCode: 'AT', categoryCount: 3, objectiveId: 'ativa', objectiveLabel: 'Mejorar autonomía', objectiveActive: true, suggestedFrequency: '3 veces por semana',
+});
 const INATIVA = item({ id: 'inativa', label: 'Opción vieja', sortOrder: 9, active: false, deactivatedAt: '2026-08-01T00:00:00Z' });
 
 /** Liga o contrato ABAC na store (as células e a régua) — como em PatientDetailCards.gate.test.tsx. */
@@ -225,8 +237,8 @@ describe('TherapeuticCatalogPage — título, descrição e ordem alfabética (s
     expect(d).not.toHaveClass('text-gray-700');
   });
 
-  it('segments: a coluna Ordem continua e a ordem é a do servidor', async () => {
-    await renderPage('segments');
+  it('motivos de saída: a coluna Ordem continua e a ordem é a do servidor', async () => {
+    await renderPage('service-exit-reasons');
     expect(screen.getByRole('columnheader', { name: COPY.table.order })).toBeInTheDocument();
     const linhas = screen.getAllByTestId(/^therapeutic-catalog-row-/).map((r) => r.getAttribute('data-testid'));
     expect(linhas).toEqual(['therapeutic-catalog-row-zeta', 'therapeutic-catalog-row-alfa']);
@@ -252,13 +264,14 @@ describe('TherapeuticCatalogPage — criar e renomear', () => {
     expect(screen.getByTestId('therapeutic-catalog-label-input')).toHaveValue('');
 
     fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Nueva opción' } });
+    await selectCombo(screen.getByTestId('therapeutic-catalog-objective-select'), 'Mejorar autonomía');
     // Spec 061: atividade não tem input de ordem.
     expect(screen.queryByTestId('therapeutic-catalog-order-input')).toBeNull();
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
 
-    await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('activities', { label: 'Nueva opción' }));
+    await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('activities', { label: 'Nueva opción', objectiveId: 'ativa' }));
     await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
-    expect(itemListCalls()).toHaveLength(2);
+    expect(itemListCalls('activities')).toHaveLength(2);
     expect(updateCatalogItem).not.toHaveBeenCalled();
   });
 
@@ -273,7 +286,7 @@ describe('TherapeuticCatalogPage — criar e renomear', () => {
     // Merge Patch (spec 061): só o título mudou, só ele viaja — a ordem não é mais da tela.
     await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('activities', 'ativa', { label: 'Autonomía en el hogar' }));
     await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
-    expect(itemListCalls()).toHaveLength(2);
+    expect(itemListCalls('activities')).toHaveLength(2);
     expect(createCatalogItem).not.toHaveBeenCalled();
   });
 
@@ -292,6 +305,7 @@ describe('TherapeuticCatalogPage — criar e renomear', () => {
     await renderPage();
     fireEvent.click(screen.getByTestId('therapeutic-catalog-new-btn'));
     fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Repetida' } });
+    await selectCombo(screen.getByTestId('therapeutic-catalog-service-select'), COPY.serviceAT);
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
 
     expect(await screen.findByTestId('therapeutic-catalog-form-error')).toHaveTextContent(COPY.errors.duplicate);
@@ -452,132 +466,218 @@ describe('TherapeuticCatalogPage — write-gate das ações (D269)', () => {
   });
 });
 
-// ── Spec 030 (F1) — `segments` ganha tela: o MESMO componente, `kind="segments"` ──────────────────
+// ── 091 — colunas por kind, filtros, painel de CIDs e campos novos; sem Segmento ───────────────────
 
-describe('TherapeuticCatalogPage — kind segments (spec 030)', () => {
-  const SEG = item({ id: 'seg1', label: 'AT para Pacientes con TEA', sortOrder: 4 });
+describe('TherapeuticCatalogPage — colunas por kind (091, §9.7)', () => {
+  const headers = () => screen.getAllByRole('columnheader').map((h) => h.textContent);
 
   beforeEach(() => {
     vi.clearAllMocks();
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
-    listCatalog.mockResolvedValue([SEG]);
-    createCatalogItem.mockResolvedValue(SEG);
+    listCatalog.mockResolvedValue([ATIVA, INATIVA]);
   });
 
-  it('segments: lista o catálogo COM inativos, com título e subtítulo próprios', async () => {
-    await renderPage('segments');
-    expect(listCatalog).toHaveBeenCalledWith('segments', { includeInactive: true });
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(COPY.kinds.segments.title);
-    expect(screen.getByText(COPY.kinds.segments.subtitle)).toBeInTheDocument();
-    expect(screen.getByTestId('therapeutic-catalog-label-seg1')).toHaveTextContent('AT para Pacientes con TEA');
+  it('objetivos: Título · Descripción · Serviço · CID-11 · Estado (+ Ações) — sem Segmento nem Ordem', async () => {
+    await renderPage('specific-objectives');
+    expect(headers()).toEqual([COPY.table.title, COPY.table.description, COPY.service, COPY.icdCategories, COPY.table.status, COPY.table.actions]);
+    expect(screen.queryByRole('columnheader', { name: /segmento|segment/i })).toBeNull();
+    expect(screen.getByTestId('therapeutic-catalog-service-ativa')).toHaveTextContent(COPY.serviceAT);
+    expect(screen.getByTestId('therapeutic-catalog-icd-ativa')).toHaveTextContent('3 categorias');
+    expect(screen.getByTestId('therapeutic-catalog-icd-inativa')).toHaveTextContent('0 categorias');
+    expect(screen.getByTestId('therapeutic-catalog-row-inativa')).toHaveTextContent('—');
   });
 
-  it('segments: cria pela modal — POST no kind segments e recarrega a lista', async () => {
-    await renderPage('segments');
-    fireEvent.click(screen.getByTestId('therapeutic-catalog-new-btn'));
-    fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Segmento nuevo' } });
-    fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
-
-    await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('segments', { label: 'Segmento nuevo', sortOrder: undefined }));
-    await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
-    expect(listCatalog).toHaveBeenCalledTimes(2);
+  it('atividades: Título · Descripción · Objetivo · Frecuencia sugerida · CID-11 · Estado (+ Ações)', async () => {
+    await renderPage('activities');
+    expect(headers()).toEqual([COPY.table.title, COPY.table.description, COPY.objective, COPY.frequency, COPY.icdCategories, COPY.table.status, COPY.table.actions]);
+    expect(screen.getByTestId('therapeutic-catalog-objective-ativa')).toHaveTextContent('Mejorar autonomía');
+    expect(screen.getByTestId('therapeutic-catalog-frequency-ativa')).toHaveTextContent('3 veces por semana');
+    expect(screen.getByTestId('therapeutic-catalog-icd-ativa')).toHaveTextContent('3 categorias');
   });
 
-  it('segments: engine ON com :read abre a tela mas SEM ações; a escrita de OUTRO catálogo não as libera', async () => {
-    comEnforcement(['catalog_therapeutic_segments:read', 'catalog_therapeutic_activities:update'], 'on');
-    render(<TherapeuticCatalogPage kind="segments" />);
-    await screen.findByTestId('therapeutic-catalog-table');
-    expect(navigate).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('therapeutic-catalog-new-btn')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('therapeutic-catalog-edit-seg1')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('therapeutic-catalog-toggle-seg1')).not.toBeInTheDocument();
+  it('atividade cujo objetivo está inativo mostra a marca de inativo', async () => {
+    listCatalog.mockResolvedValue([item({ id: 'a2', objectiveId: 'o9', objectiveLabel: 'Objetivo SINTETICO', objectiveActive: false })]);
+    await renderPage('activities');
+    expect(screen.getByTestId('therapeutic-catalog-objective-a2')).toHaveTextContent(`Objetivo SINTETICO (${COPY.inactive})`);
   });
 
-  it('segments: engine ON com read+create+update — as ações existem; sem :read manda para /admin', async () => {
-    comEnforcement(['catalog_therapeutic_segments:read', 'catalog_therapeutic_segments:create', 'catalog_therapeutic_segments:update'], 'on');
-    const { unmount } = render(<TherapeuticCatalogPage kind="segments" />);
-    await screen.findByTestId('therapeutic-catalog-table');
-    expect(screen.getByTestId('therapeutic-catalog-new-btn')).toBeInTheDocument();
-    expect(screen.getByTestId('therapeutic-catalog-toggle-seg1')).toBeInTheDocument();
-    unmount();
+  it.each(['service-exit-reasons', 'service-shift-templates'] as const)('%s: sem colunas de serviço, objetivo, frequência nem CID-11, e sem filtros', async (kind) => {
+    await renderPage(kind);
+    for (const nome of [COPY.service, COPY.objective, COPY.frequency, COPY.icdCategories]) {
+      expect(screen.queryByRole('columnheader', { name: nome })).toBeNull();
+    }
+    expect(screen.queryByTestId('therapeutic-catalog-filters')).toBeNull();
+  });
 
-    comEnforcement([], 'on');
-    render(<TherapeuticCatalogPage kind="segments" />);
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/admin', { replace: true }));
+  it('nenhum kind carrega a lista de segmentos (a chamada some com o Segmento)', async () => {
+    await renderPage('specific-objectives');
+    await renderPage('activities');
+    expect(listCatalog.mock.calls.map(([k]) => k)).not.toContain('segments');
   });
 });
 
-// ── Spec 030 (F4) — coluna "Segmento" e o vínculo no objetivo/atividade ─────────────────────────────
-
-describe('TherapeuticCatalogPage — vínculo de segmento (spec 030, F4)', () => {
-  const SEG_ON = item({ id: 'seg-on', label: 'AT para Pacientes con TEA', sortOrder: 1 });
-  const SEG_OFF = item({ id: 'seg-off', label: 'Segmento viejo', sortOrder: 2, active: false });
-  const OBJ = item({ id: 'obj1', label: 'Mejorar autonomía', segmentId: 'seg-on' });
-  const OBJ_OFF = item({ id: 'obj2', label: 'Otro objetivo', sortOrder: 2, segmentId: 'seg-off' });
-  const OBJ_LIVRE = item({ id: 'obj3', label: 'Sin segmento', sortOrder: 3, segmentId: null });
-
-  function respondePorKind(segments: TherapeuticCatalogItem[] | Error) {
-    listCatalog.mockImplementation(async (kind: string) => {
-      if (kind !== 'segments') return [OBJ, OBJ_OFF, OBJ_LIVRE];
-      if (segments instanceof Error) throw segments;
-      return segments;
-    });
-  }
+describe('TherapeuticCatalogPage — filtros (091, DD-20)', () => {
+  const OBJ_CUIDADO = item({ id: 'cuid', label: 'Objetivo cuidado SINTETICO', serviceCode: 'CAREGIVER', categoryCount: 1 });
 
   beforeEach(() => {
     vi.clearAllMocks();
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
-    updateCatalogItem.mockResolvedValue(OBJ);
-    createCatalogItem.mockResolvedValue(OBJ);
+    listCatalog.mockResolvedValue([ATIVA, OBJ_CUIDADO]);
   });
 
-  it('coluna "Segmento": rótulo resolvido por id no front; "(inactivo)" no desligado; "—" sem vínculo', async () => {
-    respondePorKind([SEG_ON, SEG_OFF]);
+  it('o filtro de CID-11 se chama "Vinculado a CID-11" (vínculo existe, não "elegível na cascata")', async () => {
     await renderPage('specific-objectives');
-    expect(listCatalog).toHaveBeenCalledWith('segments', { includeInactive: true });
-    expect(screen.getByRole('columnheader', { name: COPY.table.segment })).toBeInTheDocument();
-    expect(screen.getByTestId('therapeutic-catalog-segment-obj1')).toHaveTextContent('AT para Pacientes con TEA');
-    expect(screen.getByTestId('therapeutic-catalog-segment-obj2')).toHaveTextContent('Segmento viejo (inactivo)');
-    expect(screen.getByTestId('therapeutic-catalog-segment-obj3')).toHaveTextContent('—');
+    expect(screen.getByLabelText(COPY.filterIcd)).toBe(screen.getByTestId('therapeutic-catalog-filter-icd'));
+    expect(COPY.filterIcd).toBe('Vinculado a CID-11');
   });
 
-  it('403 na lista de segmentos (allSettled → null): a coluna e o campo SOMEM, a tela abre', async () => {
-    respondePorKind(Object.assign(new Error('forbidden'), { status: 403 }));
+  it('objetivos: filtro de Serviço esconde as linhas de outro serviço', async () => {
+    await renderPage('specific-objectives');
+    expect(screen.getByTestId('therapeutic-catalog-row-cuid')).toBeInTheDocument();
+    await selectCombo(screen.getByTestId('therapeutic-catalog-filter-service'), COPY.serviceAT);
+    expect(screen.getByTestId('therapeutic-catalog-row-ativa')).toBeInTheDocument();
+    expect(screen.queryByTestId('therapeutic-catalog-row-cuid')).toBeNull();
+  });
+
+  it('CID-11 só consulta com o código completo (4 caracteres) e manda `categoryCode` em maiúsculas', async () => {
+    await renderPage('specific-objectives');
+    const input = screen.getByTestId('therapeutic-catalog-filter-icd');
+    fireEvent.change(input, { target: { value: '6a0' } });
+    expect(itemListCalls()).toHaveLength(1);
+    fireEvent.change(input, { target: { value: '6a02' } });
+    await waitFor(() => expect(listCatalog).toHaveBeenCalledWith('specific-objectives', { includeInactive: true, categoryCode: '6A02' }));
+    // limpar volta à lista sem filtro
+    fireEvent.change(input, { target: { value: '' } });
+    await waitFor(() => expect(itemListCalls()).toHaveLength(3));
+    expect(itemListCalls()[2]).toEqual(['specific-objectives', { includeInactive: true }]);
+  });
+
+  it('o campo do filtro continua na tela enquanto a lista recarrega (o foco não se perde)', async () => {
+    await renderPage('specific-objectives');
+    const input = screen.getByTestId('therapeutic-catalog-filter-icd');
+    fireEvent.change(input, { target: { value: '6A02' } });
+    await waitFor(() => expect(itemListCalls()).toHaveLength(2));
+    expect(screen.getByTestId('therapeutic-catalog-filter-icd')).toBe(input);
+  });
+
+  it('atividades: filtros de Objetivo (manda `objectiveId`) e de CID-11 (`categoryCode`) juntos', async () => {
     await renderPage('activities');
-    expect(screen.queryByRole('columnheader', { name: COPY.table.segment })).toBeNull();
-    expect(screen.queryByTestId('therapeutic-catalog-segment-obj1')).toBeNull();
-    fireEvent.click(screen.getByTestId('therapeutic-catalog-edit-obj1'));
+    await selectCombo(screen.getByTestId('therapeutic-catalog-filter-objective'), 'Mejorar autonomía');
+    await waitFor(() => expect(listCatalog).toHaveBeenCalledWith('activities', { includeInactive: true, objectiveId: 'ativa' }));
+    fireEvent.change(screen.getByTestId('therapeutic-catalog-filter-icd'), { target: { value: '6A02' } });
+    await waitFor(() => expect(listCatalog).toHaveBeenCalledWith('activities', { includeInactive: true, categoryCode: '6A02', objectiveId: 'ativa' }));
+  });
+
+  it('atividades: sem o filtro de Serviço; objetivos: sem o filtro de Objetivo', async () => {
+    const { unmount } = await renderPage('activities');
+    expect(screen.queryByTestId('therapeutic-catalog-filter-service')).toBeNull();
+    unmount();
+    await renderPage('specific-objectives');
+    expect(screen.queryByTestId('therapeutic-catalog-filter-objective')).toBeNull();
+  });
+});
+
+describe('TherapeuticCatalogPage — painel de CIDs ligado ao chip (091)', () => {
+  const LINKS = { total: 2, items: [{ code: '6A02', title: 'Trastorno SINTETICO', activityLinks: 0 }, { code: '6A05', title: null, activityLinks: 0 }] };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+    listCatalog.mockResolvedValue([ATIVA]);
+    listObjectiveCategories.mockResolvedValue(LINKS);
+    listActivityCategories.mockResolvedValue(LINKS);
+    removeObjectiveCategory.mockResolvedValue({});
+  });
+
+  it('o chip do objetivo abre o painel com as categorias dele', async () => {
+    await renderPage('specific-objectives');
+    expect(screen.queryByTestId('therapeutic-catalog-cid-panel')).toBeNull();
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-icd-ativa'));
+    expect(await screen.findByTestId('therapeutic-catalog-cid-panel')).toBeInTheDocument();
+    await waitFor(() => expect(listObjectiveCategories).toHaveBeenCalledWith('ativa'));
+    expect(await screen.findByTestId('cid-panel-row-6A02')).toHaveTextContent('6A02 — Trastorno SINTETICO');
+    expect(screen.getByTestId('cid-panel-item')).toHaveTextContent('Mejorar autonomía');
+  });
+
+  it('o chip da atividade abre o painel de atividade (lista as categorias DA atividade)', async () => {
+    await renderPage('activities');
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-icd-ativa'));
+    await waitFor(() => expect(listActivityCategories).toHaveBeenCalledWith('ativa'));
+    expect(listObjectiveCategories).toHaveBeenCalledWith('ativa'); // candidatos do select = categorias do objetivo dono
+  });
+
+  it('com :update o painel deixa Quitar e, ao quitar, a lista da tela recarrega (contagem do chip)', async () => {
+    await renderPage('specific-objectives');
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-icd-ativa'));
+    fireEvent.click(await screen.findByTestId('cid-panel-remove-6A02'));
+    await waitFor(() => expect(removeObjectiveCategory).toHaveBeenCalledWith('ativa', '6A02'));
+    await waitFor(() => expect(itemListCalls()).toHaveLength(2));
+  });
+
+  it('🔴 engine ON com só :read — painel só leitura: linhas sim, Agregar/Quitar não', async () => {
+    comEnforcement(['catalog_therapeutic_objectives:read'], 'on');
+    render(<TherapeuticCatalogPage kind="specific-objectives" />);
+    await screen.findByTestId('therapeutic-catalog-table');
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-icd-ativa'));
+    expect(await screen.findByTestId('cid-panel-row-6A02')).toBeInTheDocument();
+    expect(screen.queryByTestId('cid-panel-remove-6A02')).toBeNull();
+    expect(screen.queryByTestId('cid-panel-add')).toBeNull();
+  });
+
+  it('engine ON com :update — o painel tem Agregar', async () => {
+    comEnforcement(['catalog_therapeutic_objectives:read', 'catalog_therapeutic_objectives:update'], 'on');
+    render(<TherapeuticCatalogPage kind="specific-objectives" />);
+    await screen.findByTestId('therapeutic-catalog-table');
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-icd-ativa'));
+    expect(await screen.findByTestId('cid-panel-add')).toBeInTheDocument();
+  });
+});
+
+describe('TherapeuticCatalogPage — modal com os campos novos (091, DD-24)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+    listCatalog.mockResolvedValue([ATIVA, INATIVA]);
+    createCatalogItem.mockResolvedValue(ATIVA);
+    updateCatalogItem.mockResolvedValue(ATIVA);
+  });
+
+  it('objetivo: criar exige o Serviço e o POST leva `serviceCode` (sem `segmentId`)', async () => {
+    await renderPage('specific-objectives');
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-new-btn'));
+    fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Objetivo nuevo SINTETICO' } });
+    expect(screen.getByTestId('therapeutic-catalog-form-save')).toBeDisabled();
+    await selectCombo(screen.getByTestId('therapeutic-catalog-service-select'), COPY.serviceCAREGIVER);
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
+    await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('specific-objectives', { label: 'Objetivo nuevo SINTETICO', serviceCode: 'CAREGIVER' }));
     expect(screen.queryByTestId('therapeutic-catalog-segment-select')).toBeNull();
   });
 
-  it('PATCH leva `segmentId` (trocar) e `null` (limpar); POST leva o escolhido', async () => {
-    respondePorKind([SEG_ON, SEG_OFF]);
-    await renderPage('specific-objectives');
-
-    fireEvent.click(screen.getByTestId('therapeutic-catalog-edit-obj2'));
-    await selectCombo(screen.getByTestId('therapeutic-catalog-segment-select'), COPY.form.segmentNone);
-    fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
-    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('specific-objectives', 'obj2', { segmentId: null }));
-    await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
-
+  it('atividade: criar escolhe o Objetivo (lista da tela) e a Frecuencia; o POST leva os dois', async () => {
+    await renderPage('activities');
     fireEvent.click(screen.getByTestId('therapeutic-catalog-new-btn'));
-    fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Nuevo objetivo' } });
-    await selectCombo(screen.getByTestId('therapeutic-catalog-segment-select'), SEG_ON.label); // seg-on
+    fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Atividade nueva SINTETICA' } });
+    await selectCombo(screen.getByTestId('therapeutic-catalog-objective-select'), 'Mejorar autonomía');
+    fireEvent.change(screen.getByTestId('therapeutic-catalog-frequency-input'), { target: { value: 'Diaria' } });
     fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
-    await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('specific-objectives', { label: 'Nuevo objetivo', segmentId: 'seg-on' }));
+    await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('activities', { label: 'Atividade nueva SINTETICA', objectiveId: 'ativa', suggestedFrequency: 'Diaria' }));
   });
 
-  it('kind="segments": não carregam segmentos, sem coluna e sem campo na modal', async () => {
-    for (const kind of ['segments'] as const) {
-      listCatalog.mockClear();
-      listCatalog.mockResolvedValue([SEG_ON]);
-      const { unmount } = await renderPage(kind);
-      expect(listCatalog).toHaveBeenCalledTimes(1);
-      expect(screen.queryByRole('columnheader', { name: COPY.table.segment })).toBeNull();
-      fireEvent.click(screen.getByTestId('therapeutic-catalog-new-btn'));
-      expect(screen.queryByTestId('therapeutic-catalog-segment-select')).toBeNull();
-      unmount();
-    }
+  it('atividade: esvaziar a Frecuencia no editar manda `suggestedFrequency: null` explícito no PATCH (DD-24)', async () => {
+    await renderPage('activities');
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-edit-ativa'));
+    expect(screen.getByTestId('therapeutic-catalog-frequency-input')).toHaveValue('3 veces por semana');
+    fireEvent.change(screen.getByTestId('therapeutic-catalog-frequency-input'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
+    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('activities', 'ativa', { suggestedFrequency: null }));
+  });
+
+  it('objetivo: trocar só o Serviço no editar viaja SÓ `serviceCode`', async () => {
+    await renderPage('specific-objectives');
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-edit-ativa'));
+    await selectCombo(screen.getByTestId('therapeutic-catalog-service-select'), COPY.serviceCAREGIVER);
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
+    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('specific-objectives', 'ativa', { serviceCode: 'CAREGIVER' }));
   });
 });
 

@@ -13,6 +13,7 @@ import {
   CATALOG_DESCRIPTION_MAX,
   CATALOG_LABEL_MAX,
   CATALOG_TITLE_MAX,
+  SUGGESTED_FREQUENCY_MAX,
   type TherapeuticCatalogItem,
   type AdminCatalogKind,
   catalogHasDescription,
@@ -27,17 +28,23 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Combobox } from '@presentation/components/atoms/Combobox';
 import { catalogRefusalMessage } from './catalogRefusalMessage';
 import { ShiftTemplateItemsField } from './ShiftTemplateItemsField';
-import { segmentSelectOptions } from './catalogSegment';
+
+/** Serviços que podem ser donos de um objetivo (091, §9.7). A chave de i18n é `service<CODE>`. */
+export const CATALOG_SERVICE_CODES = ['AT', 'CAREGIVER'] as const;
 
 export interface CatalogItemFormData {
   /** Objetivo/atividade em edição: só viaja se o título MUDOU (Merge Patch, spec 061) — título antigo >150 salva só a descrição. */
   label?: string;
-  /** Só `segments` (spec 061: objetivo/atividade não têm ordem na tela). */
+  /** Só motivos de saída (spec 061: objetivo/atividade não têm ordem na tela). */
   sortOrder?: number;
   /** Só objetivo/atividade; `null` limpa. Ausente = não mexe. */
   description?: string | null;
-  /** Só quando o campo existe E mudou; `null` limpa o vínculo (spec 030). */
-  segmentId?: string | null;
+  /** 091, só objetivo: serviço dono (obrigatório; só viaja se mudou). */
+  serviceCode?: string;
+  /** 091, só atividade: objetivo dono (obrigatório; só viaja se mudou). */
+  objectiveId?: string;
+  /** 091, só atividade: texto livre; vazio → `null` EXPLÍCITO (DD-24); não alterado → chave ausente. */
+  suggestedFrequency?: string | null;
   /** Só guardia predefinida (spec 074): os turnos `{ startTime, durationMinutes }`. */
   items?: ShiftTemplateItem[];
 }
@@ -45,14 +52,14 @@ export interface CatalogItemFormData {
 interface Props {
   kind: AdminCatalogKind | typeof SERVICE_SHIFT_TEMPLATE_KIND;
   item: TherapeuticCatalogItem | ShiftTemplate | null;
-  /** Segmentos (inclui inativos) — `null`/ausente = sem célula de segmentos ou catálogo sem vínculo: o campo some. */
-  segments?: TherapeuticCatalogItem[] | null;
+  /** Só atividade: objetivos (inclui inativos) para o select de Objetivo; `null`/ausente = lista não veio. */
+  objectives?: TherapeuticCatalogItem[] | null;
   onSave: (data: CatalogItemFormData) => Promise<void>;
   onClose: () => void;
 }
 
 
-export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSave, onClose }: Props): JSX.Element {
+export function TherapeuticCatalogFormModal({ kind, item, objectives = null, onSave, onClose }: Props): JSX.Element {
   const { t } = useTranslation();
   const tr = (k: string, o?: Record<string, unknown>) => t(`admin.therapeuticCatalog.${k}`, o ?? {});
   const isEdit = item !== null;
@@ -60,14 +67,21 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
   const catalogItem = isTemplate ? null : (item as TherapeuticCatalogItem | null);
   const [items, setItems] = useState<ShiftTemplateItem[]>(isTemplate && item !== null ? (item as ShiftTemplate).items : []);
   const [itemsValid, setItemsValid] = useState(true);
-  // Spec 061: `segments` segue como era (rótulo 200 + Ordem); objetivo/atividade ganham título 150 + descrição, sem Ordem.
+  // Spec 061: motivos de saída seguem como eram (rótulo 200 + Ordem); objetivo/atividade ganham título 150 + descrição, sem Ordem.
   const hasDescription = !isTemplate && catalogHasDescription(kind);
   const labelMax = !hasDescription ? CATALOG_LABEL_MAX : CATALOG_TITLE_MAX;
   const [label, setLabel] = useState(item?.label ?? '');
   const [description, setDescription] = useState(catalogItem?.description ?? '');
   const [sortOrder, setSortOrder] = useState(catalogItem ? String(catalogItem.sortOrder) : '');
-  const initialSegmentId = catalogItem?.segmentId ?? '';
-  const [segmentId, setSegmentId] = useState(initialSegmentId);
+  // 091: objetivo ganha Servicio (obrigatório); atividade ganha Objetivo (obrigatório) e Frecuencia (texto livre).
+  const hasService = !isTemplate && kind === 'specific-objectives';
+  const hasObjective = !isTemplate && kind === 'activities';
+  const initialServiceCode = catalogItem?.serviceCode ?? '';
+  const initialObjectiveId = catalogItem?.objectiveId ?? '';
+  const initialFrequency = (catalogItem?.suggestedFrequency ?? '').trim();
+  const [serviceCode, setServiceCode] = useState(initialServiceCode);
+  const [objectiveId, setObjectiveId] = useState(initialObjectiveId);
+  const [frequency, setFrequency] = useState(catalogItem?.suggestedFrequency ?? '');
   const [isLoading, setIsLoading] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [show, setShow] = useState(false);
@@ -82,13 +96,18 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
   const initialDescription = (catalogItem?.description ?? '').trim();
   const labelChanged = !isEdit || trimmed !== item.label;
   const descriptionChanged = trimmedDescription !== initialDescription;
-  const segmentChanged = segments !== null && segmentId !== initialSegmentId;
+  const trimmedFrequency = frequency.trim();
+  const serviceChanged = hasService && serviceCode !== initialServiceCode;
+  const objectiveChanged = hasObjective && objectiveId !== initialObjectiveId;
+  const frequencyChanged = hasObjective && trimmedFrequency !== initialFrequency;
+  const frequencyTooLong = hasObjective && trimmedFrequency.length > SUGGESTED_FREQUENCY_MAX;
+  const ownerOk = (!hasService || serviceCode !== '') && (!hasObjective || objectiveId !== '');
   // O teto novo só barra título criado agora ou alterado: o antigo (até 200) segue editável sem ser recusado.
   const tooLong = trimmed.length > labelMax && (!hasDescription || labelChanged);
   const descriptionTooLong = hasDescription && trimmedDescription.length > CATALOG_DESCRIPTION_MAX;
-  const nothingToSave = hasDescription && isEdit && !labelChanged && !descriptionChanged && !segmentChanged;
+  const nothingToSave = hasDescription && isEdit && !labelChanged && !descriptionChanged && !serviceChanged && !objectiveChanged && !frequencyChanged;
   const itemsOk = !isTemplate || (items.length > 0 && itemsValid);
-  const canSave = itemsOk && trimmed.length > 0 && !tooLong && !descriptionTooLong && !nothingToSave && !isLoading;
+  const canSave = itemsOk && ownerOk && trimmed.length > 0 && !tooLong && !descriptionTooLong && !frequencyTooLong && !nothingToSave && !isLoading;
 
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
@@ -101,12 +120,14 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
         return;
       }
       const order = hasDescription || sortOrder.trim() === '' ? undefined : Number(sortOrder);
-      // `segmentId` só viaja se o campo existe E mudou: reenviar um vínculo inativo seria recusado (422).
+      // DD-24 (Merge Patch): campo alterado viaja; vazio → `null` explícito (frequência); não alterado → chave ausente.
       await onSave({
         ...(!hasDescription || labelChanged ? { label: trimmed } : {}),
         ...(order !== undefined && Number.isFinite(order) ? { sortOrder: order } : {}),
         ...(hasDescription && descriptionChanged ? { description: trimmedDescription === '' ? null : trimmedDescription } : {}),
-        ...(segmentChanged ? { segmentId: segmentId || null } : {}),
+        ...(serviceChanged ? { serviceCode } : {}),
+        ...(objectiveChanged ? { objectiveId } : {}),
+        ...(frequencyChanged ? { suggestedFrequency: trimmedFrequency === '' ? null : trimmedFrequency } : {}),
       });
     } catch (err: unknown) {
       setSaveError(catalogRefusalMessage(err, t));
@@ -195,22 +216,50 @@ export function TherapeuticCatalogFormModal({ kind, item, segments = null, onSav
             <Text size="xs" color="muted" className="mt-1">{tr('form.sortOrderHelp')}</Text>
           </div>
           )}
-          {segments !== null && (
+          {hasService && (
             <div>
-              <Label htmlFor="therapeutic-catalog-segment">{tr('form.segment')}</Label>
+              <Label htmlFor="therapeutic-catalog-service">{tr('service')}</Label>
               <Combobox
-                id="therapeutic-catalog-segment"
-                value={segmentId}
-                onChange={setSegmentId}
-                placeholder={tr('form.segmentNone')}
-                options={[
-                  { value: '', label: tr('form.segmentNone') },
-                  ...segmentSelectOptions(segments, segmentId, (l) => tr('form.segmentInactive', { label: l })),
-                ]}
-                data-testid="therapeutic-catalog-segment-select"
+                id="therapeutic-catalog-service"
+                value={serviceCode}
+                onChange={setServiceCode}
+                placeholder={tr('service')}
+                options={CATALOG_SERVICE_CODES.map((code) => ({ value: code, label: tr(`service${code}`) }))}
+                data-testid="therapeutic-catalog-service-select"
               />
-              <Text size="xs" color="muted" className="mt-1">{tr('form.segmentHelp')}</Text>
             </div>
+          )}
+          {hasObjective && (
+            <>
+              <div>
+                <Label htmlFor="therapeutic-catalog-objective">{tr('objective')}</Label>
+                <Combobox
+                  id="therapeutic-catalog-objective"
+                  value={objectiveId}
+                  onChange={setObjectiveId}
+                  placeholder={tr('objective')}
+                  options={(objectives ?? [])
+                    .filter((o) => o.active || o.id === objectiveId)
+                    .map((o) => ({ value: o.id, label: o.active ? o.label : `${o.label} (${tr('inactive')})` }))}
+                  data-testid="therapeutic-catalog-objective-select"
+                />
+              </div>
+              <div>
+                <Label htmlFor="therapeutic-catalog-frequency">{tr('frequency')}</Label>
+                <input
+                  id="therapeutic-catalog-frequency"
+                  type="text"
+                  value={frequency}
+                  onChange={(e) => setFrequency(e.target.value)}
+                  maxLength={SUGGESTED_FREQUENCY_MAX + 20}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none"
+                  data-testid="therapeutic-catalog-frequency-input"
+                />
+                <Text size="xs" color={frequencyTooLong ? 'inherit' : 'muted'} className={`mt-1 ${frequencyTooLong ? 'text-red-600' : ''}`} data-testid="therapeutic-catalog-frequency-count">
+                  {trimmedFrequency.length}/{SUGGESTED_FREQUENCY_MAX}
+                </Text>
+              </div>
+            </>
           )}
           {saveError && (
             <div className="border border-red-300 bg-red-50 rounded-lg px-4 py-3" role="alert" data-testid="therapeutic-catalog-form-error">

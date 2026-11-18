@@ -253,7 +253,7 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
         // Spec 017 (lex C3): o projeto terapêutico segue o paciente sob a RLS de país.
         express.use(
           '/api/admin',
-          caseModule.createAdminTherapeuticProjectsRoutes(new caseModule.AdminTherapeuticProjectsController(), auth, permissions),
+          caseModule.createAdminTherapeuticProjectsRoutes(caseModule.buildAdminTherapeuticProjectsController(), auth, permissions),
         ) &&
         // F3 (vaga-le-do-servico): a família `admin.vacancies` monta COM O ROUTER REAL; os controllers que as rotas
         // exercitadas aqui não usam entram como `{}` (os handlers só os chamam por arrow, em rota que este teste não pede).

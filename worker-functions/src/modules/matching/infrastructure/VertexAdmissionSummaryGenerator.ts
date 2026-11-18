@@ -4,7 +4,7 @@ import { GoogleDocsPromptProvider } from '../../integration/infrastructure/Googl
 import { AdmissionRealAdapterInTestError } from '../application/ports/AdmissionMessagingPorts';
 import { AdmissionSummaryError, type AdmissionSummaryInput, type AdmissionSummaryPort, type AdmissionSummaryResult } from '../application/ports/AdmissionImportPorts';
 import { assertSummaryShape } from '../application/admissionSummaryGate';
-import { TherapeuticCatalogRepository } from '@modules/case/infrastructure/TherapeuticCatalogRepository';
+import { SegmentLabelsReader } from './SegmentLabelsReader';
 import { DEPENDENCY_LEVELS } from '@modules/case/domain/enums/DependencyLevel';
 import { PROFESSIONS } from '@modules/worker/domain/enums/Profession';
 import { ADMISSION_STAFFING_RULES } from '../domain/admissionStaffingRules';
@@ -80,9 +80,9 @@ export const pathologyLabelsFrom = (terminology: TerminologyPort) => async (): P
 };
 
 const defaultCatalogs = (env: NodeJS.ProcessEnv): AdmissionPromptCatalogs => {
-  const repo = new TherapeuticCatalogRepository();
+  const reader = new SegmentLabelsReader();
   return {
-    segmentLabels: async () => (await repo.list('segments')).map((i) => i.label),
+    segmentLabels: () => reader.list(), // DD-17: segmentos congelados (inativos na 586), lidos sem filtro de `active`
     pathologyTypeLabels: pathologyLabelsFrom(createTerminologyPort(env)),
   };
 };

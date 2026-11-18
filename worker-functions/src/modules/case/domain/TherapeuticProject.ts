@@ -10,6 +10,7 @@
  * Os snapshots dos catálogos (`{ id, label }`) e do CID-11 (`{ uri, code, title }`) são o que a
  * versão guarda — renomear/desativar uma opção depois não reescreve o passado (lex C19).
  */
+import { DiagnosisPlans, flattenDiagnosisPlans, type DiagnosisPlanInput, type DiagnosisPlanSnapshot } from './TherapeuticDiagnosisPlan';
 
 export interface TherapeuticDiagnosis {
   uri: string;
@@ -34,6 +35,8 @@ export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
   segmentLabel?: string | null;
   /** Descrição do item (spec 061, migration 547) — ausente em versão antiga e em item sem descrição. */
   description?: string;
+  /** Só atividade, e só na lista plana derivada do formato por diagnóstico (DD-8). */
+  suggestedFrequency?: string | null;
 }
 
 /**
@@ -43,18 +46,16 @@ export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
  * deprecada pela 418; a célula `catalog_pathology_types` sumiu do código e o sync a marca.
  */
 /**
- * `segments` (migration 430, US-17, spec 018 PR-7): catálogo GLOBAL dos segmentos da Ana Care,
- * mesmo molde dos dois de cima — mesma tabela genérica (id/label/sort_order/active/deactivated_at),
- * por isso entra no MESMO repositório/rotas sem código novo (célula literal na rota, D299.3).
- * `specific-objectives`/`activities` ganham `segment_id` (FK opcional) como FILTRO — não recorte
- * do que pode ser gravado (#REQ-16) — tratado à parte no `create`/`update` do repositório.
+ * Catálogos mantidos à mão (spec 091): objetivos (por serviço) e atividades (por objetivo). O catálogo de
+ * segmentos (430) foi descontinuado: não há kind, tabela nem célula para ele (a coluna `segment_id` fica
+ * no banco só como legado, "não ler nem escrever").
  */
-export type TherapeuticCatalogKind = 'specific-objectives' | 'activities' | 'segments';
+export type TherapeuticCatalogKind = 'specific-objectives' | 'activities';
 
-export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities', 'segments'];
+export const THERAPEUTIC_CATALOG_KINDS: readonly TherapeuticCatalogKind[] = ['specific-objectives', 'activities'];
 
 /**
- * Spec 061: só estes kinds têm a coluna `description` (migration 547) e ordem alfabética. `segments` e o
+ * Spec 061: só estes kinds têm a coluna `description` (migration 547) e ordem alfabética. O
  * catálogo extra da stage (motivos de saída, 492) NÃO — para eles a ordem manual, o campo Ordem e o SQL
  * sem `description` ficam como antes. Checagem POSITIVA: kind novo nasce sem descrição.
  */
@@ -65,14 +66,12 @@ export const catalogHasDescription = (kind: string): boolean => CATALOG_KINDS_WI
 export const THERAPEUTIC_CATALOG_TABLE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'therapeutic_specific_objectives',
   activities: 'therapeutic_activities',
-  segments: 'therapeutic_segments',
 };
 
 /** Recurso da célula ABAC de cada catálogo (D299.3: uma célula por catálogo, família admin.patients). */
 export const THERAPEUTIC_CATALOG_RESOURCE: Readonly<Record<TherapeuticCatalogKind, string>> = {
   'specific-objectives': 'catalog_therapeutic_objectives',
   activities: 'catalog_therapeutic_activities',
-  segments: 'catalog_therapeutic_segments',
 };
 
 /**
@@ -115,6 +114,10 @@ export interface TherapeuticProjectVersion {
    * a projeção (`therapeuticProjectAccess.ts`) devolve `null` sem `patient_clinical:read`.
    */
   segment: CatalogSnapshotItem | null;
+  /** Blocos por diagnóstico (091, §9.6); `null` no formato plano (versão antiga). Dado CLÍNICO: a projeção devolve `null` sem `patient_clinical:read` (DD-9). */
+  diagnosisPlans: readonly DiagnosisPlanSnapshot[] | null;
+  /** Derivado de `diagnosis_plans IS NULL` (DD-8); presente mesmo redigido — o PDF e a tela decidem o desenho SÓ por ele (DD-21). */
+  objectivesLayout: ObjectivesLayoutName;
   startDate: string;
   endDate: string;
   annulledAt: string | null;
@@ -128,6 +131,145 @@ export interface TherapeuticProjectVersion {
   createdAt: string;
   country: string;
 }
+
+export type ObjectivesLayoutName = 'flat' | 'byDiagnosis';
+
+/** O que a Strategy lê da versão para derivar a lista plana. */
+export interface ObjectivesLayoutSource {
+  readonly specificObjectives: readonly TherapeuticCatalogSnapshotItem[];
+  readonly activities: readonly TherapeuticCatalogSnapshotItem[];
+  readonly diagnosisPlans: readonly DiagnosisPlanSnapshot[] | null;
+}
+
+export interface DerivedObjectives {
+  specificObjectives: TherapeuticCatalogSnapshotItem[];
+  activities: TherapeuticCatalogSnapshotItem[];
+}
+
+/** Corpo de objetivos de uma EDIÇÃO: ou o formato plano (ids) ou o por diagnóstico (blocos) — nunca os dois (§9.4). */
+export interface VersionObjectivesBody {
+  readonly specificObjectiveIds?: readonly string[];
+  readonly activityIds?: readonly string[];
+  readonly diagnosisPlans?: readonly DiagnosisPlanInput[];
+}
+
+/** O que a edição compara com a origem: a forma-base MACRO + o corpo de objetivos do formato. */
+export interface EditMacroCandidate extends VersionObjectivesBody {
+  readonly contractedServiceId: string;
+  readonly diagnoses: readonly { uri: string }[];
+  readonly clinicalContext: string;
+  readonly generalObjective: string;
+}
+
+/** Colunas de snapshot que a versão grava; a edição as COPIA da origem (DD-6), sem reler o catálogo. */
+export interface SnapshotColumns {
+  readonly specificObjectives: readonly TherapeuticCatalogSnapshotItem[];
+  readonly activities: readonly TherapeuticCatalogSnapshotItem[];
+  readonly segment: CatalogSnapshotItem | null;
+  readonly diagnosisPlans: readonly DiagnosisPlanSnapshot[] | null;
+}
+
+/** 422 `ptp_format_mismatch`: o corpo da edição não tem o formato da versão de origem (sem ecoar nada do corpo). */
+export class PlanFormatMismatchError extends Error {
+  readonly code = 'ptp_format_mismatch';
+  constructor() {
+    super('ptp_format_mismatch');
+  }
+}
+
+/**
+ * Formato da versão (091, DD-6/DD-8) — Strategy: uma classe por formato.
+ * `project(row)` devolve a lista plana que a leitura sempre expõe; `assertAccepts` recusa corpo de outro formato;
+ * `macroChanged` compara o MACRO do formato; `copyFromOrigin` entrega o snapshot que a edição copia.
+ */
+export interface ObjectivesLayout {
+  readonly name: ObjectivesLayoutName;
+  project(row: ObjectivesLayoutSource): DerivedObjectives;
+  assertAccepts(body: VersionObjectivesBody): void;
+  macroChanged(origin: TherapeuticProjectVersion, candidate: EditMacroCandidate): TherapeuticMacroField[];
+  copyFromOrigin(origin: TherapeuticProjectVersion): SnapshotColumns;
+}
+
+const baseOf = (origin: TherapeuticProjectVersion): CurrentMacroSnapshot => ({
+  contractedServiceId: origin.contractedServiceId,
+  diagnosisUris: origin.diagnoses.map((d) => d.uri),
+  clinicalContext: origin.clinicalContext,
+  generalObjective: origin.generalObjective,
+});
+
+/** Formato antigo: a lista plana é a gravada, devolvida como está. */
+export class FlatLayout implements ObjectivesLayout {
+  readonly name = 'flat' as const;
+  project(row: ObjectivesLayoutSource): DerivedObjectives {
+    return { specificObjectives: [...row.specificObjectives], activities: [...row.activities] };
+  }
+  assertAccepts(body: VersionObjectivesBody): void {
+    if (body.specificObjectiveIds === undefined || body.activityIds === undefined || body.diagnosisPlans !== undefined) {
+      throw new PlanFormatMismatchError();
+    }
+  }
+  macroChanged(origin: TherapeuticProjectVersion, candidate: EditMacroCandidate): TherapeuticMacroField[] {
+    return macroFieldsChanged(
+      { ...baseOf(origin), specificObjectiveIds: origin.specificObjectives.map((o) => o.id), activityIds: origin.activities.map((a) => a.id) },
+      { ...candidate, specificObjectiveIds: candidate.specificObjectiveIds, activityIds: candidate.activityIds },
+    );
+  }
+  copyFromOrigin(origin: TherapeuticProjectVersion): SnapshotColumns {
+    return { specificObjectives: origin.specificObjectives, activities: origin.activities, segment: origin.segment, diagnosisPlans: null };
+  }
+}
+
+/** Formato novo: a lista plana é a união dos blocos (domínio `flattenDiagnosisPlans`), nunca gravada. */
+export class ByDiagnosisLayout implements ObjectivesLayout {
+  readonly name = 'byDiagnosis' as const;
+  project(row: ObjectivesLayoutSource): DerivedObjectives {
+    const flat = flattenDiagnosisPlans(row.diagnosisPlans ?? []);
+    const item = <T extends { id: string; label: string; description: string | null }>({ description, ...rest }: T) => ({
+      ...rest,
+      ...(description === null ? {} : { description }),
+    });
+    return { specificObjectives: flat.specificObjectives.map(item), activities: flat.activities.map(item) };
+  }
+  assertAccepts(body: VersionObjectivesBody): void {
+    if (body.diagnosisPlans === undefined || body.specificObjectiveIds !== undefined || body.activityIds !== undefined) {
+      throw new PlanFormatMismatchError();
+    }
+  }
+  macroChanged(origin: TherapeuticProjectVersion, candidate: EditMacroCandidate): TherapeuticMacroField[] {
+    const changed = macroFieldsChanged(baseOf(origin), candidate);
+    const same = new DiagnosisPlans(origin.diagnosisPlans ?? []).sameSelectionAs(this.asSnapshots(candidate.diagnosisPlans ?? []));
+    return same ? changed : [...changed, 'diagnosisPlans'];
+  }
+  copyFromOrigin(origin: TherapeuticProjectVersion): SnapshotColumns {
+    return { specificObjectives: [], activities: [], segment: origin.segment, diagnosisPlans: origin.diagnosisPlans };
+  }
+  /** O corpo traz só ids; a comparação MACRO olha ids por bloco, então o corpo vira "snapshot só de ids". */
+  private asSnapshots(inputs: readonly DiagnosisPlanInput[]): DiagnosisPlans {
+    const ref = (id: string) => ({ id, label: '', description: null });
+    return new DiagnosisPlans(
+      inputs.map((i) => ({
+        diagnosisUri: i.diagnosisUri,
+        categoryCode: null,
+        objectives: i.specificObjectiveIds.map(ref),
+        activities: i.activityIds.map((id) => ({ ...ref(id), suggestedFrequency: null })),
+      })),
+    );
+  }
+}
+
+const LAYOUT_OF: Readonly<Record<ObjectivesLayoutName, ObjectivesLayout>> = {
+  flat: new FlatLayout(),
+  byDiagnosis: new ByDiagnosisLayout(),
+};
+
+/** Fábrica por tabela: a escolha do formato acontece UMA vez, por `objectivesLayout` (nunca `if (row.diagnosis_plans)`). */
+export function objectivesLayoutFor(name: ObjectivesLayoutName): ObjectivesLayout {
+  return LAYOUT_OF[name];
+}
+
+/** `objectivesLayout` derivado de `diagnosis_plans IS NULL` (DD-8): o único lugar que olha a coluna. */
+export const layoutNameOf = (diagnosisPlans: unknown | null | undefined): ObjectivesLayoutName =>
+  diagnosisPlans == null ? 'flat' : 'byDiagnosis';
 
 export const versionLabel = (major: number, minor: number): string => `V.${major}.${minor}`;
 
@@ -162,7 +304,7 @@ export type ResolvedTherapeuticContact =
  * seleção de contato não é reescrever o conteúdo clínico da versão.
  */
 export const THERAPEUTIC_FIELD_CLASS = {
-  MACRO: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds', 'segmentId'] as const,
+  MACRO: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds', 'diagnosisPlans'] as const,
   MICRO: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'] as const,
 } as const;
 
@@ -182,8 +324,9 @@ export interface CurrentMacroSnapshot {
   diagnosisUris: readonly string[];
   clinicalContext: string;
   generalObjective: string;
-  specificObjectiveIds: readonly string[];
-  activityIds: readonly string[];
+  /** Só o formato plano tem ids; no por diagnóstico a comparação é bloco a bloco (`ByDiagnosisLayout`). */
+  specificObjectiveIds?: readonly string[];
+  activityIds?: readonly string[];
 }
 
 export interface CandidateMacroInput {
@@ -191,8 +334,8 @@ export interface CandidateMacroInput {
   diagnoses: readonly { uri: string }[];
   clinicalContext: string;
   generalObjective: string;
-  specificObjectiveIds: readonly string[];
-  activityIds: readonly string[];
+  specificObjectiveIds?: readonly string[];
+  activityIds?: readonly string[];
 }
 
 /**
@@ -206,8 +349,8 @@ export function macroFieldsChanged(current: CurrentMacroSnapshot, candidate: Can
   if (!sameIdSet(current.diagnosisUris, candidate.diagnoses.map((d) => d.uri))) changed.push('diagnoses');
   if (current.clinicalContext !== candidate.clinicalContext) changed.push('clinicalContext');
   if (current.generalObjective !== candidate.generalObjective) changed.push('generalObjective');
-  if (!sameIdSet(current.specificObjectiveIds, candidate.specificObjectiveIds)) changed.push('specificObjectiveIds');
-  if (!sameIdSet(current.activityIds, candidate.activityIds)) changed.push('activityIds');
+  if (!sameIdSet(current.specificObjectiveIds ?? [], candidate.specificObjectiveIds ?? [])) changed.push('specificObjectiveIds');
+  if (!sameIdSet(current.activityIds ?? [], candidate.activityIds ?? [])) changed.push('activityIds');
   return changed;
 }
 
