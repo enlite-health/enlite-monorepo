@@ -137,7 +137,7 @@ export function AvailabilityTab(): JSX.Element {
         {t('workerRegistration.availability.title')}
       </Heading>
 
-      <DayScheduleEditor value={flatSlots} onChange={handleScheduleChange} />
+      <DayScheduleEditor value={flatSlots} onChange={handleScheduleChange} step={15} />
 
       {errors.schedule && (
         <Text as="span" size="sm" color="inherit" className="text-red-500">

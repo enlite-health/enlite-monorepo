@@ -19,6 +19,8 @@ interface DayScheduleEditorProps {
   value: DayScheduleSlot[];
   onChange: (next: DayScheduleSlot[]) => void;
   disabled?: boolean;
+  /** Passo (min) dos seletores de horário; default 5 (vaga). Mesmo tipo de `TimeSelect`. */
+  step?: 5 | 15 | 30 | 60;
   /** Override do label do dia (default usa `workerRegistration.availability.<day>`) */
   dayLabelI18nKey?: (dayKey: string) => string;
 }
@@ -31,6 +33,7 @@ export function DayScheduleEditor({
   value,
   onChange,
   disabled = false,
+  step = 5,
   dayLabelI18nKey,
 }: DayScheduleEditorProps): JSX.Element {
   const { t } = useTranslation();
@@ -148,7 +151,7 @@ export function DayScheduleEditor({
                         value={slot.startTime}
                         onChange={(e) => updateSlot(dayIndex, slotIndex, 'startTime', e.target.value)}
                         disabled={disabled}
-                        step={5}
+                        step={step}
                         className="bg-transparent font-lexend text-white focus:outline-none text-sm cursor-pointer [&>option]:text-gray-900"
                       />
                       <Text as="span" size="sm" color="white">-</Text>
@@ -156,7 +159,7 @@ export function DayScheduleEditor({
                         value={slot.endTime}
                         onChange={(e) => updateSlot(dayIndex, slotIndex, 'endTime', e.target.value)}
                         disabled={disabled}
-                        step={5}
+                        step={step}
                         includeEndOfDay
                         className="bg-transparent font-lexend text-white focus:outline-none text-sm cursor-pointer [&>option]:text-gray-900"
                       />
