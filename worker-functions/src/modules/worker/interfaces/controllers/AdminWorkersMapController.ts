@@ -34,6 +34,7 @@
  * duas vezes — decisão consciente, o cache global de PII é assunto do ABAC.
  */
 
+import { resolveCountriesOrRespond } from '@modules/identity';
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -212,6 +213,8 @@ export class AdminWorkersMapController {
   async getMapPoints(req: Request, res: Response): Promise<void> {
     const body = parseMapBody(WorkersMapBodySchema, req, res);
     if (!body) return;
+    // Hotfix 18/11: o `country` do corpo vem de quem pergunta — so vale dentro do escopo do ator (403 senao).
+    if (!(await resolveCountriesOrRespond(this.db, res, body.country, 'MapController:getMapPoints'))) return;
 
     try {
       const { sql, params } = buildWorkersMapQuery(body);

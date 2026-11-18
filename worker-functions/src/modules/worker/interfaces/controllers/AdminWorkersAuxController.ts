@@ -17,6 +17,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { SyncTalentumWorkersUseCase, parseSyncOptions } from '@modules/integration';
 import { reportError } from '@shared/logging';
 import { canonicalLocation, recognizedZoneLabel } from '@shared/utils/normalizeLocationValue';
+import { resolveCountriesOrRespond } from '@modules/identity';
 import { cellsOfRequest } from '@modules/identity/permissions';
 import { patientNameIsRedacted, projectPatientInVacancy } from '@modules/matching/application/patientInVacancyProjection';
 
@@ -52,14 +53,16 @@ export class AdminWorkersAuxController {
    * Retorna contagem de workers cadastrados hoje, ontem e nos últimos 7 dias.
    */
   async getWorkerDateStats(_req: Request, res: Response): Promise<void> {
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'AdminWorkersAuxController:getWorkerDateStats');
+    if (!countries) return;
     try {
       const result = await this.db.query<{ today: string; yesterday: string; seven_days_ago: string }>(`
         SELECT
           COUNT(*) FILTER (WHERE (created_at AT TIME ZONE 'America/Sao_Paulo')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)::int       AS today,
           COUNT(*) FILTER (WHERE (created_at AT TIME ZONE 'America/Sao_Paulo')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - 1)::int   AS yesterday,
           COUNT(*) FILTER (WHERE (created_at AT TIME ZONE 'America/Sao_Paulo')::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - 7)::int  AS seven_days_ago
-        FROM workers WHERE merged_into_id IS NULL
-      `);
+        FROM workers WHERE merged_into_id IS NULL AND country = ANY($1::bpchar[])
+      `, [countries]);
       const row = result.rows[0];
       const stats: WorkerDateStats = {
         today: parseInt(row.today, 10),
@@ -78,6 +81,8 @@ export class AdminWorkersAuxController {
    * Retorna id + label de todos os job_postings ativos para popular selects de filtro.
    */
   async listCaseOptions(req: Request, res: Response): Promise<void> {
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'AdminWorkersAuxController:listCaseOptions');
+    if (!countries) return;
     try {
       // D286 fase 2 / lex P4: o rótulo do select carrega o NOME do paciente — segue
       // `patient_identity:read`, não `worker:read`. Sem a célula, o rótulo é só o título da vaga.
@@ -87,9 +92,9 @@ export class AdminWorkersAuxController {
                p.first_name AS patient_first_name, p.last_name AS patient_last_name
         FROM job_postings jp
         LEFT JOIN patients p ON jp.patient_id = p.id
-        WHERE jp.deleted_at IS NULL AND jp.status NOT IN ('CLOSED', 'DE_BAJA')
+        WHERE jp.deleted_at IS NULL AND jp.status NOT IN ('CLOSED', 'DE_BAJA') AND jp.country = ANY($1::bpchar[])
         ORDER BY jp.case_number DESC NULLS LAST, jp.vacancy_number DESC
-      `);
+      `, [countries]);
 
       const data = result.rows.map((row: any) => {
         const visivel = projectPatientInVacancy(row as { patient_first_name: string | null; patient_last_name: string | null }, cells);
@@ -126,6 +131,8 @@ export class AdminWorkersAuxController {
    *   profession, sex, languages, preferred_age_range, days
    */
   async getFilterOptions(_req: Request, res: Response): Promise<void> {
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'AdminWorkersAuxController:getFilterOptions');
+    if (!countries) return;
     try {
       const [statesResult, citiesResult, zonesResult, expTypesResult, prefTypesResult] =
         await Promise.all([
@@ -133,40 +140,40 @@ export class AdminWorkersAuxController {
             SELECT DISTINCT wsa.state
             FROM worker_service_areas wsa
             JOIN workers w ON wsa.worker_id = w.id
-            WHERE w.merged_into_id IS NULL
+            WHERE w.merged_into_id IS NULL AND w.country = ANY($1::bpchar[])
               AND wsa.state IS NOT NULL
               AND btrim(wsa.state) <> ''
-          `),
+          `, [countries]),
           this.db.query<{ city: string }>(`
             SELECT DISTINCT wsa.city
             FROM worker_service_areas wsa
             JOIN workers w ON wsa.worker_id = w.id
-            WHERE w.merged_into_id IS NULL
+            WHERE w.merged_into_id IS NULL AND w.country = ANY($1::bpchar[])
               AND wsa.city IS NOT NULL
               AND btrim(wsa.city) <> ''
-          `),
+          `, [countries]),
           this.db.query<{ work_zone: string }>(`
             SELECT DISTINCT wsa.work_zone
             FROM worker_service_areas wsa
             JOIN workers w ON wsa.worker_id = w.id
-            WHERE w.merged_into_id IS NULL
+            WHERE w.merged_into_id IS NULL AND w.country = ANY($1::bpchar[])
               AND wsa.work_zone IS NOT NULL
               AND btrim(wsa.work_zone) <> ''
-          `),
+          `, [countries]),
           this.db.query<{ val: string }>(`
             SELECT DISTINCT unnest(experience_types) AS val
             FROM workers
-            WHERE merged_into_id IS NULL
+            WHERE merged_into_id IS NULL AND country = ANY($1::bpchar[])
               AND experience_types IS NOT NULL
             ORDER BY val
-          `),
+          `, [countries]),
           this.db.query<{ val: string }>(`
             SELECT DISTINCT unnest(preferred_types) AS val
             FROM workers
-            WHERE merged_into_id IS NULL
+            WHERE merged_into_id IS NULL AND country = ANY($1::bpchar[])
               AND preferred_types IS NOT NULL
             ORDER BY val
-          `),
+          `, [countries]),
         ]);
 
       // Recognized zones (e.g. "CABA") surfaced from work_zone → CABA becomes a

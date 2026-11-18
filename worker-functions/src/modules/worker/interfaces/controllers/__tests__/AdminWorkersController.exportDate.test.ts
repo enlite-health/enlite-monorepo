@@ -5,6 +5,8 @@
  */
 const mockExecute = jest.fn();
 
+// Hotfix 18/11: o escopo de pais e resolvido por resolveCountriesOrRespond (testado a parte).
+jest.mock('@modules/identity', () => ({ ...jest.requireActual('@modules/identity'), resolveCountriesOrRespond: jest.fn().mockResolvedValue(['AR']) }));
 jest.mock('@shared/logging', () => ({
   logger: { child: jest.fn().mockReturnValue({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
   reportError: jest.fn(),
