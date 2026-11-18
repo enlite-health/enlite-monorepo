@@ -54,6 +54,7 @@ describe('change itinerario-trocas — catálogo de motivos de saída (492): API
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
     await pool.query(`DELETE FROM service_exit_reasons WHERE label LIKE $1`, [`${PREFIXO}%`]);
     await pool.query(`DELETE FROM therapeutic_activities WHERE label LIKE $1`, [`${PREFIXO}%`]);
+    await pool.query(`DELETE FROM therapeutic_specific_objectives WHERE label LIKE $1`, [`${PREFIXO}%`]);
     // `patient_services:read` só entra no catálogo com o sync ligado; se este teste a criou, apaga (não deixa célula extra para as outras suítes).
     if (donaDeServicosRead) {
       await pool.query(`DELETE FROM iam.permissions WHERE resource = 'patient_services' AND action = 'read'`);
@@ -177,7 +178,12 @@ describe('change itinerario-trocas — catálogo de motivos de saída (492): API
 
   it('6. sem a célula `catalog_service_exit_reasons:create` → 403 no POST, e nada é criado (mesmo com a célula de OUTRO catálogo)', async () => {
     // Controle: a célula que este usuário tem VALE — cria em /activities. Sem isto o 403 abaixo poderia ser por outro motivo.
-    const controle = await chamar('POST', '/api/admin/therapeutic-catalogs/activities', U.outraCelula, { label: `${PREFIXO}Controle atividade` });
+    // 091: atividade ativa exige objetivo (objectiveId); o objetivo ativo exige service_code — semeia um, só deste teste.
+    const objetivo = await pool.query<{ id: string }>(
+      `INSERT INTO therapeutic_specific_objectives (label, service_code, created_by, updated_by) VALUES ($1, 'AT', 'e2e', 'e2e') RETURNING id`,
+      [`${PREFIXO}Objetivo do controle`],
+    );
+    const controle = await chamar('POST', '/api/admin/therapeutic-catalogs/activities', U.outraCelula, { label: `${PREFIXO}Controle atividade`, objectiveId: objetivo.rows[0].id });
     expect(controle.status).toBe(201);
 
     const r = await chamar('POST', BASE, U.outraCelula, { label: `${PREFIXO}Sem permissão` });

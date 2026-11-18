@@ -273,10 +273,10 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     // A trilha diz o que serviu (C4) — lida DEPOIS de uma leitura própria, com polling (a trilha é assíncrona).
     await chamar('GET', BASE(), U.completa);
     let ultima = '';
-    for (let i = 0; i < 20 && !/services$/.test(ultima); i++) {
+    for (let i = 0; i < 20 && !/^read_project.*services$/.test(ultima); i++) {
       const trilha = await pool.query(`SELECT action FROM resource_access_log WHERE operator_uid = $1 AND resource_id = $2 ORDER BY occurred_at DESC LIMIT 1`, [U.completa, PATIENT]);
       ultima = trilha.rows[0]?.action ?? '';
-      if (!/services$/.test(ultima)) await new Promise((r) => setTimeout(r, 100));
+      if (!/^read_project.*services$/.test(ultima)) await new Promise((r) => setTimeout(r, 100));
     }
     expect(ultima).toBe('read_project:therapeuticProject+clinical+services');
   });

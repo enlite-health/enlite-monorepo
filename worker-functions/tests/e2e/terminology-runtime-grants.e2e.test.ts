@@ -100,6 +100,7 @@ describe('419 — grants de leitura do schema terminology para app_runtime/app_s
       '419_terminology_grants_app_roles.sql',
       '560_terminology_icd_synonyms_cie10_saude_mental.sql',
       '561_terminology_search_unaccent.sql',
+      '586_catalogo_terapeutico_por_cid.sql',
     ]);
   });
 
