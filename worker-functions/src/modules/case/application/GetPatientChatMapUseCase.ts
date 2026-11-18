@@ -1,3 +1,4 @@
+import { COUNTRY_CODES, type CountryCode } from '@shared/domain/countryCodes';
 import {
   PatientChatIdsRepository,
   type ChatMapFilter,
@@ -16,6 +17,11 @@ export interface GetPatientChatMapInput {
   chatId?: string;
   limit?: number;
   offset?: number;
+  /**
+   * Escopo de paises JA RESOLVIDO (resolveCountryScope): a rota HTTP sempre passa. Ausente = principal de servico
+   * (MCP `patient.chat.map`, API key sem uid/pais): todos os paises declarados, como hoje; DECISAO PENDENTE no PR 893.
+   */
+  countries?: readonly CountryCode[];
 }
 
 export interface GetPatientChatMapResult {
@@ -55,10 +61,11 @@ export class GetPatientChatMapUseCase {
   async execute(input: GetPatientChatMapInput = {}): Promise<GetPatientChatMapResult> {
     const limit = clamp(input.limit ?? DEFAULT_CHAT_MAP_LIMIT, 1, MAX_CHAT_MAP_LIMIT);
     const offset = Math.max(0, Math.trunc(input.offset ?? 0));
+    const countries = input.countries ?? COUNTRY_CODES;
 
     // Direção reversa: a busca é por chave única, então paginação não se aplica.
     if (input.chatId) {
-      const patients = await this.repo.findByChatId(input.chatId);
+      const patients = await this.repo.findByChatId(input.chatId, countries);
       return { patients, total: patients.length, limit, offset: 0, hasMore: false };
     }
 
@@ -66,6 +73,7 @@ export class GetPatientChatMapUseCase {
       filter: input.filter ?? 'linked',
       limit,
       offset,
+      countries,
     });
 
     return { patients: rows, total, limit, offset, hasMore: offset + rows.length < total };

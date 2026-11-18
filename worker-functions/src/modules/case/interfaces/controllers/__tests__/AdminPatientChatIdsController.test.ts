@@ -11,6 +11,10 @@ import { FindPatientChatCandidatesUseCase } from '../../../application/FindPatie
 import { GetPatientChatMapUseCase } from '../../../application/GetPatientChatMapUseCase';
 import { ListChatGroupsUseCase } from '../../../application/ListChatGroupsUseCase';
 
+// Hotfix 18/11: o escopo de pais do chat-map vem de resolveCountriesOrRespond (testado a parte).
+jest.mock('@shared/database/DatabaseConnection', () => ({ DatabaseConnection: { getInstance: () => ({ getPool: () => ({}) }) } }));
+const mockScope = jest.fn();
+jest.mock('@modules/identity', () => ({ ...jest.requireActual('@modules/identity'), resolveCountriesOrRespond: (...a: unknown[]) => mockScope(...a) }));
 jest.mock('@shared/logging', () => ({
   logger: { warn: jest.fn(), info: jest.fn(), error: jest.fn() },
   reportError: jest.fn(),
@@ -407,6 +411,19 @@ describe('AdminPatientChatIdsController', () => {
   });
 
   describe('GET chat-map (mapa em massa)', () => {
+    beforeEach(() => mockScope.mockReset().mockResolvedValue(['AR']));
+
+    it('escopo de pais: passa countries resolvidos ao caso de uso; sem escopo (403 ja respondido) NAO le o mapa', async () => {
+      const mapExecute = jest.fn().mockResolvedValue({ patients: [], total: 0, limit: 500, offset: 0, hasMore: false });
+      const { controller } = build({ mapExecute });
+      await controller.getChatMap(req({ query: {} as never }), res());
+      expect(mapExecute).toHaveBeenCalledWith({ countries: ['AR'] });
+      mapExecute.mockClear();
+      mockScope.mockResolvedValue(null);
+      await controller.getChatMap(req({ query: {} as never }), res());
+      expect(mapExecute).not.toHaveBeenCalled();
+    });
+
     const ROW = {
       patientId: PATIENT, clickupTaskId: '86a4d52bf',
       chatIds: { FAMILY: GROUP_A, PROVIDERS: GROUP_B },
@@ -421,7 +438,7 @@ describe('AdminPatientChatIdsController', () => {
 
       await controller.getChatMap(req({ query: {} as never }), r);
 
-      expect(mapExecute).toHaveBeenCalledWith({});
+      expect(mapExecute).toHaveBeenCalledWith({ countries: ['AR'] });
       expect(r.status).toHaveBeenCalledWith(200);
       expect(r.json).toHaveBeenCalledWith({
         success: true,
@@ -433,14 +450,14 @@ describe('AdminPatientChatIdsController', () => {
       const mapExecute = jest.fn().mockResolvedValue({ patients: [], total: 0, limit: 10, offset: 20, hasMore: false });
       const { controller } = build({ mapExecute });
       await controller.getChatMap(req({ query: { filter: 'unlinked', limit: '10', offset: '20' } as never }), res());
-      expect(mapExecute).toHaveBeenCalledWith({ filter: 'unlinked', limit: 10, offset: 20 });
+      expect(mapExecute).toHaveBeenCalledWith({ filter: 'unlinked', limit: 10, offset: 20, countries: ['AR'] });
     });
 
     it('repassa chatId (direção reversa)', async () => {
       const mapExecute = jest.fn().mockResolvedValue({ patients: [], total: 0, limit: 500, offset: 0, hasMore: false });
       const { controller } = build({ mapExecute });
       await controller.getChatMap(req({ query: { chatId: GROUP_A } as never }), res());
-      expect(mapExecute).toHaveBeenCalledWith({ chatId: GROUP_A });
+      expect(mapExecute).toHaveBeenCalledWith({ chatId: GROUP_A, countries: ['AR'] });
     });
 
     it('400 para filter fora do enum', async () => {

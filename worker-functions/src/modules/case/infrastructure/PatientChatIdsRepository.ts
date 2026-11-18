@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import type { CountryCode } from '@shared/domain/countryCodes';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import type { ActorContext } from '@shared/audit/actorSource';
@@ -145,6 +146,8 @@ export class PatientChatIdsRepository {
     filter: ChatMapFilter;
     limit: number;
     offset: number;
+    /** Escopo de paises JA RESOLVIDO — obrigatorio; vazio = 0 linhas, nunca "todos". */
+    countries: readonly CountryCode[];
   }): Promise<{ rows: PatientChatMapRow[]; total: number }> {
     const where = chatMapWhere(opts.filter);
 
@@ -154,13 +157,14 @@ export class PatientChatIdsRepository {
                 p.clickup_task_id AS "clickupTaskId",
                 ${PATIENT_CHAT_IDS_JSON_SUBQUERY} AS "chatIds"
            FROM patients p
-          WHERE p.deleted_at IS NULL AND ${where}
+          WHERE p.deleted_at IS NULL AND p.country = ANY($3::bpchar[]) AND ${where}
           ORDER BY p.id
           LIMIT $1 OFFSET $2`,
-        [opts.limit, opts.offset],
+        [opts.limit, opts.offset, [...opts.countries]],
       ),
       this.pool.query<{ total: string }>(
-        `SELECT COUNT(*)::text AS total FROM patients p WHERE p.deleted_at IS NULL AND ${where}`,
+        `SELECT COUNT(*)::text AS total FROM patients p WHERE p.deleted_at IS NULL AND p.country = ANY($1::bpchar[]) AND ${where}`,
+        [[...opts.countries]],
       ),
     ]);
 
@@ -179,7 +183,7 @@ export class PatientChatIdsRepository {
    * grupo do plano de saúde vier a ser compartilhado). Mentir sobre isso
    * esconderia justamente a contagem dupla que essa feature existe para evitar.
    */
-  async findByChatId(chatId: string): Promise<PatientChatMapRow[]> {
+  async findByChatId(chatId: string, countries: readonly CountryCode[]): Promise<PatientChatMapRow[]> {
     const result = await this.pool.query<PatientChatMapRow>(
       `SELECT p.id              AS "patientId",
               p.clickup_task_id AS "clickupTaskId",
@@ -188,9 +192,10 @@ export class PatientChatIdsRepository {
          FROM patient_chat_ids m
          JOIN patients p ON p.id = m.patient_id
         WHERE m.chat_id = $1
+          AND p.country = ANY($2::bpchar[])
           AND p.deleted_at IS NULL
         ORDER BY p.id, m.role`,
-      [chatId],
+      [chatId, [...countries]],
     );
     return result.rows;
   }
