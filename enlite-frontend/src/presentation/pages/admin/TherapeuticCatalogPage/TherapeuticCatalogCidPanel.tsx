@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Combobox } from '@presentation/components/atoms/Combobox';
 import { SlideOverPanel } from '@presentation/components/molecules/SlideOverPanel/SlideOverPanel';
 import { AdminTherapeuticProjectsApiService } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
 import type { TherapeuticCatalogGateway } from '@domain/repositories/TherapeuticCatalogGateway';
@@ -182,11 +183,9 @@ export function TherapeuticCatalogCidPanel(props: Props): JSX.Element {
                 ))}
               </ul>
             ) : (
-              <select value="" data-testid="cid-panel-add-select" aria-label={tr('icdAdd', 'Agregar')}
-                onChange={(e) => e.target.value && add(e.target.value)} className="border rounded px-3 py-2 text-sm">
-                <option value="">{tr('icdAdd', 'Agregar')}</option>
-                {addable.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.title}</option>)}
-              </select>
+              <Combobox value="" data-testid="cid-panel-add-select" aria-label={tr('icdAdd', 'Agregar')}
+                placeholder={tr('icdAdd', 'Agregar')} onChange={(v) => v && add(v)}
+                options={addable.map((c) => ({ value: c.code, label: `${c.code} — ${c.title}` }))} />
             )}
           </section>
         )}

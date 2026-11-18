@@ -92,10 +92,12 @@ describe('TherapeuticCatalogCidPanel', () => {
       objectiveOfActivity: [{ code: '6A02', title: 'a', activityLinks: 1 }, { code: '6A05', title: 'b', activityLinks: 0 }],
     });
     render(<TherapeuticCatalogCidPanel kind="activity" itemId="a1" objectiveId="o1" itemLabel="Atividade" isOpen onClose={() => {}} canWrite gateway={gw} />);
-    const select = (await screen.findByTestId('cid-panel-add-select')) as HTMLSelectElement;
-    await waitFor(() => expect(Array.from(select.options).map((o) => o.value)).toEqual(['', '6A05']));
+    const trigger = await screen.findByTestId('cid-panel-add-select');
+    fireEvent.click(trigger);
+    const opts = await screen.findAllByRole('option');
+    expect(opts.map((o) => o.getAttribute('data-value'))).toEqual(['6A05']);
     expect(screen.queryByTestId('cid-panel-add-search')).toBeNull();
-    fireEvent.change(select, { target: { value: '6A05' } });
+    fireEvent.click(opts[0].querySelector('button') as HTMLButtonElement);
     await waitFor(() => expect(calls.addActivity).toHaveBeenCalledWith('6A05'));
   });
 

@@ -245,14 +245,18 @@ test.describe('spec 091 — vínculos CIE-11 no catálogo: um HUMANO filtra, abr
     // sem campo de busca no catálogo: a atividade só escolhe entre as categorias do objetivo (ligadas ao objetivo: 6A02, 6A03, 6A05)
     await expect(painel.getByTestId('cid-panel-add-search')).toHaveCount(0);
     const select = painel.getByTestId('cid-panel-add-select');
-    await expect(select.locator('option')).toHaveText([/^Agregar$/, new RegExp(`^${CAT_NA_PLANILHA_2} — Categoria sintetica dos 091`), new RegExp(`^${CAT_FORA_DO_RELEASE} —`)]);
-    await expect(select.locator(`option[value="${CAT_NA_PLANILHA}"]`)).toHaveCount(0); // já ligada à atividade
-    await expect(select.locator(`option[value="${CAT_FORA_DA_PLANILHA}"]`)).toHaveCount(0); // não é do objetivo
+    await select.click();
+    const opcoes = painel.getByRole('option');
+    await expect(opcoes).toHaveText([new RegExp(`^${CAT_NA_PLANILHA_2} — Categoria sintetica dos 091`), new RegExp(`^${CAT_FORA_DO_RELEASE} —`)]);
+    await expect(painel.locator(`[role="option"][data-value="${CAT_NA_PLANILHA}"]`)).toHaveCount(0); // já ligada à atividade
+    await expect(painel.locator(`[role="option"][data-value="${CAT_FORA_DA_PLANILHA}"]`)).toHaveCount(0); // não é do objetivo
     const adicionou = page.waitForResponse((r) => r.request().method() === 'POST' && /therapeutic-catalogs\/activities\/.+\/categories/.test(r.url()));
-    await select.selectOption(CAT_NA_PLANILHA_2);
+    await painel.locator(`[role="option"][data-value="${CAT_NA_PLANILHA_2}"] button`).click();
     expect((await adicionou).status()).toBeLessThan(300);
     await expect(painel.getByTestId('cid-panel-count')).toHaveText('2 categorías');
-    await expect(select.locator('option')).toHaveCount(2); // sobrou só a 6A05
+    await select.click();
+    await expect(painel.getByRole('option')).toHaveCount(1); // sobrou só a 6A05
+    await page.keyboard.press('Escape');
     expect(vinculosAtividade(atividadeId)).toBe(`${CAT_NA_PLANILHA},${CAT_NA_PLANILHA_2}`);
     // atividade não tem cascata: "Quitar" remove direto
     const quitou = page.waitForResponse((r) => r.request().method() === 'DELETE' && r.url().includes('/categories/'));
