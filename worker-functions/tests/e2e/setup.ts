@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import axios from 'axios';
+import { cleanupDefaultCountryGrant } from './helpers/countryGrant';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const API_URL = process.env.API_URL || 'http://localhost:8080';
@@ -85,5 +86,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await cleanupDefaultCountryGrant();
   if (pool) await pool.end();
 });

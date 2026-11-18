@@ -16,6 +16,7 @@
  *  - so existe no banco de e2e (criado aqui, nunca em migration).
  */
 import { Pool } from 'pg';
+import { readFileSync } from 'fs';
 
 const TENANT = '00000000-0000-0000-0000-000000000001';
 const GROUP = 'ee270000-0f00-0009-0001-000000000001';
@@ -26,6 +27,21 @@ const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enli
 
 let pool: Pool | null = null;
 let ready: Promise<void> | null = null;
+let touched = false;
+
+/**
+ * Teste que ele mesmo declara escopo de pais (`group_country_scopes`/`grant_country`) FICA no controle: o padrao AR+BR
+ * nao se aplica (senao colide com o `uq_group_country_scopes_live` do teste e mascara os casos "so-AR"/"sem pais").
+ * Decisao central e deterministica: le o fonte do arquivo de teste em execucao (`expect.getState().testPath`).
+ */
+export function testeGerenciaOsProprioEscopo(): boolean {
+  try {
+    const path = (globalThis as { expect?: { getState(): { testPath?: string } } }).expect?.getState().testPath;
+    return path ? /group_country_scopes|grant_country|grantCountry|COUNTRY_RLS_ENABLED|createRlsAwarePool/.test(readFileSync(path, 'utf8')) : false;
+  } catch {
+    return false;
+  }
+}
 
 function db(): Pool {
   return (pool ??= new Pool({ connectionString: DATABASE_URL, max: 2 }));
@@ -69,7 +85,9 @@ async function install(p: Pool): Promise<void> {
 }
 
 /** Concede AR+BR por grupo ao `uid` (staff). Idempotente. */
-export async function grantDefaultCountries(uid: string): Promise<void> {
+export async function grantDefaultCountries(uid: string, opts: { force?: boolean } = {}): Promise<void> {
+  if (!opts.force && testeGerenciaOsProprioEscopo()) return;
+  touched = true;
   const p = db();
   await (ready ??= install(p));
   await p.query(`INSERT INTO e2e_country_grants (uid) VALUES ($1) ON CONFLICT DO NOTHING`, [uid]);
@@ -111,4 +129,32 @@ export async function assertScopeFixture(
       throw new Error(`fixture de escopo: ${table} ${id} sumiu (TRUNCATE de outro arquivo e2e em paralelo? rode com maxWorkers=1)`);
     }
   }
+}
+
+/**
+ * Roda no afterAll de CADA arquivo (setup.ts): tira do banco o que o padrao criou — usuarios placeholder (poluem o
+ * diretorio de staff e contagens de `users`), o grupo padrao (poluiria a contagem de grupos do tenant) e os registros
+ * de concessao. Sem efeito se o arquivo nunca pediu o padrao.
+ */
+export async function cleanupDefaultCountryGrant(): Promise<void> {
+  if (!touched || !pool) return;
+  const p = pool;
+  await p.query(`DELETE FROM users WHERE display_name = '${PLACEHOLDER}'`).catch(() => undefined);
+  await p.query(`DELETE FROM user_groups WHERE group_id = $1`, [GROUP]).catch(() => undefined);
+  await p.query(`DELETE FROM group_country_scopes WHERE group_id = $1`, [GROUP]).catch(() => undefined);
+  await p.query(`DELETE FROM permission_groups WHERE id = $1`, [GROUP]).catch(() => undefined);
+  await p.query(`DELETE FROM e2e_country_grants`).catch(() => undefined);
+  ready = null; // o proximo uso reinstala o grupo
+  await p.end().catch(() => undefined);
+  pool = null;
+  touched = false;
+}
+
+/**
+ * Tira o `uid` do padrao AR+BR: quem DECLARA o escopo do ator por conta propria (ex.: `concederPaises`) nao pode ficar com a
+ * uniao padrao + o declarado (um "so-AR" viraria AR+BR e o teste passaria/falharia pelo motivo errado).
+ */
+export async function removerGrantPadrao(p: Pool, uid: string): Promise<void> {
+  await p.query(`DELETE FROM user_groups WHERE user_id = $1 AND group_id = $2`, [uid, GROUP]).catch(() => undefined);
+  await p.query(`DELETE FROM e2e_country_grants WHERE uid = $1`, [uid]).catch(() => undefined);
 }

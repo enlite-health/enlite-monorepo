@@ -6,7 +6,7 @@
  * `/vacancies/:id/*` em QUALQUER router (fotos, conversa, documentos, itinerario, equipe, encuadres...), com os
  * nomes de param que o repo usa (`id`, `patientId`, `workerId`, `vacancyId`). Registro-pai fora do escopo do ator =>
  * 404 (nao confirma existencia). Id que nao e UUID (`stats`, `map`, `baja`...) passa direto, sem auth nem consulta;
- * id UUID passa antes por `requireStaffOrApiKey` (o guard precisa do uid; chave de servico passa direto).
+ * id UUID passa antes por `requireStaffOrApiKey` (o guard precisa do uid; chave de servico passa direto); se a auth NAO passar, o guard nao responde e a rota por id nega como sempre (401/403 originais).
  */
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
 import type { Pool } from 'pg';
@@ -21,10 +21,26 @@ export function createAdminRecordCountryScopeRoutes(authMiddleware: AuthMiddlewa
 
   const guarded = (table: GuardedTable, idParams: string[], notFoundBody: Record<string, unknown>): RequestHandler => {
     const guard = requireRecordInCountryScope(getPool, { table, idParams, notFoundBody });
-    return (req: Request, res: Response, next: NextFunction) => {
+    return async (req: Request, res: Response, next: NextFunction) => {
       const id = idParams.map((p) => req.params[p]).find((v) => typeof v === 'string' && v.length > 0);
       if (!id || !UUID_RE.test(id)) return next();
-      return auth(req, res, (err?: unknown) => (err ? next(err) : void guard(req, res, next)));
+      // O guard NAO e quem nega acesso: so recorta pais para quem ja e staff (ou chave de servico). Se a auth nao passar
+      // (sem token, worker, role errada), a resposta do `res` e engolida e a request segue — a rota por id, que tem o proprio
+      // `requireStaff`/`perm.require`, devolve o mesmo 401/403 de sempre (senao o guard trocaria 403 por 401).
+      let authed: unknown = undefined;
+      let passed = false;
+      const mudo = new Proxy(res, {
+        get(target, prop, receiver) {
+          if (prop === 'status' || prop === 'set' || prop === 'setHeader' || prop === 'type') return () => mudo;
+          if (prop === 'json' || prop === 'send' || prop === 'end' || prop === 'sendStatus') return () => mudo;
+          const v = Reflect.get(target, prop, receiver);
+          return typeof v === 'function' ? v.bind(target) : v;
+        },
+      });
+      await auth(req, mudo, (err?: unknown) => { passed = true; authed = err; });
+      if (!passed) return next();
+      if (authed) return next(authed);
+      return guard(req, res, next);
     };
   };
 

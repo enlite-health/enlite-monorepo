@@ -20,6 +20,7 @@ import type { Server } from 'http';
 import type { AddressInfo } from 'net';
 import type { Express } from 'express';
 import type { Pool } from 'pg';
+import { testeGerenciaOsProprioEscopo } from './countryGrant';
 import type { AuthMiddleware, PermissionMiddleware } from '@modules/identity';
 import type { PermissionsModule } from '@modules/identity/permissions';
 
@@ -182,7 +183,7 @@ export async function limparIamFixtures(
  */
 export async function grupoComCelulas(
   pool: Pool,
-  /** `paises`: padrao AR+BR (hotfix 18/11 — o ator herda pais para a rota funcionar); `[]` = grupo SEM pais (teste de escopo). */
+  /** `paises`: padrao AR+BR (hotfix 18/11), EXCETO em teste que ele mesmo declara escopo (ver testeGerenciaOsProprioEscopo); `[]` = grupo SEM pais. */
   args: { nome: string; uid: string; celulas: Array<[string, string]>; paises?: Array<'AR' | 'BR'> },
 ): Promise<string> {
   const grupo = await pool.query(
@@ -203,7 +204,7 @@ export async function grupoComCelulas(
     }
   }
 
-  for (const pais of args.paises ?? ['AR', 'BR']) {
+  for (const pais of args.paises ?? (testeGerenciaOsProprioEscopo() ? [] : (['AR', 'BR'] as const))) {
     await pool.query(
       `INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason) VALUES ($1, $2, 'e2e-default', 'padrao dos e2e')`,
       [id, pais],

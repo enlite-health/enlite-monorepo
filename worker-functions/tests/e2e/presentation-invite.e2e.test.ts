@@ -17,6 +17,7 @@
  */
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
+import { grantDefaultCountries } from './helpers/countryGrant';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const ADMIN_UID = 'pi-admin-uid'; const RECRUITER_UID = 'pi-recruiter-uid';
@@ -45,6 +46,7 @@ describe('Convite à reunión de presentación (REQ-09) @integration', () => {
     await pool.query(`DELETE FROM workers WHERE email LIKE 'pi-%@e2e.local' OR email LIKE 'pi-%@enlite.import'`);
     await pool.query(`DELETE FROM users WHERE firebase_uid = ANY($1::text[])`, [[ADMIN_UID, RECRUITER_UID]]);
     await pool.query(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ($1, $2, 'PI Admin', 'admin', true, true), ($3, $4, 'PI Recruiter', 'recruiter', true, true) ON CONFLICT (firebase_uid) DO NOTHING`, [ADMIN_UID, `${ADMIN_UID}@e2e.local`, RECRUITER_UID, `${RECRUITER_UID}@e2e.local`]);
+    await grantDefaultCountries(ADMIN_UID, { force: true }); await grantDefaultCountries(RECRUITER_UID, { force: true }); // token mock inline: nao passa pelas helpers
     await pool.query(`INSERT INTO messaging_channel_pause (channel, paused, paused_at, paused_by) VALUES ('whatsapp', true, NOW(), 'e2e-pi') ON CONFLICT (channel) DO UPDATE SET paused = true, paused_at = NOW(), paused_by = 'e2e-pi'`);
     await pool.query(`INSERT INTO message_templates (slug, name, body, category, is_active, created_at, updated_at) VALUES
       ($1, 'PI e2e', 'Hola {{worker_name}}, {{schedule_label}} {{meet_link}}. Respondé BAJA para no recibir más.', 'UTILITY', true, NOW(), NOW()),

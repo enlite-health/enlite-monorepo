@@ -74,6 +74,18 @@ describe('createAdminRecordCountryScopeRoutes — um guard para paciente, worker
     expect(mockResolve).toHaveBeenCalledTimes(1); // so a chamada do caso "inexistente"
   });
 
+  it('auth NAO passa (sem token/worker): o guard nao responde 401 — a request segue e a rota por id nega com o proprio status (403)', async () => {
+    const authNega = { requireStaffOrApiKey: () => (_q: unknown, res: { status(n: number): { end(): void } }) => { res.status(401).end(); } } as unknown as AuthMiddleware;
+    const query = jest.fn();
+    const app = express();
+    app.use('/api/admin', createAdminRecordCountryScopeRoutes(authNega, () => ({ query }) as never));
+    app.all('/api/admin/*', (_req, res) => res.status(403).json({ error: 'Staff access required' }));
+    const res = await request(app).get(`/api/admin/workers/${ID}`);
+    expect([res.status, res.body]).toEqual([403, { error: 'Staff access required' }]);
+    expect(query).not.toHaveBeenCalled();
+    expect(mockResolve).not.toHaveBeenCalled();
+  });
+
   it('falha inesperada => 500 fechado', async () => {
     mockResolve.mockRejectedValue(new Error('db down'));
     const res = await request(build([{ country: 'AR' }]).app).get(`/api/admin/patients/${ID}`);
