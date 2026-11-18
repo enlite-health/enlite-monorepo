@@ -26,7 +26,7 @@ import { VacancyScheduleEditModal } from '@presentation/components/features/admi
 import { VacancyDescriptionEditModal } from '@presentation/components/features/admin/VacancyDetail/VacancyDescriptionEditModal';
 import type { EditableVacancyStatus } from '@presentation/components/features/admin/VacancyDetail/VacancyStatusEditor';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
-import { useActionGate } from '@presentation/hooks/useCellAccess';
+import { useActionGate, useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { VacancyBajaConfirmDialog } from '@presentation/components/features/admin/VacancyBajaConfirmDialog';
 import { bajaErrorMessage, vacancyUpdateErrorMessage } from '@presentation/components/features/admin/vacancyBajaMessages';
 import { VacancyPrescreeningConfig } from '@presentation/components/features/admin/VacancyDetail/VacancyPrescreeningConfig';
@@ -63,6 +63,8 @@ export default function VacancyDetailPage() {
   };
   // Spec 084 F1: dar baixa na ficha (só vaga SEM serviço; sem "reativar" — R17).
   const canBaja = useActionGate('vacancy', 'update').allowed;
+  // 093: o título decide pela MESMA porta do box do paciente (`ContainerGate`) — sem a célula, só o código do caso.
+  const { visible: canSeePatientName } = useContainerAccess('patient_identity');
   const [bajaOpen, setBajaOpen] = useState(false);
   const [bajaWorking, setBajaWorking] = useState(false);
   const [bajaError, setBajaError] = useState<string | null>(null);
@@ -137,9 +139,9 @@ export default function VacancyDetailPage() {
     return <Navigate to={`/admin/vacancies/${id}/borrador`} replace />;
   }
 
-  const patientName = [vacancy.patient_first_name, vacancy.patient_last_name]
-    .filter(Boolean)
-    .join(' ');
+  const patientName = canSeePatientName
+    ? [vacancy.patient_first_name, vacancy.patient_last_name].filter(Boolean).join(' ')
+    : '';
 
   const pageTitle =
     vacancy.case_number != null && vacancy.vacancy_number != null
