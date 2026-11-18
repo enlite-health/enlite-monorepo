@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg';
 import { CURRENT_WEEK_START_SQL, OPERATION_TIMEZONE } from '../domain/interviewSchedule';
-import type { EnquadreEventStatus } from '../domain/enquadreEvent';
+import type { EnquadreEventStatus, EnquadreParticipantOutcome } from '../domain/enquadreEvent';
 
 /**
  * EnquadreEventListRepository — SQL da lista GLOBAL de enquadres (spec 076, plano §5). Uma consulta, no `client` da transação
@@ -54,6 +54,21 @@ export interface EnquadreListRow {
   hosts: string[];
 }
 
+/** Estágio vigente + carimbo de cada participação do evento (insumo de `participantColumn`). Sem identidade. */
+export interface EnquadreParticipantStageRow {
+  event_id: string;
+  stage: string | null;
+  outcome: EnquadreParticipantOutcome | null;
+}
+
+const PARTICIPANT_STAGES_SQL = `
+SELECT p.event_id, wja.application_funnel_stage AS stage, p.outcome
+  FROM enquadre_event_participants p
+  LEFT JOIN worker_job_applications wja
+         ON wja.worker_id = p.worker_id AND wja.job_posting_id = p.job_posting_id
+ WHERE p.event_id = ANY($1::uuid[])
+   AND p.release_kind IS DISTINCT FROM 'removed'`;
+
 const LIST_SQL = `
 WITH win AS (
   SELECT COALESCE($2::date, (${CURRENT_WEEK_START_SQL} AT TIME ZONE '${OPERATION_TIMEZONE}')::date) AS d_from
@@ -104,6 +119,16 @@ export class EnquadreEventListRepository {
       f.limit,
       f.offset,
     ]);
+    return res.rows;
+  }
+
+  /**
+   * Estágio e carimbo das participações (as mesmas que `convoked` conta) dos eventos da página — uma consulta, `ANY($1)`,
+   * sem N+1. Lista vazia não consulta. Mesmo join de estágio de `EnquadreEventRepository.listParticipants`.
+   */
+  async listParticipantStages(client: PoolClient, eventIds: string[]): Promise<EnquadreParticipantStageRow[]> {
+    if (eventIds.length === 0) return [];
+    const res = await client.query<EnquadreParticipantStageRow>(PARTICIPANT_STAGES_SQL, [eventIds]);
     return res.rows;
   }
 }
