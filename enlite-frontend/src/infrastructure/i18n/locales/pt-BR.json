@@ -142,7 +142,8 @@
     "frequency": "Frequência: {{value}}",
     "noCatalogAt": "Sem catálogo para este diagnóstico e serviço em {{date}}",
     "catalogChanged": "O catálogo deste diagnóstico mudou. Revise os objetivos e atividades marcados.",
-    "formatMismatch": "Esta versão usa outro formato de objetivos. Recarregue a página e tente de novo."
+    "formatMismatch": "Esta versão usa outro formato de objetivos. Recarregue a página e tente de novo.",
+    "cascadeError": "Não foi possível carregar o catálogo. Tente de novo."
   },
   "topNavbar": {
     "greeting": "Olá",

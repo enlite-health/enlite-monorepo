@@ -16,8 +16,8 @@
  *   3. alt 2: `/admin/catalogos/segmentos` não abre a tela e o menu não tem "Segmentos".
  */
 import { test, expect, type Page } from '@playwright/test';
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { runSQL } from '../helpers/patient-detail-c-helper';
+import { travarReleaseCorrente, restaurarRelease } from '../helpers/catalogo-cid-091-seed';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import type { MockUser } from '../helpers/abac-stack-helper';
 
@@ -26,7 +26,6 @@ const STAFF_EMAIL = `e2e.cid091.${Date.now()}@enlite.health`;
 const STAFF: MockUser = { uid: `e2e-cid091-${Date.now()}`, email: STAFF_EMAIL, role: 'admin', country: 'AR' };
 const PREFIXO = 'E2E091 ';
 const RELEASE = 'E2E091-FIX';
-const LOCK_RELEASE_CORRENTE = 9100221; // mesma chave de `travarReleaseCorrente` (worker-functions/tests/e2e/helpers/ptiCatalogoCidSeed.ts)
 const OBJETIVO = `${PREFIXO}objetivo ${STAMP}`;
 const ATIVIDADE = `${PREFIXO}actividad ${STAMP}`;
 const CAT_NA_PLANILHA = '6A02';
@@ -37,24 +36,6 @@ const CAT_FORA_DA_PLANILHA = 'ZE91';
 async function entrar(page: Page): Promise<void> {
   runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ('${STAFF.uid}', '${STAFF.email}', 'E2E Cid091', 'admin', true, true) ON CONFLICT (firebase_uid) DO NOTHING`);
   await loginComoStaffMock(page, STAFF, 'E2E Cid091');
-}
-
-/** Advisory lock de sessão numa conexão dedicada (processo `psql` aberto): fechar o processo solta o lock. Falha ALTO após 20 s. */
-function travarReleaseCorrente(): Promise<() => void> {
-  const container = process.env.E2E_PG_CONTAINER || 'enlite-postgres';
-  const proc: ChildProcessWithoutNullStreams = spawn('docker', ['exec', '-i', container, 'psql', '-U', 'enlite_admin', '-d', 'enlite_e2e', '-tA', '-v', 'ON_ERROR_STOP=1']);
-  return new Promise((resolve, reject) => {
-    let out = '';
-    let err = '';
-    const timer = setTimeout(() => { proc.kill(); reject(new Error(`release CID corrente ocupado por outro e2e (lock ${LOCK_RELEASE_CORRENTE})`)); }, 25_000);
-    proc.stdout.on('data', (d: Buffer) => {
-      out += d.toString();
-      if (out.includes('TRAVADO')) { clearTimeout(timer); resolve(() => { proc.kill(); }); }
-    });
-    proc.stderr.on('data', (d: Buffer) => { err += d.toString(); });
-    proc.on('exit', (code) => { if (!out.includes('TRAVADO')) { clearTimeout(timer); reject(new Error(`psql do lock saiu (${code}): ${err}`)); } });
-    proc.stdin.write(`SET lock_timeout = '20s'; SELECT pg_advisory_lock(${LOCK_RELEASE_CORRENTE}); SELECT 'TRAVADO';\n`);
-  });
 }
 
 function sql(...stmts: string[]): void {
@@ -68,15 +49,6 @@ function limpar(): void {
     `DELETE FROM therapeutic_objective_icd_categories WHERE objective_id IN ${objetivos}`,
     `DELETE FROM therapeutic_activities WHERE label LIKE '${PREFIXO}%' OR objective_id IN ${objetivos}`,
     `DELETE FROM therapeutic_specific_objectives WHERE label LIKE '${PREFIXO}%'`,
-  );
-}
-
-function restaurarRelease(anterior: string): void {
-  sql(
-    `UPDATE terminology.icd_releases SET is_current = false, promoted_at = NULL, promoted_by = NULL WHERE release = '${RELEASE}'`,
-    ...(anterior ? [`UPDATE terminology.icd_releases SET is_current = true, promoted_at = now(), promoted_by = 'e2e091-restore' WHERE release = '${anterior}'`] : []),
-    `DELETE FROM terminology.icd_entities WHERE release = '${RELEASE}'`,
-    `DELETE FROM terminology.icd_releases WHERE release = '${RELEASE}'`,
   );
 }
 
@@ -100,7 +72,7 @@ test.describe('spec 091 — vínculos CIE-11 no catálogo: um HUMANO filtra, abr
     soltarLock = await travarReleaseCorrente();
     try {
       limpar();
-      restaurarRelease(''); // sobra de rodada interrompida (sem reativar nada)
+      restaurarRelease(RELEASE, ''); // sobra de rodada interrompida (sem reativar nada)
       // Terminologia sintética: 1 capítulo + 3 stems. Os títulos são sintéticos (não são texto clínico de paciente).
       sql(
         `INSERT INTO terminology.icd_releases (release, entity_count) VALUES ('${RELEASE}', 4) ON CONFLICT (release) DO NOTHING`,
@@ -132,7 +104,7 @@ test.describe('spec 091 — vínculos CIE-11 no catálogo: um HUMANO filtra, abr
   test.afterAll(() => {
     try {
       limpar();
-      restaurarRelease(releaseAnterior);
+      restaurarRelease(RELEASE, releaseAnterior);
       runSQL(`DELETE FROM users WHERE email = '${STAFF_EMAIL}'`);
     } finally {
       soltarLock();

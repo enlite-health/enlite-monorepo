@@ -24,6 +24,7 @@ const FORM_CASCADE: Record<string, { es: string; ptBR: string }> = {
   noCatalogAt: { es: 'Sin catálogo para este diagnóstico y servicio al {{date}}', ptBR: 'Sem catálogo para este diagnóstico e serviço em {{date}}' },
   catalogChanged: { es: 'El catálogo de este diagnóstico cambió. Revisá los objetivos y actividades marcados.', ptBR: 'O catálogo deste diagnóstico mudou. Revise os objetivos e atividades marcados.' },
   formatMismatch: { es: 'Esta versión usa otro formato de objetivos. Recargá la página e intentá de nuevo.', ptBR: 'Esta versão usa outro formato de objetivos. Recarregue a página e tente de novo.' },
+  cascadeError: { es: 'No pudimos cargar el catálogo. Intentá de nuevo.', ptBR: 'Não foi possível carregar o catálogo. Tente de novo.' },
 };
 
 const ADMIN_TC: Record<string, { es: string; ptBR: string }> = {

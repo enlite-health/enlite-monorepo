@@ -116,14 +116,14 @@ const diagnosisPlanSchema = z
   .strict();
 const diagnosisPlansField = z.array(diagnosisPlanSchema).min(1).max(20);
 
-/** O conjunto de `diagnosisUri` dos blocos = o de `diagnoses[].uri`, sem repetição (400, §9.4). */
+/** Os blocos cobrem os diagnósticos na MESMA ordem, posição a posição (a CHECK `ptp_diagnosis_plans_forma` da 586 exige `[i].diagnosisUri = diagnoses[i].uri`; fora de ordem seria 23514 → 500), sem repetição (400, §9.4). */
 const plansMatchDiagnoses = (b: { diagnoses: { uri: string }[]; diagnosisPlans: { diagnosisUri: string }[] }): boolean => {
   const planUris = b.diagnosisPlans.map((p) => p.diagnosisUri);
   const diagUris = b.diagnoses.map((d) => d.uri);
-  return new Set(planUris).size === planUris.length && new Set(diagUris).size === diagUris.length
-    && planUris.length === diagUris.length && planUris.every((u) => diagUris.includes(u));
+  return new Set(diagUris).size === diagUris.length
+    && planUris.length === diagUris.length && planUris.every((u, i) => u === diagUris[i]);
 };
-const PLANS_MATCH_DIAGNOSES = { message: 'diagnosisPlans must cover exactly the diagnoses, once each', path: ['diagnosisPlans'] };
+const PLANS_MATCH_DIAGNOSES = { message: 'diagnosisPlans must cover exactly the diagnoses, once each, in the same order', path: ['diagnosisPlans'] };
 
 const refinedBody = <T extends z.ZodTypeAny>(schema: T) =>
   schema.refine(endNotBeforeStart, END_NOT_BEFORE_START).refine(noStatusWithContacts, STATUS_WITH_CONTACTS);

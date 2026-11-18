@@ -146,6 +146,8 @@ describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
       expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...dois, diagnosisPlans: [plan(version.diagnoses[0].uri)] } }).success).toBe(false);
       expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...dois, diagnosisPlans: [plan(version.diagnoses[0].uri), plan(version.diagnoses[0].uri)] } }).success).toBe(false);
       expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...dois, diagnosisPlans: [plan(version.diagnoses[0].uri), plan('http://id.who.int/icd/entity/2')] } }).success).toBe(true);
+      // a CHECK `ptp_diagnosis_plans_forma` (586) exige a MESMA ordem: mesmo conjunto, ordem invertida → inválido (senão vira 23514 → 500)
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...dois, diagnosisPlans: [plan('http://id.who.int/icd/entity/2'), plan(version.diagnoses[0].uri)] } }).success).toBe(false);
     });
 
     it('bloco vazio (0 objetivos e 0 atividades) é aceito na borda (se pode é do domínio); id que não é uuid → inválido', () => {

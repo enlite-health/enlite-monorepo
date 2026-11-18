@@ -973,7 +973,11 @@ describe('091 — bloco sem catálogo e `planIncomplete`', () => {
     fake.respond = async () => { throw new Error('terminologia fora do ar'); };
     montar({ patientDiagnoses: [DIAGS[0]] });
 
-    expect(await screen.findByTestId('tp-cascade-error')).toHaveTextContent('terminologia fora do ar');
+    // o texto vem do i18n; a mensagem crua do servidor NUNCA vai à tela
+    const erro = await screen.findByTestId('tp-cascade-error');
+    expect(erro).toHaveTextContent(ptBR.therapeuticProjectForm.cascadeError);
+    expect(erro).not.toHaveTextContent('terminologia fora do ar');
+    expect(screen.queryByText(/terminologia fora do ar/)).not.toBeInTheDocument();
     expect(salvar().disabled).toBe(true);
   });
 });

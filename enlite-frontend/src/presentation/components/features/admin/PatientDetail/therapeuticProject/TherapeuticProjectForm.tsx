@@ -279,7 +279,7 @@ export function TherapeuticProjectForm({
         ))
         : (
           <>
-            {cascadeApi.error && <Text size="sm" className="text-red-700" role="alert" data-testid="tp-cascade-error">{cascadeApi.error}</Text>}
+            {cascadeApi.error && <Text size="sm" className="text-red-700" role="alert" data-testid="tp-cascade-error">{tt('cascadeError')}</Text>}
             {cascadeApi.blocks.map((block, index) => (
               <TherapeuticProjectDiagnosisBlock
                 key={block.diagnosisUri}

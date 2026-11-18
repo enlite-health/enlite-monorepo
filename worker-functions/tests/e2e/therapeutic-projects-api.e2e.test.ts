@@ -441,6 +441,16 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
       ]);
     });
 
+    it('091 CA-7 a3: blocos na ORDEM INVERTIDA de `diagnoses` → 400 na validação (a CHECK `ptp_diagnosis_plans_forma` daria 23514 → 500); nenhuma versão gravada', async () => {
+      const antes = await contar();
+      const r = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody({
+        diagnoses: [{ uri: cat.uris.tea, title: 'TEA e2e' }, { uri: cat.uris.epi, title: 'Epilepsia e2e' }],
+        diagnosisPlans: [bloco(cat.uris.epi, [cat.objetivos.epi], [cat.atividades.epi]), ...planoTea(cat)],
+      }) });
+      expect(r.status).toBe(400);
+      expect(await contar()).toBe(antes);
+    });
+
     it('091 CA-7 b: 422 NOMEADO (índice + ids, nunca a URI) para objetivo de outra categoria/serviço/inativo, atividade de objetivo não marcado, bloco incompleto e bloco sem catálogo com ids; nada gravado', async () => {
       const outroBloco = bloco(cat.uris.epi, [cat.objetivos.epi], [cat.atividades.epi]);
       const dois = (primeiro: ReturnType<typeof bloco>, segundo = outroBloco) => ({
