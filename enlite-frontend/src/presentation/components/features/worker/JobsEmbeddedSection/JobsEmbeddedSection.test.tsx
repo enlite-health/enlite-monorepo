@@ -224,28 +224,28 @@ describe('JobsEmbeddedSection — carregamento', () => {
 // ── Fonte pública (PublicApiService), toggle via window.__USE_PUBLIC_JOBS_API ──
 
 describe('JobsEmbeddedSection — fonte pública de vagas', () => {
-  it('min e max presentes → "X a Y años"', async () => {
+  it('min e max presentes → chave jobs.ageRange.between', async () => {
     (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
     mockGetPublicJobs.mockResolvedValue([publicListing({ age_range_min: 20, age_range_max: 30 })]);
     render(<JobsEmbeddedSection isRegistrationComplete />);
     await waitFor(() => expect(screen.getByText('900-1')).toBeInTheDocument());
-    expect(screen.getByText(/20 a 30 años/)).toBeInTheDocument();
+    expect(screen.getByText('jobs.ageRange.between')).toBeInTheDocument();
   });
 
-  it('só min → "X+ años"', async () => {
+  it('só min → chave jobs.ageRange.from', async () => {
     (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
     mockGetPublicJobs.mockResolvedValue([publicListing({ age_range_min: 40, age_range_max: null })]);
     render(<JobsEmbeddedSection isRegistrationComplete />);
     await waitFor(() => expect(screen.getByText('900-1')).toBeInTheDocument());
-    expect(screen.getByText(/40\+ años/)).toBeInTheDocument();
+    expect(screen.getByText('jobs.ageRange.from')).toBeInTheDocument();
   });
 
-  it('só max → "hasta X años"', async () => {
+  it('só max → chave jobs.ageRange.upTo', async () => {
     (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
     mockGetPublicJobs.mockResolvedValue([publicListing({ age_range_min: null, age_range_max: 60 })]);
     render(<JobsEmbeddedSection isRegistrationComplete />);
     await waitFor(() => expect(screen.getByText('900-1')).toBeInTheDocument());
-    expect(screen.getByText(/hasta 60 años/)).toBeInTheDocument();
+    expect(screen.getByText('jobs.ageRange.upTo')).toBeInTheDocument();
   });
 
   it('nem min nem max, e campos opcionais null → string vazia, sem quebrar (nullish fallbacks)', async () => {
@@ -758,7 +758,10 @@ describe('JobsEmbeddedSection — filtros e busca', () => {
     expect(screen.getByText('jobs.noResults')).toBeInTheDocument();
   });
 
-  it('filtro de tipo/provincia/localidade/sexo restringe a lista e habilita "Limpiar"', async () => {
+  // Opções DERIVADAS dos valores da fonte (spec 097): o rótulo traz a contagem ("mujer (1)").
+  // Antes eram listas fixas ('jobs.sex.woman', 'jobs.provinces.caba') e este teste escolhia as
+  // opções fixas; agora escolhe as que a própria lista tem.
+  it('filtro de tipo/provincia/localidade/sexo restringe a lista e habilita "Limpiar" (fonte legada)', async () => {
     mockFetchOnce(legacyResponse());
     render(<JobsEmbeddedSection isRegistrationComplete />);
     await waitForLoaded();
@@ -767,7 +770,7 @@ describe('JobsEmbeddedSection — filtros e busca', () => {
     const clearBtn = screen.getByRole('button', { name: 'jobs.clearFilters' });
     expect(clearBtn).toBeDisabled();
 
-    chooseCombo(sexSelect, 'jobs.sex.woman'); // mujer
+    chooseCombo(sexSelect, 'mujer (1)');
     expect(clearBtn).not.toBeDisabled();
     expect(screen.getByText('732')).toBeInTheDocument();
     expect(screen.queryByText('736')).not.toBeInTheDocument();
@@ -775,19 +778,56 @@ describe('JobsEmbeddedSection — filtros e busca', () => {
     fireEvent.click(clearBtn);
     expect(screen.getByText('736')).toBeInTheDocument();
 
-    chooseCombo(typeSelect, 'jobs.types.at'); // acompañante terapéutico
+    chooseCombo(typeSelect, 'acompañante terapéutico (1)');
     expect(screen.getByText('736')).toBeInTheDocument();
     expect(screen.queryByText('732')).not.toBeInTheDocument();
     fireEvent.click(clearBtn);
 
-    chooseCombo(provinceSelect, 'jobs.provinces.caba'); // caba
+    chooseCombo(provinceSelect, 'caba (1)');
     expect(screen.getByText('736')).toBeInTheDocument();
     expect(screen.queryByText('732')).not.toBeInTheDocument();
     fireEvent.click(clearBtn);
 
-    chooseCombo(localitySelect, 'Palermo'); // palermo
+    chooseCombo(localitySelect, 'palermo (1)');
     expect(screen.getByText('736')).toBeInTheDocument();
     expect(screen.queryByText('732')).not.toBeInTheDocument();
+  });
+
+  // O defeito de verdade: o feed público manda 'CABA', 'F', 'BOTH', ['AT'] e a tela comparava com
+  // opções fixas em minúscula. Aqui entra o valor REAL do feed e cada opção tem de achar a vaga.
+  it('fonte pública: cada filtro acha a vaga com o valor canônico do feed (CABA, F, AT)', async () => {
+    (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
+    mockGetPublicJobs.mockResolvedValue([
+      publicListing({ id: 'a', case_number: 901, vacancy_number: 1, state: 'CABA', city: 'Palermo', worker_sex: 'F', worker_type: ['AT'] }),
+      publicListing({ id: 'b', case_number: 902, vacancy_number: 1, state: 'caba', city: 'palermo', worker_sex: 'BOTH', worker_type: ['AT'] }),
+      publicListing({ id: 'c', case_number: 903, vacancy_number: 1, state: 'Provincia de Buenos Aires', city: 'Quilmes', worker_sex: 'M', worker_type: ['CAREGIVER'] }),
+      publicListing({ id: 'd', case_number: 904, vacancy_number: 1, state: null, city: null, worker_sex: null, worker_type: ['AT'] }),
+    ]);
+    render(<JobsEmbeddedSection isRegistrationComplete />);
+    await waitFor(() => expect(screen.getByText('901-1')).toBeInTheDocument());
+
+    const [typeSelect, provinceSelect, localitySelect, sexSelect] = screen.getAllByRole('combobox');
+    const clearBtn = screen.getByRole('button', { name: 'jobs.clearFilters' });
+    const codes = (): string[] => screen.queryAllByTestId('job-code-badge').map((e) => e.textContent ?? '');
+
+    chooseCombo(provinceSelect, 'caba (2)');
+    expect(codes().sort()).toEqual(['901-1', '902-1']);
+    fireEvent.click(clearBtn);
+
+    // o `t` mockado devolve o defaultValue (grafia do feed); o rótulo es/pt-BR real é coberto em jobFilters.i18n
+    chooseCombo(sexSelect, 'F (1)');
+    expect(codes()).toEqual(['901-1']);
+    fireEvent.click(clearBtn);
+
+    chooseCombo(typeSelect, 'CAREGIVER (1)');
+    expect(codes()).toEqual(['903-1']);
+    fireEvent.click(clearBtn);
+
+    chooseCombo(localitySelect, 'palermo (2)');
+    expect(codes().sort()).toEqual(['901-1', '902-1']);
+    fireEvent.click(clearBtn);
+
+    expect(codes()).toHaveLength(4); // "Todas": a vaga sem valor volta
   });
 
   it('contador de filtros ativos aparece quando activeFiltersCount > 0', async () => {

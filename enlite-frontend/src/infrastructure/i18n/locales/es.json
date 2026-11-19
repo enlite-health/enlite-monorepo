@@ -551,6 +551,11 @@
       "registration": "Completá {{item}} para postularte",
       "multiple": "Completá {{count}} pasos para postularte"
     },
+    "ageRange": {
+      "between": "{{min}} a {{max}} años",
+      "from": "{{min}}+ años",
+      "upTo": "hasta {{max}} años"
+    },
     "viewDetails": "Ver Detalles",
     "results": "vacantes encontradas",
     "filters": {
@@ -558,18 +563,11 @@
       "province": "Provincia",
       "locality": "Localidad",
       "pathology": "Patología/s",
-      "sex": "Sexo"
-    },
-    "types": {
-      "at": "Acompañante Terapéutico",
-      "at_full": "Acompañante Terapéutico (AT)",
-      "at_school": "Acompañante Terapéutico (AT) Escolar",
-      "caregiver": "Cuidador/a"
-    },
-    "provinces": {
-      "caba": "CABA",
-      "buenos_aires": "Provincia de Buenos Aires",
-      "misiones": "Provincia de Misiones"
+      "sex": "Sexo",
+      "allWorkerTypes": "Todos los tipos",
+      "allProvinces": "Todas las provincias",
+      "allLocalities": "Todas las localidades",
+      "allSexes": "Todos"
     },
     "localities": {
       "almagro": "Almagro",

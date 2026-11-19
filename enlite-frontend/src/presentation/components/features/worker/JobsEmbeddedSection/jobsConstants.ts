@@ -1,5 +1,4 @@
 import { TFunction } from 'i18next';
-import type { ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { buildPendingRows } from '@presentation/utils/pendingRows';
 export type { PublicJobListing } from '@domain/entities/PublicJobListing';
 
@@ -15,6 +14,11 @@ export interface Job {
   code: string;
   title: string;
   workerType: string;
+  /**
+   * Valores canônicos de `worker_type` como o feed manda (`['AT']`). `workerType` (texto) fica para
+   * busca/exibição; o filtro (jobFilters.ts) compara por este array. O scraper legado não tem: ausente.
+   */
+  workerTypes?: string[];
   provincia: string;
   localidad: string;
   barrio: string;
@@ -27,83 +31,14 @@ export interface Job {
   service: string;
   daysAndHours: string;
   ageRange: string;
+  /** Faixa etária numérica (API pública); o texto `ageRange` é formatado no render com i18n. */
+  ageMin?: number | null;
+  ageMax?: number | null;
   profile: string;
   /** Spec 067 FR-15: a vaga é postulável. O link da Talentum não vem no feed público (só no 200 de track-channel). */
   canApply: boolean;
   detailLink: string;
 }
-
-export const getWorkerTypeOptions = (t: TFunction): ComboboxOption[] => [
-  { value: 'acompañante terapéutico', label: t('jobs.types.at') },
-  { value: 'acompañante terapéutico (at)', label: t('jobs.types.at_full') },
-  { value: 'acompañante terapéutico (at) escolar', label: t('jobs.types.at_school') },
-  { value: 'cuidador/a', label: t('jobs.types.caregiver') },
-];
-
-export const getProvinceOptions = (t: TFunction): ComboboxOption[] => [
-  { value: 'caba', label: t('jobs.provinces.caba') },
-  { value: 'provincia de buenos aires', label: t('jobs.provinces.buenos_aires') },
-  { value: 'provincia de misiones', label: t('jobs.provinces.misiones') },
-];
-
-export const getLocalityOptions = (): ComboboxOption[] => [
-  { value: 'adrogué (internación) y boedo, caba', label: 'Adrogué (Internación) y Boedo, CABA' },
-  { value: 'almagro', label: 'Almagro' },
-  { value: 'avellaneda', label: 'Avellaneda' },
-  { value: 'bahía blanca', label: 'Bahía Blanca' },
-  { value: 'balvanera', label: 'Balvanera' },
-  { value: 'balvanera/constitución', label: 'Balvanera/Constitución' },
-  { value: 'belgrano', label: 'Belgrano' },
-  { value: 'belgrano, cdad. autónoma de buenos aires', label: 'Belgrano, Cdad. Autónoma de Buenos Aires' },
-  { value: 'boedo', label: 'Boedo' },
-  { value: 'caba', label: 'CABA' },
-  { value: 'caballito', label: 'Caballito' },
-  { value: 'caballito/ almagro', label: 'Caballito/ Almagro' },
-  { value: 'colegiales', label: 'Colegiales' },
-  { value: 'congreso y flores', label: 'Congreso y Flores' },
-  { value: 'florencio varela', label: 'Florencio Varela' },
-  { value: 'flores', label: 'Flores' },
-  { value: 'flores / palermo', label: 'Flores / Palermo' },
-  { value: 'flores, caba', label: 'Flores, CABA' },
-  { value: 'florida', label: 'Florida' },
-  { value: 'gerli, avellaneda', label: 'Gerli, Avellaneda' },
-  { value: 'ing. pablo nogués', label: 'Ing. Pablo Nogués' },
-  { value: 'isidro casanova, la matanza', label: 'Isidro Casanova, La Matanza' },
-  { value: 'ituzaingó', label: 'Ituzaingó' },
-  { value: 'la boca', label: 'La Boca' },
-  { value: 'lanús este', label: 'Lanús Este' },
-  { value: 'leandro n. alem', label: 'Leandro N. Alem' },
-  { value: 'lomas de zamora, provincia de buenos aires', label: 'Lomas de Zamora, Provincia de Buenos Aires' },
-  { value: 'mar del plata', label: 'Mar del Plata' },
-  { value: 'mataderos', label: 'Mataderos' },
-  { value: 'morón', label: 'Morón' },
-  { value: 'nordelta (tigre) y puerto madero (caba)', label: 'Nordelta (Tigre) y Puerto Madero (CABA)' },
-  { value: 'nuñez', label: 'Nuñez' },
-  { value: 'olivos', label: 'Olivos' },
-  { value: 'palermo', label: 'Palermo' },
-  { value: 'palermo, caba (escuela martin buber)', label: 'Palermo, CABA (Escuela Martin Buber)' },
-  { value: 'parque avellaneda', label: 'Parque Avellaneda' },
-  { value: 'presidente derqui', label: 'Presidente Derqui' },
-  { value: 'quilmes', label: 'Quilmes' },
-  { value: 'quilmes, buenos aires', label: 'Quilmes, Buenos Aires' },
-  { value: 'recoleta', label: 'Recoleta' },
-  { value: 'san cristóbal', label: 'San Cristóbal' },
-  { value: 'san fernando', label: 'San Fernando' },
-  { value: 'san isidro', label: 'San Isidro' },
-  { value: 'san miguel', label: 'San Miguel' },
-  { value: 'san nicolás', label: 'San Nicolás' },
-  { value: 'sarandí', label: 'Sarandí' },
-  { value: 'tandil', label: 'Tandil' },
-  { value: 'temperley', label: 'Temperley' },
-  { value: 'tortuguitas', label: 'Tortuguitas' },
-  { value: 'tribunales, caba', label: 'Tribunales, CABA' },
-  { value: 'turdera, provincia de buenos aires', label: 'Turdera, Provincia de Buenos Aires' },
-  { value: 'versalles', label: 'Versalles' },
-  { value: 'villa celina, la matanza', label: 'Villa Celina, La Matanza' },
-  { value: 'villa crespo', label: 'Villa Crespo' },
-  { value: 'villa real', label: 'Villa Real' },
-  { value: 'villa urquiza', label: 'Villa Urquiza' },
-];
 
 /**
  * ⚠️ `getPathologyOptions()` foi REMOVIDA em 25/08/2026, e o que ela era importa mais que o
@@ -119,17 +54,10 @@ export const getLocalityOptions = (): ComboboxOption[] => [
  * identificava ninguém sozinha, mas expunha o vocabulário clínico real da base.
  *
  * O filtro não foi substituído, e a decisão é deliberada: a tela **já** tem
- * `getWorkerTypeOptions()` (tipo de prestador). Trocar patologia por serviço/profissão criaria
+ * o filtro de tipo de prestador. Trocar patologia por serviço/profissão criaria
  * um filtro quase idêntico ao que já existe, não devolveria capacidade nenhuma ao candidato.
  * Sobram busca livre, tipo, província, localidade e sexo.
  */
-
-export const getSexOptions = (t: TFunction): ComboboxOption[] => [
-  { value: 'femenino', label: t('jobs.sex.female') },
-  { value: 'hombre', label: t('jobs.sex.male') },
-  { value: 'indistinto', label: t('jobs.sex.indifferent') },
-  { value: 'mujer', label: t('jobs.sex.woman') },
-];
 
 export const MOCK_JOBS: Job[] = [
   {
