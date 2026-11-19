@@ -307,6 +307,11 @@ test.describe('@integration Home do prestador — mapa por raio (096)', () => {
   // Fotos do mapa (só com PRINT_DIR_096 e, para o mapa real, MAP_REAL=1 + E2E096_BASE=ba): raio 10 e 20 km, desktop e celular.
   test('home mapa raio — fotos: 10 km e 20 km em 1440x900 e 390x844', async ({ page }) => {
     test.skip(!PRINT_DIR, 'só gera fotos com PRINT_DIR_096');
+    // Diagnóstico do mapa real: só o NOME do erro do Google (RefererNotAllowedMapError etc.), nunca a URL/chave.
+    page.on('console', (m) => {
+      const hit = m.text().match(/(RefererNotAllowedMapError|ApiNotActivatedMapError|InvalidKeyMapError|ExpiredKeyMapError|BillingNotEnabledMapError|MissingKeyMapError|OverQuotaMapError|ApiTargetBlockedMapError|[A-Za-z]+MapError)/);
+      if (hit) console.log(`GOOGLE-MAPS-ERRO ${hit[1]}`);
+    });
     await goHome(page, uidMain);
     await expect(page.getByTestId('jobs-radius-section')).toBeVisible({ timeout: 20_000 });
     for (const [w, h, tag] of [[1440, 900, '1440x900'], [390, 844, '390x844']] as const) {
