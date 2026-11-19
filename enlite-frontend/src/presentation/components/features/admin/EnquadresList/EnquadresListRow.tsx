@@ -14,6 +14,7 @@ import { SealChip } from '../PatientDetail/admission/AdmissionSeals';
 import { IMPORT_SEAL_TONE } from '../PatientDetail/admission/sealTones';
 import { timeZoneForCountry } from '../PatientDetail/admission/admissionTime';
 import { dateAndTime } from '../VacancyDetail/Enquadre/enquadreEventTime';
+import { ENQUADRES_CELL_PAD, ENQUADRES_HOST_COLUMN, ENQUADRES_NUMERIC_COLUMN } from './enquadresNumericColumn';
 import { ENQUADRE_PHASE_KEY, ENQUADRE_PHASE_TONE } from '../VacancyDetail/Enquadre/enquadreEventPhase';
 
 const enquadreDeepLink = (e: Pick<EnquadreGlobalListItem, 'jobPostingId' | 'id'>): string =>
@@ -35,27 +36,27 @@ export function EnquadresListRow({ event: e }: { event: EnquadreGlobalListItem }
 
   return (
     <TableRow data-testid="enquadres-row" data-event-id={e.id} data-phase={e.phase} tabIndex={0} onClick={open} onKeyDown={onKeyDown}>
-      <TableCell unwrapped className="whitespace-nowrap">
+      <TableCell unwrapped className={`${ENQUADRES_CELL_PAD} whitespace-nowrap`}>
         <Link to={href} onClick={(ev) => ev.stopPropagation()} className="text-primary underline" data-testid="enquadres-row-link">
           <Text as="span" size="sm" weight="medium" color="inherit">{`${date} ${time}`}</Text>
         </Link>
       </TableCell>
-      <TableCell unwrapped className="min-w-[208px] max-w-[260px]" data-clarity-mask="True" data-testid="enquadres-row-host">
+      <TableCell unwrapped className={`${ENQUADRES_HOST_COLUMN} ${ENQUADRES_CELL_PAD}`} data-clarity-mask="True" data-testid="enquadres-row-host">
         <span title={e.hostName} className="block truncate">
           <Text as="span" size="sm" color="inherit">{e.hostName}</Text>
         </span>
       </TableCell>
-      <TableCell className="whitespace-nowrap" data-testid="enquadres-row-case">{`${formatVacancyCase(e.caseNumber, e.caseOrdinal)} · ${e.eventCode}`}</TableCell>
-      <TableCell data-testid="enquadres-row-convoked">{e.convokedCount}</TableCell>
-      <TableCell data-testid="enquadres-row-selected">{e.selectedCount}</TableCell>
-      <TableCell data-testid="enquadres-row-quick-response">{e.quickResponseCount}</TableCell>
-      <TableCell data-testid="enquadres-row-rejected">{e.rejectedCount}</TableCell>
-      <TableCell unwrapped className="whitespace-nowrap">
+      <TableCell className={`${ENQUADRES_CELL_PAD} whitespace-nowrap`} data-testid="enquadres-row-case">{`${formatVacancyCase(e.caseNumber, e.caseOrdinal)} · ${e.eventCode}`}</TableCell>
+      <TableCell align="center" className={`${ENQUADRES_NUMERIC_COLUMN} ${ENQUADRES_CELL_PAD}`} data-testid="enquadres-row-convoked">{e.convokedCount}</TableCell>
+      <TableCell align="center" className={`${ENQUADRES_NUMERIC_COLUMN} ${ENQUADRES_CELL_PAD}`} data-testid="enquadres-row-selected">{e.selectedCount}</TableCell>
+      <TableCell align="center" className={`${ENQUADRES_NUMERIC_COLUMN} ${ENQUADRES_CELL_PAD}`} data-testid="enquadres-row-quick-response">{e.quickResponseCount}</TableCell>
+      <TableCell align="center" className={`${ENQUADRES_NUMERIC_COLUMN} ${ENQUADRES_CELL_PAD}`} data-testid="enquadres-row-rejected">{e.rejectedCount}</TableCell>
+      <TableCell unwrapped className={`${ENQUADRES_CELL_PAD} whitespace-nowrap`}>
         <SealChip tone={ENQUADRE_PHASE_TONE[e.phase]} testId="enquadres-row-phase">
           {t(`admin.vacancyDetail.enquadre.${ENQUADRE_PHASE_KEY[e.phase]}`)}
         </SealChip>
       </TableCell>
-      <TableCell unwrapped className="whitespace-nowrap">
+      <TableCell unwrapped className={`${ENQUADRES_CELL_PAD} whitespace-nowrap`}>
         {reason && (
           <span data-testid="enquadres-import-blocked" data-reason={reason} role="group" title={blockedText} aria-label={blockedText} className="inline-block whitespace-nowrap">
             <SealChip tone={IMPORT_SEAL_TONE.blocked} testId="enquadres-import-chip">
