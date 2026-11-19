@@ -32,6 +32,15 @@ describe('WorkerJobsByRadiusApiService', () => {
   });
 });
 
+describe('corpo que não é a resposta da rota', () => {
+  it('200 sem items/center/applied (ex.: stub {success,data}) → HTTP_ERROR no serviço e estado error no hook; a home não cai', async () => {
+    reply(200, { success: true, data: { id: 'x' } });
+    await expect(WorkerJobsByRadiusApiService.getHome()).rejects.toMatchObject({ code: 'HTTP_ERROR' });
+    const { result } = renderHook(() => useWorkerJobsByRadius(true));
+    await waitFor(() => expect(result.current.status).toBe('error'));
+  });
+});
+
 describe('useWorkerJobsByRadius', () => {
   it.each([
     [200, HOME, 'ok'],

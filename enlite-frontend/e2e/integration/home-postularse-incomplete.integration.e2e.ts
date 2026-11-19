@@ -184,7 +184,8 @@ test.describe('@integration Home — Postularse/Ver Detalles com cadastro incomp
     // Worker REGISTERED de verdade — sem a falha simulada abaixo, esta
     // worker é elegível e o WhatsApp abriria. A prova é que o ERRO do
     // servidor bloqueia mesmo assim, sem afirmar "incompleto".
-    const w = insertEligibilityWorker({ occupation: 'CAREGIVER' });
+    // occupation 'AT': a home lista só vagas que cabem no perfil (096) e a vaga semeada exige AT.
+    const w = insertEligibilityWorker({ occupation: 'AT' });
     workers.push(w);
 
     await page.addInitScript(() => {

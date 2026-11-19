@@ -24,7 +24,13 @@ class WorkerJobsByRadiusApiServiceClass {
       method: 'GET',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     });
-    if (response.ok) return (await response.json()) as WorkerJobsByRadius;
+    if (response.ok) {
+      const body = (await response.json()) as Partial<WorkerJobsByRadius> | null;
+      // Corpo de outra forma (ex.: o stub genérico de `GET /api/workers/me*` dos e2e, `{success,data}`) NÃO é a resposta da rota:
+      // vira erro e a lista pública segue, em vez de derrubar a home com `items` indefinido.
+      if (!body || !Array.isArray(body.items) || !body.center || !body.applied) throw new WorkerJobsByRadiusError('HTTP_ERROR', response.status);
+      return body as WorkerJobsByRadius;
+    }
     let code: unknown;
     try { code = ((await response.json()) as { code?: unknown }).code; } catch { code = undefined; }
     if (response.status === 409 && code === 'NO_SERVICE_AREA') throw new WorkerJobsByRadiusError('NO_SERVICE_AREA', 409);

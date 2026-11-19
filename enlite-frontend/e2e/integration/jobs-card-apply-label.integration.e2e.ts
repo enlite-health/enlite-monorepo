@@ -141,8 +141,9 @@ test.describe('@integration Card da vaga — rótulo dinâmico do Postularse (Fa
     const vacancyId = insertMinimalVacancy({ includeInPublicListing: true });
     vacancies.push(vacancyId);
     // phone (registro) + doc_criminal_record + doc_identity_document (2 documentos) = 3 linhas.
+    // occupation 'AT': a home lista só vagas que cabem no perfil (096) e a vaga semeada exige AT.
     const w = insertEligibilityWorker({
-      occupation: 'CAREGIVER',
+      occupation: 'AT',
       phone: false,
       docCriminalRecord: false,
       docIdentityDocument: false,
@@ -171,7 +172,7 @@ test.describe('@integration Card da vaga — rótulo dinâmico do Postularse (Fa
   test('alt — cadastro completo: botão volta a dizer "Postularse" (rótulo original)', async ({ page }) => {
     const vacancyId = insertMinimalVacancy({ includeInPublicListing: true });
     vacancies.push(vacancyId);
-    const w = insertEligibilityWorker({ occupation: 'CAREGIVER' }); // todos os campos/docs default=true
+    const w = insertEligibilityWorker({ occupation: 'AT' }); // todos os campos/docs default=true; AT porque a vaga semeada exige AT (home por perfil, 096)
     await loginAndGoHome(page, w);
 
     await expect(page.locator('[data-testid="pending-tasks-card"]')).toHaveCount(0);

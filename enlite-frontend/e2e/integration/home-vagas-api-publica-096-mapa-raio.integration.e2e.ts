@@ -30,8 +30,8 @@ const DB_USER = 'enlite_admin';
 const DB_NAME = 'enlite_e2e';
 const PREFIX = 'E2E-096-';
 const PRINT_DIR = process.env.PRINT_DIR_096 || '';
-const LAT0 = -34.6037;
-const LNG0 = -58.3816;
+const LAT0 = -32.9468; // Rosario: longe do ponto (-34.6037, -58.3816) das outras massas de e2e, que entrariam na contagem do raio
+const LNG0 = -60.6393;
 
 function runSQL(sql: string): string {
   const escaped = sql.replace(/'/g, "'\\''");
