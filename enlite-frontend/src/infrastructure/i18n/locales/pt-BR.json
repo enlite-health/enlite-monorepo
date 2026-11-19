@@ -534,6 +534,25 @@
       "mobileDescription": "Todos os serviços EnLite Health Solutions na palma da sua mão."
     }
   },
+  "jobsRadius": {
+    "title": "Vagas perto do seu endereço",
+    "sliderLabel": "Raio de busca em quilômetros",
+    "upTo": "Até {{n}} km",
+    "count_one": "{{count}} vaga perto do seu endereço",
+    "count_other": "{{count}} vagas perto do seu endereço",
+    "distance": "a {{km}} km",
+    "empty": "Sem vagas em {{n}} km",
+    "widen": "Ampliar para {{n}} km",
+    "noNeighborhood": "Sem bairro",
+    "centerLabel": "Seu endereço",
+    "mapUnavailable": "O mapa não está disponível no momento. As vagas continuam na lista.",
+    "noAddress": "Cadastre seu endereço para ver vagas perto de você.",
+    "goToProfile": "Cadastrar meu endereço",
+    "inactive": "Sua conta não está ativa, por isso não podemos mostrar vagas perto de você.",
+    "error": "Não conseguimos carregar o mapa de vagas. A lista de vagas continua disponível.",
+    "completeAvailability": "Complete sua disponibilidade para ver só as vagas que cabem nos seus dias.",
+    "privacyFooter": "Mostramos só bairro e cidade. O endereço exato é informado se você for escalado."
+  },
   "jobs": {
     "title": "Consultar Vagas",
     "completeToApplyBanner": "Complete seu cadastro para poder se candidatar às vagas.",

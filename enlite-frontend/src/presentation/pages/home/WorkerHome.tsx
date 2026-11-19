@@ -1,9 +1,13 @@
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@presentation/hooks/useAuth';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
 import { AppLayout } from '@presentation/components/templates/DashboardLayout';
 import { JobsEmbeddedSection } from '@presentation/components/features/worker/JobsEmbeddedSection';
+import { JobsRadiusMap } from '@presentation/components/features/worker/JobsRadiusMap';
+import { DEFAULT_RADIUS_KM, itemsWithin } from '@presentation/components/features/worker/JobsRadiusMap/radiusScope';
+import { useWorkerJobsByRadius } from '@presentation/hooks/useWorkerJobsByRadius';
+import type { JobRadiusKm } from '@domain/entities/WorkerJobByRadius';
 import { useWorkerNavItems } from '@presentation/config/workerNavigation';
 import { TopNavbar } from '@presentation/components/templates/DashboardLayout/TopNavbar';
 import { PendingTasksCard } from '@presentation/components/organisms/PendingTasksCard';
@@ -19,6 +23,15 @@ export const WorkerHome = (): JSX.Element => {
   const [isLoading, setIsLoading] = useState(true);
   const navItems = useWorkerNavItems();
   const profilePhoto = useWorkerRegistrationStore((state) => state.data.generalInfo.profilePhoto);
+
+  // 096: mapa por raio. Uma chamada (100 km, perfil de match); o slider filtra no cliente. Falha/sem endereço ⇒ `radiusScope`
+  // fica null e a lista pública segue inteira, com o cartão do mapa no topo.
+  const radiusState = useWorkerJobsByRadius(Boolean(user?.id));
+  const [radiusKm, setRadiusKm] = useState<JobRadiusKm>(DEFAULT_RADIUS_KM);
+  const radiusScope = useMemo(() => {
+    if (radiusState.status !== 'ok') return null;
+    return Object.fromEntries(itemsWithin(radiusState.data.items, radiusKm).map((i) => [i.id, i.distance_km]));
+  }, [radiusState, radiusKm]);
 
   // Completude SÓ do servidor (Fase 1/DD1) — `missingFields` é a MESMA
   // função que decide a postulação (fn_worker_missing_fields), nunca
@@ -67,7 +80,10 @@ export const WorkerHome = (): JSX.Element => {
         />
       )}
 
+      <JobsRadiusMap state={radiusState} radiusKm={radiusKm} onRadiusChange={setRadiusKm} />
+
       <JobsEmbeddedSection
+        radiusScope={radiusScope}
         isRegistrationComplete={isFullyRegistered}
         missingFields={workerData?.missingFields ?? null}
         profession={workerData?.profession}
