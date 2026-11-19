@@ -31,6 +31,9 @@ export interface Job {
   service: string;
   daysAndHours: string;
   ageRange: string;
+  /** Faixa etária numérica (API pública); o texto `ageRange` é formatado no render com i18n. */
+  ageMin?: number | null;
+  ageMax?: number | null;
   profile: string;
   /** Spec 067 FR-15: a vaga é postulável. O link da Talentum não vem no feed público (só no 200 de track-channel). */
   canApply: boolean;

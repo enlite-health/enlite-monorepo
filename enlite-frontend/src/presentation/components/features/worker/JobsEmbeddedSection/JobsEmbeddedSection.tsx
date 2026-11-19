@@ -53,7 +53,7 @@ function toFilterable(job: Job): JobFilterable {
   };
 }
 
-function adaptPublicJobListing(dto: PublicJobListing, t: TFunction): Job {
+function adaptPublicJobListing(dto: PublicJobListing): Job {
   return {
     id: dto.id,
     // "824-5012" — MESMO formato que o painel admin usa (VacancyDetailPage.tsx,
@@ -72,7 +72,10 @@ function adaptPublicJobListing(dto: PublicJobListing, t: TFunction): Job {
     description: dto.description,
     service: dto.service ?? '',
     daysAndHours: dto.schedule_days_hours ?? '',
-    ageRange: formatAgeRange(dto.age_range_min, dto.age_range_max, t),
+    // texto da faixa etária é montado no render (precisa de `t`); aqui só os números
+    ageRange: '',
+    ageMin: dto.age_range_min,
+    ageMax: dto.age_range_max,
     profile: dto.worker_profile_sought ?? '',
     canApply: dto.can_apply === true,
     detailLink: dto.detail_link,
@@ -133,10 +136,16 @@ export const JobsEmbeddedSection = ({
   const [filters, setFilters] = useState<JobFilterSelection>(EMPTY_JOB_FILTERS);
   const setFilter = (field: keyof JobFilterSelection) => (value: string): void =>
     setFilters(prev => ({ ...prev, [field]: value }));
-  const filterOptions = useMemo(() => buildJobFilterOptions(jobs.map(toFilterable), t), [jobs, t]);
+  const jobsView = useMemo(
+    () => jobs.map(j => (j.ageMin === undefined && j.ageMax === undefined
+      ? j
+      : { ...j, ageRange: formatAgeRange(j.ageMin ?? null, j.ageMax ?? null, t) })),
+    [jobs, t],
+  );
+  const filterOptions = useMemo(() => buildJobFilterOptions(jobsView.map(toFilterable), t), [jobsView, t]);
 
   const filteredJobs = useMemo(() => {
-    return jobs.filter(job => {
+    return jobsView.filter(job => {
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = !searchTerm ||
         job.title.toLowerCase().includes(searchLower) ||
@@ -147,7 +156,7 @@ export const JobsEmbeddedSection = ({
 
       return matchesSearch && matchesJobFilters(toFilterable(job), filters);
     });
-  }, [jobs, searchTerm, filters]);
+  }, [jobsView, searchTerm, filters]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -155,7 +164,7 @@ export const JobsEmbeddedSection = ({
     const fetchJobs = async (): Promise<void> => {
       if (readUsePublicApi()) {
         const listings = await PublicApiService.getPublicJobs();
-        setJobs(listings.map(dto => adaptPublicJobListing(dto, t)));
+        setJobs(listings.map(adaptPublicJobListing));
       } else {
         const apiUrl = import.meta.env.VITE_API_WORKER_FUNCTIONS_URL || 'http://localhost:8081';
         const response = await fetch(`${apiUrl}/api/jobs`);
