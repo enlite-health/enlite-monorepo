@@ -51,6 +51,10 @@ vi.mock('@presentation/components/features/admin/PatientDetail/PatientStatusCont
 vi.mock('@hooks/admin/usePatientItinerary', () => ({
   usePatientItinerary: () => ({ itinerary: { services: [] }, status: 'ok', loadOptions: vi.fn(), allocate: vi.fn(), actionError: null, refreshError: false }),
 }));
+// Spec 092 (T501): a aba "Informes diários" tem hook + HTTP próprios (PatientDailyReportsTab.test.tsx); aqui só a montagem.
+vi.mock('@presentation/components/features/admin/PatientDetail/PatientDailyReportsTab', () => ({
+  PatientDailyReportsTab: (p: { patientId: string }) => <div data-testid="daily-reports-tab-stub">{p.patientId}</div>,
+}));
 // Spec 031: a aba "Documentos" tem hook + HTTP próprios (testados no próprio arquivo); aqui só a montagem.
 vi.mock('@presentation/components/features/admin/PatientDetail/documents/PatientDocumentsSection', () => ({
   PatientDocumentsSection: (p: { patientId: string }) => <div data-testid="documents-section-stub">{p.patientId}</div>,
@@ -371,6 +375,22 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
     expect(screen.getByTestId('itinerario-sem-servicos')).toBeInTheDocument();
   });
 
+  // Spec 092 (T501): a aba "Informes diários" é do container `daily_report` — sem a célula não existe e o conteúdo nunca monta.
+  it('092 T501: SEM daily_report:read a aba Informes diários NÃO existe', () => {
+    comCelulas(['patient:read', 'patient_document:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Documentos', 'Histórico']);
+    expect(screen.queryByTestId('daily-reports-tab-stub')).not.toBeInTheDocument();
+  });
+
+  it('092 T501: com daily_report:read a aba existe e, aberta, monta o conteúdo com o id do paciente', () => {
+    comCelulas(['patient:read', 'daily_report:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Informes diários', 'Histórico']);
+    fireEvent.click(screen.getByText('Informes diários'));
+    expect(screen.getByTestId('daily-reports-tab-stub')).toBeInTheDocument();
+  });
+
   // Spec 049 (F7) A7-1: a aba "Admissão" é do container `patient_admission`.
   it('049 A7-1: SEM patient_admission:* a aba Admissão não existe e a seção nunca monta', () => {
     comCelulas(['patient:read', 'patient_document:read'], 'on');
@@ -414,7 +434,7 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
     render(<PatientDetailPage />);
     // Spec 049 (F7: + Admissão) + cadeia do itinerário (D442: + Itinerário), sem 'Vagas' (spec 047) — sync main→stage 16/10, decisão C2.
     // A lista inteira, na ordem (sabotagem: reintroduzir 'encuadre' ou 'vacancies' em patientTabs.ts quebra aqui).
-    expect(abasNaTela()).toEqual(['Dados Clínicos', 'Rede de Apoio', 'Documentos', 'Admissão', 'Serviço Contratado', 'Itinerário', 'Histórico']);
+    expect(abasNaTela()).toEqual(['Dados Clínicos', 'Rede de Apoio', 'Documentos', 'Admissão', 'Serviço Contratado', 'Itinerário', 'Informes diários', 'Histórico']);
     fireEvent.click(screen.getByText('Rede de Apoio'));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
   });

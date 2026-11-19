@@ -7,6 +7,7 @@
 // Spec 049 (F7): a aba "Admisión" entra logo depois de "Documentos" (a vacante deixou a posição livre; 047 não reservou lugar).
 // D442 (28/09, cadeia do itinerário): 'Itinerario' entra tendo conteúdo real (D431): a grade semanal por serviço e a alocação.
 // Sync main→stage 16/10 (decisão do Gabriel, C2): a aba "Vacantes" NÃO volta (spec 047 a desceu para Serviço Contratado).
+// Spec 092 (T501): 'Informes diarios' entra depois de 'Itinerario' (o informe é da guarda do itinerário) e antes de 'Historial'.
 // Fora do componente (react-refresh): a página e o registro de telas importam a lista.
 export type PatientTab =
   | 'clinicalData'
@@ -15,6 +16,7 @@ export type PatientTab =
   | 'admission'
   | 'contractedService'
   | 'itinerary'
+  | 'dailyReports'
   | 'history';
 
 export const PATIENT_TABS: readonly PatientTab[] = [
@@ -24,6 +26,7 @@ export const PATIENT_TABS: readonly PatientTab[] = [
   'admission',
   'contractedService',
   'itinerary',
+  'dailyReports',
   'history',
 ];
 

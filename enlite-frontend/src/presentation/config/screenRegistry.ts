@@ -94,7 +94,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'patients.detail',
     route: '/admin/patients/:id',
-    tabs: ['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'itinerary', 'history'],
+    tabs: ['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'itinerary', 'dailyReports', 'history'],
     containers: [
       c('identity', 'patient_identity', ['read', 'create', 'update']),
       c('clinical', 'patient_clinical', ['read', 'create', 'update'], 'clinicalData'),
@@ -127,6 +127,10 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('contractValue', 'patient_contract_value', ['read'], 'contractedService'),
       // cadeia Fase 12 (D442): a ação de alocar; a leitura é `patient_services:read`.
       c('itinerary', 'patient_itinerary', ['update'], 'itinerary'),
+      // Spec 092 (T501): a aba "Informes diarios". `daily_report:read` = estrutura (data, prestador, respostas, sinal); o TEXTO é
+      // `daily_report_narrative:read` (container próprio na MESMA aba: o servidor redige o campo sem ela).
+      c('dailyReports', 'daily_report', ['read'], 'dailyReports'),
+      c('dailyReportNarrative', 'daily_report_narrative', ['read'], 'dailyReports'),
       // Spec 047 (F1): a aba Vacante saiu; o bloco desce para Serviço Contratado, abaixo dos serviços.
       // Célula e container NÃO mudam — só a aba a que pertencem (o card 5 cria a aba Admissão, com container próprio).
       c('vacancies', 'vacancy', ['read'], 'contractedService'),
