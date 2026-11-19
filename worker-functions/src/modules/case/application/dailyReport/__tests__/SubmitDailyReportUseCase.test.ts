@@ -101,20 +101,15 @@ describe('SubmitDailyReportUseCase — contrato do PUT', () => {
     expect(await run(s, cmd())).toBe('created');
   });
 
-  it('sem PTI vigente: id não-nulo → pti_version_mismatch; null → aceita (só relato)', async () => {
-    const vencida = fakeState({ versions: [version('v1', { endDate: '2026-11-15' })] });
-    expect(await codeOf(run(vencida, cmd()))).toBe('pti_version_mismatch');
-    expect(await run(vencida, cmd({ ptiVersionId: null, answers: [] }))).toBe('created');
+  it('sem PTI vigente: id não-nulo → pti_version_mismatch', async () => {
+    expect(await codeOf(run(fakeState({ versions: [version('v1', { endDate: '2026-11-15' })] }), cmd()))).toBe('pti_version_mismatch');
   });
 
-  it('DC-4: sem PTI vigente e ptiVersionId null → informe só com relatório (qualquer resposta é item_not_in_pti)', async () => {
-    const semPti = () => fakeState({ versions: [] });
-    expect(await run(semPti(), cmd({ ptiVersionId: null, answers: [] }))).toBe('created');
-    expect(await codeOf(run(semPti(), cmd({ ptiVersionId: null })))).toBe('item_not_in_pti');
-  });
-
-  it('com PTI vigente, ptiVersionId null → pti_version_mismatch (o app tinha de ter baixado o molde)', async () => {
-    expect(await codeOf(run(fakeState(), cmd({ ptiVersionId: null, answers: [] })))).toBe('pti_version_mismatch');
+  it('DC-4: ptiVersionId null → só relato, aceito COM ou SEM PTI vigente; qualquer resposta é item_not_in_pti', async () => {
+    for (const mk of [() => fakeState(), () => fakeState({ versions: [] })]) {
+      expect(await run(mk(), cmd({ ptiVersionId: null, answers: [] }))).toBe('created');
+      expect(await codeOf(run(mk(), cmd({ ptiVersionId: null })))).toBe('item_not_in_pti');
+    }
   });
 
   it('422 item_not_in_pti: item fora do molde (OM, legado sem pergunta, id inventado)', async () => {

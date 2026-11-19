@@ -75,11 +75,12 @@ export class SubmitDailyReportUseCase {
 
   /**
    * O PTI do corpo tem de ser EXATAMENTE o vigente que o GET dos moldes escolhe (`projectInForceFor`: mesmo serviço, não anulado, data da guarda
-   * em [início, fim], empate por `createdAt`). Sem vigente (DC-4), só `null` (relato). Anulada, vencida, substituída ou de outro serviço → mismatch.
+   * em [início, fim], empate por `createdAt`). `null` = só relato (DC-4), sempre aceito, sem respostas. Anulada, vencida, substituída ou de outro serviço → mismatch.
    */
   private async templateFor(tx: DailyReportTx, ptiVersionId: string | null, guard: GuardOccurrence, catalog: Awaited<ReturnType<DailyReportTx['scaleCatalog']>>): Promise<DailyReportTemplate> {
+    if (ptiVersionId === null) return templateOf(tx, catalog, null); // DC-4: só relato, sempre aceito (offline-first: o aparelho pode não ter o molde); resposta → item_not_in_pti
     const inForce = projectInForceFor(await tx.projectVersionsOfService(guard.serviceId), guard.serviceId, guard.onDate);
-    if ((inForce?.id ?? null) !== ptiVersionId) throw new DailyReportError('pti_version_mismatch');
+    if (inForce?.id !== ptiVersionId) throw new DailyReportError('pti_version_mismatch');
     return templateOf(tx, catalog, inForce);
   }
 
