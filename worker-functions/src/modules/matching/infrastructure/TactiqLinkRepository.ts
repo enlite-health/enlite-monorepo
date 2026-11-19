@@ -193,12 +193,13 @@ export class TactiqLinkRepository {
 
   // ── trilha `tactiq_link.*` ─────────────────────────────────────────────────────────────────────────
   async appendEvent(
-    event: { email: string; kind: string; outcome?: string | null; reason?: string | null; at: Date },
+    event: { email: string; kind: string; outcome?: string | null; reason?: string | null; at: Date; ref?: Record<string, unknown> | null },
     ex: Db = this.db,
   ): Promise<void> {
+    const ref = event.ref && Object.keys(event.ref).length > 0 ? JSON.stringify(event.ref) : null;
     await ex.query(
-      `INSERT INTO admission_events (host_email, kind, outcome, reason, at) VALUES (lower($1), $2, $3, $4, $5)`,
-      [event.email, event.kind, event.outcome ?? null, event.reason ?? null, event.at],
+      `INSERT INTO admission_events (host_email, kind, outcome, reason, at, ref) VALUES (lower($1), $2, $3, $4, $5, $6::jsonb)`,
+      [event.email, event.kind, event.outcome ?? null, event.reason ?? null, event.at, ref],
     );
   }
 

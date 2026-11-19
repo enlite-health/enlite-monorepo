@@ -11,7 +11,10 @@ import type { ExtensionState } from '../domain/chromeExtensionState';
 import { hashState, newOAuthState, newPkcePair } from '../infrastructure/tactiq/pkce';
 import {
   denyReason,
+  sanitizeScopeList,
+  type AccessVerdict,
   TactiqInvalidGrantError,
+  TactiqTransientError,
   TactiqUnauthorizedError,
   type HostAccessResult,
   type TactiqLinkGate,
@@ -37,6 +40,19 @@ export class TactiqExchangeFailedError extends Error {
   constructor(readonly reason: string) {
     super(`tactiq_exchange_failed:${reason}`);
     this.name = 'TactiqExchangeFailedError';
+  }
+}
+
+/**
+ * O vínculo NÃO foi gravado: a conta não provou acesso (`access_denied`), o formato do teste não foi reconhecido
+ * (`access_unrecognized`) ou o teste falhou por rede/5xx (`ping_transient`, fail closed). `redirectReason` é o que o controller
+ * devolve ao navegador; `reason` (a causa tipada) só vai à trilha. Sem token, e-mail nem corpo de resposta.
+ */
+export class TactiqAccessDeniedError extends Error {
+  readonly code = 'TACTIQ_ACCESS_DENIED';
+  constructor(readonly redirectReason: 'access_denied' | 'access_unrecognized' | 'ping_transient') {
+    super(`tactiq_${redirectReason}`);
+    this.name = 'TactiqAccessDeniedError';
   }
 }
 
@@ -177,14 +193,47 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     if (!consumed) throw new TactiqStateInvalidError();
 
     let refreshToken: string;
+    let accessToken: string;
+    let scope: string | undefined;
     try {
       const verifier = await this.cipher.decrypt(consumed.verifierEncrypted);
-      ({ refreshToken } = await this.deps.oauth.exchangeCode({ code: input.code, codeVerifier: verifier }));
+      ({ refreshToken, accessToken, scope } = await this.deps.oauth.exchangeCode({ code: input.code, codeVerifier: verifier }));
     } catch (err) {
       const reason = err instanceof TactiqInvalidGrantError ? 'invalid_grant' : 'exchange_error';
+      if (err instanceof TactiqUnauthorizedError) {
+        await this.repo.appendEvent({
+          email: consumed.email, kind: 'tactiq_link.link_rejected', outcome: 'exchange_failed', reason: denyReason(err.cause), at: now,
+        });
+      }
       this.log.warn({ reason }, 'admission.tactiq_link.exchange_failed');
       throw new TactiqExchangeFailedError(reason);
     }
+
+    // O acesso é provado ANTES de cifrar ou gravar qualquer coisa: quem não passa não deixa token nem linha (D1, fail closed D6).
+    const scopeRef = sanitizeScopeList(scope)?.join(' ');
+    const ref = scopeRef ? { scope: scopeRef } : undefined;
+    const reject = async (
+      outcome: 'access_denied' | 'access_unrecognized' | 'ping_transient',
+      reason: string,
+      extra: Record<string, unknown> = {},
+    ): Promise<never> => {
+      await this.repo.appendEvent({
+        email: consumed.email, kind: 'tactiq_link.link_rejected', outcome, reason, at: now, ref: { ...ref, ...extra },
+      });
+      this.log.warn({ outcome, reason }, 'admission.tactiq_link.link_rejected');
+      throw new TactiqAccessDeniedError(outcome);
+    };
+    let verdict: AccessVerdict;
+    try {
+      verdict = await this.deps.mcp.ping(accessToken);
+    } catch (err) {
+      if (err instanceof TactiqUnauthorizedError) return reject('access_denied', denyReason(err.cause));
+      return reject('ping_transient', err instanceof TactiqTransientError ? err.reason : 'unexpected');
+    }
+    if (verdict.kind === 'denied') {
+      return reject('access_denied', denyReason({ kind: 'access_action', action: verdict.action }), verdict.title ? { title: verdict.title } : {});
+    }
+    if (verdict.kind === 'unrecognized') return reject('access_unrecognized', 'access_unrecognized');
 
     const tokenEncrypted = await this.cipher.encrypt(refreshToken);
     if (!tokenEncrypted) throw new TactiqExchangeFailedError('empty_token');
@@ -195,7 +244,7 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
       clientId: this.deps.clientId?.() ?? null,
       now,
     });
-    await this.repo.appendEvent({ email: consumed.email, kind: 'tactiq_link.linked', outcome: 'linked', at: now });
+    await this.repo.appendEvent({ email: consumed.email, kind: 'tactiq_link.linked', outcome: 'linked', at: now, ...(ref ? { ref } : {}) });
     this.log.info({}, 'admission.tactiq_link.linked');
     return { email: consumed.email };
   }

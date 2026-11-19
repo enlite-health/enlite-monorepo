@@ -365,6 +365,65 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     });
   });
 
+  describe('vínculo valida o acesso ANTES de gravar (change tactiq-vinculo-valida-acesso, F2)', () => {
+    const tokensRows = async (email: string) =>
+      (await admin.query(`SELECT count(*)::int AS n FROM tactiq_link_secrets s JOIN tactiq_links l ON l.id = s.link_id WHERE lower(l.host_email) = lower($1)`, [email])).rows[0].n as number;
+    const rejectedEvents = async (email: string) =>
+      (await admin.query(`SELECT outcome, reason, ref FROM admission_events WHERE lower(host_email) = lower($1) AND kind = 'tactiq_link.link_rejected' ORDER BY at`, [email])).rows as Array<{ outcome: string; reason: string; ref: unknown }>;
+    async function callback(email: string, code: string) {
+      const { authorizeUrl } = await service.startLink({ uid: `tq049-acc-${RUN}`, email });
+      const st = new URL(authorizeUrl).searchParams.get('state')!;
+      return http('GET', `/api/admin/me/tactiq-link/callback?code=${code}&state=${st}`, null);
+    }
+    afterEach(() => { mcp.verdict = { kind: 'ready' }; mcp.pingError = null; oauth.exchangeScope = undefined; setEnv('TACTIQ_LINK_RETURN_URL', undefined); });
+
+    it('ping `upgrade` → 0 linhas em tactiq_links E 0 em tactiq_link_secrets, 1 evento link_rejected, redirect access_denied', async () => {
+      const u = await newHost({ user: false });
+      mcp.verdict = { kind: 'denied', action: 'upgrade', title: null };
+      setEnv('TACTIQ_LINK_RETURN_URL', 'https://app.example.test/profile');
+      const res = await callback(u.email, `rt-upg-${RUN}`);
+      expect(res.status).toBe(302);
+      expect(res.location).toBe('https://app.example.test/profile?tactiq=error&reason=access_denied');
+      expect(await linkRow(u.email)).toBeUndefined();
+      expect(await tokensRows(u.email)).toBe(0);
+      expect(await rejectedEvents(u.email)).toEqual([expect.objectContaining({ outcome: 'access_denied', reason: 'access_action:upgrade' })]);
+      expect((await eventKinds(u.email)).map((e) => e.kind)).toEqual(['tactiq_link.link_rejected']);
+    });
+
+    it('ping `ready` → `linked` como sempre, com o evento `linked`', async () => {
+      const u = await newHost({ user: false });
+      const res = await callback(u.email, `rt-rdy-${RUN}`);
+      expect(res.status).toBe(200);
+      expect(await linkRow(u.email)).toMatchObject({ status: 'linked' });
+      expect((await eventKinds(u.email)).map((e) => e.kind)).toEqual(['tactiq_link.linked']);
+      expect(await rejectedEvents(u.email)).toEqual([]);
+    });
+
+    it('linha prévia `linked` + negativa por acesso → a linha e o token ficam intactos', async () => {
+      const token = `rt-prev-${RUN}`;
+      const u = await newHost({ user: false, link: { status: 'linked', token } });
+      const antes = await linkRow(u.email);
+      mcp.verdict = { kind: 'denied', action: 'request_seat', title: 'Ask your team admin for a seat' };
+      const res = await callback(u.email, `rt-novo-${RUN}`);
+      expect(res.status).toBe(502);
+      expect(res.body).toMatchObject({ code: 'TACTIQ_ACCESS_DENIED', reason: 'access_denied' });
+      const depois = await linkRow(u.email);
+      expect(depois).toEqual(antes);
+      expect(unb64(depois.refresh_token_encrypted)).toBe(token);
+      expect(await rejectedEvents(u.email)).toEqual([expect.objectContaining({ reason: 'access_action:request_seat', ref: { title: 'Ask your team admin for a seat' } })]);
+    });
+
+    it('falha transitória no ping → nada gravado, outcome ping_transient, redirect ping_transient', async () => {
+      const u = await newHost({ user: false });
+      mcp.pingError = new TactiqTransientError('mcp_http_503');
+      setEnv('TACTIQ_LINK_RETURN_URL', 'https://app.example.test/profile');
+      const res = await callback(u.email, `rt-trn-${RUN}`);
+      expect(res.location).toBe('https://app.example.test/profile?tactiq=error&reason=ping_transient');
+      expect(await linkRow(u.email)).toBeUndefined();
+      expect((await rejectedEvents(u.email)).map((e) => e.outcome)).toEqual(['ping_transient']);
+    });
+  });
+
   describe('teste diário — A4-4 (sino por TRANSIÇÃO), A4-6 (ping), A4-7 (rotação)', () => {
     it('A4-4: 2 execuções com o mesmo `broken` → 1 notificação; broken → linked → broken → 2 (reason broken, remetente system:admission, sem paciente)', async () => {
       const h = await newHost({ link: { status: 'linked' } });
