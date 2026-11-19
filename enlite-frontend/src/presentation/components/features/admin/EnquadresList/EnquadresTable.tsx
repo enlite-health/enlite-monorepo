@@ -5,15 +5,26 @@ import { Table, TableBody, TableHead, TableHeader } from '@presentation/componen
 import type { EnquadreGlobalListItem } from '@domain/entities/EnquadreEvent';
 import { EnquadresListRow } from './EnquadresListRow';
 
-const COLUMNS = ['dateTime', 'host', 'case', 'convoked', 'state', 'import'] as const;
+/** Rótulo de cada coluna: as de desfecho reaproveitam `admin.kanban.columns.*` (as MESMAS palavras do Kanban do evento). */
+const COLUMNS = [
+  'admin.enquadres.columns.dateTime',
+  'admin.enquadres.columns.host',
+  'admin.enquadres.columns.case',
+  'admin.enquadres.columns.convoked',
+  'admin.kanban.columns.SELECTED',
+  'admin.kanban.columns.QUICK_RESPONSE_TEAM',
+  'admin.kanban.columns.REJECTED',
+  'admin.enquadres.columns.state',
+  'admin.enquadres.columns.import',
+] as const;
 
 export function EnquadresTable({ items }: { items: readonly EnquadreGlobalListItem[] }): JSX.Element {
   const { t } = useTranslation();
   return (
     <Table>
       <TableHeader>
-        {COLUMNS.map((c) => (
-          <TableHead key={c} className="whitespace-nowrap">{t(`admin.enquadres.columns.${c}`)}</TableHead>
+        {COLUMNS.map((key) => (
+          <TableHead key={key} className="whitespace-nowrap">{t(key)}</TableHead>
         ))}
       </TableHeader>
       <TableBody>

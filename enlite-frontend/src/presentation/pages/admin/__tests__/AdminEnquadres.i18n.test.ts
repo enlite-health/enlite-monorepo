@@ -50,3 +50,12 @@ describe('admin.enquadres — paridade es × pt-BR', () => {
     expect((ptBR as Tree & { admin: { nav: Tree } }).admin.nav.enquadres).toBe('Enquadres');
   });
 });
+
+describe('admin.kanban.columns — rótulos reaproveitados pelas colunas de desfecho da lista (spec 094)', () => {
+  it.each([['es', es], ['pt-BR', ptBR]])('%s tem SELECTED, QUICK_RESPONSE_TEAM e REJECTED não vazios', (_l, locale) => {
+    const columns = (locale as Tree & { admin: { kanban: { columns: Record<string, string> } } }).admin.kanban.columns;
+    for (const id of ['SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED']) {
+      expect((columns[id] ?? '').trim(), id).not.toBe('');
+    }
+  });
+});

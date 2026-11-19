@@ -47,6 +47,9 @@ export function EnquadresListRow({ event: e }: { event: EnquadreGlobalListItem }
       </TableCell>
       <TableCell className="whitespace-nowrap" data-testid="enquadres-row-case">{`${formatVacancyCase(e.caseNumber, e.caseOrdinal)} · ${e.eventCode}`}</TableCell>
       <TableCell data-testid="enquadres-row-convoked">{e.convokedCount}</TableCell>
+      <TableCell data-testid="enquadres-row-selected">{e.selectedCount}</TableCell>
+      <TableCell data-testid="enquadres-row-quick-response">{e.quickResponseCount}</TableCell>
+      <TableCell data-testid="enquadres-row-rejected">{e.rejectedCount}</TableCell>
       <TableCell unwrapped className="whitespace-nowrap">
         <SealChip tone={ENQUADRE_PHASE_TONE[e.phase]} testId="enquadres-row-phase">
           {t(`admin.vacancyDetail.enquadre.${ENQUADRE_PHASE_KEY[e.phase]}`)}
