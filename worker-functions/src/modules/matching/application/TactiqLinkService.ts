@@ -56,6 +56,9 @@ export class TactiqAccessDeniedError extends Error {
   }
 }
 
+/** Escopo do Tactiq que dá acesso ao conteúdo das reuniões (F20). */
+const REQUIRED_SCOPE = 'mcp:meetings:details';
+
 export const STATE_TTL_MS = 10 * 60 * 1000;
 /** Operadora do roster sem vínculo vivo há MAIS de 48 h (estritamente maior) → alarme ao gestor. */
 export const MISSING_ALARM_HOURS = 48;
@@ -210,7 +213,8 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     }
 
     // O acesso é provado ANTES de cifrar ou gravar qualquer coisa: quem não passa não deixa token nem linha (D1, fail closed D6).
-    const scopeRef = sanitizeScopeList(scope)?.join(' ');
+    const scopeList = sanitizeScopeList(scope);
+    const scopeRef = scopeList?.join(' ');
     const ref = scopeRef ? { scope: scopeRef } : undefined;
     const reject = async (
       outcome: 'access_denied' | 'access_unrecognized' | 'ping_transient',
@@ -223,6 +227,8 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
       this.log.warn({ outcome, reason }, 'admission.tactiq_link.link_rejected');
       throw new TactiqAccessDeniedError(outcome);
     };
+    // `scope` presente sem `details` → recusa sem chamar o ping; ausente = "não apurado" → segue ao ping (nunca presumir).
+    if (scopeList && !scopeList.includes(REQUIRED_SCOPE)) return reject('access_denied', denyReason({ kind: 'scope_without_details' }));
     let verdict: AccessVerdict;
     try {
       verdict = await this.deps.mcp.ping(accessToken);
