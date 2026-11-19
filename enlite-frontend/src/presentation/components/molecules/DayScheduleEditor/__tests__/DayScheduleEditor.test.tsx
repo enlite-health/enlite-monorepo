@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { DayScheduleEditor, type DayScheduleSlot } from '../index';
 
@@ -46,5 +46,45 @@ describe('DayScheduleEditor — copiar para dias', () => {
     rerender(<DayScheduleEditor value={[{ dayOfWeek: 1, startTime: '17:00', endTime: '09:00' }]} onChange={() => {}} />);
     expect(screen.getByTestId('day-schedule-invalid-monday')).toBeTruthy();
     expect((screen.getByTestId('day-schedule-copy-monday') as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('DayScheduleEditor — passo do seletor de horário (step)', () => {
+  it('sem a prop step, o seletor de início oferece 5 em 5 (vaga não muda)', () => {
+    render(<DayScheduleEditor value={[mon]} onChange={() => {}} />);
+    fireEvent.click(screen.getByText('09:00'));
+    expect(screen.getByText('09:05')).toBeTruthy();
+    expect(screen.getByText('09:10')).toBeTruthy();
+  });
+
+  it('com step=15, início oferece 09:15 e não 09:05; fim oferece 23:59', () => {
+    const { unmount } = render(<DayScheduleEditor value={[mon]} onChange={() => {}} step={15} />);
+    fireEvent.click(screen.getByText('09:00'));
+    expect(screen.getByText('09:15')).toBeTruthy();
+    expect(screen.queryByText('09:05')).toBeNull();
+    unmount();
+
+    render(<DayScheduleEditor value={[mon]} onChange={() => {}} step={15} />);
+    fireEvent.click(screen.getByText('17:00'));
+    expect(screen.getByText('23:59')).toBeTruthy();
+  });
+
+  it('horário antigo fora da grade continua visível, não dispara onChange e só muda ao escolher', () => {
+    const onChange = vi.fn();
+    const old = { dayOfWeek: 1, startTime: '08:05', endTime: '10:10' };
+    render(<DayScheduleEditor value={[old]} onChange={onChange} step={15} />);
+    expect(screen.getByText('08:05')).toBeTruthy();
+    expect(screen.getByText('10:10')).toBeTruthy();
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('08:05'));
+    expect(screen.getByText('08:00')).toBeTruthy();
+    expect(screen.getAllByText('08:15').length).toBe(1);
+    // 08:05 só aparece no botão (1x), nunca como opção da lista
+    expect(screen.getAllByText('08:05').length).toBe(1);
+
+    fireEvent.click(screen.getByText('08:15'));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith([{ dayOfWeek: 1, startTime: '08:15', endTime: '10:10' }]);
   });
 });

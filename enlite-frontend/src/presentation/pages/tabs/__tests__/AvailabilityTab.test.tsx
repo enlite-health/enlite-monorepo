@@ -145,4 +145,11 @@ describe('AvailabilityTab - Auto Save & Toast', () => {
 
     expect(await screen.findByTestId('toast-error')).toBeTruthy();
   });
+
+  it('seletores da disponibilidade oferecem 15 em 15 (09:15 sim, 09:05 não)', async () => {
+    render(<AvailabilityTab />);
+    fireEvent.click(await screen.findByText('09:00'));
+    expect(screen.getByText('09:15')).toBeTruthy();
+    expect(screen.queryByText('09:05')).toBeNull();
+  });
 });
