@@ -551,6 +551,11 @@
       "registration": "Complete {{item}} para se candidatar",
       "multiple": "Complete {{count}} passos para se candidatar"
     },
+    "ageRange": {
+      "between": "{{min}} a {{max}} anos",
+      "from": "{{min}}+ anos",
+      "upTo": "até {{max}} anos"
+    },
     "viewDetails": "Ver Detalhes",
     "results": "vagas encontradas",
     "filters": {
@@ -558,7 +563,11 @@
       "province": "Província",
       "locality": "Localidade",
       "pathology": "Patologia/s",
-      "sex": "Sexo"
+      "sex": "Sexo",
+      "allWorkerTypes": "Todos os tipos",
+      "allProvinces": "Todas as províncias",
+      "allLocalities": "Todas as localidades",
+      "allSexes": "Todos"
     },
     "types": {
       "at": "Acompanhante Terapêutico",
