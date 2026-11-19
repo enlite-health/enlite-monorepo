@@ -11,6 +11,7 @@ import type { ExtensionState } from '../domain/chromeExtensionState';
 import { hashState, newOAuthState, newPkcePair } from '../infrastructure/tactiq/pkce';
 import {
   denyReason,
+  sanitizeAccessTitle,
   sanitizeScopeList,
   type AccessVerdict,
   TactiqInvalidGrantError,
@@ -70,6 +71,16 @@ export interface OwnLinkView {
   statusChangedAt: string | null;
   /** Extensão do Tactiq no Chrome da PRÓPRIA pessoa (a linha que o `ChromeReportJob` grava e de onde sai o aviso do sino). */
   extension: OwnExtensionView;
+  /** Negativa de acesso pendente (a última tentativa de vínculo foi recusada por acesso); `null` = nenhuma. Derivado da trilha, nunca gravado. */
+  accessDenial: OwnAccessDenial | null;
+}
+
+export interface OwnAccessDenial {
+  /** `scope_without_details` | `access_action:<v>` | `access_unrecognized` | `mcp_transport_401_403` — código interno, a tela não o exibe. */
+  reason: string;
+  /** Título do Tactiq, já sanitizado; pode ser nulo. */
+  title: string | null;
+  at: string;
 }
 
 /** `sem_relatorio` também cobre "nunca reportou" (sem linha): o job trata a falta de linha assim; nunca `null`, nunca `ausente`. */
@@ -160,14 +171,27 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     const extension: OwnExtensionView = report
       ? { state: report.state, reportedAt: report.report_at ? report.report_at.toISOString() : null }
       : { state: 'sem_relatorio', reportedAt: null };
-    if (!row) return { status: 'missing', linkedAt: null, lastCheckAt: null, statusChangedAt: null, extension };
+    const accessDenial = await this.accessDenialOf(email);
+    if (!row) return { status: 'missing', linkedAt: null, lastCheckAt: null, statusChangedAt: null, extension, accessDenial };
     return {
       status: row.status,
       linkedAt: row.linked_at ? row.linked_at.toISOString() : null,
       lastCheckAt: row.last_check_at ? row.last_check_at.toISOString() : null,
       statusChangedAt: row.status_changed_at.toISOString(),
       extension,
+      accessDenial,
     };
+  }
+
+  /**
+   * Só a ÚLTIMA tentativa conta: `linked` mais novo limpa a negativa. `exchange_failed` e `ping_transient` não são orientação de
+   * acesso (a tela mostra o banner genérico) → `null`. Sem e-mail, sem token: só reason, título sanitizado e data.
+   */
+  private async accessDenialOf(email: string): Promise<OwnAccessDenial | null> {
+    const last = await this.repo.latestLinkAttempt(email);
+    if (!last || last.kind !== 'tactiq_link.link_rejected' || !last.reason) return null;
+    if (last.outcome !== 'access_denied' && last.outcome !== 'access_unrecognized') return null;
+    return { reason: last.reason, title: sanitizeAccessTitle(last.ref?.title), at: last.at.toISOString() };
   }
 
   async startLink(input: { uid: string; email: string }): Promise<{ authorizeUrl: string }> {

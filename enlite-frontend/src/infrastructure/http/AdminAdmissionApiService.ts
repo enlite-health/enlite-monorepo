@@ -141,6 +141,11 @@ export interface OwnTactiqLink {
    * momentos diferentes, e um back antigo não o envia — ausente é lido como `sem_relatorio`.
    */
   extension?: TactiqExtensionStatus;
+  /**
+   * Última tentativa de vínculo negada por falta de acesso (trilha, design D7/D9). OPCIONAL pelo mesmo motivo de `extension`
+   * (deploy desencontrado): ausente = sem negativa. `reason` é um código interno (nunca exibir); `title` vem do Tactiq (só texto).
+   */
+  accessDenial?: { reason: string; title: string | null; at: string } | null;
 }
 
 export type ResendKind = 'confirmation' | 'reminder_30min';

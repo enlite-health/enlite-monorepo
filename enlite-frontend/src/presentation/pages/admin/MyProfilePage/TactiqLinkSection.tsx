@@ -47,6 +47,12 @@ function bannerFrom(params: URLSearchParams): ReturnBanner {
   return outcome === 'linked' || outcome === 'error' ? { kind: outcome } : null;
 }
 
+/** Chave i18n da orientação, escolhida pelo `reason` SALVO (nunca pela URL); o código não é exibido. */
+function denialKey(reason: string, title: string | null): 'accessSeat' | 'accessGeneric' | 'accessGenericNoTitle' {
+  if (reason === 'scope_without_details' || reason === 'access_action:request_seat') return 'accessSeat';
+  return reason.startsWith('access_action:') && title ? 'accessGeneric' : 'accessGenericNoTitle';
+}
+
 interface Props {
   /** Redireciona o navegador para o OAuth do Tactiq (injetável: o jsdom não navega). */
   redirect?: (url: string) => void;
@@ -95,6 +101,7 @@ export default function TactiqLinkSection({ redirect = (url) => window.location.
   const locale = i18n.language.toLowerCase().startsWith('pt') ? 'pt-BR' : 'es-AR';
   const when = (iso: string | null): string => (iso ? formatInstant(iso, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }, locale) ?? '—' : '—');
   const state = link?.status;
+  const denial = link?.accessDenial ?? null;
 
   return (
     <ProfileCard title={t('admin.profile.tactiq.title')} description={t('admin.profile.tactiq.subtitle')} testId="tactiq-link-page" className="xl:col-span-2">
@@ -102,8 +109,15 @@ export default function TactiqLinkSection({ redirect = (url) => window.location.
       {banner?.kind === 'linked' && status === 'ok' && state === 'linked' && (
         <Text color="inherit" as="p" size="sm" role="status" className="rounded-lg bg-green-100 text-green-900 px-4 py-3" data-testid="tactiq-banner-linked">{tt('returnLinked')}</Text>
       )}
-      {banner?.kind === 'error' && (
+      {/* Com negativa salva a orientação explica o caso; o banner genérico não repete (nem contradiz). */}
+      {banner?.kind === 'error' && status !== 'loading' && !denial && (
         <Text color="inherit" as="p" size="sm" role="alert" className="rounded-lg bg-red-100 text-red-900 px-4 py-3" data-testid="tactiq-banner-error">{tt('returnError')}</Text>
+      )}
+
+      {status === 'ok' && denial && (
+        <Text color="inherit" as="p" size="sm" role="alert" className="rounded-lg bg-amber-100 text-amber-900 px-4 py-3" data-testid="tactiq-access-denial">
+          {t(`admin.tactiqLink.${denialKey(denial.reason, denial.title)}`, { title: denial.title ?? '' })}
+        </Text>
       )}
 
       <div data-testid="tactiq-link-card">

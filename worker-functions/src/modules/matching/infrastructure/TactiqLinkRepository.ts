@@ -203,6 +203,20 @@ export class TactiqLinkRepository {
     );
   }
 
+  /** A ÚLTIMA tentativa de vínculo na trilha (`linked` ou `link_rejected`), a mais nova primeiro; sem evento → `null`. */
+  async latestLinkAttempt(
+    email: string,
+    ex: Db = this.db,
+  ): Promise<{ kind: string; outcome: string | null; reason: string | null; ref: Record<string, unknown> | null; at: Date } | null> {
+    const { rows } = await ex.query(
+      `SELECT kind, outcome, reason, ref, at FROM admission_events
+        WHERE lower(host_email) = lower($1) AND kind = ANY($2::text[])
+        ORDER BY at DESC, id DESC LIMIT 1`,
+      [email, ['tactiq_link.linked', 'tactiq_link.link_rejected']],
+    );
+    return rows[0] ?? null;
+  }
+
   /** Quem NÃO tem linha: já avisei `missing`? (lock por e-mail serializa duas execuções simultâneas). */
   async claimMissingNotification(email: string, ex: Db): Promise<boolean> {
     await ex.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`tactiq_missing:${email.toLowerCase()}`]);
