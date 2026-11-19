@@ -10,6 +10,8 @@
  *             -> voltar do navegador -> a lista com os MESMOS `from`/`to` e os mesmos totais. Há 1 evento com importação travada.
  *  2 alt    — período sem evento: `enquadres-empty` com o intervalo e "0 encuadres · 0 convocados".
  *  3 alt    — staff só com `vacancy:read`: item ausente do menu, `/admin/enquadres` direto termina fora da lista e a API responde 403.
+ *             Spec 094: as 3 colunas de desfecho (`enquadres-row-selected|quick-response|rejected`) de cada linha = SQL independente
+ *             (estágio vigente no aberto, carimbo no encerrado, 0 no cancelado) e a tabela não rola na horizontal a 1440 px.
  *  4 alt    — recusa do SERVIDOR: ator só-AR abre `?country=BR`, a API responde 403 `COUNTRY_SCOPE_REQUIRED` e a tela mostra a mensagem
  *             traduzida (pelo `code`) + "Reintentar", sem nenhuma linha.
  *
@@ -19,7 +21,7 @@
  */
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import {
-  safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT, type MockUser,
+  safeSql, psql, scalar, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT, type MockUser,
 } from '../helpers/abac-stack-helper';
 import { seedEnquadres076, cleanupEnquadres076, contagemSql, somaDias, digitadoDe, type Seed076 } from '../helpers/enquadres-076-seed';
 
@@ -37,6 +39,47 @@ let chefeGroupId = '';
 let soVagaGroupId = '';
 
 /** "N encuadre(s) · M convocado(s)" como a tela escreve (es, plural do i18n). */
+/** Colunas de desfecho esperadas por SQL (régua independente da tela): aberto = estágio vigente; encerrado = carimbo; cancelado = 0. */
+function desfechoSql(eventId: string): { selected: number; quick: number; rejected: number } {
+  const conta = (stage: string, outcome: string): number => Number(scalar(
+    `SELECT count(*) FROM enquadre_event_participants p
+       JOIN enquadre_events ev ON ev.id = p.event_id
+       LEFT JOIN worker_job_applications wja ON wja.worker_id = p.worker_id AND wja.job_posting_id = p.job_posting_id
+      WHERE p.event_id = '${eventId}' AND p.release_kind IS DISTINCT FROM 'removed'
+        AND ((ev.status = 'open' AND wja.application_funnel_stage = '${stage}') OR (ev.status = 'closed' AND p.outcome = '${outcome}'))`,
+  ));
+  return { selected: conta('SELECTED', 'selected'), quick: conta('QUICK_RESPONSE_TEAM', 'quick_response'), rejected: conta('REJECTED', 'rejected') };
+}
+
+/** As 3 células de desfecho da linha do evento == SQL, lidas da tela. */
+async function conferirDesfecho(page: Page, eventId: string): Promise<void> {
+  const esperado = desfechoSql(eventId);
+  const linha = page.locator(`[data-testid="enquadres-row"][data-event-id="${eventId}"]`);
+  await expect(linha.getByTestId('enquadres-row-selected')).toHaveText(String(esperado.selected));
+  await expect(linha.getByTestId('enquadres-row-quick-response')).toHaveText(String(esperado.quick));
+  await expect(linha.getByTestId('enquadres-row-rejected')).toHaveText(String(esperado.rejected));
+}
+
+/** Nada rola na horizontal: nem o contêiner rolável mais próximo da tabela, nem a página. */
+async function semRolagemHorizontal(page: Page): Promise<void> {
+  const medidas = await page.getByTestId('enquadres-row').first().evaluate((row) => {
+    let el: HTMLElement | null = row.parentElement;
+    let conteiner: HTMLElement | null = null;
+    while (el && !conteiner) {
+      const ox = getComputedStyle(el).overflowX;
+      if (ox === 'auto' || ox === 'scroll') conteiner = el;
+      el = el.parentElement;
+    }
+    const doc = document.documentElement;
+    return {
+      conteiner: conteiner ? { scroll: conteiner.scrollWidth, client: conteiner.clientWidth } : null,
+      pagina: { scroll: doc.scrollWidth, client: doc.clientWidth },
+    };
+  });
+  if (medidas.conteiner) expect(medidas.conteiner.scroll, `contêiner da tabela ${JSON.stringify(medidas.conteiner)}`).toBeLessThanOrEqual(medidas.conteiner.client);
+  expect(medidas.pagina.scroll, `página ${JSON.stringify(medidas.pagina)}`).toBeLessThanOrEqual(medidas.pagina.client);
+}
+
 const totaisEs = (eventos: number, convocados: number): string =>
   `${eventos} ${eventos === 1 ? 'encuadre' : 'encuadres'} · ${convocados} ${convocados === 1 ? 'convocado' : 'convocados'}`;
 
@@ -89,6 +132,13 @@ test.describe('group-simulation-enquadres-076 — lista global de enquadres: sem
     soVagaGroupId = seedStaffInGroup({ uid: soVagaUid, email: soVaga.email, groupName: `Enq076 SoVaga ${RUN_ID}`, country: 'AR' }).groupId;
     grantCell(soVagaGroupId, 'vacancy', 'read');
     seed = seedEnquadres076(RUN_ID, chefeUid, HOST_A_NAME, HOST_B_NAME);
+    // Spec 094: o seed deixa todo mundo em COMPLETED; aqui põe estágios de resultado nos eventos ABERTOS (e1: 1 selecionado + 1 rejeitado;
+    // n1: 1 resposta rápida). O e2 (encerrado, carimbo `returned`) e o n2 (cancelado) seguem em 0/0/0 por regra.
+    const estagio = (w: string, stage: string): void => psql(
+      `UPDATE worker_job_applications SET application_funnel_stage = '${stage}' WHERE worker_id = '${w}' AND job_posting_id = '${seed.vacancyId}'`);
+    estagio(seed.workerIds[0], 'SELECTED');
+    estagio(seed.workerIds[1], 'REJECTED');
+    estagio(seed.workerIds[5], 'QUICK_RESPONSE_TEAM');
   });
 
   test.afterAll(() => {
@@ -114,6 +164,11 @@ test.describe('group-simulation-enquadres-076 — lista global de enquadres: sem
       await expect(page.locator(`[data-testid="enquadres-row"][data-event-id="${id}"]`)).toBeVisible();
     }
     await expect(page.locator(`[data-testid="enquadres-row"][data-event-id="${seed.events.n1}"]`)).toHaveCount(0);
+    // Spec 094: colunas de desfecho = SQL em cada linha da semana (controle positivo: o SQL tem de achar ao menos 1 de cada tipo no e1).
+    const desfechoE1 = desfechoSql(seed.events.e1);
+    expect(desfechoE1, 'a massa põe 1 selecionado e 1 rejeitado no e1').toMatchObject({ selected: 1, rejected: 1 });
+    for (const id of [seed.events.e1, seed.events.e2, seed.events.e3]) await conferirDesfecho(page, id);
+    await semRolagemHorizontal(page);
     // O evento com importação travada mostra o chip "Bloqueada" com o motivo traduzido no title.
     const travada = page.locator(`[data-testid="enquadres-row"][data-event-id="${seed.events.e3}"]`).getByTestId('enquadres-import-blocked');
     await expect(travada).toHaveAttribute('data-reason', 'no_link');
@@ -135,6 +190,8 @@ test.describe('group-simulation-enquadres-076 — lista global de enquadres: sem
     await expect(page.locator(`[data-testid="enquadres-row"][data-event-id="${seed.events.n1}"]`)).toBeVisible();
     await expect(page.locator(`[data-testid="enquadres-row"][data-event-id="${seed.events.e1}"]`)).toHaveCount(0);
     const totaisDaLista = (await page.getByTestId('enquadres-totals').innerText()).trim();
+    expect(desfechoSql(seed.events.n1), 'a massa põe 1 resposta rápida no n1').toMatchObject({ quick: 1 });
+    for (const id of [seed.events.n1, seed.events.n2]) await conferirDesfecho(page, id);
 
     // Clique na linha: o Kanban DAQUELE evento abre na vaga (assert pelo evento) e a URL é o link compartilhável.
     await page.locator(`[data-testid="enquadres-row"][data-event-id="${seed.events.n1}"]`).getByTestId('enquadres-row-host').click();
