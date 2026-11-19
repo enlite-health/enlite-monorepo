@@ -150,6 +150,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/patients/:id/photo → patient_identity:read',
         'GET /api/admin/patients/:id/vacancies → vacancy:read',
         'GET /api/admin/patients/:patientId/addresses → patient_address:read',
+        'GET /api/admin/patients/:patientId/daily-reports → daily_report:read', // spec 092 — informes da guarda; o texto sai só com daily_report_narrative:read (decidida no use case, fora de rota)
         'GET /api/admin/patients/chat-map → patient:read',
         'GET /api/admin/patients/funnel → patient:read',
         'GET /api/admin/patients/stats → patient:read',

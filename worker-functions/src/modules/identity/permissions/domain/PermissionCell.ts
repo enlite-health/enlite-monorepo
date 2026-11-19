@@ -88,6 +88,9 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   // Spec 017 (D299.3): o projeto terapêutico e os seus 2 catálogos, na MESMA família admin.patients.
   // `catalog_pathology_types` SAIU (08/09): tipo de patologia deriva do CID-11 — o sync marca a célula deprecada.
   patient_therapeutic_project: 'Pacientes',
+  // Spec 092 (F2): informe da guarda enviado pelo prestador. A estrutura e o TEXTO clínico têm células separadas (o texto é dado de saúde livre).
+  daily_report: 'Pacientes',
+  daily_report_narrative: 'Pacientes',
   catalog_therapeutic_objectives: 'Pacientes',
   catalog_therapeutic_activities: 'Pacientes',
   // Motivos de saída do serviço (migration 492): catálogo global de categorias genéricas, sem dado de saúde.
@@ -304,6 +307,12 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Ver e editar o VALOR-HORA dos serviços contratados: o preço do contrato cobrado à família ou '
     + 'obra social. Quem não tem a célula vê o campo redigido e não consegue gravá-lo.',
   // ── Spec 017 (D299; lex 08/09 C7): projeto terapêutico versionado e os seus catálogos ──
+  'daily_report:read':
+    'Ver os INFORMES DA GUARDA do paciente enviados pelos prestadores: data, prestador, respostas por objetivo e atividade, nota, atraso e o sinal '
+    + 'de aviso imediato. O RELATÓRIO DESCRITIVO (texto livre) só sai com `daily_report_narrative:read`. Dado sensível de saúde.',
+  'daily_report_narrative:read':
+    'Ler o TEXTO do relatório descritivo do informe da guarda (texto clínico livre escrito ou ditado pelo prestador). Exige também `daily_report:read`. '
+    + 'Sem esta célula o informe aparece com o texto oculto. Dado sensível de saúde.',
   'patient_therapeutic_project:read':
     'Ver o PROJETO TERAPÊUTICO do paciente: versões (major.minor), prazos, autor, serviço contratado '
     + 'escolhido, objetivos e atividades. A síntese clínica, o objetivo geral, o CID-11 e o tipo de patologia '

@@ -32,6 +32,8 @@ import {
   AdminPatientContractedServicesController,
   buildAdminTherapeuticProjectsController,
   createAdminTherapeuticProjectsRoutes,
+  createAdminDailyReportRoutes,
+  buildAdminDailyReportController,
   AdminServiceTeamController,
   createAdminServiceTeamRoutes,
   AdminServiceTeamContactController,
@@ -791,6 +793,9 @@ app.use(
   '/api/admin',
   createAdminTherapeuticProjectsRoutes(buildAdminTherapeuticProjectsController(), authMiddleware, permissionMiddleware),
 );
+
+// ========== Admin informes da guarda (spec 092) — leitura, com redação do texto por célula ==========
+app.use('/api/admin', createAdminDailyReportRoutes(buildAdminDailyReportController(), authMiddleware, permissionMiddleware));
 
 // ========== Quadro C — time do serviço contratado (cadeia Fase 10) ==========
 app.use('/api/admin', createAdminServiceTeamRoutes(new AdminServiceTeamController(), authMiddleware, permissionMiddleware));
