@@ -44,6 +44,7 @@ import './webhooksTwilio';
 import './worker';
 import './workerApplications';
 import './workerDocuments';
+import './workerDailyReport';
 import './workerItinerary';
 import './workerJobs';
 import './workerJobsByRadius';

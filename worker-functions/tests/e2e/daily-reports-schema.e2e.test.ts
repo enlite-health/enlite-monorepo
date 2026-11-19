@@ -202,9 +202,11 @@ describe('590 — informe da guarda: constraints, imutabilidade e privilégios (
       await limparGuarda(pool, t2);
       const g2 = await semearGuarda(pool, t2);
       const id = uuidv7();
+      // com pti_version_id preenchido: na cascata do purge o PTI pode sair ANTES do informe (achado do e2e da API)
+      const pti2 = await inserirPti(pool, { patientId: g2.patientId, serviceId: g2.serviceId, start: '2026-01-01', end: '2027-12-31', objectiveIds: [cat.objSn], activityIds: [cat.actSn] });
       await pool.query(
-        `INSERT INTO daily_reports (id, worker_id, slot_id, on_date, narrative, narrative_source, device_submitted_at, app_version) VALUES ($1, $2, $3, $4, 'NARRATIVA-ESPIA-092', 'TYPED', now(), '1')`,
-        [id, g2.workerId, g2.slotSegId, g2.onDate],
+        `INSERT INTO daily_reports (id, worker_id, slot_id, on_date, pti_version_id, narrative, narrative_source, device_submitted_at, app_version) VALUES ($1, $2, $3, $4, $5, 'NARRATIVA-ESPIA-092', 'TYPED', now(), '1')`,
+        [id, g2.workerId, g2.slotSegId, g2.onDate, pti2],
       );
       await pool.query(`INSERT INTO daily_report_answers (report_id, objective_id, scale_code, option_code) SELECT $1, id, 'SN', 'si' FROM therapeutic_specific_objectives WHERE daily_scale_code = 'SN' LIMIT 1`, [id]);
       await expect(pool.query(`DELETE FROM daily_reports WHERE id = $1`, [id])).rejects.toMatchObject({ code: '55000' });

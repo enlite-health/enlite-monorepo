@@ -9,9 +9,10 @@
 --          que a consulta por to_regclass) PASSA A BLOQUEAR de verdade.
 --   DC-7   informe IMUTÁVEL depois de recebido: UPDATE é sempre recusado (55000). DELETE só quando o PAI some (o purge do paciente entra por
 --          CASCADE de patient_contracted_services -> patient_itinerary_slot, molde 416/lex C5); DELETE direto, nunca.
---          ⚑ Divergência consciente do desenho: as respostas apontam ao informe com ON DELETE CASCADE (não RESTRICT) e o informe ao slot com
---          ON DELETE CASCADE. Com RESTRICT/NO ACTION o purge do paciente ficaria IMPOSSÍVEL assim que existisse 1 informe (lex C4: o dado
---          clínico morre com o paciente). A imutabilidade segue inteira: o trigger recusa DELETE direto e UPDATE.
+--          ⚑ Divergência consciente do desenho: as respostas apontam ao informe com ON DELETE CASCADE (não RESTRICT), e o informe ao slot e à
+--          versão do PTI também com ON DELETE CASCADE. Com RESTRICT/NO ACTION o purge do paciente ficaria IMPOSSÍVEL assim que existisse 1
+--          informe (lex C4: o dado clínico morre com o paciente; achado pelo e2e: o PTI sai antes do informe na cascata). A imutabilidade
+--          segue inteira: o trigger recusa UPDATE e DELETE direto; DELETE só com a cadeia informe → faixa → serviço → paciente QUEBRADA.
 --   DC-1   narrative: 1..8000 caracteres após btrim. É TEXTO CLÍNICO LIVRE: nunca em log, erro, métrica ou GBrain.
 --   F-5    a ocorrência é virtual (uuid v5 de slot|data|worker): NÃO é coluna. Paciente também não é coluna: deriva de
 --          slot -> patient_contracted_services -> patient_id (D514/D516, um dono, derivado nunca gravado).
@@ -30,7 +31,7 @@ CREATE TABLE IF NOT EXISTS daily_reports (
   worker_id           UUID        NOT NULL REFERENCES workers(id),
   slot_id             UUID        NOT NULL REFERENCES patient_itinerary_slot(id) ON DELETE CASCADE,
   on_date             DATE        NOT NULL,
-  pti_version_id      UUID        NULL REFERENCES patient_therapeutic_projects(id),
+  pti_version_id      UUID        NULL REFERENCES patient_therapeutic_projects(id) ON DELETE CASCADE,
   narrative           TEXT        NOT NULL,
   narrative_source    TEXT        NOT NULL,
   device_submitted_at TIMESTAMPTZ NOT NULL,
@@ -96,8 +97,14 @@ BEGIN
   IF TG_OP = 'UPDATE' THEN
     RAISE EXCEPTION 'daily_report_imutavel: informe recebido não se edita (DC-7)' USING ERRCODE = '55000';
   END IF;
-  -- DELETE: só quando o pai já sumiu (o que o CASCADE do purge do paciente faz); direto, nunca.
-  IF EXISTS (SELECT 1 FROM patient_itinerary_slot s WHERE s.id = OLD.slot_id) THEN
+  -- DELETE: só quando a cadeia faixa → serviço → paciente já está QUEBRADA (o que o CASCADE do purge faz, em qualquer ordem entre
+  -- faixa, serviço e versão do PTI); direto, nunca.
+  IF EXISTS (
+    SELECT 1 FROM patient_itinerary_slot s
+      JOIN patient_contracted_services c ON c.id = s.contracted_service_id
+      JOIN patients p ON p.id = c.patient_id
+     WHERE s.id = OLD.slot_id
+  ) THEN
     RAISE EXCEPTION 'daily_report_imutavel: informe recebido não se apaga (DC-7)' USING ERRCODE = '55000';
   END IF;
   RETURN OLD;

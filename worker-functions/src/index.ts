@@ -55,6 +55,7 @@ import {
   createAdminPatientPhotoRoutes,
 } from '@modules/case';
 import { WorkerItineraryMeController } from '@modules/case/interfaces/controllers/WorkerItineraryMeController';
+import { buildWorkerDailyReportController } from '@modules/case/interfaces/controllers/buildWorkerDailyReportController';
 import { WorkerJobsByRadiusController } from '@modules/matching/interfaces/controllers/WorkerJobsByRadiusController';
 import { createAdminConversationRoutes } from '@modules/conversation/interfaces/routes/adminConversationRoutes';
 import { createPatientDocumentsRoutes } from '@modules/patient-documents/interfaces/routes/patientDocumentsRoutes';
@@ -285,6 +286,7 @@ const adminController = new AdminController();
 const jobsController = new JobsController();
 const workerDocumentsMeController = new WorkerDocumentsMeController();
 const workerItineraryMeController = new WorkerItineraryMeController();
+const workerDailyReportMeController = buildWorkerDailyReportController();
 const workerJobsByRadiusController = new WorkerJobsByRadiusController();
 const adminWorkerDocumentsController = new AdminWorkerDocumentsController();
 const workerAdditionalDocsMeController = new WorkerAdditionalDocsMeController();
@@ -492,6 +494,17 @@ app.get('/api/workers/me/jobs', routeClass('client-policy'), authMiddleware.requ
 });
 app.get('/api/workers/me/itinerary', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
   workerItineraryMeController.getMine(req, res);
+});
+// spec 092: informe da guarda do prestador (escalas, molde por guarda, envio idempotente). Identidade só pelo token.
+// O param NÃO pode se chamar `:id`: o `requirePermission` o lê como o id do recurso `worker` (posse) — o id do informe não é de worker.
+app.get('/api/workers/me/daily-report-scales', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
+  workerDailyReportMeController.getScales(req, res);
+});
+app.get('/api/workers/me/daily-report-templates', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
+  workerDailyReportMeController.getTemplates(req, res);
+});
+app.put('/api/workers/me/daily-reports/:reportId', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+  workerDailyReportMeController.put(req, res);
 });
 app.put('/api/workers/me/general-info', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), appChannel(), (req: Request, res: Response) => {
   workerController.saveGeneralInfo(req, res);
