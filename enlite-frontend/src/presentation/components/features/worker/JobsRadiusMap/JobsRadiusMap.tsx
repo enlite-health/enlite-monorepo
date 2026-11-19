@@ -1,26 +1,11 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 import { PointsMap, type MapRing } from '@presentation/components/molecules/PointsMap/PointsMap';
 import type { JobRadiusKm } from '@domain/entities/WorkerJobByRadius';
 import type { WorkerJobsByRadiusState } from '@presentation/hooks/useWorkerJobsByRadius';
 import { groupByRegion, itemsWithin, nextRadius } from './radiusScope';
 import { RadiusSlider } from './RadiusSlider';
 import { useInView } from './useInView';
-
-/** Cartão "cargá tu dirección" — o `useNavigate` mora aqui, só montado neste estado (a home sem Router de teste segue montando). */
-function NoAddressCard(): JSX.Element {
-  const { t } = useTranslation();
-  const navigate = useNavigate();
-  return (
-    <div data-testid="radius-no-address" className="mb-6 flex flex-col gap-3 rounded-[20px] border border-[#d9d9d9] bg-white p-6 font-lexend sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm font-medium text-[#180149]">{t('jobsRadius.noAddress')}</p>
-      <button type="button" onClick={() => navigate('/worker/profile')} className="shrink-0 rounded-full bg-[#180149] px-5 py-2 text-sm font-medium text-white hover:bg-[#2a014d]">
-        {t('jobsRadius.goToProfile')}
-      </button>
-    </div>
-  );
-}
 
 interface JobsRadiusMapProps {
   state: WorkerJobsByRadiusState;
@@ -56,7 +41,8 @@ export function JobsRadiusMap({ state, radiusKm, onRadiusChange }: JobsRadiusMap
     </div>
   );
 
-  if (state.status === 'no_service_area') return <NoAddressCard />;
+  // 'incomplete' e 'idle' não desenham o mapa: quem decide é a home (aviso de cadastro / lista de sempre).
+  if (state.status === 'incomplete' || state.status === 'idle') return null;
   if (state.status === 'inactive') return card('radius-inactive', t('jobsRadius.inactive'));
   if (state.status === 'error' || !data) return card('radius-error', t('jobsRadius.error'));
 

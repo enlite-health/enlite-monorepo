@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
-import type { WorkerJobsByRadius } from '@domain/entities/WorkerJobByRadius';
+import type { MissingProfileItem, WorkerJobsByRadius } from '@domain/entities/WorkerJobByRadius';
 import { WorkerJobsByRadiusApiService, WorkerJobsByRadiusError } from '@infrastructure/http/WorkerJobsByRadiusApiService';
 
 export type WorkerJobsByRadiusState =
+  /** Sem usuário (desabilitado): a home segue como sempre. */
+  | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'ok'; data: WorkerJobsByRadius }
-  | { status: 'no_service_area' }
+  /** Cadastro completo: mapa + vagas do raio. `data.center` existe. */
+  | { status: 'ok'; data: WorkerJobsByRadius & { center: { lat: number; lng: number } } }
+  /** Faltam itens do cadastro (decisão 19/11): a home mostra o aviso, nunca mapa nem vagas. */
+  | { status: 'incomplete'; missing: MissingProfileItem[] }
   | { status: 'inactive' }
   | { status: 'error' };
 
@@ -17,15 +21,23 @@ export function useWorkerJobsByRadius(enabled: boolean): WorkerJobsByRadiusState
     if (!enabled) return;
     let cancelled = false;
     WorkerJobsByRadiusApiService.getHome()
-      .then((data) => { if (!cancelled) setState({ status: 'ok', data }); })
+      .then((data) => {
+        if (cancelled) return;
+        if (data.missing.length > 0 || !data.center) {
+          setState({ status: 'incomplete', missing: data.missing.length > 0 ? data.missing : ['address'] });
+        } else {
+          setState({ status: 'ok', data: { ...data, center: data.center } });
+        }
+      })
       .catch((err: unknown) => {
         if (cancelled) return;
-        if (err instanceof WorkerJobsByRadiusError && err.code === 'NO_SERVICE_AREA') setState({ status: 'no_service_area' });
+        // 409 só existe na rota SEM `view`; se vier, é "sem endereço".
+        if (err instanceof WorkerJobsByRadiusError && err.code === 'NO_SERVICE_AREA') setState({ status: 'incomplete', missing: ['address'] });
         else if (err instanceof WorkerJobsByRadiusError && err.code === 'ACCOUNT_INACTIVE') setState({ status: 'inactive' });
         else setState({ status: 'error' });
       });
     return () => { cancelled = true; };
   }, [enabled]);
 
-  return state;
+  return enabled ? state : { status: 'idle' };
 }

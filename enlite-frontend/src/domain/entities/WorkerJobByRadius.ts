@@ -17,12 +17,17 @@ export interface WorkerJobByRadius {
   already_applied: boolean;
 }
 
+/** O que a home exige do cadastro para mostrar mapa e vagas (decisão 19/11). */
+export type MissingProfileItem = 'address' | 'profession' | 'sex' | 'availability';
+
 export interface WorkerJobsByRadius {
   items: WorkerJobByRadius[];
-  /** Zona viva do PRÓPRIO prestador (3 casas). Só é lida: nenhuma tela manda lat/lng ao servidor. */
-  center: { lat: number; lng: number };
+  /** Zona viva do PRÓPRIO prestador (3 casas). Só é lida: nenhuma tela manda lat/lng ao servidor. Ausente só sem endereço. */
+  center?: { lat: number; lng: number };
   /** Quais filtros do perfil de match valeram. */
   applied: { schedule: boolean; profession: boolean; sex: boolean };
+  /** O que falta no cadastro; `[]` = completo. Com item faltando, `items` vem vazio. */
+  missing: MissingProfileItem[];
 }
 
 /** Paradas do controle de raio (D661), em km. */

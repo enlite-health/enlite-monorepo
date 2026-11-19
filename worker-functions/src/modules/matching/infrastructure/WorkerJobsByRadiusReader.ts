@@ -154,36 +154,44 @@ function toItem(r: Row): WorkerJobByRadius {
   };
 }
 
-/** Perfil do prestador para `view=home` (096): zona viva, disponibilidade declarada, profissão e sexo cifrado. */
-export interface WorkerHomeProfile extends MatchProfile {
-  /** Ponto da zona viva do PRÓPRIO prestador, 3 casas (~110 m). */
-  center: { lat: number; lng: number };
-  /** Sexo cifrado (KMS): o use case decifra 1x; nunca em SQL de lista nem em log. */
+/** Perfil do prestador para `view=home` (096): endereço da zona viva, disponibilidade declarada, profissão e sexo cifrado. */
+export interface WorkerHomeProfile {
+  /** Ponto da zona viva do PRÓPRIO prestador, 3 casas (~110 m); `null` = sem endereço com ponto. */
+  center: { lat: number; lng: number } | null;
+  /** Sexo cifrado (KMS): o use case decifra 1x, e só com cadastro completo; nunca em SQL de lista nem em log. */
   sexEncrypted: string | null;
+  occupation: string | null;
+  hasAvailability: boolean;
 }
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
+/** Uma linha por prestador, COM ou SEM zona viva (a home precisa dizer o que falta, inclusive o endereço). */
 export const HOME_PROFILE_SQL =
-  `SELECT wsa.latitude AS lat, wsa.longitude AS lng, wk.sex_encrypted,
+  `SELECT z.lat, z.lng, wk.sex_encrypted,
           COALESCE(wk.occupation, wk.profession) AS occupation,
           EXISTS (SELECT 1 FROM worker_availability wa WHERE wa.worker_id = wk.id) AS has_availability
    FROM workers wk
-   JOIN worker_service_areas wsa ON wsa.worker_id = wk.id AND wsa.deleted_at IS NULL
-   WHERE wk.id = $1 AND wsa.location IS NOT NULL AND NOT (wsa.latitude = 0 AND wsa.longitude = 0)
-   ORDER BY wsa.created_at DESC
-   LIMIT 1`;
+   LEFT JOIN LATERAL (
+     SELECT wsa.latitude AS lat, wsa.longitude AS lng
+     FROM worker_service_areas wsa
+     WHERE wsa.worker_id = wk.id AND wsa.deleted_at IS NULL
+       AND wsa.location IS NOT NULL AND NOT (wsa.latitude = 0 AND wsa.longitude = 0)
+     ORDER BY wsa.created_at DESC
+     LIMIT 1
+   ) z ON true
+   WHERE wk.id = $1`;
 
-/** `null` = sem zona viva com ponto (mesma régua do `w` da lista). */
+/** `null` = prestador inexistente (o use case já resolveu o id, então não acontece na prática). */
 export async function readWorkerHomeProfile(client: PoolClient, workerId: string): Promise<WorkerHomeProfile | null> {
   const res = await client.query<{
-    lat: string | number; lng: string | number; sex_encrypted: string | null; occupation: string | null; has_availability: boolean;
+    lat: string | number | null; lng: string | number | null; sex_encrypted: string | null; occupation: string | null; has_availability: boolean;
   }>(HOME_PROFILE_SQL, [workerId]);
   const r = res.rows[0];
   if (!r) return null;
   return {
-    center: { lat: round3(Number(r.lat)), lng: round3(Number(r.lng)) },
-    sexEncrypted: r.sex_encrypted,
+    center: r.lat === null || r.lng === null ? null : { lat: round3(Number(r.lat)), lng: round3(Number(r.lng)) },
+    sexEncrypted: r.sex_encrypted && r.sex_encrypted !== '' ? r.sex_encrypted : null,
     occupation: r.occupation && r.occupation.trim() !== '' ? r.occupation : null,
     hasAvailability: r.has_availability === true,
   };

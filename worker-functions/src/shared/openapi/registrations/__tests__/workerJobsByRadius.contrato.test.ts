@@ -44,15 +44,18 @@ describe('contrato: item de GET /api/workers/me/jobs', () => {
 });
 
 describe('contrato 096: view=home', () => {
-  it('CA-4 o documento descreve view, center e applied', () => {
+  it('CA-4 o documento descreve view, center, applied e missing', () => {
     const op = JSON.stringify(buildOpenApiDocument().paths['/api/workers/me/jobs']);
-    for (const s of ['"view"', '"center"', '"applied"', '"schedule"', '"profession"', '"sex"']) expect(op).toContain(s);
+    for (const s of ['"view"', '"center"', '"applied"', '"missing"', '"schedule"', '"profession"', '"sex"', '"availability"', '"address"']) expect(op).toContain(s);
   });
 
-  it('CA-3 center e applied passam no schema, strict; chave de vaga (lat/lng) em center é aceita só como lat/lng do prestador', () => {
-    const ok = { center: { lat: -37.977, lng: -57.551 }, applied: { schedule: true, profession: false, sex: true } };
+  it('CA-3 center, applied e missing passam no schema, strict; center é opcional (falta o endereço)', () => {
+    const ok = { center: { lat: -37.977, lng: -57.551 }, applied: { schedule: true, profession: false, sex: true }, missing: ['profession'] };
     expect(WorkerJobsByRadiusHomeExtras.strict().safeParse(ok).success).toBe(true);
+    const { center: _c, ...semEndereco } = { ...ok, missing: ['address'] };
+    expect(WorkerJobsByRadiusHomeExtras.strict().safeParse(semEndereco).success).toBe(true);
     expect(WorkerJobsByRadiusHomeExtras.strict().safeParse({ ...ok, address: 'x' }).success).toBe(false);
+    expect(WorkerJobsByRadiusHomeExtras.strict().safeParse({ ...ok, missing: ['clinical_text'] }).success).toBe(false);
     expect(Object.keys(WorkerJobByRadiusItem.shape)).not.toEqual(expect.arrayContaining(['lat', 'lng']));
   });
 });

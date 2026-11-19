@@ -12,8 +12,6 @@ import { JobsRadiusMap } from './JobsRadiusMap';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string, o?: Record<string, unknown>) => (o ? `${k}:${JSON.stringify(o)}` : k) }),
 }));
-const mockNavigate = vi.fn();
-vi.mock('react-router-dom', () => ({ useNavigate: () => mockNavigate }));
 
 const pointsMapProps = vi.fn();
 vi.mock('@presentation/components/molecules/PointsMap/PointsMap', () => ({
@@ -26,12 +24,12 @@ vi.mock('@presentation/components/molecules/PointsMap/PointsMap', () => ({
 const job = (id: string, d: number, nb: string | null): WorkerJobByRadius => ({
   id, case_number: 1, vacancy_number: 1, title: 't', service: null, neighborhood: nb, city: null, state: null, worker_type: [], distance_km: d, already_applied: false,
 });
-const data = (items: WorkerJobByRadius[], schedule = true): WorkerJobsByRadius => ({
-  items, center: { lat: -34.6, lng: -58.38 }, applied: { schedule, profession: true, sex: true },
+const data = (items: WorkerJobByRadius[], schedule = true): WorkerJobsByRadius & { center: { lat: number; lng: number } } => ({
+  items, center: { lat: -34.6, lng: -58.38 }, applied: { schedule, profession: true, sex: true }, missing: [],
 });
 const ok = (items: WorkerJobByRadius[], schedule = true): WorkerJobsByRadiusState => ({ status: 'ok', data: data(items, schedule) });
 
-beforeEach(() => { pointsMapProps.mockClear(); mockNavigate.mockClear(); });
+beforeEach(() => { pointsMapProps.mockClear(); });
 
 describe('JobsRadiusMap', () => {
   it('feliz: círculo (rings + fitRadiusKm + centro da zona), contagem e chips somam o total, inclusive "Sin barrio"', () => {
@@ -56,11 +54,11 @@ describe('JobsRadiusMap', () => {
     expect(screen.getAllByTestId('radius-region')).toHaveLength(1);
   });
 
-  it('409 (sem endereço) → cartão de cadastrar e botão leva ao perfil; sem mapa', () => {
-    render(<JobsRadiusMap state={{ status: 'no_service_area' }} radiusKm={10} onRadiusChange={vi.fn()} />);
-    expect(screen.getByTestId('radius-no-address')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'jobsRadius.goToProfile' }));
-    expect(mockNavigate).toHaveBeenCalledWith('/worker/profile');
+  it("cadastro incompleto ('incomplete') e sem usuário ('idle'): este componente não desenha nada (o aviso e a lista são da home)", () => {
+    const { container, rerender } = render(<JobsRadiusMap state={{ status: 'incomplete', missing: ['address'] }} radiusKm={10} onRadiusChange={vi.fn()} />);
+    expect(container).toBeEmptyDOMElement();
+    rerender(<JobsRadiusMap state={{ status: 'idle' }} radiusKm={10} onRadiusChange={vi.fn()} />);
+    expect(container).toBeEmptyDOMElement();
     expect(screen.queryByTestId('points-map')).not.toBeInTheDocument();
   });
 

@@ -19,11 +19,14 @@ export const WorkerJobByRadiusItem = z.object({
 
 /** `view=home` (096): ponto da zona viva do PRÓPRIO prestador (3 casas) e quais filtros do perfil de match valeram. */
 export const WorkerJobsByRadiusHomeExtras = z.object({
-  center: z.object({ lat: z.number(), lng: z.number() }).openapi({ description: 'Zona viva do próprio prestador, arredondada a 3 casas (~110 m). Nunca o ponto de uma vaga.' }),
+  center: z.object({ lat: z.number(), lng: z.number() }).optional().openapi({ description: 'Zona viva do próprio prestador, arredondada a 3 casas (~110 m). Nunca o ponto de uma vaga. Ausente só quando falta o endereço (`missing` inclui `address`).' }),
   applied: z.object({
-    schedule: z.boolean().openapi({ description: 'true quando o prestador declarou disponibilidade e o horário filtrou (por dia).' }),
-    profession: z.boolean().openapi({ description: 'true quando o prestador tem profissão e a profissão filtrou.' }),
-    sex: z.boolean().openapi({ description: 'true: o sexo exigido pela vaga sempre vale.' }),
+    schedule: z.boolean().openapi({ description: 'true quando o prestador declarou disponibilidade (o horário filtra, por dia).' }),
+    profession: z.boolean().openapi({ description: 'true quando o prestador tem profissão (a profissão filtra).' }),
+    sex: z.boolean().openapi({ description: 'true quando o prestador tem sexo cadastrado (o sexo exigido pela vaga filtra).' }),
+  }),
+  missing: z.array(z.enum(['address', 'profession', 'sex', 'availability'])).openapi({
+    description: 'O que falta no cadastro para a home mostrar mapa e vagas (decisão 19/11). `[]` = completo. Com item faltando, `items` vem vazio.',
   }),
 });
 
@@ -37,7 +40,7 @@ registry.registerPath({
   description:
     'Identidade só pelo token (req.user.uid); nenhum header de identidade é lido. Nunca devolve o endereço exato da vaga. ' +
     'Prestador de teste vê só vagas de teste; prestador real vê as vagas do feed público. ' +
-    'Com `view=home` (096) aplica o perfil de match (dias que cobre, profissão, sexo exigido) e devolve `center` e `applied`; sem `view`, nada muda.',
+    'Com `view=home` (096) a rota exige cadastro completo (endereço, profissão, sexo, disponibilidade): faltando algum, devolve `items: []` e `missing`; completo, aplica o perfil de match (dias que cobre, profissão, sexo exigido) e devolve `center`, `applied` e `missing: []`. Sem `view`, nada muda (409 NO_SERVICE_AREA sem endereço).',
   security: [{ firebaseAuth: [] }],
   request: {
     query: z.object({

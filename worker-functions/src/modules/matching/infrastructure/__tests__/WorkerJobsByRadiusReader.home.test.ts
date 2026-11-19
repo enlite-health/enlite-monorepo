@@ -47,7 +47,15 @@ describe('WorkerJobsByRadiusReader — view=home', () => {
     expect(out).toEqual({ center: { lat: -37.977, lng: -57.551 }, sexEncrypted: 'cifra', occupation: null, hasAvailability: true });
   });
 
-  it('readWorkerHomeProfile: sem zona viva → null', async () => {
+  it('readWorkerHomeProfile: SEM zona viva ainda devolve o perfil (center null) para a home dizer o que falta', async () => {
+    const query = jest.fn(async () => ({ rows: [{ lat: null, lng: null, sex_encrypted: '', occupation: 'AT', has_availability: false }] }));
+    await expect(readWorkerHomeProfile({ query } as never, W)).resolves.toEqual({
+      center: null, sexEncrypted: null, occupation: 'AT', hasAvailability: false,
+    });
+    expect(HOME_PROFILE_SQL).toContain('LEFT JOIN LATERAL');
+  });
+
+  it('readWorkerHomeProfile: prestador inexistente → null', async () => {
     await expect(readWorkerHomeProfile({ query: jest.fn(async () => ({ rows: [] })) } as never, W)).resolves.toBeNull();
   });
 

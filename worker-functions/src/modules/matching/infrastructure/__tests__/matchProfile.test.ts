@@ -2,7 +2,7 @@
  * matchProfile — spec 096 (DD-1, CA-2): horário (por dia), profissão e sexo, cada um com positivo e negativo.
  * Funções puras: o teste lê o mesmo texto que roda. A prova contra o banco é o e2e de back (T104).
  */
-import { matchProfileSql, passesSex, profileApplied } from '../matchProfile';
+import { matchProfileSql, MISSING_PROFILE_ITEMS, missingProfileItems, passesSex, profileApplied, type ProfileCompleteness } from '../matchProfile';
 
 const OPTS = { jp: 'jp', workerParam: '$2', occupationParam: '$4' };
 
@@ -68,5 +68,30 @@ describe('profileApplied', () => {
   it('diz quais filtros valeram', () => {
     expect(profileApplied({ hasAvailability: true, occupation: 'AT' })).toEqual({ schedule: true, profession: true, sex: true });
     expect(profileApplied({ hasAvailability: false, occupation: null })).toEqual({ schedule: false, profession: false, sex: true });
+  });
+});
+
+describe('missingProfileItems — cadastro completo para a home (decisão 19/11)', () => {
+  const FULL: ProfileCompleteness = { hasAddress: true, hasProfession: true, hasSex: true, hasAvailability: true };
+
+  it('completo → nada falta', () => {
+    expect(missingProfileItems(FULL)).toEqual([]);
+  });
+
+  it.each([
+    ['hasAddress', 'address'],
+    ['hasProfession', 'profession'],
+    ['hasSex', 'sex'],
+    ['hasAvailability', 'availability'],
+  ] as const)('só %s faltando → exatamente [%s]', (campo, item) => {
+    expect(missingProfileItems({ ...FULL, [campo]: false })).toEqual([item]);
+  });
+
+  it('dois faltando → os dois, na ordem em que a tela pede', () => {
+    expect(missingProfileItems({ ...FULL, hasSex: false, hasAddress: false })).toEqual(['address', 'sex']);
+  });
+
+  it('tudo faltando → os 4 itens', () => {
+    expect(missingProfileItems({ hasAddress: false, hasProfession: false, hasSex: false, hasAvailability: false })).toEqual([...MISSING_PROFILE_ITEMS]);
   });
 });

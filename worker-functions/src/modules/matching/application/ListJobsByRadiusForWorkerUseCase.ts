@@ -19,13 +19,21 @@ import {
   readWorkerHomeProfile,
   type WorkerJobByRadius,
 } from '../infrastructure/WorkerJobsByRadiusReader';
-import { passesSex, profileApplied, type MatchProfileApplied } from '../infrastructure/matchProfile';
+import {
+  missingProfileItems,
+  passesSex,
+  type MatchProfileApplied,
+  type MissingProfileItem,
+} from '../infrastructure/matchProfile';
 
 export const JOB_RADII_KM = [5, 10, 15, 20, 50, 100] as const;
 
 export interface HomeExtras {
+  /** Ausente só quando falta o endereço (`missing` inclui 'address'). */
   center: { lat: number; lng: number };
   applied: MatchProfileApplied;
+  /** O que falta no cadastro para mostrar mapa e vagas; `[]` = completo. Com item faltando, `items` vem vazio. */
+  missing: MissingProfileItem[];
 }
 
 export type ListJobsByRadiusResult =
@@ -81,7 +89,23 @@ export class ListJobsByRadiusForWorkerUseCase {
   private async executeHome(client: PoolClient, workerId: string, radiusKm: number): Promise<ListJobsByRadiusResult> {
     this.home ??= defaultHome();
     const profile = await this.home.profileReader(client, workerId);
-    if (profile === null) return { ok: false, code: 'NO_SERVICE_AREA' };
+    if (profile === null) return { ok: false, code: 'ACCOUNT_INACTIVE' };
+    // Cadastro incompleto (decisão do Gabriel, 19/11): sem endereço, profissão, sexo ou disponibilidade não há mapa nem vaga.
+    // A lista nem é consultada e o sexo nem é decifrado.
+    const missing = missingProfileItems({
+      hasAddress: profile.center !== null,
+      hasProfession: profile.occupation !== null,
+      hasSex: profile.sexEncrypted !== null,
+      hasAvailability: profile.hasAvailability,
+    });
+    const applied = {
+      schedule: profile.hasAvailability,
+      profession: profile.occupation !== null,
+      sex: profile.sexEncrypted !== null,
+    };
+    if (missing.length > 0) {
+      return { ok: true, items: [], ...(profile.center ? { center: profile.center } : {}), applied, missing };
+    }
     const rows = await this.home.homeReader(client, { workerId, radiusKm, profile });
     // 1 decrypt por requisição, e só se alguma vaga restringe sexo.
     const restricts = rows.some((r) => r.required_sex !== null && r.required_sex !== '');
@@ -89,6 +113,6 @@ export class ListJobsByRadiusForWorkerUseCase {
     const items = rows
       .filter((r) => passesSex(r.required_sex, workerSex))
       .map(({ required_sex: _omit, ...item }) => item);
-    return { ok: true, items, center: profile.center, applied: profileApplied(profile) };
+    return { ok: true, items, center: profile.center as { lat: number; lng: number }, applied, missing };
   }
 }

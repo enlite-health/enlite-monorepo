@@ -5,6 +5,7 @@ import { useWorkerApi } from '@presentation/hooks/useWorkerApi';
 import { AppLayout } from '@presentation/components/templates/DashboardLayout';
 import { JobsEmbeddedSection } from '@presentation/components/features/worker/JobsEmbeddedSection';
 import { JobsRadiusMap } from '@presentation/components/features/worker/JobsRadiusMap';
+import { CompleteProfileNotice } from '@presentation/components/features/worker/JobsRadiusMap/CompleteProfileNotice';
 import { DEFAULT_RADIUS_KM, itemsWithin } from '@presentation/components/features/worker/JobsRadiusMap/radiusScope';
 import { useWorkerJobsByRadius } from '@presentation/hooks/useWorkerJobsByRadius';
 import type { JobRadiusKm } from '@domain/entities/WorkerJobByRadius';
@@ -24,8 +25,9 @@ export const WorkerHome = (): JSX.Element => {
   const navItems = useWorkerNavItems();
   const profilePhoto = useWorkerRegistrationStore((state) => state.data.generalInfo.profilePhoto);
 
-  // 096: mapa por raio. Uma chamada (100 km, perfil de match); o slider filtra no cliente. Falha/sem endereço ⇒ `radiusScope`
-  // fica null e a lista pública segue inteira, com o cartão do mapa no topo.
+  // 096: mapa por raio. Uma chamada (100 km, perfil de match); o slider filtra no cliente. Cadastro incompleto (endereço,
+  // profissão, sexo ou disponibilidade) ⇒ aviso amigável NO LUGAR do mapa e da lista (nem a pública). Falha de rede ou conta
+  // inativa ⇒ `radiusScope` fica null e a lista pública segue inteira, com o cartão do mapa no topo.
   const radiusState = useWorkerJobsByRadius(Boolean(user?.id));
   const [radiusKm, setRadiusKm] = useState<JobRadiusKm>(DEFAULT_RADIUS_KM);
   const radiusScope = useMemo(() => {
@@ -80,14 +82,18 @@ export const WorkerHome = (): JSX.Element => {
         />
       )}
 
+      {radiusState.status === 'incomplete' && <CompleteProfileNotice missing={radiusState.missing} />}
       <JobsRadiusMap state={radiusState} radiusKm={radiusKm} onRadiusChange={setRadiusKm} />
 
-      <JobsEmbeddedSection
-        radiusScope={radiusScope}
-        isRegistrationComplete={isFullyRegistered}
-        missingFields={workerData?.missingFields ?? null}
-        profession={workerData?.profession}
-      />
+      {/* Sem lista enquanto carrega (evita o "pisca" da lista pública) e sem lista nenhuma com cadastro incompleto. */}
+      {radiusState.status !== 'incomplete' && radiusState.status !== 'loading' && (
+        <JobsEmbeddedSection
+          radiusScope={radiusScope}
+          isRegistrationComplete={isFullyRegistered}
+          missingFields={workerData?.missingFields ?? null}
+          profession={workerData?.profession}
+        />
+      )}
     </AppLayout>
   );
 };

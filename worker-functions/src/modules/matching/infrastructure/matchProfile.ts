@@ -8,8 +8,11 @@
  * - horário: todo dia do horário efetivo da vaga está em `worker_availability.day_of_week` do prestador. Só por DIA (como o
  *   match). Prestador SEM disponibilidade declarada não é filtrado (anti-exclusão, igual ao match); vaga sem horário passa.
  * - profissão: `COALESCE(workers.occupation, workers.profession)` ∈ profissões efetivas da vaga. Vaga com lista vazia passa
- *   (vazio ≠ ausência: divergência declarada do match, que joga `'[]' ? occ` como falso). Prestador sem profissão não é
- *   filtrado e `applied.profession` diz isso (decisão do executor, ver LISTA do PR).
+ *   (vazio ≠ ausência: divergência declarada do match, que joga `'[]' ? occ` como falso).
+ *
+ * CADASTRO COMPLETO (decisão do Gabriel, 19/11): a home só mostra mapa e vagas quando o prestador tem TUDO o que o perfil de
+ * match precisa — endereço (zona viva), profissão, sexo e disponibilidade. `missingProfileItems` diz o que falta; com qualquer
+ * item faltando a lista nem é consultada (as funções acima seguem puras e testáveis por ramo).
  */
 import { normalizeSexValue } from '@shared/utils/normalizeSexValue';
 import { vacancyEffectiveRequiredProfessionsSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
@@ -29,6 +32,28 @@ export interface MatchProfileApplied {
 
 export function profileApplied(profile: MatchProfile): MatchProfileApplied {
   return { schedule: profile.hasAvailability, profession: profile.occupation !== null, sex: true };
+}
+
+/** O que a home exige do cadastro para mostrar mapa e vagas (ordem = ordem em que a tela pede). */
+export type MissingProfileItem = 'address' | 'profession' | 'sex' | 'availability';
+export const MISSING_PROFILE_ITEMS = ['address', 'profession', 'sex', 'availability'] as const;
+
+/** Estado do cadastro, sem nenhum dado clínico nem o valor do sexo: só "tem / não tem". */
+export interface ProfileCompleteness {
+  hasAddress: boolean;
+  hasProfession: boolean;
+  hasSex: boolean;
+  hasAvailability: boolean;
+}
+
+/** Itens que faltam para a home mostrar mapa e vagas; `[]` = cadastro completo. */
+export function missingProfileItems(c: ProfileCompleteness): MissingProfileItem[] {
+  const missing: MissingProfileItem[] = [];
+  if (!c.hasAddress) missing.push('address');
+  if (!c.hasProfession) missing.push('profession');
+  if (!c.hasSex) missing.push('sex');
+  if (!c.hasAvailability) missing.push('availability');
+  return missing;
 }
 
 /**

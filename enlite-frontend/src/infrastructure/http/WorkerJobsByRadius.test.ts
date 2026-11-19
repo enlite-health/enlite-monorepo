@@ -10,7 +10,8 @@ vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
   FirebaseAuthService: class { getIdToken = async () => 'tok'; },
 }));
 
-const HOME = { items: [], center: { lat: 1, lng: 2 }, applied: { schedule: true, profession: true, sex: true } };
+const HOME = { items: [], center: { lat: 1, lng: 2 }, applied: { schedule: true, profession: true, sex: true }, missing: [] };
+const INCOMPLETE = { items: [], applied: { schedule: false, profession: true, sex: true }, missing: ['address', 'availability'] };
 const reply = (status: number, body: unknown) => vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: status < 300, status, json: async () => body } as Response);
 
 beforeEach(() => { vi.restoreAllMocks(); });
@@ -33,7 +34,7 @@ describe('WorkerJobsByRadiusApiService', () => {
 });
 
 describe('corpo que não é a resposta da rota', () => {
-  it('200 sem items/center/applied (ex.: stub {success,data}) → HTTP_ERROR no serviço e estado error no hook; a home não cai', async () => {
+  it('200 sem items/applied/missing (ex.: stub {success,data}) → HTTP_ERROR no serviço e estado error no hook; a home não cai', async () => {
     reply(200, { success: true, data: { id: 'x' } });
     await expect(WorkerJobsByRadiusApiService.getHome()).rejects.toMatchObject({ code: 'HTTP_ERROR' });
     const { result } = renderHook(() => useWorkerJobsByRadius(true));
@@ -44,7 +45,7 @@ describe('corpo que não é a resposta da rota', () => {
 describe('useWorkerJobsByRadius', () => {
   it.each([
     [200, HOME, 'ok'],
-    [409, { code: 'NO_SERVICE_AREA' }, 'no_service_area'],
+    [409, { code: 'NO_SERVICE_AREA' }, 'incomplete'],
     [403, { code: 'ACCOUNT_INACTIVE' }, 'inactive'],
     [500, { success: false }, 'error'],
   ])('HTTP %i → %s', async (status, body, expected) => {
@@ -52,6 +53,22 @@ describe('useWorkerJobsByRadius', () => {
     const { result } = renderHook(() => useWorkerJobsByRadius(true));
     expect(result.current.status).toBe('loading');
     await waitFor(() => expect(result.current.status).toBe(expected));
+  });
+
+  it('200 com missing → incomplete com a lista do que falta (sem endereço, sem center)', async () => {
+    reply(200, INCOMPLETE);
+    const { result } = renderHook(() => useWorkerJobsByRadius(true));
+    await waitFor(() => expect(result.current).toEqual({ status: 'incomplete', missing: ['address', 'availability'] }));
+  });
+
+  it('409 NO_SERVICE_AREA (rota sem view) → incomplete [address]', async () => {
+    reply(409, { code: 'NO_SERVICE_AREA' });
+    const { result } = renderHook(() => useWorkerJobsByRadius(true));
+    await waitFor(() => expect(result.current).toEqual({ status: 'incomplete', missing: ['address'] }));
+  });
+
+  it('desabilitado → idle (a home segue como sempre)', () => {
+    expect(renderHook(() => useWorkerJobsByRadius(false)).result.current).toEqual({ status: 'idle' });
   });
 
   it('rede caída → error (a lista pública continua)', async () => {

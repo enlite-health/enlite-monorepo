@@ -534,6 +534,33 @@
       "mobileDescription": "Todos os serviços EnLite Health Solutions na palma da sua mão."
     }
   },
+  "profileNotice": {
+    "title": "Falta pouquinho para mostrar vagas perto de você",
+    "intro": "Para montar seu mapa e mostrar só as vagas que combinam com você, precisamos que complete estes dados:",
+    "items": {
+      "address": {
+        "label": "Seu endereço",
+        "why": "Assim calculamos quais vagas ficam perto de você.",
+        "action": "Cadastrar meu endereço"
+      },
+      "profession": {
+        "label": "Sua profissão",
+        "why": "Para mostrar as vagas do seu perfil (AT ou cuidador/a).",
+        "action": "Completar minha profissão"
+      },
+      "sex": {
+        "label": "Seu sexo",
+        "why": "Algumas vagas pedem um sexo específico.",
+        "action": "Completar meus dados"
+      },
+      "availability": {
+        "label": "Sua disponibilidade",
+        "why": "Os dias e horários em que você pode trabalhar.",
+        "action": "Cadastrar minha disponibilidade"
+      }
+    },
+    "footer": "Leva um instantinho, e depois seu mapa e suas vagas aparecem aqui."
+  },
   "jobsRadius": {
     "title": "Vagas perto do seu endereço",
     "sliderLabel": "Raio de busca em quilômetros",
@@ -546,8 +573,6 @@
     "noNeighborhood": "Sem bairro",
     "centerLabel": "Seu endereço",
     "mapUnavailable": "O mapa não está disponível no momento. As vagas continuam na lista.",
-    "noAddress": "Cadastre seu endereço para ver vagas perto de você.",
-    "goToProfile": "Cadastrar meu endereço",
     "inactive": "Sua conta não está ativa, por isso não podemos mostrar vagas perto de você.",
     "error": "Não conseguimos carregar o mapa de vagas. A lista de vagas continua disponível.",
     "completeAvailability": "Complete sua disponibilidade para ver só as vagas que cabem nos seus dias.",
