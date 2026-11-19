@@ -30,8 +30,11 @@ const DB_USER = 'enlite_admin';
 const DB_NAME = 'enlite_e2e';
 const PREFIX = 'E2E-096-';
 const PRINT_DIR = process.env.PRINT_DIR_096 || '';
-const LAT0 = -32.9468; // Rosario: longe do ponto (-34.6037, -58.3816) das outras massas de e2e, que entrariam na contagem do raio
-const LNG0 = -60.6393;
+// Base: Rosario (longe do ponto -34.6037,-58.3816 das outras massas de e2e, que entrariam na contagem do raio). Com
+// E2E096_BASE=ba (rodada isolada, para as fotos do mapa) a massa vai para Buenos Aires.
+const BA = process.env.E2E096_BASE === 'ba';
+const LAT0 = BA ? -34.6037 : -32.9468;
+const LNG0 = BA ? -58.3816 : -60.6393;
 
 function runSQL(sql: string): string {
   const escaped = sql.replace(/'/g, "'\\''");
@@ -83,18 +86,25 @@ function seedVacancies(): void {
   }
 }
 
-/** Prestador sintético: zona viva em (LAT0 + dLat), disponibilidade nos dias 1 e 3, ocupação AT, sexo F (cifrado como o stack de teste cifra). */
-function seedWorker(authUid: string, dLat: number | null): void {
+interface WorkerSeed { zona?: boolean; ocupacao?: boolean; sexo?: boolean; disponibilidade?: boolean; dLat?: number }
+
+/** Prestador sintético. Completo por padrão: zona viva em (LAT0 + dLat), disponibilidade nos dias 1 e 3, ocupação AT, sexo F
+ *  (cifrado como o stack de teste cifra). Cada flag `false` tira UM item do cadastro (decisão 19/11). */
+function seedWorker(authUid: string, o: WorkerSeed = {}): void {
+  const { zona = true, ocupacao = true, sexo = true, disponibilidade = true, dLat = 0 } = o;
   runSQL(`INSERT INTO workers (auth_uid, email, country, timezone, status, occupation, sex_encrypted)
-          VALUES ('${authUid}', '${authUid}@test.local', 'AR', 'America/Argentina/Buenos_Aires', 'INCOMPLETE_REGISTER', 'AT', 'RkVNQUxF');`);
+          VALUES ('${authUid}', '${authUid}@test.local', 'AR', 'America/Argentina/Buenos_Aires', 'INCOMPLETE_REGISTER',
+                  ${ocupacao ? "'AT'" : 'NULL'}, ${sexo ? "'RkVNQUxF'" : 'NULL'});`);
   const id = uuidOf(runSQL(`SELECT id FROM workers WHERE auth_uid = '${authUid}'`));
-  if (dLat !== null) {
+  if (zona) {
     runSQL(`INSERT INTO worker_service_areas (worker_id, latitude, longitude, radius_km, city, state, country)
             VALUES ('${id}', ${LAT0 + dLat}, ${LNG0}, 20, 'Buenos Aires', 'CABA', 'AR');`);
   }
-  for (const day of [1, 3]) {
-    runSQL(`INSERT INTO worker_availability (worker_id, day_of_week, start_time, end_time, timezone)
-            VALUES ('${id}', ${day}, '08:00', '18:00', 'America/Argentina/Buenos_Aires');`);
+  if (disponibilidade) {
+    for (const day of [1, 3]) {
+      runSQL(`INSERT INTO worker_availability (worker_id, day_of_week, start_time, end_time, timezone)
+              VALUES ('${id}', ${day}, '08:00', '18:00', 'America/Argentina/Buenos_Aires');`);
+    }
   }
 }
 
@@ -135,15 +145,23 @@ test.describe('@integration Home do prestador — mapa por raio (096)', () => {
   test.setTimeout(90_000);
   const stamp = Date.now();
   const uidMain = `${AUTH_PREFIX}main-${stamp}`;
-  const uidSemEndereco = `${AUTH_PREFIX}sem-end-${stamp}`;
   const uidLonge = `${AUTH_PREFIX}longe-${stamp}`;
+  const uidSemEndereco = `${AUTH_PREFIX}sem-end-${stamp}`;
+  const uidSemProfissao = `${AUTH_PREFIX}sem-prof-${stamp}`;
+  const uidSemDisp = `${AUTH_PREFIX}sem-disp-${stamp}`;
+  const uidDois = `${AUTH_PREFIX}dois-${stamp}`;
+  const uidSemSexo = `${AUTH_PREFIX}sem-sexo-${stamp}`;
 
   test.beforeAll(() => {
     cleanup();
     seedVacancies();
-    seedWorker(uidMain, 0);
-    seedWorker(uidSemEndereco, null);
-    seedWorker(uidLonge, -0.09);
+    seedWorker(uidMain);
+    seedWorker(uidLonge, { dLat: -0.09 });
+    seedWorker(uidSemEndereco, { zona: false });
+    seedWorker(uidSemProfissao, { ocupacao: false });
+    seedWorker(uidSemDisp, { disponibilidade: false });
+    seedWorker(uidDois, { ocupacao: false, disponibilidade: false });
+    seedWorker(uidSemSexo, { sexo: false });
   });
   test.afterAll(() => { cleanup(); });
 
@@ -169,6 +187,7 @@ test.describe('@integration Home do prestador — mapa por raio (096)', () => {
     // O mapa lido pelo DOM, nunca por tile (CA-10). Sem chave do Google: placeholder.
     const status = await page.getByTestId('points-map').getAttribute('data-map-status');
     expect(['unavailable', 'ready']).toContain(status);
+    if (process.env.MAP_REAL === '1') expect(status, 'MAP_REAL=1 exige o mapa carregado de verdade').toBe('ready');
     await expect(page.getByTestId('points-map')).toHaveAttribute('data-rings', '10');
     console.log(`MAPA data-map-status=${status} data-rings=10`);
 
@@ -192,18 +211,61 @@ test.describe('@integration Home do prestador — mapa por raio (096)', () => {
     console.log('CONTAGEM LIDA NA TELA  10km=3 (Palermo 2, Recoleta 1) | 15km=4 (+Quilmes 1) | 5km=2');
   });
 
-  test('home mapa raio — A1: sem endereço cadastrado → cartão de cadastrar; a lista pública continua', async ({ page }) => {
-    await goHome(page, uidSemEndereco);
-    await expect(page.getByTestId('radius-no-address')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId('radius-no-address')).toContainText('Cargá tu dirección');
+  /** Cadastro incompleto: aviso amigável com EXATAMENTE os itens que faltam, e nem mapa nem lista (nem a pública). */
+  async function expectAviso(page: Page, uid: string, itens: string[], print: string): Promise<void> {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.addInitScript(() => {
+      (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
+    });
+    await loginAsWorker(page, uid, `${uid}@test.local`);
+    await page.route('**/api/workers/me/jobs**', async (route) => {
+      const headers = { ...route.request().headers(), authorization: `Bearer ${buildMockToken(uid, `${uid}@test.local`)}` };
+      await route.continue({ headers });
+    });
+    await page.goto('/', { waitUntil: 'networkidle', timeout: 30_000 });
+    await expect(page.getByTestId('complete-profile-notice')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('profile-notice-item')).toHaveCount(itens.length);
+    expect(await page.getByTestId('profile-notice-item').evaluateAll((els) => els.map((e) => e.getAttribute('data-item')))).toEqual(itens);
     await expect(page.getByTestId('jobs-radius-section')).toHaveCount(0);
-    await expect(page.getByTestId('job-card').first()).toBeVisible({ timeout: 20_000 });
-    expect(await page.getByTestId('job-card').count()).toBeGreaterThanOrEqual(SEEDS.length - 2); // feed inteiro, sem escopo
-    await expect(page.getByTestId('job-distance')).toHaveCount(0);
-    await shot(page, 'home-mapa-raio-A1-sem-endereco.png');
+    await expect(page.getByTestId('points-map')).toHaveCount(0);
+    await expect(page.locator('#jobs-section')).toHaveCount(0);
+    await expect(page.getByTestId('job-card')).toHaveCount(0);
+    await shot(page, print);
+  }
+
+  test('home mapa raio — A1: sem endereço → aviso "Tu dirección" com botão para a aba certa; nem mapa nem lista', async ({ page }) => {
+    await expectAviso(page, uidSemEndereco, ['address'], 'aviso-sem-endereco-1440x900.png');
+    await page.getByRole('button', { name: 'Cargar mi dirección' }).click();
+    await expect(page).toHaveURL(/\/worker\/profile\?tab=address/);
   });
 
-  test('home mapa raio — A2: raio sem vaga → "Ampliar" leva à próxima parada e a lista cresce', async ({ page }) => {
+  test('home mapa raio — A2: sem profissão → aviso "Tu profesión"; o botão leva ao campo', async ({ page }) => {
+    await expectAviso(page, uidSemProfissao, ['profession'], 'aviso-sem-profissao-1440x900.png');
+    await page.getByRole('button', { name: 'Completar mi profesión' }).click();
+    await expect(page).toHaveURL(/tab=general&focus=profession/);
+  });
+
+  test('home mapa raio — A3: sem disponibilidade → aviso "Tu disponibilidad"; o botão leva à aba', async ({ page }) => {
+    await expectAviso(page, uidSemDisp, ['availability'], 'aviso-sem-disponibilidade-1440x900.png');
+    await page.getByRole('button', { name: 'Cargar mi disponibilidad' }).click();
+    await expect(page).toHaveURL(/tab=availability/);
+  });
+
+  test('home mapa raio — A4: sem sexo → aviso "Tu sexo"', async ({ page }) => {
+    await expectAviso(page, uidSemSexo, ['sex'], 'aviso-sem-sexo-1440x900.png');
+    await page.getByRole('button', { name: 'Completar mis datos' }).click();
+    await expect(page).toHaveURL(/tab=general&focus=sex/);
+  });
+
+  test('home mapa raio — A5: dois faltando (profissão e disponibilidade) → os dois itens, e a versão celular', async ({ page }) => {
+    await expectAviso(page, uidDois, ['profession', 'availability'], 'aviso-dois-faltando-1440x900.png');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByTestId('complete-profile-notice')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await shot(page, 'aviso-dois-faltando-390x844.png');
+  });
+
+  test('home mapa raio — A6: raio sem vaga → "Ampliar" leva à próxima parada e a lista cresce', async ({ page }) => {
     await goHome(page, uidLonge);
     await expect(page.getByTestId('radius-empty')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('radius-empty')).toContainText('Sin vacantes en 10 km');
@@ -240,5 +302,26 @@ test.describe('@integration Home do prestador — mapa por raio (096)', () => {
       if (w === 390) await shot(page, 'home-mapa-raio-390x844.png');
     }
     console.log('MEDIDAS\n' + medidas.join('\n'));
+  });
+
+  // Fotos do mapa (só com PRINT_DIR_096 e, para o mapa real, MAP_REAL=1 + E2E096_BASE=ba): raio 10 e 20 km, desktop e celular.
+  test('home mapa raio — fotos: 10 km e 20 km em 1440x900 e 390x844', async ({ page }) => {
+    test.skip(!PRINT_DIR, 'só gera fotos com PRINT_DIR_096');
+    await goHome(page, uidMain);
+    await expect(page.getByTestId('jobs-radius-section')).toBeVisible({ timeout: 20_000 });
+    for (const [w, h, tag] of [[1440, 900, '1440x900'], [390, 844, '390x844']] as const) {
+      await page.setViewportSize({ width: w, height: h });
+      for (const km of [10, 20]) {
+        while (Number((await page.getByTestId('radius-up-to').textContent())!.match(/(\d+)/)![1]) < km) await pressRadius(page, 'ArrowRight');
+        while (Number((await page.getByTestId('radius-up-to').textContent())!.match(/(\d+)/)![1]) > km) await pressRadius(page, 'ArrowLeft');
+        await page.getByTestId('radius-map-box').scrollIntoViewIfNeeded();
+        if (process.env.MAP_REAL === '1') {
+          await expect(page.getByTestId('points-map')).toHaveAttribute('data-map-status', 'ready', { timeout: 20_000 });
+          await expect(page.getByTestId('points-map')).toHaveAttribute('data-tiles', 'loaded', { timeout: 20_000 });
+          await page.waitForTimeout(1500);
+        }
+        await shot(page, `mapa-real-${km}km-${tag}.png`);
+      }
+    }
   });
 });

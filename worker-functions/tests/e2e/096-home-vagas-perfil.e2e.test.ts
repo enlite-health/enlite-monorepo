@@ -38,6 +38,7 @@ describe('096 home do prestador: vagas por raio com perfil de match @integration
   const api: AxiosInstance = createApiClient();
   let pool: Pool;
   let worker: JourneyWorker;
+  const extras: JourneyWorker[] = [];
   let token: string;
   const ids: Record<string, string> = {};
   const patientIds: string[] = [];
@@ -94,6 +95,11 @@ describe('096 home do prestador: vagas por raio com perfil de match @integration
     await pool.query(`DELETE FROM worker_availability WHERE worker_id = $1`, [worker.id]).catch(() => {});
     await pool.query(`DELETE FROM worker_service_areas WHERE worker_id = $1`, [worker.id]).catch(() => {});
     await pool.query(`DELETE FROM workers WHERE id = $1`, [worker.id]).catch(() => {});
+    for (const w of extras) {
+      await pool.query(`DELETE FROM worker_availability WHERE worker_id = $1`, [w.id]).catch(() => {});
+      await pool.query(`DELETE FROM worker_service_areas WHERE worker_id = $1`, [w.id]).catch(() => {});
+      await pool.query(`DELETE FROM workers WHERE id = $1`, [w.id]).catch(() => {});
+    }
     expect(await contagemDeTeste()).toBe(0);
     await pool.end();
   });
@@ -126,12 +132,44 @@ describe('096 home do prestador: vagas por raio com perfil de match @integration
       );
       for (const k of proibidas) expect(item).not.toHaveProperty(k);
     }
-    expect(Object.keys(r.data).sort()).toEqual(['applied', 'center', 'items']);
+    expect(Object.keys(r.data).sort()).toEqual(['applied', 'center', 'items', 'missing']);
   });
 
   it('view desconhecido é ignorado (não é erro): resposta igual à sem view', async () => {
     const r = await api.get('/api/workers/me/jobs?radius_km=10&view=qualquer', bearer());
     expect(r.status).toBe(200);
     expect(Object.keys(r.data)).toEqual(['items']);
+  });
+
+  // Decisão 19/11: sem cadastro completo (endereço, profissão, sexo, disponibilidade) não há mapa nem vaga.
+  async function incompleto(tag: string, opts: { zona: boolean; disponibilidade: boolean; sexo: boolean; ocupacao: boolean }) {
+    const w = await createWorker(api, tag);
+    extras.push(w);
+    const t = await getWorkerToken(api, w);
+    if (opts.zona) await saveServiceArea(api, t);
+    if (opts.disponibilidade) await saveAvailability(api, t);
+    await pool.query(`UPDATE workers SET occupation = $2, sex_encrypted = $3 WHERE id = $1`, [
+      w.id, opts.ocupacao ? 'AT' : null, opts.sexo ? Buffer.from('FEMALE', 'utf8').toString('base64') : null,
+    ]);
+    return api.get('/api/workers/me/jobs?radius_km=100&view=home', { headers: { Authorization: `Bearer ${t}` } });
+  }
+
+  it.each([
+    ['sem-endereco', { zona: false, disponibilidade: true, sexo: true, ocupacao: true }, ['address'], false],
+    ['sem-profissao', { zona: true, disponibilidade: true, sexo: true, ocupacao: false }, ['profession'], true],
+    ['sem-sexo', { zona: true, disponibilidade: true, sexo: false, ocupacao: true }, ['sex'], true],
+    ['sem-disponibilidade', { zona: true, disponibilidade: false, sexo: true, ocupacao: true }, ['availability'], true],
+    ['dois-faltando', { zona: false, disponibilidade: false, sexo: true, ocupacao: true }, ['address', 'availability'], false],
+  ] as const)('cadastro incompleto (%s) → 200, items vazio e missing = %j (nenhuma vaga vaza)', async (tag, opts, missing, temCenter) => {
+    const r = await incompleto(`inc-${tag}`, opts);
+    expect(r.status).toBe(200);
+    expect(r.data.items).toEqual([]);
+    expect(r.data.missing).toEqual(missing);
+    expect('center' in r.data).toBe(temCenter);
+  });
+
+  it('cadastro completo → missing []', async () => {
+    const r = await api.get('/api/workers/me/jobs?radius_km=10&view=home', bearer());
+    expect(r.data.missing).toEqual([]);
   });
 });
