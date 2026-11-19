@@ -1,5 +1,6 @@
 import type { TFunction } from 'i18next';
 import type { ComboboxOption } from '@presentation/components/atoms/Combobox';
+import { normalizeText } from '@presentation/utils/normalizeText';
 
 /**
  * Filtros da lista de vagas (spec 097): módulo PURO — sem estado, sem I/O.
@@ -35,8 +36,7 @@ export interface JobFilterOptions {
 }
 
 /** Província/localidade: sem acento, sem espaço nas pontas, minúscula (CABA = caba = " Caba "). */
-export const normKey = (s: string | null | undefined): string =>
-  (s ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase();
+export const normKey = (s: string | null | undefined): string => normalizeText(s ?? '').trim();
 
 /** O feed manda `F/M/BOTH`; o enum/locale usa `FEMALE/MALE/BOTH`. */
 const SEX_ALIASES: Record<string, string> = { F: 'FEMALE', M: 'MALE' };
