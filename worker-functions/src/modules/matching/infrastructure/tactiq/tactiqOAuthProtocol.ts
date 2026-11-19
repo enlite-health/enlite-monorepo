@@ -82,10 +82,11 @@ export function parseTokenResponse(status: number, body: unknown): TactiqTokenSe
     return {
       accessToken: b.access_token,
       ...(typeof b.refresh_token === 'string' && b.refresh_token ? { refreshToken: b.refresh_token } : {}),
+      ...(typeof b.scope === 'string' ? { scope: b.scope } : {}),
     };
   }
   if (b.error === 'invalid_grant') throw new TactiqInvalidGrantError();
-  if (status === 401 || status === 403) throw new TactiqUnauthorizedError();
+  if (status === 401 || status === 403) throw new TactiqUnauthorizedError({ kind: 'token_endpoint' });
   if (status === 400) throw new TactiqInvalidGrantError(); // invalid_request/invalid_client no refresh: o vínculo não se recupera sozinho
   throw new TactiqTransientError(`token_http_${status}`);
 }

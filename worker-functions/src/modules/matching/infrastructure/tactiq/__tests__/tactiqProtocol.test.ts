@@ -88,6 +88,13 @@ describe('parseTokenResponse — desfecho fechado, o corpo nunca vai para o erro
     expect(parseTokenResponse(200, { access_token: 'at' })).toEqual({ accessToken: 'at' });
   });
 
+  it('lê `scope` (formato medido F20); ausente ou não-string → sem scope (não apurado)', () => {
+    const body = { access_token: 'at', expires_in: 599, refresh_token: 'rt', scope: 'mcp:meetings:own', token_type: 'Bearer' };
+    expect(parseTokenResponse(200, body)).toEqual({ accessToken: 'at', refreshToken: 'rt', scope: 'mcp:meetings:own' });
+    expect(parseTokenResponse(200, { ...body, scope: 123 })).toEqual({ accessToken: 'at', refreshToken: 'rt' });
+    expect('scope' in parseTokenResponse(200, { access_token: 'at' })).toBe(false);
+  });
+
   it('200 sem access_token → transitório', () => {
     expect(() => parseTokenResponse(200, {})).toThrow(TactiqTransientError);
   });
@@ -100,6 +107,9 @@ describe('parseTokenResponse — desfecho fechado, o corpo nunca vai para o erro
   it('401/403 → TactiqUnauthorizedError; 5xx → transitório', () => {
     expect(() => parseTokenResponse(401, {})).toThrow(TactiqUnauthorizedError);
     expect(() => parseTokenResponse(403, {})).toThrow(TactiqUnauthorizedError);
+    for (const st of [401, 403]) {
+      try { parseTokenResponse(st, {}); } catch (e) { expect((e as TactiqUnauthorizedError).cause).toEqual({ kind: 'token_endpoint' }); }
+    }
     expect(() => parseTokenResponse(503, { error_description: 'rt-segredo' })).toThrow(TactiqTransientError);
     try { parseTokenResponse(500, { access_token: 'at-segredo', refresh_token: 'rt-segredo' }); } catch (e) {
       expect((e as Error).message).not.toContain('segredo');
@@ -117,16 +127,29 @@ describe('MCP — leitura do resultado e classificação de falha', () => {
     expect(parseMcpJson(null)).toBeNull();
   });
 
-  it('ping: action=ready (F0.4) → ok; outra action → denied; formato desconhecido → ok (a 401 já seria erro de transporte)', () => {
-    expect(pingVerdict(toolResult({ access: { action: 'ready', title: 'x' } }))).toBe('ok');
-    expect(pingVerdict(toolResult({ access: { action: 'upgrade_required' } }))).toBe('denied');
-    expect(pingVerdict(toolResult({ qualquer: 'coisa' }))).toBe('ok');
+  it('ping: ready → ready; action ≠ ready → denied(action, title sanitizado); sem action string → unrecognized', () => {
+    expect(pingVerdict(toolResult({ access: { action: 'ready', title: 'x' } }))).toEqual({ kind: 'ready' });
+    expect(pingVerdict(toolResult({ access: { action: 'upgrade' } }))).toEqual({ kind: 'denied', action: 'upgrade', title: null });
+    expect(pingVerdict(toolResult({ qualquer: 'coisa' }))).toEqual({ kind: 'unrecognized' });
+    expect(pingVerdict(toolResult({ access: { action: 42 } }))).toEqual({ kind: 'unrecognized' });
+    expect(pingVerdict(null)).toEqual({ kind: 'unrecognized' });
+  });
+
+  it('F21 medido: request_seat com título → denied; título e action com marcação/texto livre saem sanitizados', () => {
+    expect(
+      pingVerdict(toolResult({ access: { action: 'request_seat', title: 'Ask your team admin for a seat', message: 'texto livre', url: 'https://x.test' } })),
+    ).toEqual({ kind: 'denied', action: 'request_seat', title: 'Ask your team admin for a seat' });
+    const v = pingVerdict(toolResult({ access: { action: 'Texto Livre <b>', title: '<img src=x onerror=alert(1)>Hola' } }));
+    expect(v).toMatchObject({ kind: 'denied', action: 'unrecognized_value' });
+    expect(JSON.stringify(v)).not.toMatch(/[<>]/);
   });
 
   it('401/403 e UnauthorizedError do SDK → vínculo caído; o resto → transitório; erros de domínio passam intactos', () => {
     expect(classifyMcpFailure({ code: 401 })).toBeInstanceOf(TactiqUnauthorizedError);
     expect(classifyMcpFailure({ code: 403 })).toBeInstanceOf(TactiqUnauthorizedError);
     expect(classifyMcpFailure({ name: 'UnauthorizedError' })).toBeInstanceOf(TactiqUnauthorizedError);
+    expect((classifyMcpFailure({ code: 401 }) as TactiqUnauthorizedError).cause).toEqual({ kind: 'mcp_transport' });
+    expect((classifyMcpFailure({ name: 'UnauthorizedError' }) as TactiqUnauthorizedError).cause).toEqual({ kind: 'mcp_transport' });
     expect(classifyMcpFailure({ code: 502 })).toBeInstanceOf(TactiqTransientError);
     expect(classifyMcpFailure(new Error('ECONNRESET rt-segredo'))).toBeInstanceOf(TactiqTransientError);
     expect(classifyMcpFailure(new Error('ECONNRESET rt-segredo')).message).not.toContain('segredo');

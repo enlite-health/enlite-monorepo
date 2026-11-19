@@ -10,6 +10,7 @@ import { ChromeReportRepository } from '../infrastructure/ChromeReportRepository
 import type { ExtensionState } from '../domain/chromeExtensionState';
 import { hashState, newOAuthState, newPkcePair } from '../infrastructure/tactiq/pkce';
 import {
+  denyReason,
   TactiqInvalidGrantError,
   TactiqUnauthorizedError,
   type HostAccessResult,
@@ -305,16 +306,22 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
       const current = await this.repo.findLinkedTokenByEmail(email);
       if (!current) return 'skipped'; // o vínculo caiu entre a listagem e a vez desta: não há o que testar
       try {
-        await this.deps.mcp.ping(await this.refreshAndRotate(email, current.refresh_token_encrypted));
+        const verdict = await this.deps.mcp.ping(await this.refreshAndRotate(email, current.refresh_token_encrypted));
+        // Teste diário: `denied` derruba (com a causa); `unrecognized` segue como `ok` + aviso (formato nunca medido, design D4).
+        if (verdict.kind === 'denied') throw new TactiqUnauthorizedError({ kind: 'access_action', action: verdict.action });
+        if (verdict.kind === 'unrecognized') this.log.warn({ linkId: link.id }, 'admission.tactiq_link.access_unrecognized');
         await this.repo.recordCheck(email, 'ok', now);
         return 'ok';
       } catch (err) {
         if (err instanceof TactiqInvalidGrantError || err instanceof TactiqUnauthorizedError) {
           const outcome = err instanceof TactiqInvalidGrantError ? 'invalid_grant' : 'unauthorized';
+          // `cause` = o motivo tipado; sem causa (`unspecified`, ex.: dublês antigos) o `reason` segue o `outcome`, como antes.
+          const cause =
+            err instanceof TactiqUnauthorizedError && err.cause.kind !== 'unspecified' ? denyReason(err.cause) : outcome;
           if (await this.repo.degrade(email, 'broken', outcome, now)) {
-            await this.repo.appendEvent({ email, kind: 'tactiq_link.broken', outcome: 'broken', reason: outcome, at: now });
+            await this.repo.appendEvent({ email, kind: 'tactiq_link.broken', outcome: 'broken', reason: cause, at: now });
           }
-          this.log.warn({ linkId: link.id, outcome }, 'admission.tactiq_link.broken');
+          this.log.warn({ linkId: link.id, outcome, cause }, 'admission.tactiq_link.broken');
           return 'broken';
         }
         // Rede, 5xx, KMS: não prova vínculo quebrado. Registra e tenta amanhã (derrubar por soluço geraria aviso falso).
