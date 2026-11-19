@@ -18,6 +18,7 @@ import {
   type ReportAnswer, type ReportContent,
 } from '../../domain/DailyReport';
 import { AccountInactiveError } from '../GetWorkerItineraryUseCase';
+import { projectInForceFor } from '../../domain/TherapeuticProjectVigencia';
 import { templateOf } from './templateAssembler';
 
 export interface SubmitDailyReportCommand {
@@ -72,14 +73,14 @@ export class SubmitDailyReportUseCase {
     return 'created';
   }
 
-  /** PTI informado: tem de ser do serviço da guarda e já em vigor na data (`start <= data`); `null` = o app não tinha o projeto (DC-4). */
+  /**
+   * O PTI do corpo tem de ser EXATAMENTE o vigente que o GET dos moldes escolhe (`projectInForceFor`: mesmo serviço, não anulado, data da guarda
+   * em [início, fim], empate por `createdAt`). Sem vigente (DC-4), só `null` (relato). Anulada, vencida, substituída ou de outro serviço → mismatch.
+   */
   private async templateFor(tx: DailyReportTx, ptiVersionId: string | null, guard: GuardOccurrence, catalog: Awaited<ReturnType<DailyReportTx['scaleCatalog']>>): Promise<DailyReportTemplate> {
-    if (ptiVersionId === null) return templateOf(tx, catalog, null);
-    const version = await tx.projectVersionById(ptiVersionId);
-    if (!version || version.contractedServiceId !== guard.serviceId || version.startDate > guard.onDate) {
-      throw new DailyReportError('pti_version_mismatch');
-    }
-    return templateOf(tx, catalog, version);
+    const inForce = projectInForceFor(await tx.projectVersionsOfService(guard.serviceId), guard.serviceId, guard.onDate);
+    if ((inForce?.id ?? null) !== ptiVersionId) throw new DailyReportError('pti_version_mismatch');
+    return templateOf(tx, catalog, inForce);
   }
 
   private contentOf(cmd: SubmitDailyReportCommand, workerId: string, guard: GuardOccurrence): ReportContent {

@@ -85,16 +85,36 @@ describe('SubmitDailyReportUseCase — contrato do PUT', () => {
     expect(await run(s, cmd({ now: new Date('2027-03-01T00:00:00.000Z') }))).toBe('replayed');
   });
 
-  it('422 pti_version_mismatch: versão inexistente, de outro serviço ou com início depois da data', async () => {
+  it('422 pti_version_mismatch: inexistente, de outro serviço, anulada, vencida, ainda não iniciada ou substituída por mais recente', async () => {
     expect(await codeOf(run(fakeState(), cmd({ ptiVersionId: 'nao-existe' })))).toBe('pti_version_mismatch');
     expect(await codeOf(run(fakeState({ versions: [version('v1', { contractedServiceId: OTHER_SERVICE })] }), cmd()))).toBe('pti_version_mismatch');
     expect(await codeOf(run(fakeState({ versions: [version('v1', { startDate: '2026-11-17' })] }), cmd()))).toBe('pti_version_mismatch');
+    expect(await codeOf(run(fakeState({ versions: [version('v1', { annulledAt: '2026-11-01T00:00:00.000Z' })] }), cmd()))).toBe('pti_version_mismatch');
+    expect(await codeOf(run(fakeState({ versions: [version('v1', { endDate: '2026-11-15' })] }), cmd()))).toBe('pti_version_mismatch');
+    const substituida = fakeState({ versions: [version('v1'), version('v2', { createdAt: '2026-10-01T10:00:00.000Z' })] });
+    expect(await codeOf(run(substituida, cmd()))).toBe('pti_version_mismatch');
+    expect(await run(substituida, cmd({ ptiVersionId: 'v2' }))).toBe('created');
   });
 
-  it('DC-4: ptiVersionId null → informe só com relatório (qualquer resposta é item_not_in_pti)', async () => {
-    const s = fakeState();
-    expect(await run(s, cmd({ ptiVersionId: null, answers: [] }))).toBe('created');
-    expect(await codeOf(run(fakeState(), cmd({ ptiVersionId: null })))).toBe('item_not_in_pti');
+  it('PTI vigente informado → aceita (a substituída por anulação volta a ser a vigente)', async () => {
+    const s = fakeState({ versions: [version('v1'), version('v2', { createdAt: '2026-10-01T10:00:00.000Z', annulledAt: '2026-10-02T00:00:00.000Z' })] });
+    expect(await run(s, cmd())).toBe('created');
+  });
+
+  it('sem PTI vigente: id não-nulo → pti_version_mismatch; null → aceita (só relato)', async () => {
+    const vencida = fakeState({ versions: [version('v1', { endDate: '2026-11-15' })] });
+    expect(await codeOf(run(vencida, cmd()))).toBe('pti_version_mismatch');
+    expect(await run(vencida, cmd({ ptiVersionId: null, answers: [] }))).toBe('created');
+  });
+
+  it('DC-4: sem PTI vigente e ptiVersionId null → informe só com relatório (qualquer resposta é item_not_in_pti)', async () => {
+    const semPti = () => fakeState({ versions: [] });
+    expect(await run(semPti(), cmd({ ptiVersionId: null, answers: [] }))).toBe('created');
+    expect(await codeOf(run(semPti(), cmd({ ptiVersionId: null })))).toBe('item_not_in_pti');
+  });
+
+  it('com PTI vigente, ptiVersionId null → pti_version_mismatch (o app tinha de ter baixado o molde)', async () => {
+    expect(await codeOf(run(fakeState(), cmd({ ptiVersionId: null, answers: [] })))).toBe('pti_version_mismatch');
   });
 
   it('422 item_not_in_pti: item fora do molde (OM, legado sem pergunta, id inventado)', async () => {

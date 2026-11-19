@@ -41,6 +41,12 @@ describe('informe da guarda — rotas do prestador pela borda HTTP (spec 092) @i
   let occB: string;
   let occBClosed: string; // guarda de 2 semanas atrás: fora da janela de aceite
   let ptiOutroServico: string;
+  let occAnul: string; // guardas de pacientes sem PTI vigente: só ANULADA / só VENCIDA
+  let ptiAnulada: string;
+  let occVenc: string;
+  let ptiVencida: string;
+  let anul: Guarda;
+  let venc: Guarda;
 
   const answersOk = () => [
     { objectiveId: cat.objAut, scaleCode: 'AUT', optionCode: 'no_lo_hizo', reasonCode: 'rechazo' },
@@ -75,6 +81,13 @@ describe('informe da guarda — rotas do prestador pela borda HTTP (spec 092) @i
     occBClosed = occurrenceIdOf(b.slotSegId, fechada, b.workerId);
     // PTI de OUTRO paciente/serviço (para pti_version_mismatch)
     ptiOutroServico = await inserirPti(pool, { patientId: a.patientId, serviceId: s2.rows[0].id, start: '2026-02-01', end: '2027-12-31', major: 3, objectiveIds: [cat.objSn], activityIds: [cat.actSn] });
+
+    anul = await semearGuarda(pool, `${TAG}-anul`);
+    ptiAnulada = await inserirPti(pool, { patientId: anul.patientId, serviceId: anul.serviceId, start: '2026-01-01', end: '2027-12-31', annulled: true, ...itens });
+    occAnul = occurrenceIdOf(anul.slotSegId, anul.onDate, anul.workerId);
+    venc = await semearGuarda(pool, `${TAG}-venc`);
+    ptiVencida = await inserirPti(pool, { patientId: venc.patientId, serviceId: venc.serviceId, start: '2025-01-01', end: '2025-12-31', ...itens });
+    occVenc = occurrenceIdOf(venc.slotSegId, venc.onDate, venc.workerId);
   });
   afterAll(async () => {
     await limparGuarda(pool, TAG);
@@ -178,10 +191,21 @@ describe('informe da guarda — rotas do prestador pela borda HTTP (spec 092) @i
       expect(await codeOf(occB, uuidv4())).toEqual([422, 'pti_version_mismatch']);
       expect(await codeOf(occB, ptiOutroServico)).toEqual([422, 'pti_version_mismatch']);
     });
+    it('pti_version_mismatch pela vigência: PTI ANULADO e PTI VENCIDO (endDate < data) não valem; sem vigente, só relato (null) passa', async () => {
+      const tenta = async (g: Guarda, occ: string, pti: string | null, answers: unknown[]) => {
+        const r = await put(g.authUid, uuidv4(), body(occ, pti, { answers }));
+        expect(JSON.stringify(r.data)).not.toContain(ESPIA);
+        return [r.status, r.data.code];
+      };
+      expect(await tenta(anul, occAnul, ptiAnulada, answersOk())).toEqual([422, 'pti_version_mismatch']);
+      expect(await tenta(venc, occVenc, ptiVencida, answersOk())).toEqual([422, 'pti_version_mismatch']);
+      expect((await tenta(anul, occAnul, null, []))[0]).toBe(201); // controle: sem vigente, relato puro é aceito
+      expect((await tenta(venc, occVenc, null, []))[0]).toBe(201);
+    });
     it('item_not_in_pti: objetivo OM, objetivo legado e atividade fora do PTI', async () => {
       expect(await codeOf(occB, ptiB, { answers: [...answersOk(), { objectiveId: cat.objOm, scaleCode: 'OM', optionCode: 'x' }] })).toEqual([422, 'item_not_in_pti']);
       expect(await codeOf(occB, ptiB, { answers: [...answersOk(), { objectiveId: cat.objSemPergunta, scaleCode: 'SN', optionCode: 'si' }] })).toEqual([422, 'item_not_in_pti']);
-      expect(await codeOf(occB, null)).toEqual([422, 'item_not_in_pti']); // DC-4: sem PTI, qualquer resposta é item fora
+      expect(await codeOf(occB, null)).toEqual([422, 'pti_version_mismatch']); // há PTI vigente: relato sem PTI não vale
     });
     it('scale_mismatch, option_unknown, reason_required, reason_not_allowed', async () => {
       const trocar = (i: number, over: Record<string, unknown>) => answersOk().map((x, k) => (k === i ? { ...x, ...over } : x));
