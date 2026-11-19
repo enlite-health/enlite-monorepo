@@ -124,6 +124,10 @@ export interface EnquadreGlobalListItem {
   status: EnquadreEventStatus;
   phase: EnquadreEventPhase;
   convokedCount: number;
+  /** Colunas de desfecho do Kanban do evento (spec 094): mesma regra do servidor (estágio vigente no aberto, carimbo no encerrado). */
+  selectedCount: number;
+  quickResponseCount: number;
+  rejectedCount: number;
   /** Motivo (código fechado) quando a importação da esteira está `blocked`; `null` nos demais estados. */
   importBlocked: { reason: string } | null;
 }

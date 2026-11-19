@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { EnquadreEventGlobalList, type EnquadreGlobalListInput } from '../EnquadreEventGlobalList';
-import type { EnquadreListRow } from '../../infrastructure/EnquadreEventListRepository';
+import type { EnquadreListRow, EnquadreParticipantStageRow } from '../../infrastructure/EnquadreEventListRepository';
 
 jest.mock('@shared/database/actorContext', () => ({
   withActorContext: async (_pool: unknown, fn: (client: unknown) => Promise<unknown>) => fn({}),
@@ -53,10 +53,13 @@ function row(over: Partial<EnquadreListRow> = {}): EnquadreListRow {
   };
 }
 
-function build(rows: EnquadreListRow[], now = new Date('2026-10-27T12:00:00Z')) {
+const E1 = '00000000-0000-4000-8000-000000000001';
+
+function build(rows: EnquadreListRow[], now = new Date('2026-10-27T12:00:00Z'), stages: EnquadreParticipantStageRow[] = []) {
   const list = jest.fn().mockResolvedValue(rows);
-  const uc = new EnquadreEventGlobalList({ db: {} as Pool, repo: { list }, now: () => now });
-  return { uc, list };
+  const listParticipantStages = jest.fn().mockResolvedValue(stages);
+  const uc = new EnquadreEventGlobalList({ db: {} as Pool, repo: { list, listParticipantStages }, now: () => now });
+  return { uc, list, listParticipantStages };
 }
 
 describe('EnquadreEventGlobalList', () => {
@@ -97,6 +100,9 @@ describe('EnquadreEventGlobalList', () => {
         'importBlocked',
         'jobPostingId',
         'phase',
+        'quickResponseCount',
+        'rejectedCount',
+        'selectedCount',
         'startsAt',
         'status',
       ].sort(),
@@ -148,5 +154,51 @@ describe('EnquadreEventGlobalList', () => {
     expect(list.mock.calls[1][1]).toMatchObject({ eventCodeLike: '%ENC-AB12%', digitsLike: null, ordinal: null });
     await uc.execute({ ...INPUT, q: 'Ficticio 01' });
     expect(list.mock.calls[2][1]).toMatchObject({ eventCodeLike: null, digitsLike: null, ordinal: null });
+  });
+
+  const st = (event_id: string, stage: string | null, outcome: EnquadreParticipantStageRow['outcome'] = null) => ({ event_id, stage, outcome });
+  const counts = (i: { selectedCount: number; quickResponseCount: number; rejectedCount: number }) => [i.selectedCount, i.quickResponseCount, i.rejectedCount];
+
+  it('evento aberto: conta pelo estágio vigente, só do próprio evento', async () => {
+    const E2 = '00000000-0000-4000-8000-000000000002';
+    const { uc, listParticipantStages } = build(
+      [row(), row({ id: E2 })],
+      undefined,
+      [st(E1, 'SELECTED'), st(E1, 'SELECTED'), st(E1, 'QUICK_RESPONSE_TEAM'), st(E1, 'REJECTED'), st(E1, null), st(E2, 'REJECTED')],
+    );
+    const out = await uc.execute(INPUT);
+    expect(counts(out.items[0])).toEqual([2, 1, 1]);
+    expect(counts(out.items[1])).toEqual([0, 0, 1]);
+    expect(listParticipantStages).toHaveBeenCalledTimes(1);
+    expect(listParticipantStages.mock.calls[0][1]).toEqual([E1, E2]);
+  });
+
+  it('evento sem participante = 0/0/0', async () => {
+    const { uc } = build([row({ convoked: 0 })]);
+    expect(counts((await uc.execute(INPUT)).items[0])).toEqual([0, 0, 0]);
+  });
+
+  it('evento cancelado = 0/0/0 mesmo com estágio de seleção', async () => {
+    const { uc } = build([row({ status: 'cancelled' })], undefined, [st(E1, 'SELECTED'), st(E1, 'REJECTED')]);
+    expect(counts((await uc.execute(INPUT)).items[0])).toEqual([0, 0, 0]);
+  });
+
+  it('evento encerrado vale o carimbo, não o estágio de hoje', async () => {
+    const { uc } = build([row({ status: 'closed' })], undefined, [
+      st(E1, 'REJECTED', 'selected'),
+      st(E1, 'SELECTED', 'returned'),
+      st(E1, 'SELECTED', 'quick_response'),
+    ]);
+    expect(counts((await uc.execute(INPUT)).items[0])).toEqual([1, 1, 0]);
+  });
+
+  it('página vazia não chama listParticipantStages', async () => {
+    const empty = row({
+      id: null, job_posting_id: null, country: null, host_display_name: null, starts_at: null, ends_at: null,
+      status: null, event_code: null, case_number: null, case_ordinal: null, convoked: null, total: 25, convoked_total: 150, hosts: [],
+    });
+    const { uc, listParticipantStages } = build([empty]);
+    await uc.execute({ ...INPUT, offset: 100 });
+    expect(listParticipantStages).not.toHaveBeenCalled();
   });
 });

@@ -23,7 +23,7 @@ import AdminEnquadresPage from '../AdminEnquadresPage';
 const item = (over: Partial<EnquadreGlobalListItem> & { id: string }): EnquadreGlobalListItem => ({
   jobPostingId: `jp-${over.id}`, caseNumber: 1234, caseOrdinal: 2, eventCode: `ENC-${over.id.toUpperCase()}`,
   startsAt: '2026-10-28T17:00:00.000Z', endsAt: '2026-10-28T18:00:00.000Z', country: 'AR', hostName: 'Entrevistadora Ficticia',
-  status: 'open', phase: 'scheduled', convokedCount: 3, importBlocked: null, ...over,
+  status: 'open', phase: 'scheduled', convokedCount: 3, selectedCount: 1, quickResponseCount: 1, rejectedCount: 1, importBlocked: null, ...over,
 });
 const list = (items: EnquadreGlobalListItem[], over: Partial<EnquadreGlobalList> = {}): EnquadreGlobalList => ({
   items, total: items.length, convokedTotal: items.length * 3, hosts: ['Entrevistadora Ficticia'],
@@ -110,6 +110,24 @@ describe('AdminEnquadresPage', () => {
     await userEvent.click(row);
     expect(screen.getByTestId('vacancy-detail')).toBeInTheDocument();
     expect(screen.getByTestId('where').textContent).toBe('/admin/vacancies/jp-ev1?tab=enquadre&event=ev1');
+  });
+
+  it('colunas de desfecho (094): 3 células por linha com o número do servidor e cabeçalhos em es e pt-BR', async () => {
+    api.listAll.mockResolvedValue(list([item({ id: 'ev1', convokedCount: 7, selectedCount: 2, quickResponseCount: 3, rejectedCount: 1 })]));
+    mount();
+    const row = await screen.findByTestId('enquadres-row');
+    expect(within(row).getByTestId('enquadres-row-convoked').textContent).toBe('7');
+    expect(within(row).getByTestId('enquadres-row-selected').textContent).toBe('2');
+    expect(within(row).getByTestId('enquadres-row-quick-response').textContent).toBe('3');
+    expect(within(row).getByTestId('enquadres-row-rejected').textContent).toBe('1');
+    const headers = (): string[] => screen.getAllByRole('columnheader').map((h) => h.textContent ?? '');
+    expect(headers()).toEqual(['Fecha y hora', 'Entrevistador', 'Caso', 'Convocados', 'Seleccionados', 'Equipo de Respuesta Rápida', 'Rechazados', 'Estado', 'Importación']);
+    await i18n.changeLanguage('pt-BR');
+    try {
+      await waitFor(() => expect(headers()).toEqual(['Data e hora', 'Entrevistador', 'Caso', 'Convocados', 'Selecionados', 'Equipe de Resposta Rápida', 'Rejeitados', 'Estado', 'Importação']));
+    } finally {
+      await i18n.changeLanguage('es');
+    }
   });
 
   it('Enter na linha também abre', async () => {

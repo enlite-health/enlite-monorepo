@@ -65,16 +65,19 @@ export interface ColumnedParticipant {
   outcome: EnquadreParticipantOutcome | null;
 }
 
-/** Contadores do evento: `outcome` (do carimbo), `markedCount` (fora de Convocados) e `unmarkedCount` (em Convocados). */
+/** Contadores do evento: `columns` (por coluna vigente, a mesma do kanban), `outcome` (do carimbo), `markedCount` (fora de Convocados) e `unmarkedCount` (em Convocados). */
 export function eventCounters(participants: readonly ColumnedParticipant[]): {
   convokedCount: number;
   markedCount: number;
   unmarkedCount: number;
   outcome: EnquadreOutcomeCounts;
+  columns: Record<EnquadreColumnId, number>;
 } {
   const outcome: EnquadreOutcomeCounts = { selected: 0, quickResponse: 0, rejected: 0, returned: 0 };
+  const columns: Record<EnquadreColumnId, number> = { CONVOKED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 0 };
   let marked = 0;
   for (const p of participants) {
+    columns[p.column] += 1;
     if (p.column !== 'CONVOKED') marked += 1;
     if (p.outcome === 'selected') outcome.selected += 1;
     else if (p.outcome === 'quick_response') outcome.quickResponse += 1;
@@ -86,6 +89,7 @@ export function eventCounters(participants: readonly ColumnedParticipant[]): {
     markedCount: marked,
     unmarkedCount: participants.length - marked,
     outcome,
+    columns,
   };
 }
 

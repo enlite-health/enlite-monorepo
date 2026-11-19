@@ -148,6 +148,40 @@ describe('lista global de enquadres — HTTP real, banco real, engine LIGADO (sp
     );
   }
 
+  async function candidatura(workerId: string, vac: string, stage: string): Promise<void> {
+    await admin.query(
+      `INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source) VALUES ($1, $2, $3, 'talentum')`,
+      [workerId, vac, stage],
+    );
+  }
+
+  /** Participação com estágio vigente na candidatura; `outcome` só em `closed` (CHECK da tabela). */
+  async function participanteNoEstagio(
+    eventId: string,
+    vac: string,
+    stage: string,
+    kind: 'closed' | 'cancelled' | 'removed' | null,
+    outcome: 'selected' | 'quick_response' | 'rejected' | 'returned' | null = null,
+  ): Promise<void> {
+    const w = await novoWorker();
+    await candidatura(w, vac, stage);
+    await admin.query(
+      `INSERT INTO enquadre_event_participants (event_id, job_posting_id, worker_id, added_by_uid, released_at, release_kind, outcome)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::text, CASE WHEN $5::text IS NULL THEN NULL ELSE now() END, $5::text, $6::text)`,
+      [eventId, vac, w, UID_FULL, kind, outcome],
+    );
+  }
+
+  async function detalheDoEvento(vac: string, eventId: string) {
+    const res = await fetch(`${app.url}/api/admin/vacancies/${vac}/enquadre-events/${eventId}`, {
+      headers: { Authorization: tokenMock(UID_FULL, 'admin', 'AR') },
+    });
+    const body = (await res.json()) as { data: { participants: Array<{ column: string }> } };
+    expect(res.status).toBe(200);
+    const por = (c: string) => body.data.participants.filter((p) => p.column === c).length;
+    return { total: body.data.participants.length, convoked: por('CONVOKED'), selected: por('SELECTED'), quick: por('QUICK_RESPONSE_TEAM'), rejected: por('REJECTED') };
+  }
+
   beforeAll(async () => {
     admin = new Pool({ connectionString: DATABASE_URL });
     await admin.query(`DELETE FROM iam.group_country_scopes WHERE group_id IN (SELECT id FROM iam.permission_groups WHERE name = ANY($1))`, [GRUPOS]);
@@ -198,6 +232,10 @@ describe('lista global de enquadres — HTTP real, banco real, engine LIGADO (sp
     const { EnquadreEventGlobalList } = await import('../../src/modules/matching/application/EnquadreEventGlobalList');
     const { EnquadreEventListController } = await import('../../src/modules/matching/interfaces/controllers/EnquadreEventListController');
     const { createAdminEnquadreEventListRoutes } = await import('../../src/modules/matching/interfaces/routes/adminEnquadreEventListRoutes');
+    // Spec 094: a rota de DETALHE do evento (a que alimenta o Kanban/aba da vaga) é o oráculo das colunas da lista.
+    const { EnquadreEventService } = await import('../../src/modules/matching/application/EnquadreEventService');
+    const { EnquadreEventController } = await import('../../src/modules/matching/interfaces/controllers/EnquadreEventController');
+    const { createAdminEnquadreEventRoutes } = await import('../../src/modules/matching/interfaces/routes/adminEnquadreEventRoutes');
     const pool = DatabaseConnection.getInstance().getPool();
     app = await montarAppDeFamilia({
       enforcedRoutes: 'admin.vacancies',
@@ -206,6 +244,18 @@ describe('lista global de enquadres — HTTP real, banco real, engine LIGADO (sp
           '/api/admin',
           createAdminEnquadreEventListRoutes(auth, permissions, new EnquadreEventListController(pool, new EnquadreEventGlobalList({ db: pool }))),
         );
+        // Só `getEvent` roda neste arquivo: calendário, entrevistadoras e Tactiq nunca são chamados (leitura pura).
+        const detalhe = new EnquadreEventService({
+          db: pool,
+          calendar: {} as never,
+          hosts: {} as never,
+          tactiq: {} as never,
+          decryptor: { decrypt: async () => 'Ficticio NN' },
+          env: process.env,
+          impersonateEmail: 'enlite@enlite.health',
+          calendarRetryDelaysMs: [],
+        });
+        express.use('/api/admin', createAdminEnquadreEventRoutes(auth, permissions, new EnquadreEventController(detalhe, {} as never)));
       },
     });
   }, 60000);
@@ -341,6 +391,48 @@ describe('lista global de enquadres — HTTP real, banco real, engine LIGADO (sp
     expect(hosts).toContain(HOST_NAME);
     expect(hosts).not.toContain(hostBR);
     expect(new Set(hosts).size).toBe(hosts.length); // distintos
+  });
+
+  it('8. colunas de desfecho (094): a lista iguala o detalhe do evento (aberto, encerrado, cancelado, removed) e convokedCount = soma das colunas', async () => {
+    const aberto = await evento({ vac: vacAR, startsAt: ba('2031-12-10', '09:00') });
+    for (const stage of ['SELECTED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED', 'COMPLETED']) await participanteNoEstagio(aberto, vacAR, stage, null);
+    await participanteNoEstagio(aberto, vacAR, 'SELECTED', 'removed'); // removed não conta em coluna nenhuma
+
+    // encerrado: vale o carimbo, mesmo com o estágio de hoje diferente (REJECTED e SELECTED trocados de propósito)
+    const encerrado = await evento({ vac: vacAR, startsAt: ba('2031-12-10', '10:00'), status: 'closed' });
+    await participanteNoEstagio(encerrado, vacAR, 'REJECTED', 'closed', 'selected');
+    await participanteNoEstagio(encerrado, vacAR, 'SELECTED', 'closed', 'rejected');
+    await participanteNoEstagio(encerrado, vacAR, 'SELECTED', 'closed', 'quick_response');
+    await participanteNoEstagio(encerrado, vacAR, 'SELECTED', 'closed', 'returned');
+
+    // cancelado com estágio de seleção: tudo em Convocados
+    const cancelado = await evento({ vac: vacAR, startsAt: ba('2031-12-10', '11:00'), status: 'cancelled' });
+    await participanteNoEstagio(cancelado, vacAR, 'SELECTED', 'cancelled');
+    await participanteNoEstagio(cancelado, vacAR, 'REJECTED', 'cancelled');
+
+    const vazio = await evento({ vac: vacAR, startsAt: ba('2031-12-10', '12:00') });
+
+    const res = await get('?from=2031-12-10&to=2031-12-10&limit=100');
+    expect(res.status).toBe(200);
+    const itens = new Map((res.body.data.items as Array<Record<string, number | string>>).map((i) => [i.id as string, i]));
+    const esperado: Array<[string, string, number[]]> = [
+      ['aberto', aberto, [2, 1, 1]],
+      ['encerrado', encerrado, [1, 1, 1]],
+      ['cancelado', cancelado, [0, 0, 0]],
+      ['sem participante', vazio, [0, 0, 0]],
+    ];
+    for (const [nome, id, literal] of esperado) {
+      const item = itens.get(id);
+      expect({ nome, achou: item !== undefined }).toEqual({ nome, achou: true });
+      const det = await detalheDoEvento(vacAR, id);
+      const daLista = [item!.selectedCount, item!.quickResponseCount, item!.rejectedCount];
+      expect({ nome, daLista }).toEqual({ nome, daLista: [det.selected, det.quick, det.rejected] }); // lista == detalhe
+      expect({ nome, daLista }).toEqual({ nome, daLista: literal }); // valor literal
+      // CA-6: as duas origens do total (COUNT(*) do SQL e as colunas do detalhe) concordam
+      expect({ nome, n: item!.convokedCount }).toEqual({ nome, n: det.convoked + det.selected + det.quick + det.rejected });
+      expect({ nome, n: item!.convokedCount }).toEqual({ nome, n: det.total });
+    }
+    expect(itens.get(aberto)!.convokedCount).toBe(5); // controle: o removed ficou de fora do total
   });
 
   it('7. privacidade: a resposta inteira não tem nome/sobrenome/e-mail do paciente, do convocado nem do entrevistador', async () => {

@@ -1,9 +1,20 @@
 import type { Pool } from 'pg';
 import { withActorContext } from '@shared/database/actorContext';
-import { enquadreEventPhase, type EnquadreEventPhase, type EnquadreEventStatus } from '../domain/enquadreEvent';
+import {
+  enquadreEventPhase,
+  eventCounters,
+  participantColumn,
+  type ColumnedParticipant,
+  type EnquadreEventPhase,
+  type EnquadreEventStatus,
+} from '../domain/enquadreEvent';
 import { getAdmissionCountryConfig, isAdmissionCountry, type AdmissionCountry } from '../domain/admissionCountries';
 import { parseEnquadreSearch } from '../domain/enquadreListQuery';
-import { EnquadreEventListRepository, type EnquadreListRow } from '../infrastructure/EnquadreEventListRepository';
+import {
+  EnquadreEventListRepository,
+  type EnquadreListRow,
+  type EnquadreParticipantStageRow,
+} from '../infrastructure/EnquadreEventListRepository';
 import { inZone } from './EnquadreEventService';
 
 /**
@@ -24,6 +35,10 @@ export interface EnquadreGlobalListItem {
   status: EnquadreEventStatus;
   phase: EnquadreEventPhase;
   convokedCount: number;
+  /** Mesmas colunas e a mesma regra do kanban do evento (`participantColumn` + `eventCounters`). */
+  selectedCount: number;
+  quickResponseCount: number;
+  rejectedCount: number;
   importBlocked: { reason: string } | null;
 }
 
@@ -48,7 +63,7 @@ export interface EnquadreGlobalListInput {
 
 export interface EnquadreEventGlobalListDeps {
   db: Pool;
-  repo?: Pick<EnquadreEventListRepository, 'list'>;
+  repo?: Pick<EnquadreEventListRepository, 'list' | 'listParticipantStages'>;
   now?: () => Date;
 }
 
@@ -61,8 +76,14 @@ function toAdmissionCountry(value: string | null): AdmissionCountry {
   throw new Error(`Enquadre event with unsupported country: ${String(value)}`);
 }
 
+function groupByEvent(rows: EnquadreParticipantStageRow[]): Map<string, EnquadreParticipantStageRow[]> {
+  const byEvent = new Map<string, EnquadreParticipantStageRow[]>();
+  for (const r of rows) byEvent.set(r.event_id, [...(byEvent.get(r.event_id) ?? []), r]);
+  return byEvent;
+}
+
 export class EnquadreEventGlobalList {
-  private readonly repo: Pick<EnquadreEventListRepository, 'list'>;
+  private readonly repo: Pick<EnquadreEventListRepository, 'list' | 'listParticipantStages'>;
   private readonly now: () => Date;
 
   constructor(private readonly deps: EnquadreEventGlobalListDeps) {
@@ -72,8 +93,8 @@ export class EnquadreEventGlobalList {
 
   async execute(input: EnquadreGlobalListInput): Promise<EnquadreGlobalList> {
     const search = parseEnquadreSearch(input.q);
-    const rows = await withActorContext(this.deps.db, (client) =>
-      this.repo.list(client, {
+    const { rows, stages } = await withActorContext(this.deps.db, async (client) => {
+      const listed = await this.repo.list(client, {
         countries: input.countries,
         from: input.from,
         to: input.to,
@@ -84,12 +105,16 @@ export class EnquadreEventGlobalList {
         ordinal: search.ordinal ?? null,
         limit: input.limit,
         offset: input.offset,
-      }),
-    );
+      });
+      const pageIds = listed.flatMap((r) => (r.id === null ? [] : [r.id]));
+      const stages = pageIds.length === 0 ? [] : await this.repo.listParticipantStages(client, pageIds);
+      return { rows: listed, stages };
+    });
+    const stagesByEvent = groupByEvent(stages);
     const head = rows[0];
     const now = this.now();
     return {
-      items: rows.filter((r) => r.id !== null).map((r) => this.toItem(r, now)),
+      items: rows.filter((r) => r.id !== null).map((r) => this.toItem(r, now, stagesByEvent.get(r.id as string) ?? [])),
       total: head?.total ?? 0,
       convokedTotal: head?.convoked_total ?? 0,
       hosts: head?.hosts ?? [],
@@ -97,10 +122,15 @@ export class EnquadreEventGlobalList {
     };
   }
 
-  private toItem(r: EnquadreListRow, now: Date): EnquadreGlobalListItem {
+  private toItem(r: EnquadreListRow, now: Date, stages: EnquadreParticipantStageRow[]): EnquadreGlobalListItem {
     const country = toAdmissionCountry(r.country);
     const tz = getAdmissionCountryConfig(country).timezone;
     const status = r.status as EnquadreEventStatus;
+    const participants: ColumnedParticipant[] = stages.map((p) => ({
+      column: participantColumn({ eventStatus: status, currentStage: p.stage, outcome: p.outcome }),
+      outcome: p.outcome,
+    }));
+    const { columns } = eventCounters(participants);
     return {
       id: r.id as string,
       jobPostingId: r.job_posting_id as string,
@@ -114,6 +144,9 @@ export class EnquadreEventGlobalList {
       status,
       phase: enquadreEventPhase(status, r.ends_at as Date, now),
       convokedCount: r.convoked ?? 0,
+      selectedCount: columns.SELECTED,
+      quickResponseCount: columns.QUICK_RESPONSE_TEAM,
+      rejectedCount: columns.REJECTED,
       importBlocked: r.import_status === 'blocked' && r.blocked_reason ? { reason: r.blocked_reason } : null,
     };
   }
