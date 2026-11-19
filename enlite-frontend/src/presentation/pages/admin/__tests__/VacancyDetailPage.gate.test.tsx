@@ -248,3 +248,46 @@ describe('VacancyDetailPage — atalho para o itinerário do paciente (spec 041 
     expect(screen.queryByTestId('vacancy-view-patient-itinerary')).not.toBeInTheDocument();
   });
 });
+
+describe('VacancyDetailPage — título da vaga só com o código sem patient_identity (093)', () => {
+  const CASO = 'admin.vacancyDetail.case 748-1';
+  const comVaga = (patch: Record<string, unknown>) =>
+    vi.mocked(useVacancyDetail).mockReturnValue({
+      vacancy: { ...mockVacancy, ...patch } as any,
+      isLoading: false,
+      error: null,
+      refetch: mockRefetch,
+    });
+  const h1 = () => screen.getByRole('heading', { level: 1 });
+
+  it('(a) sem a célula, API projetou o nome redigido: título é só o código, sem "—" nem "Contato restrito"', () => {
+    comVaga({ patient_first_name: 'Contato restrito', patient_last_name: null });
+    comEnforcement(['vacancy:read'], 'on');
+    renderPage();
+    expect(h1().textContent).toBe(CASO);
+    expect(h1().textContent).not.toContain('—');
+    expect(h1().textContent).not.toContain('Contato restrito');
+  });
+
+  it('(b) sem a célula, mesmo se a API NÃO projetou (nome real no payload): o front decide pela célula, não pela sentinela', () => {
+    comVaga({ patient_first_name: 'Paciente', patient_last_name: 'Ficticio' });
+    comEnforcement(['vacancy:read'], 'on');
+    renderPage();
+    expect(h1().textContent).toBe(CASO);
+    expect(h1().textContent).not.toContain('Ficticio');
+  });
+
+  it('(c) com patient_identity:read: título traz o nome', () => {
+    comVaga({ patient_first_name: 'Paciente', patient_last_name: 'Ficticio' });
+    comEnforcement(['vacancy:read', 'patient_identity:read'], 'on');
+    renderPage();
+    expect(h1().textContent).toContain(' — Paciente Ficticio');
+  });
+
+  it('(d) enforcement=off, sem células: título traz o nome (freio de rollout D268)', () => {
+    comVaga({ patient_first_name: 'Paciente', patient_last_name: 'Ficticio' });
+    comEnforcement([], 'off');
+    renderPage();
+    expect(h1().textContent).toContain(' — Paciente Ficticio');
+  });
+});
