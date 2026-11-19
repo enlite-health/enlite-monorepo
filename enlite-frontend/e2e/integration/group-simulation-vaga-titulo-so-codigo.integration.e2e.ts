@@ -94,12 +94,14 @@ test.describe('Título da vaga só com o código sem patient_identity (engine AB
 
     await loginAs(page, STAFF_A);
     await page.goto(`/admin/vacancies/${vacancyId}`);
-    const h1 = page.getByRole('heading', { level: 1 });
+    const h1 = page.getByRole('heading', { level: 1, name: /^Caso / }); // a página tem outros h1 (cards); o do título começa por "Caso "
     await expect(h1).toBeVisible({ timeout: 20_000 });
     await expect(h1, 'A: H1 é exatamente `Caso N-M`').toHaveText(tituloSoCodigo(vA), { useInnerText: true });
     await expect(h1).not.toContainText('—');
     await expect(h1).not.toContainText(NOME_REDIGIDO);
     await expect(page.getByTestId('vacancy-patient-card'), 'A: card do paciente ausente').toHaveCount(0);
+    // Nenhum heading da página (h1..h3) carrega o nome sintético do paciente.
+    await expect(page.getByRole('heading', { name: new RegExp(NOME_SINTETICO) }), 'A: nenhum heading com o nome').toHaveCount(0);
     console.log('[093] A: H1 == código; card do paciente ausente; API redigida');
   });
 
@@ -109,7 +111,7 @@ test.describe('Título da vaga só com o código sem patient_identity (engine AB
 
     await loginAs(page, STAFF_B);
     await page.goto(`/admin/vacancies/${vacancyId}`);
-    const h1 = page.getByRole('heading', { level: 1 });
+    const h1 = page.getByRole('heading', { level: 1, name: /^Caso / }); // a página tem outros h1 (cards); o do título começa por "Caso "
     await expect(h1).toBeVisible({ timeout: 20_000 });
     await expect(h1, 'B: H1 contém o nome').toContainText(` — ${NOME_SINTETICO}`);
     await expect(page.getByTestId('vacancy-patient-card'), 'B: card do paciente presente').toBeVisible();
