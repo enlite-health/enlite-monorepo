@@ -569,17 +569,6 @@
       "allLocalities": "Todas las localidades",
       "allSexes": "Todos"
     },
-    "types": {
-      "at": "Acompañante Terapéutico",
-      "at_full": "Acompañante Terapéutico (AT)",
-      "at_school": "Acompañante Terapéutico (AT) Escolar",
-      "caregiver": "Cuidador/a"
-    },
-    "provinces": {
-      "caba": "CABA",
-      "buenos_aires": "Provincia de Buenos Aires",
-      "misiones": "Provincia de Misiones"
-    },
     "localities": {
       "almagro": "Almagro",
       "balvanera": "Balvanera",

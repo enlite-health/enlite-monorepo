@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState, useMemo } from 'react';
 import { Combobox } from '@presentation/components/atoms/Combobox';
@@ -10,15 +11,14 @@ import type { PublicJobListing } from '@domain/entities/PublicJobListing';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { JobCard } from './JobCard';
 import { resolveJobDetailUrl } from './jobDetailUrl';
+import { type Job, type JobsResponse, buildApplyLabel } from './jobsConstants';
 import {
-  type Job,
-  type JobsResponse,
-  getWorkerTypeOptions,
-  getProvinceOptions,
-  getLocalityOptions,
-  getSexOptions,
-  buildApplyLabel,
-} from './jobsConstants';
+  buildJobFilterOptions,
+  matchesJobFilters,
+  EMPTY_JOB_FILTERS,
+  type JobFilterable,
+  type JobFilterSelection,
+} from './jobFilters';
 
 // `window` é sempre definido: esta é uma SPA Vite pura, sem SSR (arquitetura em
 // enlite-frontend/CLAUDE.md) — o guard `typeof window !== 'undefined'` nunca
@@ -36,14 +36,24 @@ function readUsePublicApi(): boolean {
   return import.meta.env.VITE_USE_PUBLIC_JOBS_API !== 'false';
 }
 
-function formatAgeRange(min: number | null, max: number | null): string {
-  if (min !== null && max !== null) return `${min} a ${max} años`;
-  if (min !== null) return `${min}+ años`;
-  if (max !== null) return `hasta ${max} años`;
+function formatAgeRange(min: number | null, max: number | null, t: TFunction): string {
+  if (min !== null && max !== null) return t('jobs.ageRange.between', { min, max });
+  if (min !== null) return t('jobs.ageRange.from', { min });
+  if (max !== null) return t('jobs.ageRange.upTo', { max });
   return '';
 }
 
-function adaptPublicJobListing(dto: PublicJobListing): Job {
+/** Projeção da vaga para o filtro: o feed público traz o array; o legado, só o texto. */
+function toFilterable(job: Job): JobFilterable {
+  return {
+    workerTypes: job.workerTypes ?? (job.workerType ? [job.workerType] : []),
+    state: job.provincia,
+    city: job.localidad,
+    sex: job.workerSex,
+  };
+}
+
+function adaptPublicJobListing(dto: PublicJobListing, t: TFunction): Job {
   return {
     id: dto.id,
     // "824-5012" — MESMO formato que o painel admin usa (VacancyDetailPage.tsx,
@@ -54,6 +64,7 @@ function adaptPublicJobListing(dto: PublicJobListing): Job {
     code: `${formatCaseNumber(dto.case_number)}-${dto.vacancy_number}`,
     title: dto.title,
     workerType: (dto.worker_type ?? []).join(', '),
+    workerTypes: dto.worker_type ?? [],
     provincia: dto.state ?? '',
     localidad: dto.city ?? '',
     barrio: dto.neighborhood ?? '',
@@ -61,7 +72,7 @@ function adaptPublicJobListing(dto: PublicJobListing): Job {
     description: dto.description,
     service: dto.service ?? '',
     daysAndHours: dto.schedule_days_hours ?? '',
-    ageRange: formatAgeRange(dto.age_range_min, dto.age_range_max),
+    ageRange: formatAgeRange(dto.age_range_min, dto.age_range_max, t),
     profile: dto.worker_profile_sought ?? '',
     canApply: dto.can_apply === true,
     detailLink: dto.detail_link,
@@ -102,10 +113,6 @@ export const JobsEmbeddedSection = ({
   // que já chega pronta (contada no e2e).
   const applyLabel = buildApplyLabel(missingFields, profession, t);
 
-  const workerTypeOptions = useMemo(() => getWorkerTypeOptions(t), [t]);
-  const provinceOptions = useMemo(() => getProvinceOptions(t), [t]);
-  const localityOptions = useMemo(() => getLocalityOptions(), []);
-  const sexOptions = useMemo(() => getSexOptions(t), [t]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -122,10 +129,11 @@ export const JobsEmbeddedSection = ({
   };
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState('');
-  const [filterProvince, setFilterProvince] = useState('');
-  const [filterLocality, setFilterLocality] = useState('');
-  const [filterSex, setFilterSex] = useState('');
+  // Estado = chave canônica de cada filtro ('' = "Todas"); as opções saem dos próprios dados (jobFilters.ts).
+  const [filters, setFilters] = useState<JobFilterSelection>(EMPTY_JOB_FILTERS);
+  const setFilter = (field: keyof JobFilterSelection) => (value: string): void =>
+    setFilters(prev => ({ ...prev, [field]: value }));
+  const filterOptions = useMemo(() => buildJobFilterOptions(jobs.map(toFilterable), t), [jobs, t]);
 
   const filteredJobs = useMemo(() => {
     return jobs.filter(job => {
@@ -137,14 +145,9 @@ export const JobsEmbeddedSection = ({
         job.localidad.toLowerCase().includes(searchLower) ||
         job.provincia.toLowerCase().includes(searchLower);
 
-      const matchesType = !filterType || job.workerType === filterType;
-      const matchesProvince = !filterProvince || job.provincia === filterProvince;
-      const matchesLocality = !filterLocality || job.localidad === filterLocality;
-      const matchesSex = !filterSex || job.workerSex === filterSex;
-
-      return matchesSearch && matchesType && matchesProvince && matchesLocality && matchesSex;
+      return matchesSearch && matchesJobFilters(toFilterable(job), filters);
     });
-  }, [jobs, searchTerm, filterType, filterProvince, filterLocality, filterSex]);
+  }, [jobs, searchTerm, filters]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -152,7 +155,7 @@ export const JobsEmbeddedSection = ({
     const fetchJobs = async (): Promise<void> => {
       if (readUsePublicApi()) {
         const listings = await PublicApiService.getPublicJobs();
-        setJobs(listings.map(adaptPublicJobListing));
+        setJobs(listings.map(dto => adaptPublicJobListing(dto, t)));
       } else {
         const apiUrl = import.meta.env.VITE_API_WORKER_FUNCTIONS_URL || 'http://localhost:8081';
         const response = await fetch(`${apiUrl}/api/jobs`);
@@ -169,14 +172,11 @@ export const JobsEmbeddedSection = ({
 
   const clearFilters = (): void => {
     setSearchTerm('');
-    setFilterType('');
-    setFilterProvince('');
-    setFilterLocality('');
-    setFilterSex('');
+    setFilters(EMPTY_JOB_FILTERS);
   };
 
   const activeFiltersCount = [
-    searchTerm, filterType, filterProvince, filterLocality, filterSex
+    searchTerm, filters.type, filters.province, filters.locality, filters.sex
   ].filter(Boolean).length;
 
   if (isLoading) {
@@ -238,33 +238,37 @@ export const JobsEmbeddedSection = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           <Combobox
             inputSize="compact"
-            value={filterType}
-            onChange={setFilterType}
-            options={workerTypeOptions}
+            value={filters.type}
+            onChange={setFilter('type')}
+            options={filterOptions.types}
+            clearLabel={t('jobs.filters.allWorkerTypes')}
             placeholder={t('jobs.filters.workerType')}
             aria-label={t('jobs.filters.workerType')}
           />
           <Combobox
             inputSize="compact"
-            value={filterProvince}
-            onChange={setFilterProvince}
-            options={provinceOptions}
+            value={filters.province}
+            onChange={setFilter('province')}
+            options={filterOptions.provinces}
+            clearLabel={t('jobs.filters.allProvinces')}
             placeholder={t('jobs.filters.province')}
             aria-label={t('jobs.filters.province')}
           />
           <Combobox
             inputSize="compact"
-            value={filterLocality}
-            onChange={setFilterLocality}
-            options={localityOptions}
+            value={filters.locality}
+            onChange={setFilter('locality')}
+            options={filterOptions.localities}
+            clearLabel={t('jobs.filters.allLocalities')}
             placeholder={t('jobs.filters.locality')}
             aria-label={t('jobs.filters.locality')}
           />
           <Combobox
             inputSize="compact"
-            value={filterSex}
-            onChange={setFilterSex}
-            options={sexOptions}
+            value={filters.sex}
+            onChange={setFilter('sex')}
+            options={filterOptions.sexes}
+            clearLabel={t('jobs.filters.allSexes')}
             placeholder={t('jobs.filters.sex')}
             aria-label={t('jobs.filters.sex')}
           />
