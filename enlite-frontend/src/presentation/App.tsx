@@ -16,6 +16,7 @@ import { lazyWithRetry } from './utils/lazyWithRetry';
 import { AdminLayout } from './components/templates/AdminLayout/AdminLayout';
 import { AdminLoginRedirect } from './components/features/admin/AdminLoginRedirect';
 import { AuthActionPage } from './pages/auth/AuthActionPage';
+import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage';
 import { NoAccessPage } from './pages/NoAccessPage';
 import { WorkerAccountCheckPage } from './pages/WorkerAccountCheckPage';
 import { WORKER_ACCOUNT_CHECK_ROUTE } from './utils/workerInitOutcome';
@@ -150,6 +151,7 @@ export function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/complete-whatsapp" element={<CompleteWhatsappPage />} />
         <Route path="/auth/action" element={<AuthActionPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route
           path="/vacantes/:id"
           element={

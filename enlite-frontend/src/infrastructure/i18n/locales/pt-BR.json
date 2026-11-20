@@ -302,6 +302,16 @@
       "login": "Entrar com Google",
       "register": "Cadastrar-me com Google"
     },
+    "forgot": {
+      "title": "Esqueceu sua senha?",
+      "description": "Informe seu e-mail e enviaremos um link para você criar uma senha nova.",
+      "submit": "Enviar link",
+      "sentNeutral": "Se existir uma conta com esse e-mail, enviamos um link para criar uma senha nova. Se você se cadastrou com o Google, use \"Entrar com Google\".",
+      "invalidEmail": "Por favor, informe um e-mail válido",
+      "tooManyRequests": "Muitas tentativas. Tente novamente mais tarde.",
+      "genericError": "Não foi possível enviar o link. Tente novamente.",
+      "backToLogin": "Voltar para o login"
+    },
     "action": {
       "title": "Defina sua senha",
       "titleFor": "Defina sua senha para {{email}}",

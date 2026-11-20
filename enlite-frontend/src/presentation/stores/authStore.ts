@@ -16,6 +16,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<User>;
   register: (email: string, password: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   initialize: () => () => void;
 }
@@ -55,6 +56,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     WorkerApiService.initWorker({ authUid: user.id, email: user.email }).catch(() => undefined);
   },
   
+  sendPasswordReset: async (email: string): Promise<void> => {
+    const { authService } = get();
+    await authService.sendPasswordResetEmail(email);
+  },
+
   logout: async (): Promise<void> => {
     const { authService } = get();
     await authService.logout();

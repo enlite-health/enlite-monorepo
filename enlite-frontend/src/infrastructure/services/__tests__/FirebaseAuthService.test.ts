@@ -14,6 +14,7 @@ vi.mock('firebase/auth', () => ({
   onAuthStateChanged: vi.fn(),
   getIdToken: vi.fn(),
   sendEmailVerification: vi.fn(),
+  sendPasswordResetEmail: vi.fn(),
 }));
 
 vi.mock('../../config/firebase', () => ({
@@ -81,6 +82,32 @@ describe('FirebaseAuthService', () => {
       await expect(
         service.signInWithEmail('test@example.com', 'wrong-password')
       ).rejects.toThrow('Invalid credentials');
+    });
+  });
+
+  describe('sendPasswordResetEmail', () => {
+    it('chama o Firebase com o e-mail e o actionCodeSettings no mesmo molde da verificação', async () => {
+      vi.mocked(firebase.sendPasswordResetEmail).mockResolvedValue(undefined as any);
+
+      await service.sendPasswordResetEmail('ana@example.com');
+
+      expect(firebase.sendPasswordResetEmail).toHaveBeenCalledWith(
+        expect.anything(),
+        'ana@example.com',
+        {
+          url: `${window.location.origin}/login`,
+          handleCodeInApp: true,
+          iOS: { bundleId: 'com.enlite.app' },
+          android: { packageName: 'com.enlite.app', installApp: false, minimumVersion: '1' },
+        }
+      );
+    });
+
+    it('relança o erro do Firebase para quem chama escolher a resposta', async () => {
+      const err = Object.assign(new Error('x'), { code: 'auth/user-not-found' });
+      vi.mocked(firebase.sendPasswordResetEmail).mockRejectedValue(err);
+
+      await expect(service.sendPasswordResetEmail('ninguem@example.com')).rejects.toBe(err);
     });
   });
 
