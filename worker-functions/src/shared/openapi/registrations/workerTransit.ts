@@ -25,7 +25,7 @@ registry.registerPath({
   responses: {
     200: {
       description: 'Rotas (até 3); routes [] quando não há trajeto ou o paciente não tem ponto.',
-      content: { 'application/json': { schema: z.object({ origin_label: z.string().openapi({ description: 'Endereço da zona; a tela mostra "Desde tu zona:" seguido dele.' }), routes: z.array(WorkerTransitRoute) }) } },
+      content: { 'application/json': { schema: z.object({ origin_label: z.string().openapi({ description: 'Só o bairro da zona (D722), nunca rua e número; a tela mostra "Desde tu zona" seguido dele.' }), routes: z.array(WorkerTransitRoute) }) } },
     },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     403: { description: 'Prestador inexistente ou inativo (DISABLED).', content: { 'application/json': { schema: ErrorCode('ACCOUNT_INACTIVE') } } },
