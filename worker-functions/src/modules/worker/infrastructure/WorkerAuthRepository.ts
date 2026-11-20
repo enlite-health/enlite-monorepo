@@ -204,6 +204,20 @@ export async function updateAuthUid(
   }
 }
 
+// ─── setPhoneIfNull ───────────────────────────────────────────────────────────
+
+/** Atômico: o `AND (phone IS NULL OR phone = '')` decide, não uma leitura anterior. Erro do banco sobe. */
+export async function setPhoneIfNull(pool: Pool, workerId: string, phone: string): Promise<Worker | null> {
+  const result = await pool.query(
+    `UPDATE workers SET phone = $2, updated_at = NOW()
+     WHERE id = $1 AND (phone IS NULL OR phone = '')
+     RETURNING id, auth_uid as "authUid", email, phone, country, timezone, status,
+               created_at as "createdAt", updated_at as "updatedAt"`,
+    [workerId, phone],
+  );
+  return result.rows.length === 0 ? null : (result.rows[0] as Worker);
+}
+
 // ─── updateImportedWorkerData ─────────────────────────────────────────────────
 
 export async function updateImportedWorkerData(
