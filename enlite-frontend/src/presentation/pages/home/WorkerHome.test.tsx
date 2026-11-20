@@ -74,6 +74,10 @@ vi.mock('@presentation/components/organisms/PendingTasksCard', () => ({
   ),
 }));
 
+// Estes testes são da COMPLETUDE (missingFields), não do mapa. Antes viviam do fallback "rota do mapa falha ⇒ lista"; com a falha
+// fechada (096: cartão de erro) o hook fica fixo em 'inactive' (lista pública segue). O mapa tem o WorkerHome.perfil096.test.tsx.
+vi.mock('@presentation/hooks/useWorkerJobsByRadius', () => ({ useWorkerJobsByRadius: () => ({ status: 'inactive' }) }));
+
 vi.mock('@presentation/components/features/worker/JobsEmbeddedSection', () => ({
   JobsEmbeddedSection: ({
     isRegistrationComplete,

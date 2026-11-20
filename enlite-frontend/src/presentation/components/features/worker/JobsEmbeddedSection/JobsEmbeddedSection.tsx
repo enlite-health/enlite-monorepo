@@ -98,12 +98,19 @@ interface JobsEmbeddedSectionProps {
    * `GET /api/workers/me` que `WorkerHome` já buscou.
    */
   profession?: string | null;
+  /**
+   * 096 (DD-6): `id da vaga → distance_km` das vagas dentro do raio escolhido (rota `workers/me/jobs?view=home`). Presente ⇒ a
+   * lista é feed ∩ estes ids, por distância, com "a N,N km" no card; ausente (sem endereço, erro, ainda carregando) ⇒ a lista
+   * pública inteira, como sempre. Os filtros da 097 valem sobre esta lista.
+   */
+  radiusScope?: Record<string, number> | null;
 }
 
 export const JobsEmbeddedSection = ({
   isRegistrationComplete = false,
   missingFields = null,
   profession = null,
+  radiusScope = null,
 }: JobsEmbeddedSectionProps): JSX.Element => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -136,12 +143,16 @@ export const JobsEmbeddedSection = ({
   const [filters, setFilters] = useState<JobFilterSelection>(EMPTY_JOB_FILTERS);
   const setFilter = (field: keyof JobFilterSelection) => (value: string): void =>
     setFilters(prev => ({ ...prev, [field]: value }));
-  const jobsView = useMemo(
-    () => jobs.map(j => (j.ageMin === undefined && j.ageMax === undefined
+  const jobsView = useMemo(() => {
+    const formatted = jobs.map(j => (j.ageMin === undefined && j.ageMax === undefined
       ? j
-      : { ...j, ageRange: formatAgeRange(j.ageMin ?? null, j.ageMax ?? null, t) })),
-    [jobs, t],
-  );
+      : { ...j, ageRange: formatAgeRange(j.ageMin ?? null, j.ageMax ?? null, t) }));
+    if (!radiusScope) return formatted;
+    return formatted
+      .filter(j => j.id in radiusScope)
+      .map(j => ({ ...j, distanceKm: radiusScope[j.id] }))
+      .sort((a, b) => (a.distanceKm ?? 0) - (b.distanceKm ?? 0));
+  }, [jobs, t, radiusScope]);
   const filterOptions = useMemo(() => buildJobFilterOptions(jobsView.map(toFilterable), t), [jobsView, t]);
 
   const filteredJobs = useMemo(() => {

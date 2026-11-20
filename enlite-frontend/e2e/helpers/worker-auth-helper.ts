@@ -194,6 +194,17 @@ export async function installWorkerInterceptors(
       });
       return;
     }
+    // Spec 096: a home FALHA FECHADA quando `/api/workers/me/jobs?view=home` erra (cartão de erro, sem lista). O stub genérico de
+    // `GET /api/workers/me*` abaixo responderia `{success,data}` (corpo que não é da rota ⇒ erro ⇒ home sem lista) e derrubaria
+    // todo spec que só quer a vitrine pública. Aqui a rota diz "conta inativa" (403 ACCOUNT_INACTIVE): a home mantém a lista
+    // pública, que é o que esses specs medem. Quem testa o mapa/erro registra a PRÓPRIA rota depois do login (a mais nova vence).
+    if (url.includes('/api/workers/me/jobs')) {
+      await route.fulfill({
+        status: 403, contentType: 'application/json',
+        body: JSON.stringify({ success: false, code: 'ACCOUNT_INACTIVE' }),
+      });
+      return;
+    }
     if (url.includes('/api/workers/me') && route.request().method() === 'GET') {
       await route.fulfill({
         status: 200, contentType: 'application/json',

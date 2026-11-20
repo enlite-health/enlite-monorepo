@@ -68,6 +68,11 @@ export function JobCard({ job, applyLabel, onViewDetails }: JobCardProps): JSX.E
           <h3 className="font-semibold text-[#180149] text-sm font-lexend">
             {[job.barrio, job.localidad, job.provincia].filter(Boolean).join(' · ')}
           </h3>
+          {job.distanceKm !== undefined && (
+            <p data-testid="job-distance" className="text-xs text-[#737373] font-lexend font-medium">
+              {t('jobsRadius.distance', { km: job.distanceKm.toFixed(1).replace('.', ',') })}
+            </p>
+          )}
         </div>
         {/* `w-full` no mobile empilhado: os botões ocupam a largura do card
             (podem quebrar linha entre si via flex-wrap, e o rótulo longo

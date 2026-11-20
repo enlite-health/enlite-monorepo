@@ -20,10 +20,12 @@ export class WorkerJobsByRadiusController {
     }
     const raw = req.query.radius_km;
     const radiusKm = typeof raw === 'string' && /^[0-9]+$/.test(raw) ? Number(raw) : Number.NaN;
+    // `view` por allow-list: `home` | ausente; outro valor = ausente, não erro (096 DD-2).
+    const view = req.query.view === 'home' ? 'home' : undefined;
     try {
-      const out = await this.useCase.execute(uid, radiusKm);
+      const out = view ? await this.useCase.execute(uid, radiusKm, { view }) : await this.useCase.execute(uid, radiusKm);
       if (out.ok) {
-        res.status(200).json({ items: out.items });
+        res.status(200).json(view === 'home' ? { items: out.items, center: out.center, applied: out.applied, missing: out.missing } : { items: out.items });
         return;
       }
       res.status(STATUS_BY_CODE[out.code]).json({ code: out.code });

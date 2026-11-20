@@ -61,7 +61,8 @@ test.describe('@integration Home — "Postularse" por can_apply (spec 067 FR-14/
     vagaA = insertMinimalVacancy({ talentumWhatsappUrl: LINK_A, includeInPublicListing: true });
     vagaB = insertMinimalVacancy({ talentumWhatsappUrl: '', includeInPublicListing: true });
     vacancies.push(vagaA, vagaB);
-    w = insertAptoWorker({ docs: 'validated' });
+    // occupation 'AT': a home agora lista só vagas que cabem no perfil (096) e as vagas deste spec exigem AT.
+    w = insertAptoWorker({ docs: 'validated', occupation: 'AT' });
     workers.push(w);
   });
 

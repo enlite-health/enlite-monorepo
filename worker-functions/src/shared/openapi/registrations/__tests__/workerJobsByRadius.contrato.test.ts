@@ -3,7 +3,7 @@
  * (spec 077 C-37). O item é tipado com a interface do Reader: chave nova no Reader sem chave aqui quebra o tsc do ts-jest;
  * `.strict()` reprova chave que o Reader emite e a doc não declara.
  */
-import { WorkerJobByRadiusItem } from '../workerJobsByRadius';
+import { WorkerJobByRadiusItem, WorkerJobsByRadiusHomeExtras } from '../workerJobsByRadius';
 import { buildOpenApiDocument } from '../../document';
 import type { WorkerJobByRadius } from '@modules/matching/infrastructure/WorkerJobsByRadiusReader';
 
@@ -40,5 +40,22 @@ describe('contrato: item de GET /api/workers/me/jobs', () => {
     for (const s of ['"radius_km"', '"already_applied"', '"distance_km"', 'INVALID_RADIUS', 'NO_SERVICE_AREA', 'ACCOUNT_INACTIVE']) {
       expect(op).toContain(s);
     }
+  });
+});
+
+describe('contrato 096: view=home', () => {
+  it('CA-4 o documento descreve view, center, applied e missing', () => {
+    const op = JSON.stringify(buildOpenApiDocument().paths['/api/workers/me/jobs']);
+    for (const s of ['"view"', '"center"', '"applied"', '"missing"', '"schedule"', '"profession"', '"sex"', '"availability"', '"address"']) expect(op).toContain(s);
+  });
+
+  it('CA-3 center, applied e missing passam no schema, strict; center é opcional (falta o endereço)', () => {
+    const ok = { center: { lat: -37.977, lng: -57.551 }, applied: { schedule: true, profession: false, sex: true }, missing: ['profession'] };
+    expect(WorkerJobsByRadiusHomeExtras.strict().safeParse(ok).success).toBe(true);
+    const { center: _c, ...semEndereco } = { ...ok, missing: ['address'] };
+    expect(WorkerJobsByRadiusHomeExtras.strict().safeParse(semEndereco).success).toBe(true);
+    expect(WorkerJobsByRadiusHomeExtras.strict().safeParse({ ...ok, address: 'x' }).success).toBe(false);
+    expect(WorkerJobsByRadiusHomeExtras.strict().safeParse({ ...ok, missing: ['clinical_text'] }).success).toBe(false);
+    expect(Object.keys(WorkerJobByRadiusItem.shape)).not.toEqual(expect.arrayContaining(['lat', 'lng']));
   });
 });

@@ -35,6 +35,8 @@ export interface Job {
   ageMin?: number | null;
   ageMax?: number | null;
   profile: string;
+  /** 096: distância (km, 1 casa) até a zona do prestador — só quando a lista vem escopada pelo raio. */
+  distanceKm?: number;
   /** Spec 067 FR-15: a vaga é postulável. O link da Talentum não vem no feed público (só no 200 de track-channel). */
   canApply: boolean;
   detailLink: string;
