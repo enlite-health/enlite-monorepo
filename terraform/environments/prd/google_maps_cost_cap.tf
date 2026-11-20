@@ -17,6 +17,20 @@ locals {
   maps_cap_per_min = "600"
   maps_cap_per_day = "20000"
 
+  # Routes API (routes.googleapis.com, Compute Routes do "Como llegar", worker-functions GoogleTransitDirections.ts -> directions/v2:computeRoutes).
+  # Teto PROPRIO, bem abaixo do 600/min e 20.000/dia dos demais: volume estimado ~6.000 chamadas/mes (~200/dia em media).
+  # 1.000/dia = 5x a media diaria; 60/min = 1 req/s (default do Google: 3.000/min). Calculo no corpo do PR.
+  routes_cap_per_min = "60"
+  routes_cap_per_day = "1000"
+
+  # TODO(NAO CONFIRMADO): nome da metrica e do limitId da cota da Routes API. NAO achado em fonte oficial publica
+  # (doc de uso so cita "3.000 QPM" sem o nome da metrica; routes_v2.yaml do googleapis nao tem secao de quota).
+  # Obter lendo (como tf-admin): gcloud alpha services quota list --service=routes.googleapis.com --consumer=projects/enlite-prd
+  # e confirmar por GET em consumerQuotaMetrics/<metric>/limits/<id> (200). Depois, entrar em maps_quota_caps assim:
+  #   "routes-compute-min" = { service = "routes.googleapis.com", metric = "<METRICA-CONFIRMADA>", limit = "%2Fmin%2Fproject", value = local.routes_cap_per_min }
+  #   "routes-compute-dia" = { service = "routes.googleapis.com", metric = "<METRICA-CONFIRMADA>", limit = "%2Fd%2Fproject", value = local.routes_cap_per_day }
+  # Sem esses overrides a Routes API continua so com o default do Google (3.000/min, sem teto diario).
+
   # métrica -> unidades a limitar. Limite efetivo atual entre parênteses.
   maps_quota_caps = {
     # Places API (New), service places.googleapis.com
@@ -72,6 +86,9 @@ locals {
     "services/0776-5E2E-55E3", # Places API (New)
     "services/0AC2-4B25-C429", # Geocoding API
     "services/1934-AA85-20F9", # Maps API (SKU "Dynamic Maps" = Maps JavaScript API)
+    # TODO(NAO CONFIRMADO): "services/<ID>" da Routes API. Achado so o ID de SKU (Compute Routes Essentials 9EFF-679A-9B16),
+    # que NAO e ID de servico e nao serve neste filtro. Ler do export de faturamento (service.id x service.description = 'Routes API')
+    # como nos outros 4 IDs, ou do catalogo: cloudbilling.googleapis.com/v1/services. Nao chutar.
   ]
 }
 
