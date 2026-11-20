@@ -153,7 +153,21 @@ export class InitWorkerUseCase {
         return Result.ok<InitWorkerOutput>({ ...(claim.getValue() as InitWorkerOutput & { status: 'claim_pending' }), code: 'CLAIM_PENDING' });
       }
 
-      const saved = await this.workerRepository.setPhoneIfNull(found.id, normalized);
+      let saved: Worker | null;
+      try {
+        saved = await this.workerRepository.setPhoneIfNull(found.id, normalized);
+      } catch (err: unknown) {
+        // DT-51: corrida de duas contas no mesmo celular. A mensagem do Postgres ecoa a linha (PII):
+        // nunca entra na resposta nem no log; só o código e o hash do id.
+        const pg = err as { code?: string; constraint?: string };
+        const log = logger.child({ source: 'InitWorkerUseCase:applyPhone', workerIdHash: resourceIdHash(found.id) });
+        if (pg.code === '23505' && pg.constraint === 'idx_workers_phone_unique') {
+          log.warn({ msg: 'worker_phone_unique_violation' });
+          return Result.ok<InitWorkerOutput>({ status: 'phone_rejected', code: 'PHONE_IN_USE' });
+        }
+        log.error({ msg: 'worker_phone_update_failed', pgCode: pg.code });
+        return Result.fail<InitWorkerOutput>('PHONE_UPDATE_FAILED');
+      }
       if (saved === null) return Result.ok<InitWorkerOutput>({ status: 'ok', worker: found, code: 'PHONE_LOCKED' });
       return Result.ok<InitWorkerOutput>({ status: 'ok', worker: saved, code: 'OK' });
     }
