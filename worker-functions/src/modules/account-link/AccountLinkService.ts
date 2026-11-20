@@ -199,11 +199,28 @@ export class AccountLinkService {
     });
 
     // Email de aviso com undo assinado (7d) — best-effort; falha não desfaz o merge.
+    // FR-95/DP-23: absorvida `is_test` não manda e-mail (o e-mail de teste não chama o provedor real).
     if (auditId != null) {
-      await sendLinkedNoticeEmail(this.pool, { survivorId, absorbedId, mergeAuditId: auditId });
+      const absorbed = await this.fetchAbsorbedFlags(absorbedId);
+      if (!absorbed.isTest) {
+        await sendLinkedNoticeEmail(this.pool, { survivorId, absorbedId, mergeAuditId: auditId });
+      } else {
+        await recordAccountLinkEvent(this.pool, {
+          event: 'notice_email_skipped', workerId: survivorId, otherWorkerId: absorbedId,
+          mergeAuditId: auditId, detail: { reason: 'is_test' },
+        });
+      }
     }
 
     return { status: 'merged', recovered, workerStatus };
+  }
+
+  /** Marca de teste da ficha absorvida (a linha continua existindo, com `merged_into_id`). Sem linha = não é teste. */
+  private async fetchAbsorbedFlags(absorbedId: string): Promise<{ isTest: boolean }> {
+    const res = await this.pool.query<{ is_test: boolean }>(
+      `SELECT is_test FROM workers WHERE id = $1::uuid`, [absorbedId],
+    );
+    return { isTest: res.rows[0]?.is_test === true };
   }
 
   private async fetchRecovered(auditId: number): Promise<Record<string, number>> {
