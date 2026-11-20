@@ -243,10 +243,10 @@ export function TherapeuticProjectDiagnosisBlock(props: BlockProps): JSX.Element
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
         data-testid={`tp-block-toggle-${uri}`}
-        className={`w-full min-h-[64px] box-border px-5 py-3.5 rounded-xl flex items-center gap-3 text-left cursor-pointer ${FOCUS}`}
+        className={`w-full min-h-[64px] box-border px-5 py-3.5 rounded-xl flex flex-wrap items-center gap-3 text-left cursor-pointer ${FOCUS}`}
       >
         <span className="flex text-primary shrink-0">{open ? <ChevronDown size={20} strokeWidth={2} aria-hidden="true" /> : <ChevronRight size={20} strokeWidth={2} aria-hidden="true" />}</span>
-        <span className="flex-1 min-w-0 flex flex-col gap-0.5" data-clarity-mask="True">
+        <span className="flex-1 min-w-[160px] flex flex-col gap-0.5" data-clarity-mask="True">
           <span className="font-poppins text-base leading-[1.35] font-semibold text-primary" data-testid={`tp-block-title-${uri}`}>{props.title}</span>
           <span className="text-[13px] leading-[1.4] text-[#4A4458]" data-testid={`tp-block-counter-${uri}`}>{COUNTER_BY_STATUS[block.status]({ objectives, activities }, tt)}</span>
         </span>

@@ -83,14 +83,23 @@ export async function escolherDiagnostico(page: Page, titulo: string, busca: str
   await expect(page.getByTestId('tp-diagnosis-chip')).toHaveCount(1);
 }
 
-/** Marca um checkbox do bloco pelo mouse (o `input` é sr-only: o humano clica o rótulo). */
-export async function marcar(page: Page, testId: string): Promise<void> {
-  await page.locator('label', { has: page.getByTestId(testId) }).click();
-  await expect(page.getByTestId(testId)).toBeChecked();
+/** 099: o acordeão do diagnóstico `uri` precisa estar aberto antes de marcar (só o 1º nasce aberto): clica o cabeçalho se estiver fechado. */
+export async function abrirBloco(page: Page, uri: string): Promise<void> {
+  const cabecalho = page.getByTestId(`tp-block-toggle-${uri}`);
+  if ((await cabecalho.getAttribute('aria-expanded')) !== 'true') await cabecalho.click();
+  await expect(cabecalho).toHaveAttribute('aria-expanded', 'true');
 }
 
-/** Paso 3 e 4 do bloco do diagnóstico `uri`: marca o objetivo e depois a atividade do plano. */
+/** 099: objetivo e atividade são cartões-botão (`aria-pressed`): o humano clica e a tela passa a marcar o botão como pressionado. */
+export async function marcar(page: Page, testId: string): Promise<void> {
+  const botao = page.getByTestId(testId);
+  await botao.click();
+  await expect(botao).toHaveAttribute('aria-pressed', 'true');
+}
+
+/** Paso 3 do bloco do diagnóstico `uri`: abre o acordeão, marca o objetivo e depois a atividade (que só aparece dentro do cartão marcado). */
 export async function marcarPlano(page: Page, uri: string, plano: Plano): Promise<void> {
+  await abrirBloco(page, uri);
   await marcar(page, `tp-obj-${uri}-${plano.objetivo.id}`);
   await marcar(page, `tp-act-${uri}-${plano.objetivo.id}-${plano.atividade.id}`);
 }

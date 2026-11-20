@@ -307,6 +307,7 @@ export function TherapeuticProjectForm({
 
   // 099: contador do rodapé "N de M diagnósticos con catálogo completos" — só "Nuevo" e só blocos COM catálogo (status `ok`).
   const catalogBlocks = cascadeApi.blocks.filter((b) => b.status === 'ok');
+  const fullWidthPlan = !isEditing && layout === 'byDiagnosis';
   const showProgress = !isEditing && layout === 'byDiagnosis' && cascadeApi.blocks.length > 0;
 
   /** Strategy por `objectivesLayout` (DD-21): um painel por formato. */
@@ -427,7 +428,7 @@ export function TherapeuticProjectForm({
         </div>
 
         <div className="flex flex-col gap-6">
-          {planPanels[layout]()}
+          {!fullWidthPlan && planPanels[layout]()}
           {/* Sem "Tipo de patología": deriva dos CID-11 no servidor (Gabriel 08/09; D163/D164) — máscara invisível na tela (DEC-09). */}
           <div className="grid grid-cols-2 gap-4">
             <FormField label={tf('startDate')} htmlFor="tp-startDate" labelSize="compact" required>
@@ -460,6 +461,9 @@ export function TherapeuticProjectForm({
             />
           ))}
         </div>
+
+        {/* 099: o Paso 3 do "Nuevo" ocupa a LARGURA TOTAL do form (desenho A), abaixo das duas colunas. */}
+        {fullWidthPlan && <div className="lg:col-span-2" data-testid="tp-plan-fullwidth">{planPanels[layout]()}</div>}
       </div>
 
       {saveError && (

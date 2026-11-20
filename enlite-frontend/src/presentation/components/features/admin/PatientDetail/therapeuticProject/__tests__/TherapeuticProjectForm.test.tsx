@@ -877,6 +877,22 @@ describe('091 — "Nuevo": passos habilitam em ordem', () => {
     expect(screen.queryByTestId(`tp-no-catalog-${C_URI}`)).not.toBeInTheDocument(); // fechado: corpo não monta
   });
 
+  it('099: o Paso 3 do "Nuevo" ocupa a LARGURA TOTAL (col-span-2 do grid do form), fora das duas colunas', async () => {
+    montar();
+    await aguardarBlocos(2);
+
+    const largura = screen.getByTestId('tp-plan-fullwidth');
+    expect(largura.className).toContain('lg:col-span-2');
+    expect(largura).toContainElement(screen.getByTestId('tp-step-objectives-title'));
+    expect(largura.parentElement!.className).toContain('lg:grid-cols-2');
+  });
+
+  it('"Editar" byDiagnosis mantém os blocos só leitura na coluna (sem o contêiner de largura total)', () => {
+    montar({ from: { ...VERSAO, objectivesLayout: 'byDiagnosis', specificObjectives: [], activities: [], diagnosisPlans: [] } });
+
+    expect(screen.queryByTestId('tp-plan-fullwidth')).not.toBeInTheDocument();
+  });
+
   it('DD-13: "Nuevo" nasce SEM objetivo nem atividade marcados; atividade só existe dentro do objetivo marcado', async () => {
     montar();
     await aguardarBlocos(2);

@@ -1,0 +1,56 @@
+=== a-tea: app (776, 693) -> (643, 572) (x0.8286); desenho recorte (643, 572)
+canvas (643, 572) app (643, 572)
+tol=40 min_px=150 gap=4
+pixels diferentes (tela inteira, bruto): 5.222% (19206 px)
+pixels diferentes (dentro de faixas):    5.222% (19206 px)
+faixa 1: y 224-273 px = 112-136.5 dp ; 11.45% dentro da faixa (3609 px)
+faixa 2: y 156-189 px = 78-94.5 dp ; 13.82% dentro da faixa (2932 px)
+faixa 3: y 73-121 px = 36.5-60.5 dp ; 8.65% dentro da faixa (2670 px)
+faixa 4: y 375-408 px = 187.5-204 dp ; 10.63% dentro da faixa (2255 px)
+faixa 5: y 307-340 px = 153.5-170 dp ; 10.61% dentro da faixa (2252 px)
+faixa 6: y 443-476 px = 221.5-238 dp ; 10.49% dentro da faixa (2226 px)
+faixa 7: y 0-47 px = 0-23.5 dp ; 5.64% dentro da faixa (1705 px)
+faixa 8: y 511-544 px = 255.5-272 dp ; 7.34% dentro da faixa (1557 px)
+VEREDITO: DIFERENTE (8 faixas)
+gerado: /Users/gabrielstein-dev/projects/enlite/ebrain/openspec/changes/099-pti-objetivo-como-tarjeta/evidencias/comparacao/a-tea-lado.png
+gerado: /Users/gabrielstein-dev/projects/enlite/ebrain/openspec/changes/099-pti-objetivo-como-tarjeta/evidencias/comparacao/a-tea-sobreposto.png
+=== b-tea: app (776, 900) -> (643, 650) (x0.8286); desenho recorte (643, 650)
+canvas (643, 650) app (643, 650)
+tol=40 min_px=150 gap=4
+pixels diferentes (tela inteira, bruto): 7.818% (32677 px)
+pixels diferentes (dentro de faixas):    7.818% (32677 px)
+faixa 1: y 58-309 px = 29-154.5 dp ; 9.27% dentro da faixa (14956 px)
+faixa 2: y 396-445 px = 198-222.5 dp ; 12.34% dentro da faixa (3889 px)
+faixa 3: y 547-581 px = 273.5-290.5 dp ; 15.34% dentro da faixa (3354 px)
+faixa 4: y 479-513 px = 239.5-256.5 dp ; 15.08% dentro da faixa (3297 px)
+faixa 5: y 328-362 px = 164-181 dp ; 13.86% dentro da faixa (3030 px)
+faixa 6: y 615-649 px = 307.5-324.5 dp ; 12.36% dentro da faixa (2702 px)
+faixa 7: y 16-47 px = 8-23.5 dp ; 7.27% dentro da faixa (1449 px)
+VEREDITO: DIFERENTE (7 faixas)
+gerado: /Users/gabrielstein-dev/projects/enlite/ebrain/openspec/changes/099-pti-objetivo-como-tarjeta/evidencias/comparacao/b-tea-lado.png
+gerado: /Users/gabrielstein-dev/projects/enlite/ebrain/openspec/changes/099-pti-objetivo-como-tarjeta/evidencias/comparacao/b-tea-sobreposto.png
+=== c-tdah: app (776, 809) -> (643, 670) (x0.8286); desenho recorte (643, 670)
+canvas (643, 670) app (643, 670)
+tol=40 min_px=150 gap=4
+pixels diferentes (tela inteira, bruto): 8.624% (37155 px)
+pixels diferentes (dentro de faixas):    8.624% (37155 px)
+faixa 1: y 60-294 px = 30-147 dp ; 10.76% dentro da faixa (16188 px)
+faixa 2: y 312-347 px = 156-173.5 dp ; 17.75% dentro da faixa (3995 px)
+faixa 3: y 583-618 px = 291.5-309 dp ; 15.97% dentro da faixa (3593 px)
+faixa 4: y 504-550 px = 252-275 dp ; 11.10% dentro da faixa (3282 px)
+faixa 5: y 380-414 px = 190-207 dp ; 13.93% dentro da faixa (3046 px)
+faixa 6: y 448-482 px = 224-241 dp ; 12.39% dentro da faixa (2709 px)
+faixa 7: y 17-47 px = 8.5-23.5 dp ; 13.16% dentro da faixa (2538 px)
+faixa 8: y 640-654 px = 320-327 dp ; 20.04% dentro da faixa (1804 px)
+VEREDITO: DIFERENTE (8 faixas)
+gerado: /Users/gabrielstein-dev/projects/enlite/ebrain/openspec/changes/099-pti-objetivo-como-tarjeta/evidencias/comparacao/c-tdah-lado.png
+gerado: /Users/gabrielstein-dev/projects/enlite/ebrain/openspec/changes/099-pti-objetivo-como-tarjeta/evidencias/comparacao/c-tdah-sobreposto.png
+=== c-asma: app (776, 138) -> (643, 59) (x0.8286); desenho recorte (643, 59)
+canvas (643, 59) app (643, 59)
+tol=40 min_px=150 gap=4
+pixels diferentes (tela inteira, bruto): 2.905% (1102 px)
+pixels diferentes (dentro de faixas):    2.905% (1102 px)
+faixa 1: y 17-48 px = 8.5-24 dp ; 5.53% dentro da faixa (1102 px)
+VEREDITO: DIFERENTE (1 faixas)
+gerado: /Users/gabrielstein-dev/projects/enlite/ebrain/openspec/changes/099-pti-objetivo-como-tarjeta/evidencias/comparacao/c-asma-lado.png
+gerado: /Users/gabrielstein-dev/projects/enlite/ebrain/openspec/changes/099-pti-objetivo-como-tarjeta/evidencias/comparacao/c-asma-sobreposto.png
