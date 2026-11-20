@@ -171,7 +171,9 @@ export class InitWorkerUseCase {
       if (saved === null) return Result.ok<InitWorkerOutput>({ status: 'ok', worker: found, code: 'PHONE_LOCKED' });
       return Result.ok<InitWorkerOutput>({ status: 'ok', worker: saved, code: 'OK' });
     }
-    return Result.ok<InitWorkerOutput>({ status: 'ok', worker: found, code: 'PHONE_LOCKED' });
+    // Ficha com telefone: o MESMO número é idempotente (OK, nada gravado); outro número → PHONE_LOCKED.
+    const same = normalizePhoneAR(worker.phone) === normalizePhoneAR(phoneInput);
+    return Result.ok<InitWorkerOutput>({ status: 'ok', worker: found, code: same ? 'OK' : 'PHONE_LOCKED' });
   }
 
   /**

@@ -98,8 +98,8 @@ export class WorkerControllerV2 {
 
       // Check if worker already exists — if so, return existing record
       const existingResult = await this.getProgressUseCase.execute(authUid);
-      // FR-88/C-43: ficha existente SEM telefone e telefone no corpo → o init aplica o ramo do telefone.
-      const phoneBranch = !existingResult.isFailure && Boolean(phone) && !existingResult.getValue().phone;
+      // FR-88/C-43: ficha existente e telefone no corpo → o init aplica o ramo do telefone (grava, ou PHONE_LOCKED).
+      const phoneBranch = !existingResult.isFailure && Boolean(phone);
       if (!existingResult.isFailure && !phoneBranch) {
         await this.provisionCountryClaim.execute({ uid: authUid, principal, country: existingResult.getValue().country });
         res.status(200).json({
