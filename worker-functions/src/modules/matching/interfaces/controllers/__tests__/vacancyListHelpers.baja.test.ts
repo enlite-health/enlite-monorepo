@@ -1,7 +1,7 @@
 /** Spec 084 F2: a lista esconde as dadas de baja por padrão; "Mostrar dadas de baja" e o filtro de status as mostram (só consulta). */
 import { buildListVacanciesQuery, mapStatus, mapVacancyListRow, type VacancyListRow } from '../vacancyListHelpers';
 
-const base = { limit: '20', offset: '0' };
+const base = { countries: ['AR'], limit: '20', offset: '0' };
 
 describe('lista de vacantes — dadas de baja (spec 084 F2)', () => {
   it('padrão: NENHUMA baixada na lista (`jp.status != DE_BAJA`)', () => {
@@ -19,7 +19,7 @@ describe('lista de vacantes — dadas de baja (spec 084 F2)', () => {
   it('filtro de status "Dada de baja" mostra SÓ as baixadas (parametrizado, sem esconder)', () => {
     const q = buildListVacanciesQuery({ ...base, status: 'DE_BAJA' });
     expect(q.baseQuery).toContain('AND jp.status = $1');
-    expect(q.params).toEqual(['DE_BAJA']);
+    expect(q.params).toEqual(['DE_BAJA', ['AR']]);
     expect(q.baseQuery).not.toContain("jp.status != 'DE_BAJA'");
   });
 

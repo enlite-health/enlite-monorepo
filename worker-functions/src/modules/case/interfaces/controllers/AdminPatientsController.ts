@@ -556,10 +556,26 @@ export class AdminPatientsController {
       return;
     }
 
+    // Escopo de pais resolvido NO SERVIDOR (mesmo contrato de getPatientStats): sem pais => 403 COUNTRY_SCOPE_REQUIRED;
+    // `?country` fora do escopo => 403; ausente => uniao dos paises do ator. NUNCA "todos".
+    let scope;
+    try {
+      scope = await resolveCountryScope(this.db, currentDbContext()?.uid, parsed.data.country);
+    } catch (err) {
+      if (err instanceof CountryScopeError) {
+        res.status(err.status).json({ success: false, error: err.code, detail: err.message });
+        return;
+      }
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:listPatients:scope' });
+      res.status(500).json({ success: false, error: 'Failed to resolve country scope' });
+      return;
+    }
+
     try {
       // D286: as células do ator decidem o que a lista carrega — e o que o KMS descriptografa.
       const cells = cellsDaLista;
-      const { rows, total } = await this.repo.list(parsed.data, patientContainerReadsOf(cells));
+      const { rows, total } = await this.repo.list({ ...parsed.data, countries: scope.countries }, patientContainerReadsOf(cells));
 
       const data = rows.map((row) => toAdminPatientListItem(row, cells));
 

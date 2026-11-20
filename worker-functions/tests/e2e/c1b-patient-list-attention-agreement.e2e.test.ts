@@ -24,7 +24,7 @@ const TAG = 'C1B-attention-%';
 // País próprio: `stats()` conta a base INTEIRA, e a base e2e é toda AR (medido: 37/37). Com as
 // fixtures em BR, `stats('BR')` e `list({country:'BR'})` falam das MESMAS 4 linhas — sem isso o
 // contador dança com o que as outras suítes inserem no mesmo Postgres.
-const BASE = { limit: 500, offset: 0, country: 'BR' } as unknown as AdminPatientsListParams;
+const BASE = { limit: 500, offset: 0, country: 'BR', countries: ['BR'] } as unknown as AdminPatientsListParams & { countries: readonly ('AR' | 'BR')[] };
 
 describe('C3 — filtro, total e contadores concordam com o badge que a lista mostra (Postgres real) @integration', () => {
   let pool: Pool;
@@ -113,7 +113,7 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
 
   /** As linhas deste teste, com o que o PAYLOAD afirma — a fonte contra a qual tudo é medido. */
   const minhas = async () => {
-    const { rows } = await repo.list({ ...BASE, search: 'Atencion QA' } as AdminPatientsListParams);
+    const { rows } = await repo.list({ ...BASE, search: 'Atencion QA' } as typeof BASE);
     return rows.filter((r) => (r.lastName ?? '') === 'Atencion QA');
   };
 
@@ -141,14 +141,14 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
 
   it('b. filtrar por `needs_attention=true` devolve EXATAMENTE quem tem o badge — e nunca quem não tem', async () => {
     const badge = new Set((await minhas()).filter((r) => r.needsAttention).map((r) => r.id));
-    const { rows } = await repo.list({ ...BASE, search: 'Atencion QA', needs_attention: 'true' } as AdminPatientsListParams);
+    const { rows } = await repo.list({ ...BASE, search: 'Atencion QA', needs_attention: 'true' } as typeof BASE);
     const filtrados = new Set(rows.filter((r) => (r.lastName ?? '') === 'Atencion QA').map((r) => r.id));
     expect([...filtrados].sort()).toEqual([...badge].sort());
     expect(rows.every((r) => r.needsAttention)).toBe(true);
   });
 
   it('c. filtrar por `needs_attention=false` ("Completo") NÃO devolve nenhuma linha com o badge', async () => {
-    const { rows } = await repo.list({ ...BASE, search: 'Atencion QA', needs_attention: 'false' } as AdminPatientsListParams);
+    const { rows } = await repo.list({ ...BASE, search: 'Atencion QA', needs_attention: 'false' } as typeof BASE);
     const meus = rows.filter((r) => (r.lastName ?? '') === 'Atencion QA');
     expect(meus.some((r) => r.needsAttention)).toBe(false);
     const semBadge = (await minhas()).filter((r) => !r.needsAttention).map((r) => r.id).sort();
@@ -158,19 +158,19 @@ describe('C3 — filtro, total e contadores concordam com o badge que a lista mo
   it('d. `attention_reason=INCOMPLETE_ADMISSION` casa com quem o payload marca (hoje: ninguém)', async () => {
     const esperados = (await minhas()).filter((r) => r.attentionReasons.includes('INCOMPLETE_ADMISSION')).map((r) => r.id).sort();
     expect(esperados.length).toBeGreaterThan(0);
-    const { rows } = await repo.list({ ...BASE, search: 'Atencion QA', attention_reason: 'INCOMPLETE_ADMISSION' } as AdminPatientsListParams);
+    const { rows } = await repo.list({ ...BASE, search: 'Atencion QA', attention_reason: 'INCOMPLETE_ADMISSION' } as typeof BASE);
     expect(rows.filter((r) => (r.lastName ?? '') === 'Atencion QA').map((r) => r.id).sort()).toEqual(esperados);
   });
 
   it('e. o `total` do filtro é o número de linhas que o filtro devolve (paginação não mente)', async () => {
-    const { rows: pagina, total } = await repo.list({ ...BASE, search: 'Atencion QA', needs_attention: 'true', limit: 1 } as AdminPatientsListParams);
+    const { rows: pagina, total } = await repo.list({ ...BASE, search: 'Atencion QA', needs_attention: 'true', limit: 1 } as typeof BASE);
     expect(pagina).toHaveLength(1);
     const badge = (await minhas()).filter((r) => r.needsAttention).length;
     expect(total).toBe(badge);
   });
 
   it('f. os contadores de `stats()` somam o MESMO que o badge da lista', async () => {
-    const { rows: todos, total } = await repo.list({ ...BASE } as AdminPatientsListParams);
+    const { rows: todos, total } = await repo.list({ ...BASE } as typeof BASE);
     const comBadge = todos.filter((r) => r.needsAttention).length;
     expect(total).toBe(cenarios.length);
     expect(comBadge).toBeGreaterThan(0); // controle positivo: as fixtures deste teste estão dentro

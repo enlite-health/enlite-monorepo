@@ -119,6 +119,17 @@ describe('Admin Patients API', () => {
       `INSERT INTO group_country_scopes (id, group_id, country, granted_by, reason) VALUES ($1, $2, 'AR', 'admin-patients-api-e2e', 'grant do teste de stats/funnel')`,
       [ADMIN_SCOPE_ID, ADMIN_GROUP_ID],
     );
+    // Este arquivo declara o proprio escopo (o padrao AR+BR dos e2e nao se aplica): TODO ator staff que chama as rotas de
+    // paciente precisa de pais. O `staffToken` (recruiter, caso 15) entra no mesmo grupo AR.
+    await pool.query(
+      `INSERT INTO users (firebase_uid, email, role, is_active, tenant_id) VALUES ($1, $2, 'recruiter', true, $3)
+       ON CONFLICT (firebase_uid) DO NOTHING`,
+      ['patients-staff-e2e', 'patients-staff@e2e.local', TENANT_ID],
+    );
+    await pool.query(
+      `INSERT INTO user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`,
+      ['patients-staff-e2e', ADMIN_GROUP_ID, TENANT_ID],
+    );
 
     // Seed patients for filter tests
     await seedPatient({ firstName: 'Francisco', lastName: 'Alomon', documentNumber: 'DOC-E2E-001', needsAttention: false });
@@ -138,7 +149,7 @@ describe('Admin Patients API', () => {
     await pool.query(`DELETE FROM group_country_scopes WHERE id = $1`, [ADMIN_SCOPE_ID]);
     await pool.query(`DELETE FROM user_groups WHERE group_id = $1`, [ADMIN_GROUP_ID]);
     await pool.query(`DELETE FROM permission_groups WHERE id = $1`, [ADMIN_GROUP_ID]);
-    await pool.query(`DELETE FROM users WHERE firebase_uid = $1`, ['patients-admin-e2e']);
+    await pool.query(`DELETE FROM users WHERE firebase_uid = ANY($1::text[])`, [['patients-admin-e2e', 'patients-staff-e2e']]);
     await pool.end();
   });
 

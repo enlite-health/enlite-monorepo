@@ -32,7 +32,7 @@ describe('GetPatientChatMapUseCase', () => {
       const out = await new GetPatientChatMapUseCase(repo).execute();
 
       expect(repo.findChatMap).toHaveBeenCalledWith({
-        filter: 'linked', limit: DEFAULT_CHAT_MAP_LIMIT, offset: 0,
+        filter: 'linked', limit: DEFAULT_CHAT_MAP_LIMIT, offset: 0, countries: ['AR', 'BR'], // principal de servico: todos (decisao pendente)
       });
       expect(out).toEqual({
         patients: [ROW_1], total: 1, limit: DEFAULT_CHAT_MAP_LIMIT, offset: 0, hasMore: false,
@@ -118,7 +118,7 @@ describe('GetPatientChatMapUseCase', () => {
 
       const out = await new GetPatientChatMapUseCase(repo).execute({ chatId: FAMILY });
 
-      expect(repo.findByChatId).toHaveBeenCalledWith(FAMILY);
+      expect(repo.findByChatId).toHaveBeenCalledWith(FAMILY, ['AR', 'BR']);
       expect(repo.findChatMap).not.toHaveBeenCalled();
       expect(out).toEqual({ patients: [hit], total: 1, limit: DEFAULT_CHAT_MAP_LIMIT, offset: 0, hasMore: false });
     });

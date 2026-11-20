@@ -16,6 +16,7 @@ import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
 import { reportError } from '@shared/logging';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { sameRealmAsVacancySql, excludeTestVacancySql } from '@shared/database/testRealmSql';
+import { resolveCountriesOrRespond } from '@modules/identity';
 import { cellsOfRequest, projectWorkerFields, ProjecaoSemDecryptorError } from '@modules/identity/permissions';
 import { canSearchVacanciesByPatientName, projectPatientInVacancy } from '../../application/patientInVacancyProjection';
 import { loadVacancyPatientDiagnoses } from '../../application/vacancyPatientDiagnoses';
@@ -81,6 +82,8 @@ export class VacanciesController {
   }
 
   async listVacancies(req: Request, res: Response): Promise<void> {
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'VacanciesController:listVacancies');
+    if (!countries) return;
     try {
       const {
         search, status, include_baja, talentum_manual,
@@ -93,6 +96,7 @@ export class VacanciesController {
       // D286 fase 2: nome do paciente na lista segue `patient_identity:read` — inclusive na BUSCA.
       const cellsDaLista = cellsOfRequest(req);
       const { baseQuery, params, paramIndex } = buildListVacanciesQuery({
+        countries,
         search, status,
         includeBaja: include_baja,
         talentumManual: talentum_manual,
@@ -158,6 +162,8 @@ export class VacanciesController {
   }
 
   async getVacanciesStats(req: Request, res: Response): Promise<void> {
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'VacanciesController:getVacanciesStats');
+    if (!countries) return;
     try {
       const result = await this.db.query(`
         SELECT
@@ -189,7 +195,7 @@ export class VacanciesController {
           ) as tempo_medio_fechamento
         FROM job_postings jp
         WHERE case_number IS NOT NULL AND deleted_at IS NULL AND ${excludeTestVacancySql('jp')}
-      `);
+      AND jp.country = ANY($1::bpchar[])`, [countries]);
 
       const stats = result.rows[0];
       const formattedStats = [
@@ -417,6 +423,8 @@ export class VacanciesController {
   }
 
   async getCasesForSelect(req: Request, res: Response): Promise<void> {
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'VacanciesController:getCasesForSelect');
+    if (!countries) return;
     try {
       const result = await this.db.query(`
         SELECT
@@ -426,6 +434,7 @@ export class VacanciesController {
         FROM patients p
         WHERE p.case_number IS NOT NULL
           AND p.deleted_at IS NULL
+          AND p.country = ANY($1::bpchar[])
           AND p.status IN ('ACTIVE', 'PENDING_ADMISSION', 'ADMISSION')
           AND EXISTS (
             SELECT 1 FROM patient_addresses pa
@@ -433,7 +442,7 @@ export class VacanciesController {
                 AND pa.archived_at IS NULL
           )
         ORDER BY p.case_number DESC
-      `);
+      `, [countries]);
       // Nível de dependência é dado de SAÚDE (`lex` fase 2, P3): sai só com `patient_clinical:read`.
       const cellsDoSelect = cellsOfRequest(req);
       const data = result.rows.map((r: { caseNumber: number; patientId: string; dependencyLevel: string }) => {

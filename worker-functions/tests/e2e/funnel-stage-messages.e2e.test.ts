@@ -46,6 +46,7 @@ import { MessageTemplateRepository } from '@modules/notification/infrastructure/
 import { MessagingChannelPauseCache } from '@modules/notification/infrastructure/MessagingChannelPauseCache';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { grantDefaultCountries } from './helpers/countryGrant';
 import type { IMessagingService } from '@modules/notification/domain/IMessagingService';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -94,6 +95,7 @@ describe('Mensagem por etapa do Kanban (PEND-14 / DEC-12) @integration', () => {
   beforeAll(async () => {
     await waitForBackend(api);
     pool = new Pool({ connectionString: DATABASE_URL });
+    await grantDefaultCountries(ADMIN_UID, { force: true }); await grantDefaultCountries(RECRUITER_UID, { force: true }); // token mock inline: nao passa pelas helpers
     await pool.query(`DELETE FROM job_postings WHERE case_number = ANY($1::int[])`, [[CASE_A, CASE_B]]);
     await cleanWorkerProfile(pool, (await pool.query<{ id: string }>(`SELECT id FROM workers WHERE email LIKE 'fsm-%@e2e.local'`)).rows.map((r) => r.id));
     await pool.query(`DELETE FROM workers WHERE email LIKE 'fsm-%@e2e.local'`);

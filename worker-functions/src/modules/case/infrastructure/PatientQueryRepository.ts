@@ -51,8 +51,12 @@ export class PatientQueryRepository {
     this.encryptionService = new KMSEncryptionService();
   }
 
+  /**
+   * `countries` é o escopo JÁ RESOLVIDO no servidor (`resolveCountryScope`) — nunca o `?country` cru. Obrigatório e
+   * sem "null = todos": lista vazia devolve 0 linhas (`= ANY('{}')` é falso), jamais todos os países.
+   */
   async list(
-    filters: AdminPatientsListParams,
+    filters: AdminPatientsListParams & { countries: readonly CountryCode[] },
     // D286 / lex P3: o desempate do lead (e-mail mascarado) só é descriptografado para quem lê identidade.
     reads: PatientContainerReads = ALL_PATIENT_CONTAINERS_READABLE,
   ): Promise<{ rows: PatientListRow[]; total: number }> {
@@ -89,8 +93,8 @@ export class PatientQueryRepository {
     params.push(filters.case_number ?? null);
     const caseNumberIdx = i++;
 
-    // $7 country filter (null = todos os países)
-    params.push(filters.country ?? null);
+    // $7 escopo de países (resolveCountryScope) — `= ANY`, nunca "null = todos"
+    params.push([...filters.countries]);
     const countryIdx = i++;
 
     // lex 08/09 (gate da LISTA 017): o ramo da busca que casa o NOME DO RESPONSÁVEL é dado do container
@@ -248,7 +252,7 @@ export class PatientQueryRepository {
         AND ($${dependencyLevelIdx}::text IS NULL OR p.dependency_level = $${dependencyLevelIdx})
         AND ($${caseNumberIdx}::text IS NULL
           OR CAST((${effectiveCaseNumber}) AS TEXT) ILIKE '%' || $${caseNumberIdx} || '%')
-        AND ($${countryIdx}::text IS NULL OR p.country = $${countryIdx})
+        AND p.country = ANY($${countryIdx}::bpchar[])
         -- Checkbox "Mostrar desactivados" (opt-in, D-2026-09-28): default continua
         -- excluindo o soft-delete — só $${includeDeactivatedIdx}=true relaxa o filtro.
         AND ($${includeDeactivatedIdx}::boolean IS TRUE OR p.deleted_at IS NULL)

@@ -72,7 +72,7 @@ async function csvDe(result: { csvLines?: AsyncGenerator<string> }): Promise<str
 
 function rodar(cells: string[] | null, columns: WorkerExportColumnKey[]) {
   return new ExportWorkersUseCase().execute({
-    format: 'csv', columns, filters: {}, cells,
+    format: 'csv', columns, filters: { countries: ['AR'] }, cells,
   });
 }
 

@@ -154,6 +154,8 @@ const VALID_WORKER_TYPES: ReadonlySet<string> = new Set(['AT', 'CAREGIVER']);
 const VALID_REQUIRED_SEX: ReadonlySet<string> = new Set(['F', 'M', 'BOTH']);
 
 export interface ListVacanciesFilters {
+  /** Escopo de paises JA RESOLVIDO (resolveCountryScope) — obrigatorio; vazio = 0 linhas, nunca "todos". */
+  countries: readonly string[];
   search?: unknown;
   status?: unknown;
   /** Filter by required_professions: 'AT' | 'CAREGIVER' */
@@ -268,6 +270,11 @@ export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { s
     params.push(...scheduleResult.params);
     paramIndex = scheduleResult.nextParamIndex;
   }
+
+  // Hotfix 18/11: dado BR so para grupo com BR — escopo resolvido no servidor (`= ANY`), sempre; vazio = 0 linhas.
+  baseQuery += ` AND jp.country = ANY($${paramIndex}::bpchar[])`;
+  params.push([...filters.countries]);
+  paramIndex++;
 
   return { baseQuery, params, paramIndex };
 }

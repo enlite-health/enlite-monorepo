@@ -64,7 +64,7 @@ import { createPatientDocumentsRoutes } from '@modules/patient-documents/interfa
 import { createAdminNotificationRoutes } from '@modules/inapp-notification/interfaces/routes/adminNotificationRoutes';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
-import { UserController, resolveCountryScope, sealUnclassifiedRoutes } from '@modules/identity';
+import { UserController, resolveCountryScope, sealUnclassifiedRoutes, createAdminRecordCountryScopeRoutes } from '@modules/identity';
 import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createAdminAreaMembershipRoutes, AreaMembershipController, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createAdminPresenceRoutes } from '@modules/presence';
 import { routeClass, markRouteClass, createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
@@ -280,6 +280,12 @@ const authzEngine = process.env.PERMISSION_ENGINE_ENABLED === 'true'
   : nonGovernedEngine;
 
 const authMiddleware = new AuthMiddleware(authService, authzEngine, permissionsBoundary.permissions.client);
+
+// Hotfix 18/11/2026: escopo de pais do registro individual (paciente/worker/vaga e filhas sob /api/admin). Tem de ser o
+// PRIMEIRO mount de rota do app — antes de qualquer router que sirva /api/admin/..., inclusive os montados em /api
+// (ex.: createWorkerDocumentsRoutes, /admin/workers/:id/additional-documents). Depois do dbSessionMiddleware (l.217).
+// O teste adminRecordCountryScopeMountOrder.test.ts morre se alguem montar rota antes daqui.
+app.use('/api/admin', createAdminRecordCountryScopeRoutes(authMiddleware, () => DatabaseConnection.getInstance().getPool()));
 
 // ── Controller instances ──────────────────────────────────────────────────────
 const workerController = new WorkerControllerV2();

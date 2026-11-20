@@ -33,9 +33,20 @@ import { PublicVacancyController } from '../../src/modules/matching/interfaces/c
 import { VacanciesController } from '../../src/modules/matching/interfaces/controllers/VacanciesController';
 import { VacancyCrudController } from '../../src/modules/matching/interfaces/controllers/VacancyCrudController';
 import { DataRealm } from '../../src/shared/domain/DataRealm';
+import { grantDefaultCountries } from './helpers/countryGrant';
 
 const ADMIN_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const UID = 'vls-f1-staff-uid';
+
+/** `listVacancies` resolve o escopo de pais do ator pelo uid da request (ALS): a sonda precisa rodar como request staff AR. */
+async function comoStaffNaRequest<T>(fn: () => Promise<T>): Promise<T> {
+  const session: DbSession = { context: { kind: 'staff', uid: UID, country: 'AR' }, released: false };
+  try {
+    return await loggingAls.run({ traceId: 'vls-list', dbSession: session }, fn);
+  } finally {
+    await releaseDbSession(session);
+  }
+}
 const TAG = 'vls-f1';
 
 /** A = o que a cópia da vaga e o serviço têm no início. X = o que o serviço passa a ter (a vaga NÃO é tocada). */
@@ -306,7 +317,7 @@ const LEITORES: Leitor[] = [
     probe: async (ctx) => {
       const listaPorDia = async (day: number) => {
         const res = mockRes();
-        await new VacanciesController(diagnosisStub).listVacancies(asReq({ query: { days: String(day), limit: '50', offset: '0' } }), asRes(res));
+        await comoStaffNaRequest(() => new VacanciesController(diagnosisStub).listVacancies(asReq({ query: { days: String(day), limit: '50', offset: '0' } }), asRes(res)));
         expect(res.statusCode).toBe(200);
         const ids = JSON.stringify(res.body);
         return ids.includes(ctx.vacancyId);
@@ -380,7 +391,7 @@ const LEITORES_QTD: LeitorQtd[] = [
     nome: 'VacanciesController.listVacancies (faltantes = quantidade − preenchidas)',
     probe: async (ctx) => {
       const res = mockRes();
-      await new VacanciesController(diagnosisStub).listVacancies(asReq({ query: { limit: '50', offset: '0' } }), asRes(res));
+      await comoStaffNaRequest(() => new VacanciesController(diagnosisStub).listVacancies(asReq({ query: { limit: '50', offset: '0' } }), asRes(res)));
       expect(res.statusCode).toBe(200);
       const rows = ((res.body as { data: unknown }).data ?? []) as Array<{ id: string; faltantes: unknown }>;
       const row = rows.find((r) => r.id === ctx.vacancyId);
@@ -413,6 +424,8 @@ const LEITORES_QTD: LeitorQtd[] = [
 
 beforeAll(async () => {
   admin = new Pool({ connectionString: ADMIN_URL });
+  // O controller (in-process) agora resolve o escopo de pais do ator no banco: o staff AR do teste precisa de grupo com pais.
+  await grantDefaultCountries(UID, { force: true });
   identityPool = new Pool({ connectionString: ADMIN_URL, options: runtimeOptions(`-c app.user_country=AR -c app.user_uid=${UID}`), max: 4 });
   barePool = new Pool({ connectionString: ADMIN_URL, options: runtimeOptions(''), max: 4 });
   // Como o rlsAwarePool com a flag LIGADA: `query()` vai para o client fixado da request (COM identidade);
@@ -832,7 +845,7 @@ const matchedBy = async <T,>(values: readonly T[], hit: (v: T) => Promise<boolea
 };
 const adminListHits = async (ctx: Ctx, query: Record<string, string>): Promise<boolean> => {
   const res = mockRes();
-  await new VacanciesController(diagnosisStub).listVacancies(asReq({ query: { limit: '50', offset: '0', ...query } }), asRes(res));
+  await comoStaffNaRequest(() => new VacanciesController(diagnosisStub).listVacancies(asReq({ query: { limit: '50', offset: '0', ...query } }), asRes(res)));
   expect(res.statusCode).toBe(200);
   return JSON.stringify(res.body).includes(ctx.vacancyId);
 };

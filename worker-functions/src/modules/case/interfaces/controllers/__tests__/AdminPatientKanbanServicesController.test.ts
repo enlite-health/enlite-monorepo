@@ -3,6 +3,7 @@
  * real, agregação, RLS) é o e2e do backend (P7). Aqui cobrimos validação/erro e o contrato
  * publicado (critério 5: varredura recursiva de chaves, nenhuma casa dado pessoal/clínico).
  */
+import { CountryScopeError } from '@modules/identity';
 jest.mock('@shared/logging', () => ({ reportError: jest.fn() }));
 
 import { AdminPatientKanbanServicesController } from '../AdminPatientKanbanServicesController';
@@ -62,6 +63,8 @@ function chavesProibidas(value: unknown, proibido: RegExp): string[] {
   return achadas;
 }
 
+const stubScope = jest.fn(async (_uid: unknown, requested: unknown) => ({ countries: (requested ? [requested] : ['AR']) as ('AR' | 'BR')[] }));
+
 describe('AdminPatientKanbanServicesController', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -70,7 +73,7 @@ describe('AdminPatientKanbanServicesController', () => {
   describe('list', () => {
     it('400 quando country não é AR/BR', async () => {
       const useCase = { execute: jest.fn() };
-      const controller = new AdminPatientKanbanServicesController(useCase as never);
+      const controller = new AdminPatientKanbanServicesController(useCase as never, stubScope);
       const res = mockRes();
 
       await controller.list(mockReq({ query: { country: 'XX' } }), res);
@@ -79,29 +82,39 @@ describe('AdminPatientKanbanServicesController', () => {
       expect(useCase.execute).not.toHaveBeenCalled();
     });
 
-    it('sem country → useCase.execute(null)', async () => {
+    it('pais fora do escopo => 403 COUNTRY_SCOPE_REQUIRED do resolvedor e useCase NAO chamado', async () => {
+      const useCase = { execute: jest.fn() };
+      const deny = jest.fn().mockRejectedValue(new CountryScopeError(403, 'COUNTRY_SCOPE_REQUIRED', 'fora'));
+      const controller = new AdminPatientKanbanServicesController(useCase as never, deny);
+      const res = mockRes();
+      await controller.list(mockReq({ query: { country: 'BR' } }), res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(useCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('sem country → useCase.execute(escopo resolvido, nunca null)', async () => {
       const useCase = { execute: jest.fn().mockResolvedValue({ patients: [] }) };
-      const controller = new AdminPatientKanbanServicesController(useCase as never);
+      const controller = new AdminPatientKanbanServicesController(useCase as never, stubScope);
       const res = mockRes();
 
       await controller.list(mockReq(), res);
 
-      expect(useCase.execute).toHaveBeenCalledWith(null);
+      expect(useCase.execute).toHaveBeenCalledWith(['AR']);
     });
 
-    it('country=AR → useCase.execute("AR")', async () => {
+    it("country=AR -> useCase.execute([AR])", async () => {
       const useCase = { execute: jest.fn().mockResolvedValue({ patients: [] }) };
-      const controller = new AdminPatientKanbanServicesController(useCase as never);
+      const controller = new AdminPatientKanbanServicesController(useCase as never, stubScope);
       const res = mockRes();
 
       await controller.list(mockReq({ query: { country: 'AR' } }), res);
 
-      expect(useCase.execute).toHaveBeenCalledWith('AR');
+      expect(useCase.execute).toHaveBeenCalledWith(['AR']);
     });
 
     it('500 e reportError com { source, country } e nada mais (nunca o corpo/erro cru)', async () => {
       const useCase = { execute: jest.fn().mockRejectedValue(new Error('boom')) };
-      const controller = new AdminPatientKanbanServicesController(useCase as never);
+      const controller = new AdminPatientKanbanServicesController(useCase as never, stubScope);
       const res = mockRes();
 
       await controller.list(mockReq({ query: { country: 'BR' } }), res);
@@ -110,13 +123,13 @@ describe('AdminPatientKanbanServicesController', () => {
       expect(reportError).toHaveBeenCalledTimes(1);
       expect(reportError).toHaveBeenCalledWith(expect.any(Error), {
         source: 'AdminPatientKanbanServicesController:list',
-        country: 'BR',
+        countries: ['BR'],
       });
     });
 
     it('500 quando o caso de uso rejeita com algo que NÃO é Error (String(err) no reportError)', async () => {
       const useCase = { execute: jest.fn().mockRejectedValue('rejeição crua') };
-      const controller = new AdminPatientKanbanServicesController(useCase as never);
+      const controller = new AdminPatientKanbanServicesController(useCase as never, stubScope);
       const res = mockRes();
 
       await controller.list(mockReq(), res);
@@ -126,7 +139,7 @@ describe('AdminPatientKanbanServicesController', () => {
 
     it('200, o corpo satisfaz o contrato publicado (kanbanServicesResponseSchema) e não tem dado pessoal/clínico', async () => {
       const useCase = { execute: jest.fn().mockResolvedValue(FELIZ) };
-      const controller = new AdminPatientKanbanServicesController(useCase as never);
+      const controller = new AdminPatientKanbanServicesController(useCase as never, stubScope);
       const res = mockRes();
 
       await controller.list(mockReq(), res);

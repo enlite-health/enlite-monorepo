@@ -1,5 +1,9 @@
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
+import { resolveCountryScope, CountryScopeError } from '@modules/identity';
+import type { CountryCode } from '@shared/domain/countryCodes';
+import { currentDbContext } from '@shared/database/requestDbSession';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { ListKanbanServicesUseCase } from '../../application/ListKanbanServicesUseCase';
 import { kanbanServicesQuerySchema } from '../validators/kanbanServicesSchemas';
 
@@ -17,7 +21,12 @@ import { kanbanServicesQuerySchema } from '../validators/kanbanServicesSchemas';
  * de paciente sai em log — só ids, código de serviço, horas e `liveVacancyId` no corpo.
  */
 export class AdminPatientKanbanServicesController {
-  constructor(private readonly useCase: ListKanbanServicesUseCase = new ListKanbanServicesUseCase()) {}
+  constructor(
+    private readonly useCase: ListKanbanServicesUseCase = new ListKanbanServicesUseCase(),
+    // Pool pego sob demanda (o construtor nao abre banco). Escopo de pais SEMPRE do servidor (PR-9), nunca o `?country` cru.
+    private readonly resolveScope: (uid: string | undefined, requested: unknown) => Promise<{ countries: CountryCode[] }> = (uid, requested) =>
+      resolveCountryScope(DatabaseConnection.getInstance().getPool(), uid, requested),
+  ) {}
 
   /** GET /patients/kanban/services */
   async list(req: Request, res: Response): Promise<void> {
@@ -26,13 +35,25 @@ export class AdminPatientKanbanServicesController {
       res.status(400).json({ success: false, error: 'Invalid query params' });
       return;
     }
-    const country = query.data.country ?? null;
+    let countries: CountryCode[];
     try {
-      const data = await this.useCase.execute(country);
+      countries = (await this.resolveScope(currentDbContext()?.uid, query.data.country)).countries;
+    } catch (err) {
+      if (err instanceof CountryScopeError) {
+        res.status(err.status).json({ success: false, error: err.code, detail: err.message });
+        return;
+      }
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientKanbanServicesController:list:scope' });
+      res.status(500).json({ success: false, error: 'Failed to resolve country scope' });
+      return;
+    }
+    try {
+      const data = await this.useCase.execute(countries);
       res.status(200).json({ success: true, data });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
-      reportError(e, { source: 'AdminPatientKanbanServicesController:list', country });
+      reportError(e, { source: 'AdminPatientKanbanServicesController:list', countries });
       res.status(500).json({ success: false, error: 'Failed to list kanban services' });
     }
   }

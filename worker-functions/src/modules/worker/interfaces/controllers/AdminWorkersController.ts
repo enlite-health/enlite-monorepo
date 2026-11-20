@@ -17,6 +17,8 @@ import { generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { mapPlatformLabel, WorkerListItem, WORKER_DETAIL_COLS } from './AdminWorkersControllerHelpers';
 import { buildWorkerDetailResponse } from './AdminWorkersDetailBuilder';
 import { ExportWorkersUseCase, ExportSemColunaPermitidaError } from '../../application/ExportWorkersUseCase';
+import { resolveCountriesOrRespond } from '@modules/identity';
+import { currentDbContext } from '@shared/database/requestDbSession';
 import { cellsOfRequest } from '@modules/identity/permissions';
 import { WORKER_EXPORT_COLUMN_KEYS, WorkerExportColumnKey } from '../../application/export/workerExportColumns';
 import { buildAllValidatedClause, buildPendingValidationClause } from '../../application/workerDocumentFilters';
@@ -159,6 +161,10 @@ export class AdminWorkersController {
       return;
     }
 
+    // Hotfix 18/11: dado BR so para grupo com BR — escopo resolvido no servidor, `= ANY`, nunca "todos".
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'AdminWorkersController:listWorkers');
+    if (!countries) return;
+
     try {
       const {
         docs_validated, search,
@@ -185,6 +191,9 @@ export class AdminWorkersController {
         limit,
         offset,
       });
+      whereClause += ` AND w.country = ANY($${paramIndex}::bpchar[])`;
+      params.push(countries);
+      paramIndex++;
 
       // Apply docs_validated (synchronous)
       whereClause = this.applyDocsValidatedFilter(whereClause, docs_validated);
@@ -319,9 +328,18 @@ export class AdminWorkersController {
         res.status(400).json({ success: false, error: 'Query parameter "phone" is required' });
         return;
       }
+      // Hotfix 18/11: ator STAFF so ve worker de pais do seu escopo (fora => 404, igual a inexistente). Principal de
+      // servico (API key do triage-service) nao tem uid/pais: segue como antes — DECISAO PENDENTE (ver PR).
+      const staffActor = currentDbContext()?.kind === 'staff';
+      let scopeCountries: string[] | null = null;
+      if (staffActor) {
+        const c = await resolveCountriesOrRespond(this.db, res, undefined, 'AdminWorkersController:getWorkerByPhone');
+        if (!c) return;
+        scopeCountries = c;
+      }
       const workerResult = await this.db.query(
-        `SELECT ${WORKER_DETAIL_COLS} FROM workers w WHERE w.phone = ANY($1::text[]) AND w.merged_into_id IS NULL`,
-        [candidates],
+        `SELECT ${WORKER_DETAIL_COLS} FROM workers w WHERE w.phone = ANY($1::text[]) AND w.merged_into_id IS NULL AND ($2::bpchar[] IS NULL OR w.country = ANY($2::bpchar[]))`,
+        [candidates, scopeCountries],
       );
       if (workerResult.rows.length === 0) {
         res.status(404).json({ success: false, error: 'Worker not found' });
@@ -374,6 +392,8 @@ export class AdminWorkersController {
     }
 
     const columns = columnKeys as WorkerExportColumnKey[];
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'AdminWorkersController:exportWorkers');
+    if (!countries) return;
     const statusLabel = status ?? 'ALL';
     const date = operationDateOf('AR', new Date());
 
@@ -382,7 +402,7 @@ export class AdminWorkersController {
       const result = await useCase.execute({
         format,
         columns,
-        filters: { status, platform, docs_complete, docs_validated, case_id },
+        filters: { status, platform, docs_complete, docs_validated, case_id, countries },
         // C5: `cellsOfRequest` devolve `null` quando o engine não decidiu — e
         // `null` NÃO é `[]`. Escrever `?? []` aqui derrubaria o dossiê de todo
         // export antes mesmo do flip.

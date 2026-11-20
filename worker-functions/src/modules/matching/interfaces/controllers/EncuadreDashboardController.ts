@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { resolveCountriesOrRespond } from '@modules/identity';
 
 /**
  * EncuadreDashboardController
@@ -25,6 +26,8 @@ export class EncuadreDashboardController {
    * Returns per-coordinator capacity metrics.
    */
   async getCoordinatorCapacity(_req: Request, res: Response): Promise<void> {
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'EncuadreDashboardController:getCoordinatorCapacity');
+    if (!countries) return;
     try {
       const result = await this.db.query(`
         SELECT
@@ -43,6 +46,7 @@ export class EncuadreDashboardController {
             SELECT COUNT(*)::int
             FROM job_postings jp
             WHERE jp.coordinator_id = c.id
+              AND jp.country = ANY($1::bpchar[])
               AND jp.is_covered = false
               AND jp.deleted_at IS NULL
           ) AS active_cases,
@@ -52,6 +56,7 @@ export class EncuadreDashboardController {
             FROM encuadres e
             JOIN job_postings jp ON jp.id = e.job_posting_id
             WHERE jp.coordinator_id = c.id
+              AND jp.country = ANY($1::bpchar[])
               AND e.interview_date >= date_trunc('week', CURRENT_DATE)
               AND e.interview_date < date_trunc('week', CURRENT_DATE) + interval '7 days'
           ) AS encuadres_this_week,
@@ -62,17 +67,19 @@ export class EncuadreDashboardController {
             FROM encuadres e
             JOIN job_postings jp ON jp.id = e.job_posting_id
             WHERE jp.coordinator_id = c.id
+            AND jp.country = ANY($1::bpchar[])
           ) AS conversion_rate,
           -- Total cases managed
           (
             SELECT COUNT(*)::int
             FROM job_postings jp
             WHERE jp.coordinator_id = c.id
+              AND jp.country = ANY($1::bpchar[])
               AND jp.deleted_at IS NULL
           ) AS total_cases
         FROM coordinators c
         ORDER BY c.name
-      `);
+      `, [countries]);
 
       res.json({
         success: true,
@@ -99,6 +106,8 @@ export class EncuadreDashboardController {
    * Returns problem cases that need human intervention.
    */
   async getAlerts(_req: Request, res: Response): Promise<void> {
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'EncuadreDashboardController:getAlerts');
+    if (!countries) return;
     try {
       const result = await this.db.query(`
         SELECT
@@ -118,6 +127,7 @@ export class EncuadreDashboardController {
              AND e.created_at >= NOW() - interval '7 days') AS recent_encuadres
         FROM job_postings jp
         WHERE jp.deleted_at IS NULL
+          AND jp.country = ANY($1::bpchar[])
           AND jp.is_covered = false
           AND (
             -- Cases with >200 encuadres without success
@@ -140,7 +150,7 @@ export class EncuadreDashboardController {
             ELSE 3
           END,
           jp.search_start_date ASC NULLS LAST
-      `);
+      `, [countries]);
 
       const alerts = result.rows.map(row => {
         const reasons: string[] = [];
@@ -182,6 +192,8 @@ export class EncuadreDashboardController {
    * Returns conversion rates (SELECCIONADO / total) grouped by recruitment origin channel.
    */
   async getConversionByChannel(_req: Request, res: Response): Promise<void> {
+    const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'EncuadreDashboardController:getConversionByChannel');
+    if (!countries) return;
     try {
       const result = await this.db.query(`
         SELECT
@@ -195,10 +207,12 @@ export class EncuadreDashboardController {
             3
           ) AS conversion_rate
         FROM encuadres e
+        JOIN job_postings jp ON jp.id = e.job_posting_id
         WHERE e.job_posting_id IS NOT NULL
+          AND jp.country = ANY($1::bpchar[])
         GROUP BY COALESCE(e.import_source_audit, 'Desconocido')
         ORDER BY total DESC
-      `);
+      `, [countries]);
 
       res.json({
         success: true,

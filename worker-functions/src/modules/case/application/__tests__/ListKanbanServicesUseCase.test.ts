@@ -47,7 +47,7 @@ describe('ListKanbanServicesUseCase', () => {
     ];
     const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
 
-    const result = await useCase.execute('AR', new Date('2026-09-27T15:00:00Z'));
+    const result = await useCase.execute(['AR'], new Date('2026-09-27T15:00:00Z'));
 
     expect(result.patients).toHaveLength(1);
     expect(result.patients[0].patientId).toBe('p-1');
@@ -80,7 +80,7 @@ describe('ListKanbanServicesUseCase', () => {
     ];
     const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
 
-    const result = await useCase.execute('AR', new Date('2026-09-27T15:00:00Z'));
+    const result = await useCase.execute(['AR'], new Date('2026-09-27T15:00:00Z'));
 
     expect(result.patients[0].services[0].cobertas).toBe(0);
   });
@@ -105,7 +105,7 @@ describe('ListKanbanServicesUseCase', () => {
     ];
 
     const semAusencia = new ListKanbanServicesUseCase(readerWith(baseRows), noTeam);
-    const resultSemAusencia = await semAusencia.execute('AR', asOf);
+    const resultSemAusencia = await semAusencia.execute(['AR'], asOf);
 
     const comAusencia = new ListKanbanServicesUseCase(
       readerWith([
@@ -129,7 +129,7 @@ describe('ListKanbanServicesUseCase', () => {
       ]),
       noTeam,
     );
-    const resultComAusencia = await comAusencia.execute('AR', asOf);
+    const resultComAusencia = await comAusencia.execute(['AR'], asOf);
 
     const s1SemAusencia = resultSemAusencia.patients[0].services.find((s) => s.contractedServiceId === 'svc-1')!;
     const s2SemAusencia = resultSemAusencia.patients[0].services.find((s) => s.contractedServiceId === 'svc-2')!;
@@ -169,7 +169,7 @@ describe('ListKanbanServicesUseCase', () => {
     ];
     const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
 
-    const result = await useCase.execute('AR', asOf);
+    const result = await useCase.execute(['AR'], asOf);
 
     expect(result.patients[0].services[0].uncoveredDays).toBe(1);
   });
@@ -186,7 +186,7 @@ describe('ListKanbanServicesUseCase', () => {
       occurrences: { slots: [faixa('dom', 0), faixa('sab', 6)], assignments: [], absences: [] },
     });
     const dias = async (assembled: boolean | undefined) =>
-      (await new ListKanbanServicesUseCase(readerWith([linha(assembled)]), noTeam).execute('AR', asOf)).patients[0].services[0].uncoveredDays;
+      (await new ListKanbanServicesUseCase(readerWith([linha(assembled)]), noTeam).execute(['AR'], asOf)).patients[0].services[0].uncoveredDays;
 
     expect(await dias(false)).toBe(0);
     expect(await dias(undefined)).toBe(0); // ausente = não montado
@@ -202,7 +202,7 @@ describe('ListKanbanServicesUseCase', () => {
       slots: [],
       occurrences: { slots: [faixa('dom', 0), faixa('sab', 6)], assignments: [], absences: [] },
     });
-    const dias = async (st: string) => (await new ListKanbanServicesUseCase(readerWith([linha(st)]), noTeam).execute('AR', asOf)).patients[0].services[0].uncoveredDays;
+    const dias = async (st: string) => (await new ListKanbanServicesUseCase(readerWith([linha(st)]), noTeam).execute(['AR'], asOf)).patients[0].services[0].uncoveredDays;
     expect(await dias('ON_HOLD')).toBe(0);
     expect(await dias('ACTIVE')).toBe(2);
   });
@@ -220,7 +220,7 @@ describe('ListKanbanServicesUseCase', () => {
       },
     ];
 
-    const result = await new ListKanbanServicesUseCase(readerWith(rows), noTeam).execute('AR', asOf);
+    const result = await new ListKanbanServicesUseCase(readerWith(rows), noTeam).execute(['AR'], asOf);
 
     expect(result.patients[0].services[0].uncoveredDays).toBe(2);
   });
@@ -232,7 +232,7 @@ describe('ListKanbanServicesUseCase', () => {
     ];
     const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
 
-    const result = await useCase.execute(null, new Date('2026-09-28T02:30:00Z'));
+    const result = await useCase.execute(['AR', 'BR'], new Date('2026-09-28T02:30:00Z'));
 
     expect(result.patients.find((p) => p.patientId === 'p-ar')?.asOf).toBe('2026-09-27');
     expect(result.patients.find((p) => p.patientId === 'p-br')?.asOf).toBe('2026-09-27');
@@ -241,7 +241,7 @@ describe('ListKanbanServicesUseCase', () => {
   it('leitor devolve [] → { patients: [] }', async () => {
     const useCase = new ListKanbanServicesUseCase(readerWith([]), noTeam);
 
-    const result = await useCase.execute('AR');
+    const result = await useCase.execute(['AR']);
 
     expect(result).toEqual({ patients: [] });
   });
@@ -262,7 +262,7 @@ describe('ListKanbanServicesUseCase', () => {
     ];
     const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
 
-    const result = await useCase.execute('AR', new Date('2026-09-27T15:00:00Z'));
+    const result = await useCase.execute(['AR'], new Date('2026-09-27T15:00:00Z'));
 
     assertNoForbiddenKeys(result, ['slots', 'workerId', 'applicationId']);
   });
@@ -286,7 +286,7 @@ describe('ListKanbanServicesUseCase', () => {
       ]),
     };
 
-    const result = await new ListKanbanServicesUseCase(readerWith(rows), teamReader).execute('AR', new Date('2026-09-27T15:00:00Z'));
+    const result = await new ListKanbanServicesUseCase(readerWith(rows), teamReader).execute(['AR'], new Date('2026-09-27T15:00:00Z'));
 
     expect(teamReader.readMany).toHaveBeenCalledWith(['svc-a']);
     expect(result.patients[0].services.map((sv) => [sv.contractedServiceId, sv.reserve])).toEqual([

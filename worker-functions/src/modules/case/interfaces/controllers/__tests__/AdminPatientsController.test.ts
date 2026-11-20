@@ -26,6 +26,12 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   },
 }));
 
+// Hotfix 18/11: listPatients resolve o escopo de pais (resolveCountryScope) antes do repo.
+jest.mock('@modules/identity', () => ({
+  ...jest.requireActual('@modules/identity'),
+  resolveCountryScope: jest.fn().mockResolvedValue({ countries: ['AR'], requested: 'ALL' }),
+}));
+
 jest.mock('@shared/security/KMSEncryptionService', () => ({
   KMSEncryptionService: jest.fn().mockImplementation(() => ({
     encrypt: jest.fn().mockResolvedValue('enc'),
