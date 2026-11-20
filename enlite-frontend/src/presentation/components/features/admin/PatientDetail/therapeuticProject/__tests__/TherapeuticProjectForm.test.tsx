@@ -45,13 +45,22 @@ import { patientDetailFixture } from '../../__tests__/patientDetailFixture';
 
 const translations = ptBR as Record<string, any>;
 
+const lookup = (key: string): unknown => key.split('.').reduce<any>((acc, part) => acc?.[part], translations);
+
+/** Plural como o i18next: `_zero` quando count=0 e existir; senão `_one`/`_other` pelo Intl.PluralRules do pt-BR. */
+function pluralKey(key: string, count: number): string {
+  if (count === 0 && typeof lookup(`${key}_zero`) === 'string') return `${key}_zero`;
+  return `${key}_${new Intl.PluralRules('pt-BR').select(count)}`;
+}
+
 function t(key: string, optsOrDefault?: any): string {
-  const parts = key.split('.');
+  const resolved = typeof optsOrDefault?.count === 'number' && typeof lookup(key) !== 'string' ? pluralKey(key, optsOrDefault.count) : key;
+  const parts = resolved.split('.');
   let current: any = translations;
   for (const part of parts) current = current?.[part];
   if (typeof current === 'string') {
     if (typeof optsOrDefault === 'object' && optsOrDefault !== null) {
-      return current.replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => optsOrDefault[k] ?? _);
+      return current.replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => String(optsOrDefault[k] ?? _));
     }
     return current;
   }
@@ -818,8 +827,12 @@ describe('contatos por seleção (task 7.7): responsáveis, externos, cobertura,
 
 // ── 091 — cascata do "Nuevo" (§9.8, DF-6, DD-13, DD-21) ─────────────────────
 
-const objCheck = (uri: string, id: string) => screen.getByTestId(`tp-obj-${uri}-${id}`) as HTMLInputElement;
-const actChecks = (uri: string) => Array.from(screen.getByTestId(`tp-activities-${uri}`).querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+// 099: objetivo e atividade são cartões-botão (`aria-pressed`), não checkbox.
+const objBtn = (uri: string, id: string) => screen.getByTestId(`tp-obj-${uri}-${id}`);
+const objOn = (uri: string, id: string) => objBtn(uri, id).getAttribute('aria-pressed') === 'true';
+const actBtns = (uri: string) => Array.from(document.querySelectorAll<HTMLElement>(`[data-testid^="tp-act-${uri}-"]`));
+const isOn = (el: HTMLElement) => el.getAttribute('aria-pressed') === 'true';
+const abrirBloco = (uri: string) => fireEvent.click(screen.getByTestId(`tp-block-toggle-${uri}`));
 const aguardarBlocos = (n: number) => waitFor(() => expect(screen.getAllByTestId(/^tp-block-urn/)).toHaveLength(n));
 
 describe('091 — "Nuevo": passos habilitam em ordem', () => {
@@ -851,44 +864,98 @@ describe('091 — "Nuevo": passos habilitam em ordem', () => {
     expect(screen.getAllByTestId(/^tp-block-title-/).map((e) => e.textContent)).toEqual(['Diagnóstico A', 'Diagnóstico C']);
   });
 
-  it('DD-13: "Nuevo" nasce SEM objetivo nem atividade marcados, e o Paso 4 espera um objetivo (`pickObjectiveFirst`)', async () => {
+  it('099: Paso 3 único ("Objetivos y actividades" + ajuda) e o 1º acordeão abre aberto; os demais, fechados', async () => {
     montar();
     await aguardarBlocos(2);
 
-    expect(objCheck(A_URI, objA(A_URI)).checked).toBe(false);
-    expect(actChecks(A_URI)).toHaveLength(0);
-    expect(screen.getByTestId(`tp-pick-objective-${A_URI}`)).toHaveTextContent(ptBR.therapeuticProjectForm.pickObjectiveFirst);
-    expect(screen.getByTestId(`tp-activities-${A_URI}`)).toBeDisabled();
+    expect(screen.getByTestId('tp-step-objectives-title')).toHaveTextContent(ptBR.therapeuticProjectForm.stepObjectivesAndActivities);
+    expect(screen.getByText(ptBR.therapeuticProjectForm.stepObjectivesHelp)).toBeInTheDocument();
+    expect(screen.queryByText(ptBR.therapeuticProjectForm.stepActivities)).not.toBeInTheDocument(); // o Paso 4 saiu
+    expect(screen.getByTestId(`tp-block-toggle-${A_URI}`)).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId(`tp-block-toggle-${C_URI}`)).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId(`tp-objectives-${A_URI}`)).toBeInTheDocument();
+    expect(screen.queryByTestId(`tp-no-catalog-${C_URI}`)).not.toBeInTheDocument(); // fechado: corpo não monta
   });
 
-  it('marcar o objetivo habilita o Paso 4, agrupa as atividades dele e mostra título, descrição e frecuencia', async () => {
+  it('DD-13: "Nuevo" nasce SEM objetivo nem atividade marcados; atividade só existe dentro do objetivo marcado', async () => {
     montar();
     await aguardarBlocos(2);
 
-    fireEvent.click(objCheck(A_URI, objA(A_URI)));
+    expect(objOn(A_URI, objA(A_URI))).toBe(false);
+    expect(actBtns(A_URI)).toHaveLength(0);
+    expect(screen.queryByText(ptBR.therapeuticProjectForm.activitiesOfObjective)).not.toBeInTheDocument();
+    expect(screen.getByTestId(`tp-block-pill-${A_URI}`)).toHaveTextContent(ptBR.therapeuticProjectForm.pillNoneChosen);
+  });
+
+  it('marcar o objetivo abre as atividades DENTRO do cartão dele, empilhadas, com título, descrição e frecuencia', async () => {
+    montar();
+    await aguardarBlocos(2);
+
+    fireEvent.click(objBtn(A_URI, objA(A_URI)));
 
     const grupo = screen.getByTestId(`tp-activity-group-${A_URI}-${objA(A_URI)}`);
-    expect(screen.getByTestId(`tp-activities-${A_URI}`)).not.toBeDisabled();
+    expect(grupo).toContainElement(screen.getByText(ptBR.therapeuticProjectForm.activitiesOfObjective));
+    expect(grupo.parentElement).toContainElement(objBtn(A_URI, objA(A_URI))); // mesmo cartão do objetivo
+    expect(grupo.querySelector('.flex-col > button')).not.toBeNull(); // coluna, não grade
+    expect(grupo.querySelector('.grid')).toBeNull();
     expect(within(grupo).getByText('Atividade um')).toBeInTheDocument();
     expect(within(grupo).getByText('Descrição da atividade um')).toBeInTheDocument();
     expect(within(grupo).getByText('Frequência: 2x por semana')).toBeInTheDocument();
     expect(within(grupo).getAllByTestId('tp-activity-frequency')).toHaveLength(1); // a atividade sem frecuencia não mostra a linha
-    expect(actChecks(A_URI)).toHaveLength(2); // as do objetivo dois (não marcado) NÃO aparecem
+    expect(actBtns(A_URI)).toHaveLength(2); // as do objetivo dois (não marcado) NÃO aparecem
+    expect(objBtn(A_URI, objA(A_URI))).toHaveTextContent('0 de 2 escolhidas');
+    expect(objBtn(A_URI, `${A_URI}-o2`)).toHaveTextContent('1 atividade'); // desmarcado: "N atividade(s)"
     expect(onDirty).toHaveBeenCalled();
+  });
+
+  it('"N de M elegidas" acompanha as atividades marcadas e o contador/pílula do cabeçalho também', async () => {
+    montar();
+    await aguardarBlocos(2);
+    fireEvent.click(objBtn(A_URI, objA(A_URI)));
+
+    expect(screen.getByTestId(`tp-block-counter-${A_URI}`)).toHaveTextContent('1 objetivo · 0 atividades');
+    expect(screen.getByTestId(`tp-block-pill-${A_URI}`)).toHaveTextContent(ptBR.therapeuticProjectForm.pillMissingActivity);
+
+    fireEvent.click(actBtns(A_URI)[0]);
+
+    expect(isOn(actBtns(A_URI)[0])).toBe(true);
+    expect(objBtn(A_URI, objA(A_URI))).toHaveTextContent('1 de 2 escolhidas');
+    expect(screen.getByTestId(`tp-block-counter-${A_URI}`)).toHaveTextContent('1 objetivo · 1 atividade');
+    expect(screen.getByTestId(`tp-block-pill-${A_URI}`)).toHaveTextContent(ptBR.therapeuticProjectForm.pillComplete);
+  });
+
+  it('rodapé: "N de M diagnósticos con catálogo completos" conta só blocos COM catálogo', async () => {
+    montar();
+    await aguardarBlocos(2); // A (ok) e C (sem catálogo): M = 1
+
+    expect(screen.getByTestId('tp-progress-footer')).toHaveTextContent('0 de 1 diagnósticos com catálogo completos');
+
+    fireEvent.click(objBtn(A_URI, objA(A_URI)));
+    expect(screen.getByTestId('tp-progress-footer')).toHaveTextContent('0 de 1 diagnósticos com catálogo completos'); // sem atividade ainda
+    fireEvent.click(actBtns(A_URI)[0]);
+
+    expect(screen.getByTestId('tp-progress-footer')).toHaveTextContent('1 de 1 diagnósticos com catálogo completos');
+  });
+
+  it('"Editar" não mostra o rodapé de progresso', () => {
+    montar({ from: VERSAO });
+
+    expect(screen.queryByTestId('tp-progress-footer')).not.toBeInTheDocument();
   });
 
   it('desmarcar o objetivo tira as atividades dele (e a marcação delas)', async () => {
     montar();
     await aguardarBlocos(2);
-    fireEvent.click(objCheck(A_URI, objA(A_URI)));
-    fireEvent.click(actChecks(A_URI)[0]);
-    expect(actChecks(A_URI)[0].checked).toBe(true);
+    fireEvent.click(objBtn(A_URI, objA(A_URI)));
+    fireEvent.click(actBtns(A_URI)[0]);
+    expect(isOn(actBtns(A_URI)[0])).toBe(true);
 
-    fireEvent.click(objCheck(A_URI, objA(A_URI)));
-    expect(actChecks(A_URI)).toHaveLength(0);
-    fireEvent.click(objCheck(A_URI, objA(A_URI))); // remarcar: a atividade NÃO volta marcada
+    fireEvent.click(objBtn(A_URI, objA(A_URI)));
+    expect(actBtns(A_URI)).toHaveLength(0);
+    fireEvent.click(objBtn(A_URI, objA(A_URI))); // remarcar: a atividade NÃO volta marcada (DD-13)
 
-    expect(actChecks(A_URI).every((c) => !c.checked)).toBe(true);
+    expect(actBtns(A_URI)).toHaveLength(2);
+    expect(actBtns(A_URI).every((b) => !isOn(b))).toBe(true);
   });
 
   it('tirar um diagnóstico some com o bloco dele', async () => {
@@ -911,8 +978,8 @@ describe('091 — "Nuevo": trocar o serviço zera todos os blocos', () => {
     escolherNoCombo('tp-service', 'Cuidador');
 
     await waitFor(() => expect(fake.calls.map((c) => c.serviceCode)).toEqual(['AT', 'CAREGIVER']));
-    await waitFor(() => expect(objCheck(A_URI, objA(A_URI)).checked).toBe(false));
-    expect(actChecks(A_URI)).toHaveLength(0);
+    await waitFor(() => expect(objOn(A_URI, objA(A_URI))).toBe(false));
+    expect(actBtns(A_URI)).toHaveLength(0);
     expect(salvar().disabled).toBe(true);
   });
 });
@@ -922,8 +989,11 @@ describe('091 — bloco sem catálogo e `planIncomplete`', () => {
     montar();
     await aguardarBlocos(2);
 
+    abrirBloco(C_URI); // 2º diagnóstico nasce fechado
     expect(screen.getByTestId(`tp-no-catalog-${C_URI}`)).toHaveTextContent(ptBR.therapeuticProjectForm.noCatalog);
-    expect(within(screen.getByTestId(`tp-block-${C_URI}`)).queryAllByRole('checkbox')).toHaveLength(0);
+    expect(screen.getByTestId(`tp-block-counter-${C_URI}`)).toHaveTextContent(ptBR.therapeuticProjectForm.noObjectivesToPick);
+    expect(screen.getByTestId(`tp-block-pill-${C_URI}`)).toHaveTextContent(ptBR.therapeuticProjectForm.pillNoCatalog);
+    expect(within(screen.getByTestId(`tp-block-${C_URI}`)).queryAllByRole('button', { pressed: false })).toHaveLength(0); // nenhum objetivo/atividade para escolher
   });
 
   it('o bloco sem catálogo NÃO impede salvar, e sai no corpo vazio, na ordem dos diagnósticos', async () => {
@@ -933,7 +1003,8 @@ describe('091 — bloco sem catálogo e `planIncomplete`', () => {
     await waitFor(() => expect(screen.getAllByTestId(/^tp-block-urn/)).toHaveLength(3));
     // B (com catálogo) ainda não foi escolhido: trava; completando B, destrava.
     expect(salvar().disabled).toBe(true);
-    fireEvent.click(objCheck('urn:icd:B', objA('urn:icd:B')));
+    abrirBloco('urn:icd:B'); // 3º diagnóstico nasce fechado
+    fireEvent.click(objBtn('urn:icd:B', objA('urn:icd:B')));
     fireEvent.click(screen.getByTestId(`tp-act-urn:icd:B-${objA('urn:icd:B')}-urn:icd:B-a2`));
     expect(salvar().disabled).toBe(false);
     fireEvent.click(salvar());
@@ -948,23 +1019,36 @@ describe('091 — bloco sem catálogo e `planIncomplete`', () => {
   it('só o objetivo marcado, sem atividade: `planIncomplete` no bloco e o salvar travado; completar tira o aviso', async () => {
     montar({ patientDiagnoses: [DIAGS[0]] });
     await preencherTudo();
-    fireEvent.click(actChecks(A_URI)[0]); // desmarca a única atividade
-    fireEvent.click(objCheck(A_URI, objA(A_URI))); // desmarca e remarca o objetivo: ainda sem atividade
-    fireEvent.click(objCheck(A_URI, objA(A_URI)));
+    fireEvent.click(actBtns(A_URI)[0]); // desmarca a única atividade
+    fireEvent.click(objBtn(A_URI, objA(A_URI))); // desmarca e remarca o objetivo: ainda sem atividade
+    fireEvent.click(objBtn(A_URI, objA(A_URI)));
 
     expect(screen.getByTestId(`tp-plan-incomplete-${A_URI}`)).toHaveTextContent(ptBR.therapeuticProjectForm.planIncomplete);
     expect(salvar().disabled).toBe(true);
 
-    fireEvent.click(actChecks(A_URI)[0]);
+    fireEvent.click(actBtns(A_URI)[0]);
 
     expect(screen.queryByTestId(`tp-plan-incomplete-${A_URI}`)).not.toBeInTheDocument();
     expect(salvar().disabled).toBe(false);
+  });
+
+  it('o erro `planIncomplete` NÃO aparece antes de a pessoa mexer no bloco (nem com o bloco vazio e aberto)', async () => {
+    montar();
+    await aguardarBlocos(2);
+
+    expect(screen.queryByTestId(`tp-plan-incomplete-${A_URI}`)).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    fireEvent.click(objBtn(A_URI, objA(A_URI))); // mexeu: objetivo sem atividade
+
+    expect(screen.getByTestId(`tp-plan-incomplete-${A_URI}`)).toHaveAttribute('role', 'alert');
   });
 
   it('422 de bloco (DD-21): `planIncomplete` aparece NO bloco do `diagnosisIndex` 1 (o 2º), e só nele', async () => {
     montar({ saveBlockError: { diagnosisIndex: 1, message: ptBR.therapeuticProjectForm.planIncomplete } });
     await aguardarBlocos(2); // A (índice 0) e C (índice 1)
 
+    expect(screen.getByTestId(`tp-block-toggle-${C_URI}`)).toHaveAttribute('aria-expanded', 'true'); // a recusa abre o bloco dela
     expect(within(screen.getByTestId(`tp-block-${C_URI}`)).getByTestId(`tp-block-refusal-${C_URI}`)).toHaveTextContent(ptBR.therapeuticProjectForm.planIncomplete);
     expect(screen.queryByTestId(`tp-block-refusal-${A_URI}`)).not.toBeInTheDocument();
   });
