@@ -126,7 +126,7 @@ export class WorkerRepository implements IWorkerRepository {
         SELECT id, auth_uid as "authUid", email, phone,
                whatsapp_phone_encrypted as "whatsappPhoneEnc",
                lgpd_consent_at as "lgpdConsentAt",
-               country, timezone,
+               country, timezone, is_test as "isTest",
                created_at as "createdAt", updated_at as "updatedAt"
         FROM workers
         WHERE id = $1

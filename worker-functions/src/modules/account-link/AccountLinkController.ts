@@ -76,7 +76,7 @@ export class AccountLinkController {
       return;
     }
     try {
-      const data = await this.service.confirm(uid, String(phone ?? ''), String(verificationSid), String(otp));
+      const data = await this.service.confirm(uid, String(phone ?? ''), String(verificationSid), String(otp), (req as Request & { user?: { email?: string } }).user?.email);
       res.status(200).json({ success: true, data });
     } catch (err) { this.fail(res, err, 'AccountLinkController:confirm'); }
   }

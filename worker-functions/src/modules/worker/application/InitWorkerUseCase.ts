@@ -178,6 +178,7 @@ export class InitWorkerUseCase {
 
     try {
       const { verificationSid } = await this.twilioVerify.startVerification(phoneE164, {
+        workerId: ficha.id,
         fichaIsTest: ficha.isTest === true,
         tokenEmail,
       });

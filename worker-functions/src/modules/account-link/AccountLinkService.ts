@@ -95,7 +95,7 @@ export class AccountLinkService {
     // pro digitado no request.
     const phoneForOtp = owner.phone!;
     const phoneE164 = phoneForOtp.startsWith('+') ? phoneForOtp : `+${normalizePhoneAR(phoneForOtp) ?? phoneForOtp}`;
-    const { verificationSid } = await this.twilio.startVerification(phoneE164, { fichaIsTest: owner.is_test === true, tokenEmail });
+    const { verificationSid } = await this.twilio.startVerification(phoneE164, { workerId: owner.id, fichaIsTest: owner.is_test === true, tokenEmail });
 
     await recordAccountLinkEvent(this.pool, {
       event: 'started', workerId: me.id, otherWorkerId: owner.id,
@@ -107,11 +107,16 @@ export class AccountLinkService {
 
   // ── confirm — posse provada: REQUIRES_REVIEW | conflitos | merge direto ──
 
-  async confirm(authUid: string, phoneEntered: string, verificationSid: string, otp: string): Promise<AccountLinkConfirmResult> {
+  async confirm(authUid: string, phoneEntered: string, verificationSid: string, otp: string, tokenEmail?: string | null): Promise<AccountLinkConfirmResult> {
     const me = await this.resolveLoggedWorker(authUid);
     const owner = await this.resolvePhoneOwner(phoneEntered, me.id);
 
-    const check = await this.twilio.checkVerification(verificationSid, otp);
+    const check = await this.twilio.checkVerification(verificationSid, otp, {
+      workerId: owner.id,
+      tokenEmail,
+      // `owner` acabou de ser lido do banco por resolvePhoneOwner (inclui is_test) nesta mesma requisição.
+      fichaIsTest: async () => owner.is_test === true,
+    });
     if (!check.valid) {
       throw new AccountLinkError(check.status === 'expired' ? 'EXPIRED_OTP' : 'INVALID_OTP');
     }
