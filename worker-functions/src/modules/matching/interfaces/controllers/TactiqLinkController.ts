@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { logger, reportError } from '@shared/logging';
 import { actorUid, MissingActorError } from '@modules/conversation/interfaces/controllers/ConversationActor';
 import {
+  TactiqAccessDeniedError,
   TactiqExchangeFailedError,
   TactiqLinkService,
   TactiqStateInvalidError,
@@ -55,6 +56,10 @@ export class TactiqLinkController {
     } catch (err: unknown) {
       if (err instanceof TactiqStateInvalidError) {
         res.status(400).json({ success: false, error: err.message, code: err.code });
+        return;
+      }
+      if (err instanceof TactiqAccessDeniedError) {
+        this.finish(res, 'error', err.redirectReason, 502, err.code);
         return;
       }
       if (err instanceof TactiqExchangeFailedError) {

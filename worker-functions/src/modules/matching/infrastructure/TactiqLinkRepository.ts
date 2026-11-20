@@ -193,13 +193,28 @@ export class TactiqLinkRepository {
 
   // ── trilha `tactiq_link.*` ─────────────────────────────────────────────────────────────────────────
   async appendEvent(
-    event: { email: string; kind: string; outcome?: string | null; reason?: string | null; at: Date },
+    event: { email: string; kind: string; outcome?: string | null; reason?: string | null; at: Date; ref?: Record<string, unknown> | null },
     ex: Db = this.db,
   ): Promise<void> {
+    const ref = event.ref && Object.keys(event.ref).length > 0 ? JSON.stringify(event.ref) : null;
     await ex.query(
-      `INSERT INTO admission_events (host_email, kind, outcome, reason, at) VALUES (lower($1), $2, $3, $4, $5)`,
-      [event.email, event.kind, event.outcome ?? null, event.reason ?? null, event.at],
+      `INSERT INTO admission_events (host_email, kind, outcome, reason, at, ref) VALUES (lower($1), $2, $3, $4, $5, $6::jsonb)`,
+      [event.email, event.kind, event.outcome ?? null, event.reason ?? null, event.at, ref],
     );
+  }
+
+  /** A ÚLTIMA tentativa de vínculo na trilha (`linked` ou `link_rejected`), a mais nova primeiro; sem evento → `null`. */
+  async latestLinkAttempt(
+    email: string,
+    ex: Db = this.db,
+  ): Promise<{ kind: string; outcome: string | null; reason: string | null; ref: Record<string, unknown> | null; at: Date } | null> {
+    const { rows } = await ex.query(
+      `SELECT kind, outcome, reason, ref, at FROM admission_events
+        WHERE lower(host_email) = lower($1) AND kind = ANY($2::text[])
+        ORDER BY at DESC, id DESC LIMIT 1`,
+      [email, ['tactiq_link.linked', 'tactiq_link.link_rejected']],
+    );
+    return rows[0] ?? null;
   }
 
   /** Quem NÃO tem linha: já avisei `missing`? (lock por e-mail serializa duas execuções simultâneas). */

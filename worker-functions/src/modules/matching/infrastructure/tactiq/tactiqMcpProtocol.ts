@@ -2,7 +2,14 @@
  * Partes PURAS do cliente MCP do Tactiq — separadas do transporte para serem testadas sem rede.
  * Nada aqui devolve ou registra conteúdo de reunião; só desfechos fechados.
  */
-import { TactiqTransientError, TactiqUnauthorizedError, type TactiqMeetingItem } from '../../application/ports/TactiqPorts';
+import {
+  sanitizeAccessAction,
+  sanitizeAccessTitle,
+  TactiqTransientError,
+  TactiqUnauthorizedError,
+  type AccessVerdict,
+  type TactiqMeetingItem,
+} from '../../application/ports/TactiqPorts';
 
 /** O texto JSON do primeiro bloco `text` de um resultado de tool (formato do MCP). `null` se não houver/não parsear. */
 export function parseMcpJson(result: unknown): unknown {
@@ -18,22 +25,23 @@ export function parseMcpJson(result: unknown): unknown {
 }
 
 /**
- * Veredito do `get_access_options` (F0.4: objeto `access` com `action`; `ready` = "You already have access").
- * `action` presente e diferente de `ready` → o token não dá acesso (`denied`). Formato não reconhecido → `ok`: a
- * chamada AUTENTICADA voltou sem erro, e a 401/403 já teria virado `TactiqUnauthorizedError` no transporte.
+ * Veredito do `get_access_options` (F0.4: objeto `access` com `action`; `ready` = "You already have access"). DONO ÚNICO do
+ * veredito de ping, 3 valores: `ready`; `denied(action, title?)` (action string ≠ `ready`, ambos sanitizados); `unrecognized`
+ * (sem `action` string — formato nunca medido: cada ponto de uso decide a política, ver design D4).
  */
-export function pingVerdict(result: unknown): 'ok' | 'denied' {
-  const parsed = parseMcpJson(result) as { access?: { action?: unknown }; action?: unknown } | null;
+export function pingVerdict(result: unknown): AccessVerdict {
+  const parsed = parseMcpJson(result) as { access?: { action?: unknown; title?: unknown }; action?: unknown; title?: unknown } | null;
   const action = parsed?.access?.action ?? parsed?.action;
-  if (typeof action === 'string' && action !== 'ready') return 'denied';
-  return 'ok';
+  if (typeof action !== 'string') return { kind: 'unrecognized' };
+  if (action === 'ready') return { kind: 'ready' };
+  return { kind: 'denied', action: sanitizeAccessAction(action), title: sanitizeAccessTitle(parsed?.access?.title ?? parsed?.title) };
 }
 
 /** Erro do transporte/SDK → erro de domínio. 401/403 = vínculo caído; o resto é transitório. Nunca copia a mensagem. */
 export function classifyMcpFailure(err: unknown): Error {
   if (err instanceof TactiqUnauthorizedError || err instanceof TactiqTransientError) return err;
   const e = err as { code?: unknown; name?: string };
-  if (e?.name === 'UnauthorizedError' || e?.code === 401 || e?.code === 403) return new TactiqUnauthorizedError();
+  if (e?.name === 'UnauthorizedError' || e?.code === 401 || e?.code === 403) return new TactiqUnauthorizedError({ kind: 'mcp_transport' });
   return new TactiqTransientError(typeof e?.code === 'number' ? `mcp_http_${e.code}` : 'mcp_transport');
 }
 

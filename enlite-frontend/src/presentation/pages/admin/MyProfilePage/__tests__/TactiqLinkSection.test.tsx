@@ -144,3 +144,67 @@ describe('volta do callback', () => {
     expect(screen.queryByTestId('tactiq-banner-error')).not.toBeInTheDocument();
   });
 });
+
+describe('negativa de acesso salva (accessDenial)', () => {
+  const denial = (reason: string, title: string | null = null) => ({ accessDenial: { reason, title, at: '2026-11-19T10:00:00.000Z' } });
+  const withDenial = (status: string, d: unknown) => ({ ...view(status), ...(d as object) });
+
+  it('(1) request_seat + URL limpa: mostra o texto de assento e nunca o código', async () => {
+    api.getOwnTactiqLink.mockResolvedValue(withDenial('missing', denial('access_action:request_seat')));
+    renderPage();
+    const box = await screen.findByTestId('tactiq-access-denial');
+    expect(box).toHaveTextContent(tEs('admin.tactiqLink.accessSeat'));
+    expect(document.body.textContent).not.toContain('access_action');
+    expect(document.body.textContent).not.toContain('request_seat');
+  });
+
+  it('scope_without_details também mostra o texto de assento', async () => {
+    api.getOwnTactiqLink.mockResolvedValue(withDenial('missing', denial('scope_without_details')));
+    renderPage();
+    expect(await screen.findByTestId('tactiq-access-denial')).toHaveTextContent(tEs('admin.tactiqLink.accessSeat'));
+    expect(document.body.textContent).not.toContain('scope_without_details');
+  });
+
+  it('(2) accessDenial + ?tactiq=error: orientação SEM o banner genérico, e o reason da URL não é usado', async () => {
+    api.getOwnTactiqLink.mockResolvedValue(withDenial('missing', denial('access_action:request_seat')));
+    renderPage('?tactiq=error&reason=invalid_grant');
+    expect(await screen.findByTestId('tactiq-access-denial')).toHaveTextContent(tEs('admin.tactiqLink.accessSeat'));
+    expect(screen.queryByTestId('tactiq-banner-error')).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('invalid_grant');
+  });
+
+  it('(3) sem accessDenial + ?tactiq=error: banner genérico antigo', async () => {
+    api.getOwnTactiqLink.mockResolvedValue(view('missing'));
+    renderPage('?tactiq=error');
+    expect(await screen.findByTestId('tactiq-banner-error')).toHaveTextContent(tEs('admin.tactiqLink.returnError'));
+    expect(screen.queryByTestId('tactiq-access-denial')).not.toBeInTheDocument();
+  });
+
+  it('(4) access_action:upgrade com título: título no texto, nenhum código', async () => {
+    api.getOwnTactiqLink.mockResolvedValue(withDenial('missing', denial('access_action:upgrade', 'Actualizá tu plan')));
+    renderPage();
+    const box = await screen.findByTestId('tactiq-access-denial');
+    expect(box).toHaveTextContent(tEs('admin.tactiqLink.accessGeneric', { title: 'Actualizá tu plan' }));
+    expect(document.body.textContent).not.toContain('access_action');
+    expect(document.body.textContent).not.toContain('upgrade');
+  });
+
+  it.each([
+    ['access_unrecognized', null],
+    ['access_action:upgrade', null],
+  ])('%s sem título: texto genérico sem título', async (reason, title) => {
+    api.getOwnTactiqLink.mockResolvedValue(withDenial('missing', denial(reason, title)));
+    renderPage();
+    expect(await screen.findByTestId('tactiq-access-denial')).toHaveTextContent(tEs('admin.tactiqLink.accessGenericNoTitle'));
+  });
+
+  it('(5) título com <img onerror>: texto puro, nenhum img no DOM', async () => {
+    const evil = '<img src=x onerror="window.__pwn=1">';
+    api.getOwnTactiqLink.mockResolvedValue(withDenial('missing', denial('access_action:upgrade', evil)));
+    renderPage();
+    const box = await screen.findByTestId('tactiq-access-denial');
+    expect(box.querySelector('img')).toBeNull();
+    expect(document.querySelector('img')).toBeNull();
+    expect(box.textContent).toContain(evil);
+  });
+});

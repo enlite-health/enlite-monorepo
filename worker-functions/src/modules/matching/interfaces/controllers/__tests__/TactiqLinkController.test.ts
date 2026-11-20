@@ -8,7 +8,7 @@ jest.mock('@modules/identity', () => ({ AuthMiddleware: { getAuthContext: jest.f
 import type { Request, Response } from 'express';
 import { logger, reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
-import { TactiqExchangeFailedError, TactiqStateInvalidError, type TactiqLinkService } from '../../../application/TactiqLinkService';
+import { TactiqAccessDeniedError, TactiqExchangeFailedError, TactiqStateInvalidError, type TactiqLinkService } from '../../../application/TactiqLinkService';
 import { TactiqNotConfiguredError } from '../../../application/ports/TactiqPorts';
 import { TactiqLinkController } from '../TactiqLinkController';
 
@@ -118,5 +118,24 @@ describe('TactiqLinkController', () => {
     expect(r3.statusCode).toBe(500);
     expect(JSON.stringify(r3.body)).not.toContain('segredo');
     expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'TactiqLinkController:callback' });
+  });
+
+  it('acesso negado/não reconhecido/transitório: 302 ?tactiq=error&reason=access_denied|access_unrecognized|ping_transient; 502 sem a env; nunca 500', async () => {
+    for (const reason of ['access_denied', 'access_unrecognized', 'ping_transient'] as const) {
+      const b = build();
+      b.service.completeLink.mockRejectedValue(new TactiqAccessDeniedError(reason));
+      process.env.TACTIQ_LINK_RETURN_URL = 'https://app.example.test/profile';
+      const r = res();
+      await b.c.callback(req({ query: { code: 'c', state: 's' } }), r);
+      expect(r.statusCode).toBe(302);
+      expect(r.location).toBe(`https://app.example.test/profile?tactiq=error&reason=${reason}`);
+
+      delete process.env.TACTIQ_LINK_RETURN_URL;
+      const r2 = res();
+      await b.c.callback(req({ query: { code: 'c', state: 's' } }), r2);
+      expect(r2.statusCode).toBe(502);
+      expect(r2.body).toMatchObject({ code: 'TACTIQ_ACCESS_DENIED', reason });
+    }
+    expect(reportError).not.toHaveBeenCalled();
   });
 });

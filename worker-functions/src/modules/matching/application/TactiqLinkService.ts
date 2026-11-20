@@ -10,7 +10,12 @@ import { ChromeReportRepository } from '../infrastructure/ChromeReportRepository
 import type { ExtensionState } from '../domain/chromeExtensionState';
 import { hashState, newOAuthState, newPkcePair } from '../infrastructure/tactiq/pkce';
 import {
+  denyReason,
+  sanitizeAccessTitle,
+  sanitizeScopeList,
+  type AccessVerdict,
   TactiqInvalidGrantError,
+  TactiqTransientError,
   TactiqUnauthorizedError,
   type HostAccessResult,
   type TactiqLinkGate,
@@ -39,6 +44,19 @@ export class TactiqExchangeFailedError extends Error {
   }
 }
 
+/**
+ * O vínculo NÃO foi gravado: a conta não provou acesso (`access_denied`), o formato do teste não foi reconhecido
+ * (`access_unrecognized`) ou o teste falhou por rede/5xx (`ping_transient`, fail closed). `redirectReason` é o que o controller
+ * devolve ao navegador; `reason` (a causa tipada) só vai à trilha. Sem token, e-mail nem corpo de resposta.
+ */
+export class TactiqAccessDeniedError extends Error {
+  readonly code = 'TACTIQ_ACCESS_DENIED';
+  constructor(readonly redirectReason: 'access_denied' | 'access_unrecognized' | 'ping_transient') {
+    super(`tactiq_${redirectReason}`);
+    this.name = 'TactiqAccessDeniedError';
+  }
+}
+
 export const STATE_TTL_MS = 10 * 60 * 1000;
 /** Operadora do roster sem vínculo vivo há MAIS de 48 h (estritamente maior) → alarme ao gestor. */
 export const MISSING_ALARM_HOURS = 48;
@@ -50,6 +68,16 @@ export interface OwnLinkView {
   statusChangedAt: string | null;
   /** Extensão do Tactiq no Chrome da PRÓPRIA pessoa (a linha que o `ChromeReportJob` grava e de onde sai o aviso do sino). */
   extension: OwnExtensionView;
+  /** Negativa de acesso pendente (a última tentativa de vínculo foi recusada por acesso); `null` = nenhuma. Derivado da trilha, nunca gravado. */
+  accessDenial: OwnAccessDenial | null;
+}
+
+export interface OwnAccessDenial {
+  /** `scope_without_details` | `access_action:<v>` | `access_unrecognized` | `mcp_transport_401_403` — código interno, a tela não o exibe. */
+  reason: string;
+  /** Título do Tactiq, já sanitizado; pode ser nulo. */
+  title: string | null;
+  at: string;
 }
 
 /** `sem_relatorio` também cobre "nunca reportou" (sem linha): o job trata a falta de linha assim; nunca `null`, nunca `ausente`. */
@@ -140,14 +168,27 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     const extension: OwnExtensionView = report
       ? { state: report.state, reportedAt: report.report_at ? report.report_at.toISOString() : null }
       : { state: 'sem_relatorio', reportedAt: null };
-    if (!row) return { status: 'missing', linkedAt: null, lastCheckAt: null, statusChangedAt: null, extension };
+    const accessDenial = await this.accessDenialOf(email);
+    if (!row) return { status: 'missing', linkedAt: null, lastCheckAt: null, statusChangedAt: null, extension, accessDenial };
     return {
       status: row.status,
       linkedAt: row.linked_at ? row.linked_at.toISOString() : null,
       lastCheckAt: row.last_check_at ? row.last_check_at.toISOString() : null,
       statusChangedAt: row.status_changed_at.toISOString(),
       extension,
+      accessDenial,
     };
+  }
+
+  /**
+   * Só a ÚLTIMA tentativa conta: `linked` mais novo limpa a negativa. `exchange_failed` e `ping_transient` não são orientação de
+   * acesso (a tela mostra o banner genérico) → `null`. Sem e-mail, sem token: só reason, título sanitizado e data.
+   */
+  private async accessDenialOf(email: string): Promise<OwnAccessDenial | null> {
+    const last = await this.repo.latestLinkAttempt(email);
+    if (!last || last.kind !== 'tactiq_link.link_rejected' || !last.reason) return null;
+    if (last.outcome !== 'access_denied' && last.outcome !== 'access_unrecognized') return null;
+    return { reason: last.reason, title: sanitizeAccessTitle(last.ref?.title), at: last.at.toISOString() };
   }
 
   async startLink(input: { uid: string; email: string }): Promise<{ authorizeUrl: string }> {
@@ -176,14 +217,47 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     if (!consumed) throw new TactiqStateInvalidError();
 
     let refreshToken: string;
+    let accessToken: string;
+    let scope: string | undefined;
     try {
       const verifier = await this.cipher.decrypt(consumed.verifierEncrypted);
-      ({ refreshToken } = await this.deps.oauth.exchangeCode({ code: input.code, codeVerifier: verifier }));
+      ({ refreshToken, accessToken, scope } = await this.deps.oauth.exchangeCode({ code: input.code, codeVerifier: verifier }));
     } catch (err) {
       const reason = err instanceof TactiqInvalidGrantError ? 'invalid_grant' : 'exchange_error';
+      if (err instanceof TactiqUnauthorizedError) {
+        await this.repo.appendEvent({
+          email: consumed.email, kind: 'tactiq_link.link_rejected', outcome: 'exchange_failed', reason: denyReason(err.cause), at: now,
+        });
+      }
       this.log.warn({ reason }, 'admission.tactiq_link.exchange_failed');
       throw new TactiqExchangeFailedError(reason);
     }
+
+    // O acesso é provado ANTES de cifrar ou gravar qualquer coisa: quem não passa não deixa token nem linha (D1, fail closed D6).
+    const scopeRef = sanitizeScopeList(scope)?.join(' ');
+    const ref = scopeRef ? { scope: scopeRef } : undefined;
+    const reject = async (
+      outcome: 'access_denied' | 'access_unrecognized' | 'ping_transient',
+      reason: string,
+      extra: Record<string, unknown> = {},
+    ): Promise<never> => {
+      await this.repo.appendEvent({
+        email: consumed.email, kind: 'tactiq_link.link_rejected', outcome, reason, at: now, ref: { ...ref, ...extra },
+      });
+      this.log.warn({ outcome, reason }, 'admission.tactiq_link.link_rejected');
+      throw new TactiqAccessDeniedError(outcome);
+    };
+    let verdict: AccessVerdict;
+    try {
+      verdict = await this.deps.mcp.ping(accessToken);
+    } catch (err) {
+      if (err instanceof TactiqUnauthorizedError) return reject('access_denied', denyReason(err.cause));
+      return reject('ping_transient', err instanceof TactiqTransientError ? err.reason : 'unexpected');
+    }
+    if (verdict.kind === 'denied') {
+      return reject('access_denied', denyReason({ kind: 'access_action', action: verdict.action }), verdict.title ? { title: verdict.title } : {});
+    }
+    if (verdict.kind === 'unrecognized') return reject('access_unrecognized', 'access_unrecognized');
 
     const tokenEncrypted = await this.cipher.encrypt(refreshToken);
     if (!tokenEncrypted) throw new TactiqExchangeFailedError('empty_token');
@@ -194,7 +268,7 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
       clientId: this.deps.clientId?.() ?? null,
       now,
     });
-    await this.repo.appendEvent({ email: consumed.email, kind: 'tactiq_link.linked', outcome: 'linked', at: now });
+    await this.repo.appendEvent({ email: consumed.email, kind: 'tactiq_link.linked', outcome: 'linked', at: now, ...(ref ? { ref } : {}) });
     this.log.info({}, 'admission.tactiq_link.linked');
     return { email: consumed.email };
   }
@@ -305,16 +379,22 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
       const current = await this.repo.findLinkedTokenByEmail(email);
       if (!current) return 'skipped'; // o vínculo caiu entre a listagem e a vez desta: não há o que testar
       try {
-        await this.deps.mcp.ping(await this.refreshAndRotate(email, current.refresh_token_encrypted));
+        const verdict = await this.deps.mcp.ping(await this.refreshAndRotate(email, current.refresh_token_encrypted));
+        // Teste diário: `denied` derruba (com a causa); `unrecognized` segue como `ok` + aviso (formato nunca medido, design D4).
+        if (verdict.kind === 'denied') throw new TactiqUnauthorizedError({ kind: 'access_action', action: verdict.action });
+        if (verdict.kind === 'unrecognized') this.log.warn({ linkId: link.id }, 'admission.tactiq_link.access_unrecognized');
         await this.repo.recordCheck(email, 'ok', now);
         return 'ok';
       } catch (err) {
         if (err instanceof TactiqInvalidGrantError || err instanceof TactiqUnauthorizedError) {
           const outcome = err instanceof TactiqInvalidGrantError ? 'invalid_grant' : 'unauthorized';
+          // `cause` = o motivo tipado; sem causa (`unspecified`, ex.: dublês antigos) o `reason` segue o `outcome`, como antes.
+          const cause =
+            err instanceof TactiqUnauthorizedError && err.cause.kind !== 'unspecified' ? denyReason(err.cause) : outcome;
           if (await this.repo.degrade(email, 'broken', outcome, now)) {
-            await this.repo.appendEvent({ email, kind: 'tactiq_link.broken', outcome: 'broken', reason: outcome, at: now });
+            await this.repo.appendEvent({ email, kind: 'tactiq_link.broken', outcome: 'broken', reason: cause, at: now });
           }
-          this.log.warn({ linkId: link.id, outcome }, 'admission.tactiq_link.broken');
+          this.log.warn({ linkId: link.id, outcome, cause }, 'admission.tactiq_link.broken');
           return 'broken';
         }
         // Rede, 5xx, KMS: não prova vínculo quebrado. Registra e tenta amanhã (derrubar por soluço geraria aviso falso).

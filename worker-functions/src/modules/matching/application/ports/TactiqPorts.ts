@@ -33,10 +33,58 @@ export class TactiqInvalidGrantError extends Error {
   }
 }
 
-/** O Tactiq recusou o token (401/403): o vínculo caiu. */
+/**
+ * Por que o Tactiq recusou (tipado, sem texto livre). `access_action.action` já vem SANITIZADO (`sanitizeAccessAction`).
+ * `unspecified` = quem lança não disse (importação, leitor, dublês): continua compilando com `new TactiqUnauthorizedError()`.
+ */
+export type DenyCause =
+  | { kind: 'token_endpoint' }
+  | { kind: 'mcp_transport' }
+  | { kind: 'access_action'; action: string }
+  | { kind: 'scope_without_details' }
+  | { kind: 'unspecified' };
+
+/** A ÚNICA função que vira `reason` de evento/log. Nunca recebe token, e-mail nem corpo: só a causa tipada. */
+export function denyReason(cause: DenyCause): string {
+  switch (cause.kind) {
+    case 'token_endpoint':
+      return 'token_endpoint_401_403';
+    case 'mcp_transport':
+      return 'mcp_transport_401_403';
+    case 'access_action':
+      return `access_action:${sanitizeAccessAction(cause.action)}`;
+    case 'scope_without_details':
+      return 'scope_without_details';
+    default:
+      return 'unspecified';
+  }
+}
+
+const ACTION_RE = /^[a-z][a-z0-9_]{0,31}$/;
+/** `access.action` do Tactiq: só passa se casa o enum esperado; senão `unrecognized_value` (F13: o enum não é fechado nem confiável). */
+export function sanitizeAccessAction(raw: unknown): string {
+  return typeof raw === 'string' && ACTION_RE.test(raw) ? raw : 'unrecognized_value';
+}
+
+const TITLE_DISALLOWED = /[^\p{L}\p{N} .,'’:!?¿¡-]/gu;
+/** `title` do Tactiq (texto livre): ≤ 80 caracteres, só letras/números/espaço e `.,'’:!?¿¡-`; o resto é descartado. Vazio → `null`. */
+export function sanitizeAccessTitle(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const clean = raw.replace(TITLE_DISALLOWED, '').replace(/ {2,}/g, ' ').trim().slice(0, 80).trim();
+  return clean || null;
+}
+
+const SCOPE_TOKEN_RE = /^[a-z:_]+$/;
+/** `scope` do token (separado por espaço) → lista de tokens `^[a-z:_]+$`, no máximo 8. Ausente/não-string → `null` ("não apurado"). */
+export function sanitizeScopeList(raw: unknown): string[] | null {
+  if (typeof raw !== 'string') return null;
+  return raw.split(/\s+/).filter((t) => SCOPE_TOKEN_RE.test(t)).slice(0, 8);
+}
+
+/** O Tactiq recusou o token (401/403) ou o acesso: o vínculo caiu. A causa é opcional (default `unspecified`). */
 export class TactiqUnauthorizedError extends Error {
   readonly code = 'TACTIQ_UNAUTHORIZED';
-  constructor() {
+  constructor(readonly cause: DenyCause = { kind: 'unspecified' }) {
     super('tactiq_unauthorized');
     this.name = 'TactiqUnauthorizedError';
   }
@@ -55,7 +103,15 @@ export interface TactiqTokenSet {
   accessToken: string;
   /** Presente quando o Tactiq ROTACIONA o refresh token: o novo SEMPRE substitui o antigo. */
   refreshToken?: string;
+  /** Escopos concedidos, como o Tactiq devolveu (string separada por espaço). Ausente = "não apurado": nunca presumir `details`. */
+  scope?: string;
 }
+
+/** Veredito do `get_access_options` (dono único: `pingVerdict`). `unrecognized` = sem `action` string. `title` já sanitizado. */
+export type AccessVerdict =
+  | { kind: 'ready' }
+  | { kind: 'denied'; action: string; title: string | null }
+  | { kind: 'unrecognized' };
 
 export interface TactiqOAuthPort {
   /** URL de autorização (PKCE S256, cliente público). O `state` e o desafio vêm de quem chama. */
@@ -83,8 +139,8 @@ export interface TactiqTranscriptPage {
 
 /** Cliente do MCP do Tactiq. Nunca loga conteúdo. Respeita 10 reuniões/h/usuário (spec §3.3) — quem chama conta. */
 export interface TactiqMcpPort {
-  /** Chamada barata do teste diário. 401/403 → `TactiqUnauthorizedError`; rede/5xx → `TactiqTransientError`. */
-  ping(accessToken: string): Promise<void>;
+  /** Chamada barata do teste diário e do vínculo: DEVOLVE o veredito do acesso. Só lança 401/403 do transporte (`TactiqUnauthorizedError`, causa `mcp_transport`) e transitório (`TactiqTransientError`). */
+  ping(accessToken: string): Promise<AccessVerdict>;
   searchMeetings(accessToken: string, input: { query: string; dateFrom: string; dateTo: string }): Promise<TactiqMeetingItem[]>;
   getTranscriptPage(accessToken: string, meetingId: string, page: number): Promise<TactiqTranscriptPage>;
 }

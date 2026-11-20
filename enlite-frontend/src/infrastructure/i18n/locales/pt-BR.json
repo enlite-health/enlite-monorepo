@@ -6720,7 +6720,10 @@
       "starting": "Abrindo o Tactiq…",
       "startError": "Não conseguimos iniciar a vinculação. Tente novamente.",
       "returnLinked": "Pronto: sua conta do Tactiq foi vinculada.",
-      "returnError": "Não conseguimos concluir a vinculação com o Tactiq. Tente novamente."
+      "returnError": "Não conseguimos concluir a vinculação com o Tactiq. Tente novamente.",
+      "accessSeat": "Sua conta do Tactiq não tem um assento do plano da equipe Enlite, então não pode ler resumos nem transcrições. Peça a um administrador do Tactiq (Ana Joulie, Javier ou Marcel) que atribua um assento a você e depois volte a vincular aqui. Verifique também se, em app.tactiq.io, você está com seu e-mail @enlite.health.",
+      "accessGeneric": "O Tactiq informou que sua conta não tem acesso: «{{title}}». Verifique se, em app.tactiq.io, você está com seu e-mail @enlite.health, resolva com um administrador do Tactiq e depois volte a vincular aqui.",
+      "accessGenericNoTitle": "O Tactiq informou que sua conta não tem acesso aos resumos e transcrições. Verifique se, em app.tactiq.io, você está com seu e-mail @enlite.health, consulte um administrador do Tactiq e depois volte a vincular aqui."
     },
     "interviewHosts": {
       "title": "Entrevistadores de enquadre e admissão",

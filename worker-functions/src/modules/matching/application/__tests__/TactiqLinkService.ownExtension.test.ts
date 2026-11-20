@@ -16,7 +16,7 @@ const row = (over: Partial<ChromeReportRow>): ChromeReportRow => ({
 });
 
 function build(chrome: ChromeReportRow | null) {
-  const linkRepo = { findByEmail: jest.fn().mockResolvedValue(null) };
+  const linkRepo = { findByEmail: jest.fn().mockResolvedValue(null), latestLinkAttempt: jest.fn().mockResolvedValue(null) };
   const chromeRepo = { findByEmail: jest.fn().mockResolvedValue(chrome) };
   const service = new TactiqLinkService({
     repo: linkRepo as unknown as TactiqLinkRepository,
@@ -59,7 +59,7 @@ describe('TactiqLinkService.getOwn — extension', () => {
     const { service } = build(null);
     expect(await service.getOwn('exemplo@enlite.test')).toEqual({
       status: 'missing', linkedAt: null, lastCheckAt: null, statusChangedAt: null,
-      extension: { state: 'sem_relatorio', reportedAt: null },
+      extension: { state: 'sem_relatorio', reportedAt: null }, accessDenial: null,
     });
   });
 });

@@ -1,5 +1,6 @@
 import {
   TactiqInvalidGrantError,
+  type AccessVerdict,
   type TactiqMcpPort,
   type TactiqMeetingItem,
   type TactiqOAuthPort,
@@ -10,6 +11,7 @@ import {
 /**
  * Dublê do OAuth do Tactiq (NODE_ENV=test ou ADMISSION_EXTERNALS=fake). Determinístico e programável:
  *  - `exchangeCode`: o código `rt-<x>` devolve o refresh token `rt-<x>` (o teste escolhe o token dublado);
+ *  - `exchangeScope`: `scope` devolvido pela troca do código (ausente = "não apurado", como o Tactiq real pode devolver);
  *  - `refresh`: `invalidate(token)` faz o token seguinte falhar com `invalid_grant`; `rotateTo` devolve um refresh novo.
  */
 export class FakeTactiqOAuth implements TactiqOAuthPort {
@@ -18,6 +20,8 @@ export class FakeTactiqOAuth implements TactiqOAuthPort {
   readonly refreshCalls: string[] = [];
   private readonly invalid = new Set<string>();
   private nextRotation: string | null = null;
+  /** `scope` que a PRÓXIMA e as seguintes trocas de código devolvem; `undefined` = a resposta vem sem `scope`. */
+  exchangeScope: string | undefined = undefined;
 
   async buildAuthorizeUrl(input: { state: string; codeChallenge: string }): Promise<string> {
     this.authorizeCalls.push(input);
@@ -27,7 +31,11 @@ export class FakeTactiqOAuth implements TactiqOAuthPort {
   async exchangeCode(input: { code: string; codeVerifier: string }): Promise<TactiqTokenSet & { refreshToken: string }> {
     this.exchangeCalls.push(input);
     if (input.code === 'bad-code') throw new TactiqInvalidGrantError();
-    return { accessToken: `at-${input.code}`, refreshToken: input.code.startsWith('rt-') ? input.code : `rt-${input.code}` };
+    return {
+      accessToken: `at-${input.code}`,
+      refreshToken: input.code.startsWith('rt-') ? input.code : `rt-${input.code}`,
+      ...(this.exchangeScope !== undefined ? { scope: this.exchangeScope } : {}),
+    };
   }
 
   async refresh(refreshToken: string): Promise<TactiqTokenSet> {
@@ -48,7 +56,7 @@ export class FakeTactiqOAuth implements TactiqOAuthPort {
 }
 
 /**
- * Dublê do MCP: `ping` passa, ou lança o erro programado (ex.: `TactiqUnauthorizedError`).
+ * Dublê do MCP: `ping` devolve `verdict` (default `ready`), ou lança o erro programado (`pingError`, ex.: `TactiqUnauthorizedError`).
  *
  * Importação (spec 049 F6): o que a CONTA enxerga é por TOKEN (`meetingsByToken`) — é assim que o teste prova "autor errado"
  * (o token do responsável não vê a reunião). Sem programação por token, vale `meetings`. As páginas da transcrição vêm de
@@ -61,6 +69,8 @@ export class FakeTactiqMcp implements TactiqMcpPort {
   readonly searchCalls: Array<{ token: string; query: string; dateFrom: string; dateTo: string }> = [];
   readonly transcriptCalls: Array<{ token: string; meetingId: string; page: number }> = [];
   pingError: Error | null = null;
+  /** Veredito que o `ping` devolve quando não há `pingError`. */
+  verdict: AccessVerdict = { kind: 'ready' };
   searchError: Error | null = null;
   transcriptError: Error | null = null;
   meetings: TactiqMeetingItem[] = [];
@@ -82,11 +92,12 @@ export class FakeTactiqMcp implements TactiqMcpPort {
     }
   }
 
-  async ping(accessToken: string): Promise<void> {
+  async ping(accessToken: string): Promise<AccessVerdict> {
     this.pingTokens.push(accessToken);
     return this.counted(async () => {
       await this.pingGates.get(accessToken);
       if (this.pingError) throw this.pingError;
+      return this.verdict;
     });
   }
 
@@ -119,6 +130,7 @@ export class FakeTactiqMcp implements TactiqMcpPort {
     this.searchCalls.length = 0;
     this.transcriptCalls.length = 0;
     this.pingError = null;
+    this.verdict = { kind: 'ready' };
     this.searchError = null;
     this.transcriptError = null;
     this.meetings = [];

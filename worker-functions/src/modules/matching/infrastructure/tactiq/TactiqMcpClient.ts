@@ -4,7 +4,7 @@ import {
   TactiqNotConfiguredError,
   TactiqRealClientInTestError,
   TactiqTransientError,
-  TactiqUnauthorizedError,
+  type AccessVerdict,
   type TactiqMcpPort,
   type TactiqMeetingItem,
   type TactiqTranscriptPage,
@@ -25,9 +25,8 @@ export class TactiqMcpClient implements TactiqMcpPort {
     if (this.env.NODE_ENV === 'test') throw new TactiqRealClientInTestError('new TactiqMcpClient()');
   }
 
-  async ping(accessToken: string): Promise<void> {
-    const raw = await this.callTool(accessToken, 'get_access_options', {});
-    if (pingVerdict(raw) === 'denied') throw new TactiqUnauthorizedError();
+  async ping(accessToken: string): Promise<AccessVerdict> {
+    return pingVerdict(await this.callTool(accessToken, 'get_access_options', {}));
   }
 
   async searchMeetings(accessToken: string, input: { query: string; dateFrom: string; dateTo: string }): Promise<TactiqMeetingItem[]> {
