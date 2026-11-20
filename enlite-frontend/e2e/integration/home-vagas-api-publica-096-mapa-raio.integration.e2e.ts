@@ -278,17 +278,18 @@ test.describe('@integration Home do prestador — mapa por raio (096)', () => {
   });
 
   /** A7 — a rota da home falha (500): a home FALHA FECHADA. O `page.route` com 500 SÓ nesta rota é o cenário de falha (não é mock de
-   *  dado: nenhuma vaga é fabricada); a 2ª chamada, depois do "Reintentar", segue para a API real. */
+   *  dado: nenhuma vaga é fabricada); depois do "Reintentar" (com `falhar=false`) a chamada segue para a API real. */
   test('home mapa raio — A7: rota da home com 500 → cartão de erro, nem mapa nem vaga nem lista pública; "Reintentar" recupera', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.addInitScript(() => {
       (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
     });
     await loginAsWorker(page, uidMain, `${uidMain}@test.local`);
-    let chamadas = 0;
+    // Falha ENQUANTO `falhar` for true (e não "na 1ª chamada"): o React.StrictMode do Vite dev roda o efeito duas vezes e a 1ª
+    // chamada é cancelada, então contar chamadas deixaria a 2ª passar para a API real e o erro nunca apareceria.
+    let falhar = true;
     await page.route('**/api/workers/me/jobs**', async (route) => {
-      chamadas += 1;
-      if (chamadas === 1) {
+      if (falhar) {
         await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'falha-simulada-e2e' }) });
         return;
       }
@@ -305,10 +306,10 @@ test.describe('@integration Home do prestador — mapa por raio (096)', () => {
     await expect(page.getByTestId('complete-profile-notice')).toHaveCount(0);
     await shot(page, 'erro-home-1440x900.png');
 
+    falhar = false;
     await page.getByRole('button', { name: 'Reintentar' }).click();
     await expect(page.getByTestId('jobs-radius-section')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('home-load-error')).toHaveCount(0);
-    expect(chamadas).toBe(2);
   });
 
   test('home mapa raio — responsivo medido: 390 empilha, 1280 lado a lado, sem scroll horizontal', async ({ page }) => {
