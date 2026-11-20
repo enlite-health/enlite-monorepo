@@ -375,10 +375,21 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       const st = new URL(authorizeUrl).searchParams.get('state')!;
       return http('GET', `/api/admin/me/tactiq-link/callback?code=${code}&state=${st}`, null);
     }
-    afterEach(() => { mcp.verdict = { kind: 'ready' }; mcp.pingError = null; oauth.exchangeScope = undefined; setEnv('TACTIQ_LINK_RETURN_URL', undefined); });
+    const hostsDoBloco: string[] = [];
+    const novoHost = async (opts: Parameters<typeof newHost>[0]) => {
+      const h = await novoHost(opts);
+      hostsDoBloco.push(h.email);
+      return h;
+    };
+    // Vínculo `linked` deixado por um caso daria ao `runDailyCheck` dos testes seguintes um host a mais, e o dublê
+    // `oauth.rotateTo` (uso único) seria gasto nele: os casos deste bloco não deixam linha viva atrás de si.
+    afterEach(async () => {
+      mcp.verdict = { kind: 'ready' }; mcp.pingError = null; oauth.exchangeScope = undefined; setEnv('TACTIQ_LINK_RETURN_URL', undefined);
+      await admin.query(`DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)`, [hostsDoBloco.splice(0)]);
+    });
 
     it('ping `upgrade` → 0 linhas em tactiq_links E 0 em tactiq_link_secrets, 1 evento link_rejected, redirect access_denied', async () => {
-      const u = await newHost({ user: false });
+      const u = await novoHost({ user: false });
       mcp.verdict = { kind: 'denied', action: 'upgrade', title: null };
       setEnv('TACTIQ_LINK_RETURN_URL', 'https://app.example.test/profile');
       const res = await callback(u.email, `rt-upg-${RUN}`);
@@ -391,7 +402,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     });
 
     it('ping `ready` → `linked` como sempre, com o evento `linked`', async () => {
-      const u = await newHost({ user: false });
+      const u = await novoHost({ user: false });
       const res = await callback(u.email, `rt-rdy-${RUN}`);
       expect(res.status).toBe(200);
       expect(await linkRow(u.email)).toMatchObject({ status: 'linked' });
@@ -401,7 +412,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
 
     it('linha prévia `linked` + negativa por acesso → a linha e o token ficam intactos', async () => {
       const token = `rt-prev-${RUN}`;
-      const u = await newHost({ user: false, link: { status: 'linked', token } });
+      const u = await novoHost({ user: false, link: { status: 'linked', token } });
       const antes = await linkRow(u.email);
       mcp.verdict = { kind: 'denied', action: 'request_seat', title: 'Ask your team admin for a seat' };
       const res = await callback(u.email, `rt-novo-${RUN}`);
@@ -414,7 +425,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     });
 
     it('falha transitória no ping → nada gravado, outcome ping_transient, redirect ping_transient', async () => {
-      const u = await newHost({ user: false });
+      const u = await novoHost({ user: false });
       mcp.pingError = new TactiqTransientError('mcp_http_503');
       setEnv('TACTIQ_LINK_RETURN_URL', 'https://app.example.test/profile');
       const res = await callback(u.email, `rt-trn-${RUN}`);
