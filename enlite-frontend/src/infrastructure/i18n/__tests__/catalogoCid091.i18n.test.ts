@@ -25,6 +25,21 @@ const FORM_CASCADE: Record<string, { es: string; ptBR: string }> = {
   catalogChanged: { es: 'El catálogo de este diagnóstico cambió. Revisá los objetivos y actividades marcados.', ptBR: 'O catálogo deste diagnóstico mudou. Revise os objetivos e atividades marcados.' },
   formatMismatch: { es: 'Esta versión usa otro formato de objetivos. Recargá la página e intentá de nuevo.', ptBR: 'Esta versão usa outro formato de objetivos. Recarregue a página e tente de novo.' },
   cascadeError: { es: 'No pudimos cargar el catálogo. Intentá de nuevo.', ptBR: 'Não foi possível carregar o catálogo. Tente de novo.' },
+  // 099 — direção A "Objetivo como tarjeta" (es = literal do desenho congelado)
+  stepObjectivesAndActivities: { es: 'Paso 3 · Objetivos y actividades', ptBR: 'Passo 3 · Objetivos e atividades' },
+  stepObjectivesHelp: { es: 'Marcá un objetivo para ver y elegir sus actividades.', ptBR: 'Marque um objetivo para ver e escolher as atividades dele.' },
+  activitiesOfObjective: { es: 'Actividades de este objetivo', ptBR: 'Atividades deste objetivo' },
+  objectivesCount_one: { es: '{{count}} objetivo', ptBR: '{{count}} objetivo' },
+  objectivesCount_other: { es: '{{count}} objetivos', ptBR: '{{count}} objetivos' },
+  activitiesCount_one: { es: '{{count}} actividad', ptBR: '{{count}} atividade' },
+  activitiesCount_other: { es: '{{count}} actividades', ptBR: '{{count}} atividades' },
+  activitiesPicked: { es: '{{picked}} de {{total}} elegidas', ptBR: '{{picked}} de {{total}} escolhidas' },
+  noObjectivesToPick: { es: 'Sin objetivos para elegir', ptBR: 'Sem objetivos para escolher' },
+  pillComplete: { es: 'Completo', ptBR: 'Completo' },
+  pillMissingActivity: { es: 'Falta una actividad', ptBR: 'Falta uma atividade' },
+  pillNoneChosen: { es: 'Sin elegir', ptBR: 'Nada escolhido' },
+  pillNoCatalog: { es: 'Sin catálogo', ptBR: 'Sem catálogo' },
+  diagnosesProgress: { es: '{{done}} de {{total}} diagnósticos con catálogo completos', ptBR: '{{done}} de {{total}} diagnósticos com catálogo completos' },
 };
 
 const ADMIN_TC: Record<string, { es: string; ptBR: string }> = {

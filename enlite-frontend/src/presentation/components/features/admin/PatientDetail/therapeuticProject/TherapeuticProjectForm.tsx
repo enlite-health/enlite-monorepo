@@ -270,7 +270,7 @@ export function TherapeuticProjectForm({
     </>
   );
 
-  /** "Editar" de versão `byDiagnosis`: blocos só leitura (MACRO); "Nuevo": blocos da cascata (Paso 3 e 4). */
+  /** "Editar" de versão `byDiagnosis`: blocos só leitura (MACRO); "Nuevo": Paso 3 único com um acordeão por diagnóstico (099). */
   const byDiagnosisPanel = (): JSX.Element => (
     <div className="flex flex-col gap-4" data-testid="tp-diagnosis-blocks">
       {isEditing
@@ -279,24 +279,36 @@ export function TherapeuticProjectForm({
         ))
         : (
           <>
+            <div className="flex flex-col gap-1">
+              <h4 className="m-0 font-poppins text-base leading-[1.4] font-semibold text-primary" data-testid="tp-step-objectives-title">{tt('stepObjectivesAndActivities')}</h4>
+              <p className="m-0 text-sm leading-normal text-[#4A4458]">{tt('stepObjectivesHelp')}</p>
+            </div>
             {cascadeApi.error && <Text size="sm" className="text-red-700" role="alert" data-testid="tp-cascade-error">{tt('cascadeError')}</Text>}
-            {cascadeApi.blocks.map((block, index) => (
-              <TherapeuticProjectDiagnosisBlock
-                key={block.diagnosisUri}
-                title={diagnosisTitleOf(block.diagnosisUri)}
-                block={block}
-                cascade={cascade}
-                showIncomplete={touchedBlocks.includes(block.diagnosisUri) && !cascade.isBlockComplete(block.diagnosisUri)}
-                disabled={saving}
-                refusal={saveBlockError?.diagnosisIndex === index ? saveBlockError.message : undefined}
-                onToggleObjective={(id) => { touchBlock(block.diagnosisUri); cascadeApi.toggleObjective(block.diagnosisUri, id); onDirty(); }}
-                onToggleActivity={(id) => { touchBlock(block.diagnosisUri); cascadeApi.toggleActivity(block.diagnosisUri, id); onDirty(); }}
-              />
-            ))}
+            <div className="flex flex-col gap-3">
+              {cascadeApi.blocks.map((block, index) => (
+                <TherapeuticProjectDiagnosisBlock
+                  key={block.diagnosisUri}
+                  title={diagnosisTitleOf(block.diagnosisUri)}
+                  block={block}
+                  cascade={cascade}
+                  defaultOpen={index === 0}
+                  showIncomplete={touchedBlocks.includes(block.diagnosisUri) && !cascade.isBlockComplete(block.diagnosisUri)}
+                  disabled={saving}
+                  refusal={saveBlockError?.diagnosisIndex === index ? saveBlockError.message : undefined}
+                  onToggleObjective={(id) => { touchBlock(block.diagnosisUri); cascadeApi.toggleObjective(block.diagnosisUri, id); onDirty(); }}
+                  onToggleActivity={(id) => { touchBlock(block.diagnosisUri); cascadeApi.toggleActivity(block.diagnosisUri, id); onDirty(); }}
+                />
+              ))}
+            </div>
           </>
         )}
     </div>
   );
+
+  // 099: contador do rodapé "N de M diagnósticos con catálogo completos" — só "Nuevo" e só blocos COM catálogo (status `ok`).
+  const catalogBlocks = cascadeApi.blocks.filter((b) => b.status === 'ok');
+  const fullWidthPlan = !isEditing && layout === 'byDiagnosis';
+  const showProgress = !isEditing && layout === 'byDiagnosis' && cascadeApi.blocks.length > 0;
 
   /** Strategy por `objectivesLayout` (DD-21): um painel por formato. */
   const planPanels: Record<ObjectivesLayoutName, () => JSX.Element> = { flat: flatPanel, byDiagnosis: byDiagnosisPanel };
@@ -416,7 +428,7 @@ export function TherapeuticProjectForm({
         </div>
 
         <div className="flex flex-col gap-6">
-          {planPanels[layout]()}
+          {!fullWidthPlan && planPanels[layout]()}
           {/* Sem "Tipo de patología": deriva dos CID-11 no servidor (Gabriel 08/09; D163/D164) — máscara invisível na tela (DEC-09). */}
           <div className="grid grid-cols-2 gap-4">
             <FormField label={tf('startDate')} htmlFor="tp-startDate" labelSize="compact" required>
@@ -449,6 +461,9 @@ export function TherapeuticProjectForm({
             />
           ))}
         </div>
+
+        {/* 099: o Paso 3 do "Nuevo" ocupa a LARGURA TOTAL do form (desenho A), abaixo das duas colunas. */}
+        {fullWidthPlan && <div className="lg:col-span-2" data-testid="tp-plan-fullwidth">{planPanels[layout]()}</div>}
       </div>
 
       {saveError && (
@@ -457,7 +472,12 @@ export function TherapeuticProjectForm({
         </div>
       )}
 
-      <div className="flex justify-end gap-3 pt-2 border-t border-slate-100">
+      <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+        {showProgress && (
+          <span className="mr-auto text-[13px] leading-[1.4] text-[#4A4458]" data-testid="tp-progress-footer">
+            {tt('diagnosesProgress', { done: catalogBlocks.filter((b) => cascade.isBlockComplete(b.diagnosisUri)).length, total: catalogBlocks.length })}
+          </span>
+        )}
         <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>{t('common.cancel')}</Button>
         <Button type="submit" variant="primary" disabled={!canSave} data-testid="tp-save">
           {saving ? tf('saving') : tf('save')}
