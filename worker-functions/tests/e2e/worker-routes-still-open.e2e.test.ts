@@ -58,6 +58,8 @@ const OUTRAS_CLIENT_POLICY = [
   'GET /api/workers/me/daily-report-scales',
   'GET /api/workers/me/daily-report-templates',
   'PUT /api/workers/me/daily-reports/:reportId',
+  // spec 077 PR-INF-18: 'Cómo llegar' da zona do prestador ao paciente (identidade só pelo token)
+  'GET /api/workers/me/patients/:patientRef/transit',
 ];
 
 const bearer = (uid: string, role: string) =>
@@ -118,7 +120,7 @@ describe('F3 — prestador continua dentro das 21 rotas (T319)', () => {
     await pool?.end();
   });
 
-  it('as 21 rotas de prestador existem no inventário (runtime) como client-policy; as outras client-policy são as 10 nomeadas', async () => {
+  it('as 21 rotas de prestador existem no inventário (runtime) como client-policy; as outras client-policy são as 11 nomeadas', async () => {
     const inv = await axios.get(`${API_URL}/.well-known/permissions/routes`, { headers: { 'X-Internal-Secret': INTERNAL_SECRET }, validateStatus: () => true });
     expect(inv.status).toBe(200);
     const cp = (inv.data.routes as Array<{ method: string; path: string; class: string }>)

@@ -59,6 +59,8 @@ import {
 import { WorkerItineraryMeController } from '@modules/case/interfaces/controllers/WorkerItineraryMeController';
 import { buildWorkerDailyReportController } from '@modules/case/interfaces/controllers/buildWorkerDailyReportController';
 import { WorkerJobsByRadiusController } from '@modules/matching/interfaces/controllers/WorkerJobsByRadiusController';
+import { WorkerTransitMeController, workerTransitRateLimit } from '@modules/matching/interfaces/controllers/WorkerTransitMeController';
+import { createGetWorkerTransitToPatientUseCase } from '@modules/matching/infrastructure/workerTransitComposition';
 import { createAdminConversationRoutes } from '@modules/conversation/interfaces/routes/adminConversationRoutes';
 import { createPatientDocumentsRoutes } from '@modules/patient-documents/interfaces/routes/patientDocumentsRoutes';
 import { createAdminNotificationRoutes } from '@modules/inapp-notification/interfaces/routes/adminNotificationRoutes';
@@ -290,6 +292,7 @@ const workerDocumentsMeController = new WorkerDocumentsMeController();
 const workerItineraryMeController = new WorkerItineraryMeController();
 const workerDailyReportMeController = buildWorkerDailyReportController();
 const workerJobsByRadiusController = new WorkerJobsByRadiusController();
+const workerTransitMeController = new WorkerTransitMeController(createGetWorkerTransitToPatientUseCase());
 const adminWorkerDocumentsController = new AdminWorkerDocumentsController();
 const workerAdditionalDocsMeController = new WorkerAdditionalDocsMeController();
 const adminAdditionalDocsController = new AdminAdditionalDocsController();
@@ -507,6 +510,9 @@ app.get('/api/workers/me/daily-report-templates', routeClass('client-policy'), a
 });
 app.put('/api/workers/me/daily-reports/:reportId', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
   workerDailyReportMeController.put(req, res);
+});
+app.get('/api/workers/me/patients/:patientRef/transit', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), workerTransitRateLimit, (req: Request, res: Response) => {
+  workerTransitMeController.getMine(req, res);
 });
 app.put('/api/workers/me/general-info', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), appChannel(), (req: Request, res: Response) => {
   workerController.saveGeneralInfo(req, res);

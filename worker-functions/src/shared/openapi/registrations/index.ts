@@ -49,3 +49,4 @@ import './workerItinerary';
 import './workerJobs';
 import './workerJobsByRadius';
 import './workerStatus';
+import './workerTransit';
