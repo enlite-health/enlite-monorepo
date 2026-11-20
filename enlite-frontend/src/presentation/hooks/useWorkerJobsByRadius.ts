@@ -13,13 +13,15 @@ export type WorkerJobsByRadiusState =
   | { status: 'inactive' }
   | { status: 'error' };
 
-/** Uma chamada (`radius_km=100&view=home`) quando `enabled`; o slider filtra no cliente (096 DD-3). */
-export function useWorkerJobsByRadius(enabled: boolean): WorkerJobsByRadiusState {
+/** Uma chamada (`radius_km=100&view=home`) quando `enabled`; o slider filtra no cliente (096 DD-3). `attempt` sobe a cada
+ *  "Reintentar": refaz a chamada e volta a 'loading'. */
+export function useWorkerJobsByRadius(enabled: boolean, attempt = 0): WorkerJobsByRadiusState {
   const [state, setState] = useState<WorkerJobsByRadiusState>({ status: 'loading' });
 
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+    setState({ status: 'loading' });
     WorkerJobsByRadiusApiService.getHome()
       .then((data) => {
         if (cancelled) return;
@@ -37,7 +39,7 @@ export function useWorkerJobsByRadius(enabled: boolean): WorkerJobsByRadiusState
         else setState({ status: 'error' });
       });
     return () => { cancelled = true; };
-  }, [enabled]);
+  }, [enabled, attempt]);
 
   return enabled ? state : { status: 'idle' };
 }

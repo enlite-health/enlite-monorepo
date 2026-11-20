@@ -6,6 +6,7 @@ import { AppLayout } from '@presentation/components/templates/DashboardLayout';
 import { JobsEmbeddedSection } from '@presentation/components/features/worker/JobsEmbeddedSection';
 import { JobsRadiusMap } from '@presentation/components/features/worker/JobsRadiusMap';
 import { CompleteProfileNotice } from '@presentation/components/features/worker/JobsRadiusMap/CompleteProfileNotice';
+import { HomeLoadErrorNotice } from '@presentation/components/features/worker/JobsRadiusMap/HomeLoadErrorNotice';
 import { DEFAULT_RADIUS_KM, itemsWithin } from '@presentation/components/features/worker/JobsRadiusMap/radiusScope';
 import { useWorkerJobsByRadius } from '@presentation/hooks/useWorkerJobsByRadius';
 import type { JobRadiusKm } from '@domain/entities/WorkerJobByRadius';
@@ -26,9 +27,11 @@ export const WorkerHome = (): JSX.Element => {
   const profilePhoto = useWorkerRegistrationStore((state) => state.data.generalInfo.profilePhoto);
 
   // 096: mapa por raio. Uma chamada (100 km, perfil de match); o slider filtra no cliente. Cadastro incompleto (endereço,
-  // profissão, sexo ou disponibilidade) ⇒ aviso amigável NO LUGAR do mapa e da lista (nem a pública). Falha de rede ou conta
-  // inativa ⇒ `radiusScope` fica null e a lista pública segue inteira, com o cartão do mapa no topo.
-  const radiusState = useWorkerJobsByRadius(Boolean(user?.id));
+  // profissão, sexo ou disponibilidade) ⇒ aviso amigável NO LUGAR do mapa e da lista (nem a pública). Falha da rota ⇒ FALHA
+  // FECHADA: cartão de erro com "Reintentar", sem mapa, vagas nem lista pública. Conta inativa ⇒ `radiusScope` null e a lista
+  // pública segue inteira, com o cartão do mapa no topo.
+  const [attempt, setAttempt] = useState(0);
+  const radiusState = useWorkerJobsByRadius(Boolean(user?.id), attempt);
   const [radiusKm, setRadiusKm] = useState<JobRadiusKm>(DEFAULT_RADIUS_KM);
   const radiusScope = useMemo(() => {
     if (radiusState.status !== 'ok') return null;
@@ -83,10 +86,11 @@ export const WorkerHome = (): JSX.Element => {
       )}
 
       {radiusState.status === 'incomplete' && <CompleteProfileNotice missing={radiusState.missing} />}
+      {radiusState.status === 'error' && <HomeLoadErrorNotice onRetry={() => setAttempt((n) => n + 1)} />}
       <JobsRadiusMap state={radiusState} radiusKm={radiusKm} onRadiusChange={setRadiusKm} />
 
-      {/* Sem lista enquanto carrega (evita o "pisca" da lista pública) e sem lista nenhuma com cadastro incompleto. */}
-      {radiusState.status !== 'incomplete' && radiusState.status !== 'loading' && (
+      {/* Sem lista enquanto carrega (evita o "pisca" da lista pública), com cadastro incompleto ou com a rota da home falhando. */}
+      {radiusState.status !== 'incomplete' && radiusState.status !== 'error' && radiusState.status !== 'loading' && (
         <JobsEmbeddedSection
           radiusScope={radiusScope}
           isRegistrationComplete={isFullyRegistered}

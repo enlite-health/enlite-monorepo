@@ -534,6 +534,11 @@
       "mobileDescription": "Todos los servicios EnLite Health Solutions en la palma de su mano."
     }
   },
+  "homeLoadError": {
+    "title": "No pudimos cargar tus vacantes",
+    "body": "Algo falló de nuestro lado y no queremos mostrarte información incompleta. Probá de nuevo en unos segundos.",
+    "retry": "Reintentar"
+  },
   "profileNotice": {
     "title": "Falta poquito para mostrarte vacantes cerca tuyo",
     "intro": "Para armar tu mapa y mostrarte solo las vacantes que encajan con vos, necesitamos que completes estos datos:",
@@ -574,7 +579,6 @@
     "centerLabel": "Tu dirección",
     "mapUnavailable": "El mapa no está disponible por ahora. Las vacantes siguen en la lista.",
     "inactive": "Tu cuenta no está activa, por eso no podemos mostrarte vacantes cerca.",
-    "error": "No pudimos cargar el mapa de vacantes. La lista de vacantes sigue disponible.",
     "completeAvailability": "Completá tu disponibilidad para ver solo las vacantes que encajan con tus días.",
     "privacyFooter": "Mostramos solo barrio y ciudad. La dirección exacta te la damos si te asignan."
   },

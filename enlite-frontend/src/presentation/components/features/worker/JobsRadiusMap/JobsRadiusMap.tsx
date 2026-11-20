@@ -41,10 +41,10 @@ export function JobsRadiusMap({ state, radiusKm, onRadiusChange }: JobsRadiusMap
     </div>
   );
 
-  // 'incomplete' e 'idle' não desenham o mapa: quem decide é a home (aviso de cadastro / lista de sempre).
-  if (state.status === 'incomplete' || state.status === 'idle') return null;
+  // 'incomplete', 'error' e 'idle' não desenham o mapa: quem decide é a home (aviso de cadastro / cartão de erro / lista de sempre).
+  if (state.status === 'incomplete' || state.status === 'error' || state.status === 'idle') return null;
   if (state.status === 'inactive') return card('radius-inactive', t('jobsRadius.inactive'));
-  if (state.status === 'error' || !data) return card('radius-error', t('jobsRadius.error'));
+  if (!data) return null;
 
   const next = nextRadius(radiusKm);
   return (

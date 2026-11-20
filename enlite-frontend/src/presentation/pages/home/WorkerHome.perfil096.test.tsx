@@ -1,9 +1,9 @@
 /**
  * WorkerHome × cadastro (096, decisão 19/11): incompleto → aviso, NADA de mapa nem de lista (nem a pública); completo → mapa + lista;
- * carregando → nenhuma lista (sem "pisca"); falha de rede → a lista pública de sempre. O WorkerHome.test.tsx antigo segue sem edição.
+ * carregando → nenhuma lista (sem "pisca"); falha da rota da home → cartão de erro com "Reintentar" (falha fechada: nem mapa, nem vagas, nem lista pública); conta inativa → a lista pública de sempre. O WorkerHome.test.tsx antigo segue sem edição.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import type { WorkerJobsByRadiusState } from '@presentation/hooks/useWorkerJobsByRadius';
 import { WorkerHome } from './WorkerHome';
 
@@ -23,14 +23,17 @@ vi.mock('@presentation/components/features/worker/JobsEmbeddedSection', () => ({
 vi.mock('@presentation/components/molecules/PointsMap/PointsMap', () => ({ PointsMap: () => <div data-testid="points-map" /> }));
 
 let hookState: WorkerJobsByRadiusState = { status: 'loading' };
-vi.mock('@presentation/hooks/useWorkerJobsByRadius', () => ({ useWorkerJobsByRadius: () => hookState }));
+const hookCalls: number[] = [];
+vi.mock('@presentation/hooks/useWorkerJobsByRadius', () => ({
+  useWorkerJobsByRadius: (_enabled: boolean, attempt = 0) => { hookCalls.push(attempt); return hookState; },
+}));
 
 const OK: WorkerJobsByRadiusState = {
   status: 'ok',
   data: { items: [], center: { lat: -34.6, lng: -58.38 }, applied: { schedule: true, profession: true, sex: true }, missing: [] },
 };
 
-beforeEach(() => { hookState = { status: 'loading' }; });
+beforeEach(() => { hookState = { status: 'loading' }; hookCalls.length = 0; });
 
 describe('WorkerHome — cadastro para o mapa (096)', () => {
   it.each([
@@ -59,10 +62,30 @@ describe('WorkerHome — cadastro para o mapa (096)', () => {
     expect(screen.queryByTestId('jobs-embedded-section')).not.toBeInTheDocument();
   });
 
-  it.each([[{ status: 'error' }], [{ status: 'inactive' }]] as const)('falha (%j) → lista pública de sempre', (state) => {
-    hookState = state as WorkerJobsByRadiusState;
+  it('erro da rota → cartão de erro; sem mapa, sem vagas, sem lista pública, sem aviso de cadastro', () => {
+    hookState = { status: 'error' };
+    render(<WorkerHome />);
+    expect(screen.getByTestId('home-load-error')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'homeLoadError.retry' })).toBeInTheDocument();
+    expect(screen.queryByTestId('jobs-embedded-section')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('jobs-radius-section')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('points-map')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('complete-profile-notice')).not.toBeInTheDocument();
+  });
+
+  it('"Reintentar" refaz a chamada (o hook recebe attempt+1)', () => {
+    hookState = { status: 'error' };
+    render(<WorkerHome />);
+    expect(Math.max(...hookCalls)).toBe(0);
+    fireEvent.click(screen.getByTestId('home-load-error-retry'));
+    expect(Math.max(...hookCalls)).toBe(1);
+  });
+
+  it('conta inativa → lista pública de sempre, sem cartão de erro', () => {
+    hookState = { status: 'inactive' };
     render(<WorkerHome />);
     expect(screen.getByTestId('jobs-embedded-section')).toBeInTheDocument();
+    expect(screen.queryByTestId('home-load-error')).not.toBeInTheDocument();
     expect(screen.queryByTestId('complete-profile-notice')).not.toBeInTheDocument();
   });
 });

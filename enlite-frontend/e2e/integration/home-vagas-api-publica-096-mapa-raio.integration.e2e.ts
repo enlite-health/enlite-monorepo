@@ -277,6 +277,40 @@ test.describe('@integration Home do prestador — mapa por raio (096)', () => {
     console.log('CONTAGEM LIDA NA TELA  prestador longe: 10km=0 -> Ampliar -> 15km=2');
   });
 
+  /** A7 — a rota da home falha (500): a home FALHA FECHADA. O `page.route` com 500 SÓ nesta rota é o cenário de falha (não é mock de
+   *  dado: nenhuma vaga é fabricada); a 2ª chamada, depois do "Reintentar", segue para a API real. */
+  test('home mapa raio — A7: rota da home com 500 → cartão de erro, nem mapa nem vaga nem lista pública; "Reintentar" recupera', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.addInitScript(() => {
+      (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
+    });
+    await loginAsWorker(page, uidMain, `${uidMain}@test.local`);
+    let chamadas = 0;
+    await page.route('**/api/workers/me/jobs**', async (route) => {
+      chamadas += 1;
+      if (chamadas === 1) {
+        await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'falha-simulada-e2e' }) });
+        return;
+      }
+      const headers = { ...route.request().headers(), authorization: `Bearer ${buildMockToken(uidMain, `${uidMain}@test.local`)}` };
+      await route.continue({ headers });
+    });
+    await page.goto('/', { waitUntil: 'networkidle', timeout: 30_000 });
+    await expect(page.getByTestId('home-load-error')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('button', { name: 'Reintentar' })).toBeVisible();
+    await expect(page.getByTestId('jobs-radius-section')).toHaveCount(0);
+    await expect(page.getByTestId('points-map')).toHaveCount(0);
+    await expect(page.locator('#jobs-section')).toHaveCount(0);
+    await expect(page.getByTestId('job-card')).toHaveCount(0);
+    await expect(page.getByTestId('complete-profile-notice')).toHaveCount(0);
+    await shot(page, 'erro-home-1440x900.png');
+
+    await page.getByRole('button', { name: 'Reintentar' }).click();
+    await expect(page.getByTestId('jobs-radius-section')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('home-load-error')).toHaveCount(0);
+    expect(chamadas).toBe(2);
+  });
+
   test('home mapa raio — responsivo medido: 390 empilha, 1280 lado a lado, sem scroll horizontal', async ({ page }) => {
     await goHome(page, uidMain);
     await expect(page.getByTestId('jobs-radius-section')).toBeVisible({ timeout: 20_000 });

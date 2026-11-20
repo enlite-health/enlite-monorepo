@@ -62,11 +62,12 @@ describe('JobsRadiusMap', () => {
     expect(screen.queryByTestId('points-map')).not.toBeInTheDocument();
   });
 
-  it('403 inativa e erro de rede → mensagem, sem mapa, nada quebra', () => {
+  it('403 inativa → mensagem; erro de rede → nada aqui (a home mostra o cartão de erro); sem mapa nos dois', () => {
     const { rerender } = render(<JobsRadiusMap state={{ status: 'inactive' }} radiusKm={10} onRadiusChange={vi.fn()} />);
     expect(screen.getByTestId('radius-inactive')).toBeInTheDocument();
     rerender(<JobsRadiusMap state={{ status: 'error' }} radiusKm={10} onRadiusChange={vi.fn()} />);
-    expect(screen.getByTestId('radius-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('radius-error')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('jobs-radius-section')).not.toBeInTheDocument();
     expect(screen.queryByTestId('points-map')).not.toBeInTheDocument();
   });
 
