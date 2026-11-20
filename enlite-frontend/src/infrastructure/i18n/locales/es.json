@@ -302,6 +302,16 @@
       "login": "Entrar con Google",
       "register": "Registrarme con Google"
     },
+    "forgot": {
+      "title": "¿Olvidó su contraseña?",
+      "description": "Ingrese su correo electrónico y le enviaremos un enlace para crear una contraseña nueva.",
+      "submit": "Enviar enlace",
+      "sentNeutral": "Si existe una cuenta con ese correo electrónico, le enviamos un enlace para crear una contraseña nueva. Si se registró con Google, use \"Entrar con Google\".",
+      "invalidEmail": "Por favor, ingrese un correo electrónico válido",
+      "tooManyRequests": "Demasiados intentos. Intente nuevamente más tarde.",
+      "genericError": "No pudimos enviar el enlace. Intente nuevamente.",
+      "backToLogin": "Volver al inicio de sesión"
+    },
     "action": {
       "title": "Definí tu contraseña",
       "titleFor": "Definí tu contraseña para {{email}}",

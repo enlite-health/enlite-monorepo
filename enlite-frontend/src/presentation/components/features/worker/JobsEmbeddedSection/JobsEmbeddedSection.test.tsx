@@ -174,6 +174,7 @@ beforeEach(() => {
     login: vi.fn(),
     loginWithGoogle: vi.fn(),
     register: vi.fn(),
+    sendPasswordReset: vi.fn(),
     logout: vi.fn(),
   });
   mockTrackAcquisitionChannel.mockResolvedValue({ prescreeningUrl: 'https://talentum.invalid/public/pre-screening/00000000-0000-4000-8000-000000000067/chat' });
