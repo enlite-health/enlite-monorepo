@@ -23,6 +23,7 @@ import { LocalizacoesCard } from '@presentation/components/features/admin/Patien
 import { ServicosContratadosCard } from '@presentation/components/features/admin/PatientDetail/ServicosContratadosCard';
 import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
 import { PatientItineraryTab } from '@presentation/components/features/admin/PatientDetail/PatientItineraryTab';
+import { PatientDailyReportsTab } from '@presentation/components/features/admin/PatientDetail/PatientDailyReportsTab';
 import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
 import { PatientConversationHandle } from '@presentation/components/features/admin/PatientDetail/conversation/PatientConversationHandle';
 import { PatientDocumentsSection } from '@presentation/components/features/admin/PatientDetail/documents/PatientDocumentsSection';
@@ -361,6 +362,12 @@ export default function PatientDetailPage() {
         {shownTab === 'itinerary' && (
           <ContainerGate resource="patient_services">
             <PatientItineraryTab patient={patient} />
+          </ContainerGate>
+        )}
+        {/* Spec 092 (T501): informes diarios da guarda — container próprio, célula `daily_report:read`; o texto é de `daily_report_narrative:read` (decidido no servidor). */}
+        {shownTab === 'dailyReports' && (
+          <ContainerGate resource="daily_report">
+            <PatientDailyReportsTab patientId={patient.id} />
           </ContainerGate>
         )}
         {shownTab === 'history' && (

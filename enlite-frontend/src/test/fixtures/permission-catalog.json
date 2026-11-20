@@ -30,6 +30,8 @@
     "catalog_therapeutic_objectives:create",
     "catalog_therapeutic_objectives:read",
     "catalog_therapeutic_objectives:update",
+    "daily_report:read",
+    "daily_report_narrative:read",
     "dashboard:read",
     "dashboard_funnel:read",
     "dashboard_numbers:read",

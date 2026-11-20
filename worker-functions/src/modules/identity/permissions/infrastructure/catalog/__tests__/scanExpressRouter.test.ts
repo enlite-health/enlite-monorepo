@@ -329,6 +329,10 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // 07/09 — o preço do serviço contratado deixou de ser "papel admin" e virou célula de DADO;
       // não é portão de rota (a rota abre com `patient_services:*`), então SÓ existe por aqui.
       'patient_contract_value:read',
+      // spec 092: `daily_report:read` está na rota do painel; `daily_report_narrative:read` é decidida pelo use case com as células da request
+      // (redação do texto clínico, `canReadDailyReportNarrative`) — sem `perm.require` próprio, por isso chega ao catálogo por aqui.
+      'daily_report:read',
+      'daily_report_narrative:read',
       // Spec 017 (08/09) — projeto terapêutico e os 2 catálogos: declaradas por rota no app real
       // (`adminTherapeuticProjectsRoutes.ts`); o fixture deste teste não as declara.
       // `patient_therapeutic_project:write` REMOVIDA (mesma change, F8/F9): órfã — coberta por

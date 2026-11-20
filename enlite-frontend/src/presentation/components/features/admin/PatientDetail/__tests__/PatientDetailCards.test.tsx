@@ -883,8 +883,8 @@ describe('PatientProfileTabs', () => {
   // placeholder genérico "Em breve" atrás, nenhum card real (decisão Gabriel 03/09, item 9).
   // 05/09 (decisão do Gabriel): "Enquadre" também saiu — era a tabela de serviços duplicada +
   // placeholder; o encuadre do paciente É o serviço contratado (endereço + horário).
-  // Sync main→stage 16/10 (decisão C2): spec 049 (+ Admissão) + cadeia do itinerário (+ Itinerário), sem "Vagas" (spec 047) — 7 abas.
-  it('renders the 7 tabs with real content (spec 049: + Admissão; cadeia: + Itinerário) — "Dados Financeiros"/"Agendamentos"/"Enquadre"/"Vagas" (spec 047) não existem mais', () => {
+  // Sync main→stage 16/10 (decisão C2): spec 049 (+ Admissão) + cadeia do itinerário (+ Itinerário), sem "Vagas" (spec 047) + spec 092 (+ Informes diários) — 8 abas.
+  it('renders the 8 tabs with real content (spec 049: + Admissão; cadeia: + Itinerário; spec 092: + Informes diários) — "Dados Financeiros"/"Agendamentos"/"Enquadre"/"Vagas" (spec 047) não existem mais', () => {
     const onTabChange = vi.fn();
     render(<PatientProfileTabs activeTab="clinicalData" onTabChange={onTabChange} />);
     expect(screen.getByText('Dados Clínicos')).toBeInTheDocument();
@@ -893,12 +893,13 @@ describe('PatientProfileTabs', () => {
     expect(screen.getByText('Admissão')).toBeInTheDocument();
     expect(screen.getByText('Serviço Contratado')).toBeInTheDocument();
     expect(screen.getByText('Itinerário')).toBeInTheDocument();
+    expect(screen.getByText('Informes diários')).toBeInTheDocument();
     expect(screen.queryByText('Vagas')).not.toBeInTheDocument();
     expect(screen.getByText('Histórico')).toBeInTheDocument();
     expect(screen.queryByText('Dados Financeiros')).not.toBeInTheDocument();
     expect(screen.queryByText('Agendamentos')).not.toBeInTheDocument();
     expect(screen.queryByText('Enquadre')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button')).toHaveLength(7);
+    expect(screen.getAllByRole('button')).toHaveLength(8);
   });
 
   it('active tab has primary background class', () => {

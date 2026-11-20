@@ -165,7 +165,7 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(containersOfTab(s, 'contractedService').map((c) => c.resource)).toEqual(['patient_coverage', 'patient_address', 'patient_services', 'patient_contract_value', 'vacancy']);
     // Spec 049 (F7): a aba Admissão vem logo depois de Documentos, com container próprio e 5 células (4 da 049 + o ensaio pago da 050).
     // Spec 049 (F7) + cadeia do itinerário (D442) — sync main→stage 16/10, decisão C2: 7 abas, sem 'vacancies'.
-    expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'itinerary', 'history']);
+    expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'itinerary', 'dailyReports', 'history']);
     expect(containersOfTab(s, 'admission').map((c) => c.resource)).toEqual(['patient_admission']);
     expect(s.containers?.find((c) => c.id === 'admission')?.cells).toEqual(['patient_admission:read', 'patient_admission:create', 'patient_admission:update', 'patient_admission:resend_message', 'patient_admission:release_paid_rehearsal', 'patient_admission:retry_summary']);
     expect(screenById('account.tactiq').cells).toEqual(['own_tactiq_link:read', 'own_tactiq_link:create']);
@@ -175,6 +175,8 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(containersOfTab(s, 'encuadre')).toEqual([]);
     expect(containersOfTab(s, 'itinerary').map((c) => c.resource)).toEqual(['patient_services', 'patient_itinerary']);
     expect(containersOfTab(s, 'history').map((c) => c.resource)).toEqual(['patient']);
+    // Spec 092 (T501): a aba Informes diarios — estrutura e texto são células distintas (o servidor redige o texto sem a segunda).
+    expect(containersOfTab(s, 'dailyReports').map((c) => c.resource)).toEqual(['daily_report', 'daily_report_narrative']);
     // 02/10 (spec 031): a aba Documentos vem logo depois da Rede de apoio, com as 4 células do recurso.
     expect(containersOfTab(s, 'documents').map((c) => c.resource)).toEqual(['patient_document']);
     expect(s.containers?.find((c) => c.id === 'documents')?.cells).toEqual([

@@ -97,10 +97,10 @@ test.describe('itinerario-aba @integration', () => {
       await loginAs(page, STAFF);
       await openItineraryTab(page, seed.patientId);
 
-      // Critério 10: 7 abas (02/10, spec 031: Documentos entra logo depois de Red de Apoyo; 05/10, 041 R3: a
+      // Critério 10: 8 abas (02/10, spec 031: Documentos entra logo depois de Red de Apoyo; 05/10, 041 R3: a
       // aba Encuadre sai), o Itinerario é o 6º (índice 5) e "Encuadre" não existe na tab bar.
       const tabButtons = page.getByTestId('patient-profile-tabs').getByRole('button');
-      await expect(tabButtons).toHaveCount(7);
+      await expect(tabButtons).toHaveCount(8);
       await expect(tabButtons.nth(5)).toHaveText('Itinerario');
       await expect(page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Encuadre', exact: true })).toHaveCount(0);
 
