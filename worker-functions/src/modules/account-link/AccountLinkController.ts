@@ -62,7 +62,7 @@ export class AccountLinkController {
     const uid = this.authUid(req);
     if (!uid) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
     try {
-      const data = await this.service.start(uid, String(req.body?.phone ?? ''));
+      const data = await this.service.start(uid, String(req.body?.phone ?? ''), (req as Request & { user?: { email?: string } }).user?.email);
       res.status(200).json({ success: true, data });
     } catch (err) { this.fail(res, err, 'AccountLinkController:start'); }
   }

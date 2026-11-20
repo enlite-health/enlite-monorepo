@@ -161,7 +161,7 @@ export class WorkerRepository implements IWorkerRepository {
         SELECT id, auth_uid as "authUid", email, phone,
                whatsapp_phone_encrypted as "whatsappPhoneEnc",
                lgpd_consent_at as "lgpdConsentAt",
-               country, timezone,
+               country, timezone, is_test as "isTest",
                created_at as "createdAt", updated_at as "updatedAt"
         FROM workers WHERE email = $1
       `;
@@ -337,7 +337,7 @@ export class WorkerRepository implements IWorkerRepository {
       // mig 219) e não soft-deletados — conta com deleted_at não pode bloquear o
       // número de quem está se cadastrando (caso Edith, diagnóstico 03/08).
       const result = await this.pool.query(
-        `SELECT id, auth_uid as "authUid", email, phone, country,
+        `SELECT id, auth_uid as "authUid", email, phone, country, is_test as "isTest",
                 created_at as "createdAt", updated_at as "updatedAt"
          FROM workers
          WHERE phone = ANY($1::text[])

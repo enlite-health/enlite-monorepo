@@ -162,7 +162,7 @@ describe('AccountLinkService.start', () => {
   it('OTP vai pro número DA FICHA em E164 (anti-hijack)', async () => {
     const { service, twilio } = makeService({});
     const out = await service.start('FirebaseNew', '9999999999');
-    expect(twilio.startVerification).toHaveBeenCalledWith('+5491133336012');
+    expect(twilio.startVerification).toHaveBeenCalledWith('+5491133336012', { fichaIsTest: false, tokenEmail: undefined });
     expect(out.verificationSid).toBe('VE-test');
   });
 });

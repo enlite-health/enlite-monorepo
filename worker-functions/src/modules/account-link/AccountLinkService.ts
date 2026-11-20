@@ -16,7 +16,8 @@ import { logger } from '@shared/logging';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId } from '@shared/database/resolveCanonicalWorkerId';
-import { TwilioVerifyService, otpCheckIsForPhone } from '../auth/infrastructure/TwilioVerifyService';
+import { TwilioVerifyService, otpCheckIsForPhone, type ITwilioVerifyService } from '../auth/infrastructure/TwilioVerifyService';
+import { IsTestOtpGuardedVerify } from '../auth/application/IsTestOtpGuard';
 import { ExecuteAdminMergeUseCase } from '../../application/dedup/ExecuteAdminMergeUseCase';
 import { buildFieldComparisons } from '../../application/dedup/dedupFieldComparison';
 import { SYNTHETIC_AUTH_UID_PREFIXES } from '../../infrastructure/services/WorkerPhoneMergeTypes';
@@ -42,23 +43,25 @@ interface WorkerLite {
   auth_uid: string | null;
   phone: string | null;
   updated_at: Date;
+  is_test?: boolean;
 }
 
 export class AccountLinkService {
   private readonly encryption: KMSEncryptionService;
-  private readonly twilio: TwilioVerifyService;
+  private readonly twilio: ITwilioVerifyService;
   private readonly adminMerge: ExecuteAdminMergeUseCase;
 
   constructor(
     private readonly pool: Pool,
     deps?: {
       encryption?: KMSEncryptionService;
-      twilio?: TwilioVerifyService;
+      twilio?: ITwilioVerifyService;
       adminMerge?: ExecuteAdminMergeUseCase;
     },
   ) {
     this.encryption = deps?.encryption ?? new KMSEncryptionService();
-    this.twilio = deps?.twilio ?? new TwilioVerifyService();
+    // Ponto único de envio do código: a guarda de OTP de teste decora a porta (FR-95/DP-23).
+    this.twilio = new IsTestOtpGuardedVerify(deps?.twilio ?? new TwilioVerifyService());
     this.adminMerge = deps?.adminMerge ?? new ExecuteAdminMergeUseCase(pool);
   }
 
@@ -80,7 +83,7 @@ export class AccountLinkService {
 
   // ── start — OTP pro número DA CONTA ANTIGA, só na intenção ──────────────
 
-  async start(authUid: string, phoneEntered: string): Promise<AccountLinkStartResult> {
+  async start(authUid: string, phoneEntered: string, tokenEmail?: string | null): Promise<AccountLinkStartResult> {
     const me = await this.resolveLoggedWorker(authUid);
     const owner = await this.resolvePhoneOwner(phoneEntered, me.id);
 
@@ -92,7 +95,7 @@ export class AccountLinkService {
     // pro digitado no request.
     const phoneForOtp = owner.phone!;
     const phoneE164 = phoneForOtp.startsWith('+') ? phoneForOtp : `+${normalizePhoneAR(phoneForOtp) ?? phoneForOtp}`;
-    const { verificationSid } = await this.twilio.startVerification(phoneE164);
+    const { verificationSid } = await this.twilio.startVerification(phoneE164, { fichaIsTest: owner.is_test === true, tokenEmail });
 
     await recordAccountLinkEvent(this.pool, {
       event: 'started', workerId: me.id, otherWorkerId: owner.id,
@@ -245,7 +248,7 @@ export class AccountLinkService {
     if (candidates.length === 0) throw new AccountLinkError('NO_CONFLICT');
 
     const res = await this.pool.query<WorkerLite>(
-      `SELECT id, email, auth_uid, phone, updated_at
+      `SELECT id, email, auth_uid, phone, updated_at, is_test
        FROM workers
        WHERE phone = ANY($1::text[])
          AND merged_into_id IS NULL

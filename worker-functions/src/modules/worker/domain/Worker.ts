@@ -5,6 +5,8 @@ export interface Worker {
   phone?: string;
   whatsappPhone?: string;
   lgpdConsentAt?: Date;
+  /** Ficha de teste (conta de E2E). Lido só onde a decisão depende dela (guarda de OTP). */
+  isTest?: boolean;
   
   firstName?: string;
   lastName?: string;

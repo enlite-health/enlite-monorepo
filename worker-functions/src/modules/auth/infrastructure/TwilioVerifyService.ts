@@ -61,8 +61,17 @@ export interface OtpCheckResult {
   to?: string;
 }
 
+/**
+ * Fatos que a guarda de OTP de teste (`IsTestOtpGuard`) precisa no momento do envio: a ficha que
+ * RECEBE o código é de teste? e o e-mail do TOKEN de quem pede? Ausente = envio normal.
+ */
+export interface OtpSendContext {
+  fichaIsTest: boolean;
+  tokenEmail?: string | null;
+}
+
 export interface ITwilioVerifyService {
-  startVerification(phoneE164: string): Promise<{ verificationSid: string }>;
+  startVerification(phoneE164: string, ctx?: OtpSendContext): Promise<{ verificationSid: string }>;
   checkVerification(verificationSid: string, code: string): Promise<OtpCheckResult>;
 }
 
@@ -116,7 +125,7 @@ export class TwilioVerifyService implements ITwilioVerifyService {
     }
   }
 
-  async startVerification(phoneE164: string): Promise<{ verificationSid: string }> {
+  async startVerification(phoneE164: string, _ctx?: OtpSendContext): Promise<{ verificationSid: string }> {
     const phoneMasked = maskPhoneForLog(phoneE164);
     const log = logger.child({
       source: 'TwilioVerifyService:start',
