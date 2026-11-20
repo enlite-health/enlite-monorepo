@@ -6,6 +6,7 @@ import { logger } from '@shared/logging';
 import { resourceIdHash } from '@shared/audit/resourceAccessLog';
 import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
+import { isEnliteTestEmail } from '@shared/utils/testAccountEmail';
 import { isClaimableWorker, isImportedWorker } from './isClaimableWorker';
 import { ITwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
 
@@ -118,6 +119,8 @@ export class InitWorkerUseCase {
       whatsappPhone: data.whatsappPhone,
       lgpdOptIn: data.lgpdOptIn,
       country: data.country,
+      // C-50/DP-23: conta de E2E nasce is_test no próprio INSERT (e-mail do token, minúsculas).
+      isTest: isEnliteTestEmail(data.email),
     });
 
     if (createResult.isFailure) {

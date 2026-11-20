@@ -82,8 +82,8 @@ export class WorkerRepository implements IWorkerRepository {
       const rawPhone = data.phone || null;
       const normalizedPhone = rawPhone ? (normalizePhoneAR(rawPhone) || rawPhone) : null;
       const query = `
-        INSERT INTO workers (auth_uid, email, phone, whatsapp_phone_encrypted, lgpd_consent_at, terms_accepted_at, privacy_accepted_at, country, timezone, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'INCOMPLETE_REGISTER')
+        INSERT INTO workers (auth_uid, email, phone, whatsapp_phone_encrypted, lgpd_consent_at, terms_accepted_at, privacy_accepted_at, country, timezone, status, is_test)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'INCOMPLETE_REGISTER', $10)
         RETURNING id, auth_uid as "authUid", email, phone,
                   lgpd_consent_at as "lgpdConsentAt",
                   terms_accepted_at as "termsAcceptedAt",
@@ -107,6 +107,7 @@ export class WorkerRepository implements IWorkerRepository {
         consentAt,
         country,
         timezone,
+        data.isTest === true,
       ];
       const result = await this.pool.query(query, values);
       const row = result.rows[0];

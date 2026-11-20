@@ -74,6 +74,8 @@ export interface CreateWorkerDTO {
   lgpdOptIn?: boolean;
   country?: string;
   timezone?: string;
+  /** Ficha de teste desde o INSERT (conta de E2E, e-mail `@enlite.test`): sem janela entre o init e um UPDATE. */
+  isTest?: boolean;
 }
 
 export interface UpdateWorkerStepDTO {

@@ -105,6 +105,7 @@ describe('InitWorkerUseCase', () => {
         whatsappPhone: '+5411234567890',
         lgpdOptIn: true,
         country: dto.country,
+        isTest: false,
       });
     });
 
