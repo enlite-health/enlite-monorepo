@@ -40,19 +40,16 @@ const complete = (t: ReturnType<typeof build>) => t.service.completeLink({ state
 const rejected = (events: Array<Record<string, unknown>>) => events.filter((e) => e.kind === 'tactiq_link.link_rejected');
 
 describe('completeLink — vínculo só com acesso provado', () => {
-  it('scope own → recusa scope_without_details, ping NÃO chamado, nada gravado, ref.scope com o escopo recebido', async () => {
+  it('scope own + ping ready → grava 1× e o evento linked leva ref.scope (sem o commit do escopo, só o ping decide)', async () => {
     const t = build();
     t.oauth.exchangeScope = 'mcp:meetings:own';
-    await expect(complete(t)).rejects.toMatchObject({ redirectReason: 'access_denied' });
-    expect(t.mcp.pingTokens).toEqual([]);
-    expect(t.repo.upsertLinked).not.toHaveBeenCalled();
-    expect(t.cipher.encrypt).not.toHaveBeenCalled();
-    expect(rejected(t.events)).toEqual([
-      expect.objectContaining({ outcome: 'access_denied', reason: 'scope_without_details', ref: { scope: 'mcp:meetings:own' } }),
-    ]);
+    await expect(complete(t)).resolves.toEqual({ email: HOST });
+    expect(t.mcp.pingTokens).toEqual(['at-code-1']);
+    expect(t.repo.upsertLinked).toHaveBeenCalledTimes(1);
+    expect(t.events).toEqual([expect.objectContaining({ kind: 'tactiq_link.linked', ref: { scope: 'mcp:meetings:own' } })]);
   });
 
-  it('scope com details + ready → upsertLinked 1×, evento linked; scope ausente → segue ao ping e grava sem ref', async () => {
+  it('scope com details + ready → upsertLinked 1×, evento linked; scope ausente → grava sem ref', async () => {
     let t = build();
     t.oauth.exchangeScope = 'mcp:meetings:own mcp:meetings:details';
     await complete(t);
