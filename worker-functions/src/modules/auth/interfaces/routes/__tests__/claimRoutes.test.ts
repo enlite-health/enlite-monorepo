@@ -258,3 +258,79 @@ describe('createWorkerInitOtpRateLimit — cota de OTP do init', () => {
     expect((await init(enderecos[3], true)).status).toBe(429);
   });
 });
+
+/**
+ * Chave da cota do init por canal: pelo BFF o IP é o de saída do Cloud Run (comum a todas as cuidadoras),
+ * então no canal app (marca do `appChannel`) a chave é o uid do JWT; na web continua o IP.
+ * Montagem na ORDEM real do index.ts: requireAuth → appChannel → limitador → controller.
+ * MORRE se a chave do canal app voltar a ser o IP (4 uids diferentes dariam 429) ou se a web deixar de ser por IP.
+ */
+describe('createWorkerInitOtpRateLimit — chave por canal (app: uid, web: IP)', () => {
+  const enviaOtp = jest.fn((_req: Request, res: Response) => {
+    markOtpStarted(res); // todo init aqui abre OTP, para gastar a cota
+    res.status(200).json({ m: 'init' });
+  });
+  /** Dublê do requireAuth: uid vem de X-Teste-Uid; sem ele, 401 (o limitador nem é alcançado). */
+  const auth = (req: Request, res: Response, next: () => void) => {
+    const uid = req.headers['x-teste-uid'];
+    if (!uid) { res.status(401).json({ success: false }); return; }
+    (req as Request & { user?: unknown }).user = { uid: String(uid), email: `${uid}@exemplo.test` };
+    next();
+  };
+  /** Dublê do appChannel com token VALIDADO: marca o canal app quando X-Teste-Canal=app. */
+  const canal = (req: Request, res: Response, next: () => void) => {
+    if (req.headers['x-teste-canal'] === 'app') res.locals.profileEditChannel = 'app';
+    next();
+  };
+  const server = appDeRota('workerInitOtpCanal', '/api', () => {
+    const r = Router();
+    r.post('/workers/init', auth, canal, createWorkerInitOtpRateLimit(), enviaOtp);
+    return r;
+  });
+  const init = (uid: string | undefined, ip: string, app: boolean) => {
+    let rq = request(server).post('/api/workers/init').set('X-Forwarded-For', ip).set('X-Teste-Canal', app ? 'app' : 'web');
+    if (uid) rq = rq.set('X-Teste-Uid', uid);
+    return rq.send({});
+  };
+
+  afterEach(() => enviaOtp.mockClear());
+
+  it('canal app: 4 uids DIFERENTES atrás do MESMO IP (saída do Cloud Run) não levam 429', async () => {
+    for (const u of ['app-u1', 'app-u2', 'app-u3', 'app-u4']) {
+      expect((await init(u, 'cloud-run-egress-1', true)).status).toBe(200);
+    }
+  });
+
+  it('canal app: 4 inits do MESMO uid levam 429 na 4ª, e o use case não é chamado', async () => {
+    for (let i = 0; i < 3; i++) expect((await init('app-mesmo', 'cloud-run-egress-2', true)).status).toBe(200);
+    enviaOtp.mockClear();
+    const r = await init('app-mesmo', 'cloud-run-egress-2', true);
+    expect(r.status).toBe(429);
+    expect(enviaOtp).not.toHaveBeenCalled();
+  });
+
+  it('canal app: o uid é a chave, não o IP — trocar de IP não zera a cota', async () => {
+    for (let i = 0; i < 3; i++) expect((await init('app-troca-ip', `egress-troca-${i}`, true)).status).toBe(200);
+    expect((await init('app-troca-ip', 'egress-troca-novo', true)).status).toBe(429);
+  });
+
+  it('web (sem marca): continua POR IP — 4 uids diferentes do mesmo IP levam 429 na 4ª', async () => {
+    for (const u of ['web-u1', 'web-u2', 'web-u3']) expect((await init(u, 'ip-web-1', false)).status).toBe(200);
+    expect((await init('web-u4', 'ip-web-1', false)).status).toBe(429);
+  });
+
+  it('web: o mesmo uid em IPs diferentes não divide cota (por IP, inalterado)', async () => {
+    for (let i = 0; i < 4; i++) expect((await init('web-mesmo-uid', `ip-web-diverso-${i}`, false)).status).toBe(200);
+  });
+
+  it('as cotas dos canais não se misturam: uid no app e IP na web são chaves distintas', async () => {
+    for (let i = 0; i < 3; i++) expect((await init('app-x', 'ip-compartilhado', true)).status).toBe(200);
+    expect((await init('web-y', 'ip-compartilhado', false)).status).toBe(200);
+  });
+
+  it('anônimo leva 401 do requireAuth, sem gastar cota nem chegar ao use case', async () => {
+    for (let i = 0; i < 5; i++) expect((await init(undefined, 'anon-ip', true)).status).toBe(401);
+    expect(enviaOtp).not.toHaveBeenCalled();
+    expect((await init('app-depois-do-anonimo', 'anon-ip', true)).status).toBe(200);
+  });
+});
