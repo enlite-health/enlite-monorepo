@@ -29,9 +29,15 @@ describe('WorkerTransitReaders', () => {
     expect(TRANSIT_ZONE_SQL).toContain('deleted_at IS NULL');
     expect(TRANSIT_ZONE_SQL).toContain('NOT (latitude = 0 AND longitude = 0)');
     expect(TRANSIT_ZONE_SQL).toContain('ORDER BY updated_at DESC LIMIT 1');
-    const com = runWith({ worker: [{ id: WID, status: 'REGISTERED' }], zone: [{ address_line: 'Zona', latitude: '-38.0023', longitude: '-57.5575' }] });
+    // D722: a origem é só o bairro; o endereço (rua e número) da prestadora não sai do banco para esta rota.
+    expect(TRANSIT_ZONE_SQL).toContain('neighborhood');
+    expect(TRANSIT_ZONE_SQL).not.toContain('address_line');
+    const com = runWith({ worker: [{ id: WID, status: 'REGISTERED' }], zone: [{ neighborhood: 'Zona', latitude: '-38.0023', longitude: '-57.5575' }] });
     expect(await new PgWorkerZoneReader(com.run).findByAuthUid('uid-token')).toEqual({ found: true, workerId: WID, disabled: false, zone: { label: 'Zona', point: { lat: -38.0023, lng: -57.5575 } } });
     expect(com.query.mock.calls.map((c) => c[1])).toEqual([['uid-token'], [WID]]);
+    // sem bairro cadastrado o rótulo fica vazio: nunca cai para o endereço (D722)
+    const semBairro = runWith({ worker: [{ id: WID, status: 'REGISTERED' }], zone: [{ neighborhood: null, address_line: 'Calle Falsa 123', latitude: '-38.0023', longitude: '-57.5575' }] });
+    expect(await new PgWorkerZoneReader(semBairro.run).findByAuthUid('uid-token')).toMatchObject({ zone: { label: '' } });
     const sem = runWith({ worker: [{ id: WID, status: 'DISABLED' }], zone: [] });
     expect(await new PgWorkerZoneReader(sem.run).findByAuthUid('uid-token')).toEqual({ found: true, workerId: WID, disabled: true, zone: null });
     expect(await new PgWorkerZoneReader(runWith({ worker: [], zone: [] }).run).findByAuthUid('x')).toEqual({ found: false });

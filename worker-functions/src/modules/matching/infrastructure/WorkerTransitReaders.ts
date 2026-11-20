@@ -10,9 +10,12 @@ import type { PatientItineraryItem, PatientItineraryPort, WorkerZoneLookup, Work
 
 export type RunInActorContext = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
 
-/** Zona viva com ponto, a mais recente (D659: o critério do /admin/mapa, `GetTransitCorridorUseCase`; 0,0 não é ponto). */
+/**
+ * Zona viva com ponto, a mais recente (D659: o critério do /admin/mapa, `GetTransitCorridorUseCase`; 0,0 não é ponto).
+ * D722: o rótulo da origem é SÓ o bairro (`neighborhood`); `address_line` (rua e número da prestadora) nunca é lido aqui.
+ */
 export const TRANSIT_ZONE_SQL =
-  'SELECT address_line, latitude, longitude FROM worker_service_areas WHERE worker_id = $1 AND deleted_at IS NULL ' +
+  'SELECT neighborhood, latitude, longitude FROM worker_service_areas WHERE worker_id = $1 AND deleted_at IS NULL ' +
   'AND latitude IS NOT NULL AND longitude IS NOT NULL AND NOT (latitude = 0 AND longitude = 0) ORDER BY updated_at DESC LIMIT 1';
 
 export class PgWorkerZoneReader implements WorkerZoneReader {
@@ -22,12 +25,12 @@ export class PgWorkerZoneReader implements WorkerZoneReader {
     return this.run(async (client) => {
       const w = (await client.query<{ id: string; status: string }>('SELECT id, status FROM workers WHERE auth_uid = $1 LIMIT 1', [authUid])).rows[0];
       if (!w) return { found: false };
-      const z = (await client.query<{ address_line: string; latitude: string | number; longitude: string | number }>(TRANSIT_ZONE_SQL, [w.id])).rows[0];
+      const z = (await client.query<{ neighborhood: string | null; latitude: string | number; longitude: string | number }>(TRANSIT_ZONE_SQL, [w.id])).rows[0];
       return {
         found: true,
         workerId: w.id,
         disabled: w.status === 'DISABLED',
-        zone: z ? { label: z.address_line, point: { lat: Number(z.latitude), lng: Number(z.longitude) } } : null,
+        zone: z ? { label: z.neighborhood?.trim() ?? '', point: { lat: Number(z.latitude), lng: Number(z.longitude) } } : null,
       };
     });
   }
