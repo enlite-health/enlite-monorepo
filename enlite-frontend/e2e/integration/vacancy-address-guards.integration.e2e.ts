@@ -21,6 +21,7 @@
  * aceita em USE_MOCK_AUTH=true.
  */
 
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { test, expect, type Page, type Route } from '@playwright/test';
 import {
   insertTestPatient,
@@ -40,7 +41,7 @@ const MOCK_ADMIN_USER = {
   role: 'admin',
 };
 const MOCK_TOKEN =
-  'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN_USER), 'utf-8').toString('base64');
+  tokenFor(MOCK_ADMIN_USER);
 
 const FAKE_ID_TOKEN =
   'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' +

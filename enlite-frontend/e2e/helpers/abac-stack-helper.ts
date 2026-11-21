@@ -12,6 +12,7 @@
  */
 import { execFileSync } from 'child_process';
 import { expect, type APIRequestContext, type Page, type Route } from '@playwright/test';
+import { ensureDefaultCountries } from './country-grant-e2e';
 
 export const ABAC_API_URL = process.env.ABAC_API_URL ?? 'http://localhost:8089';
 export const ABAC_DB_URL =
@@ -96,17 +97,25 @@ export function cleanupStaffAndGroup(uid: string, groupId: string): void {
 
 // ── Auth: JWT fake no Identity Toolkit, token `mock_*` na API (USE_MOCK_AUTH=true) ──────────
 
-export function tokenFor(u: MockUser): string {
+/** Ator do token mock: `country` e opcional (specs antigos nao o trazem); o JSON do token sai identico ao que cada spec montava. */
+export type TokenActor = Omit<MockUser, 'country'> & { country?: string };
+
+/**
+ * Token `mock_*` do ator. Efeito colateral deliberado: garante pais AR+BR por grupo no banco (`ensureDefaultCountries`) —
+ * desde o #893 a API responde 403 COUNTRY_SCOPE_REQUIRED a staff sem pais. Spec que declara o proprio escopo nao recebe o default.
+ */
+export function tokenFor(u: TokenActor): string {
+  ensureDefaultCountries(u.uid, u.role);
   return 'mock_' + Buffer.from(JSON.stringify(u), 'utf-8').toString('base64');
 }
 
-function fakeIdToken(u: MockUser): string {
+function fakeIdToken(u: TokenActor): string {
   const now = Math.floor(Date.now() / 1000);
   const payload = { sub: u.uid, uid: u.uid, email: u.email, iss: 'https://securetoken.google.com/enlite-prd', aud: 'enlite-prd', iat: now, exp: now + 3600 };
   return 'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' + Buffer.from(JSON.stringify(payload)).toString('base64url') + '.';
 }
 
-export async function installAuthInterceptors(page: Page, u: MockUser): Promise<void> {
+export async function installAuthInterceptors(page: Page, u: TokenActor): Promise<void> {
   const idToken = fakeIdToken(u);
   const mockToken = tokenFor(u);
 
