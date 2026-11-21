@@ -70,13 +70,13 @@ export class AccountLinkController {
   async confirm(req: Request, res: Response): Promise<void> {
     const uid = this.authUid(req);
     if (!uid) { res.status(401).json({ success: false, error: 'Unauthorized' }); return; }
-    const { phone, verificationSid, otp } = req.body ?? {};
+    const { phone, verificationSid, otp, preview } = req.body ?? {};
     if (!verificationSid || !otp) {
       res.status(400).json({ success: false, error: 'Missing verificationSid/otp' });
       return;
     }
     try {
-      const data = await this.service.confirm(uid, String(phone ?? ''), String(verificationSid), String(otp), (req as Request & { user?: { email?: string } }).user?.email);
+      const data = await this.service.confirm(uid, String(phone ?? ''), String(verificationSid), String(otp), (req as Request & { user?: { email?: string } }).user?.email, { preview: preview === true });
       res.status(200).json({ success: true, data });
     } catch (err) { this.fail(res, err, 'AccountLinkController:confirm'); }
   }

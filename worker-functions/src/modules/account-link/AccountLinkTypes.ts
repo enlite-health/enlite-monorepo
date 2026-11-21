@@ -54,6 +54,7 @@ export interface AccountLinkConflict extends FieldComparison {
 export type AccountLinkConfirmResult =
   | { status: 'merged'; recovered: Record<string, number>; workerStatus: string | null }
   | { status: 'conflicts'; conflicts: AccountLinkConflict[]; linkToken: string; accounts: { current: string; other: string } }
+  | { status: 'preview'; conflicts: AccountLinkConflict[]; linkToken: string; accounts: { current: string; other: string } }
   | { status: 'REQUIRES_REVIEW' };
 
 // ── Campos que o worker compara/escolhe no self-service ────────────────────
