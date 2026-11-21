@@ -97,7 +97,7 @@ describe('StartClaimUseCase', () => {
         phone: '+5411999887766', // phone diferente do da ficha
       });
 
-      expect(twilio.startVerification).toHaveBeenCalledWith(FICHA_PHONE);
+      expect(twilio.startVerification).toHaveBeenCalledWith(FICHA_PHONE, expect.objectContaining({ fichaIsTest: false }));
     });
 
     it('retorna fail quando Twilio lança erro', async () => {

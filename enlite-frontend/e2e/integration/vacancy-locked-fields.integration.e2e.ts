@@ -12,6 +12,7 @@
  * `PUT` num campo travado (`schedule`) recusa com 422 e o banco não muda → `PUT` num campo livre
  * (`worker_profile_sought`) aceita e persiste; `required_professions` passou a travado (057/D523) → 422.
  */
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { test, expect } from '@playwright/test';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
@@ -26,7 +27,7 @@ const MOCK_ADMIN = {
   email: 'admin.lockedfields@e2e.test',
   role: 'admin',
 };
-const MOCK_TOKEN = 'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN), 'utf-8').toString('base64');
+const MOCK_TOKEN = tokenFor(MOCK_ADMIN);
 // Horário do serviço contratado — a ÚNICA fonte do horário da vaga (F2: o foguete não o copia).
 const SERVICE_SCHEDULE = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }];
 // O GET da vaga devolve o horário no formato da VAGA (`normalizeSchedule`: dayOfWeek 1 → 'lunes'), não no do serviço.

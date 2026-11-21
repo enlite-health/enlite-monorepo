@@ -61,9 +61,30 @@ export interface OtpCheckResult {
   to?: string;
 }
 
+/**
+ * Fatos que a guarda de OTP de teste (`IsTestOtpGuard`) precisa no momento do envio: a ficha que
+ * RECEBE o código é de teste? e o e-mail do TOKEN de quem pede? Ausente = envio normal.
+ */
+export interface OtpSendContext {
+  /** Ficha que RECEBE o código: o confirm confere de novo que é a mesma (lacre dentro do sid suprimido). */
+  workerId: string;
+  fichaIsTest: boolean;
+  tokenEmail?: string | null;
+}
+
+/**
+ * Fatos do CONFIRM de um código suprimido: as duas condições do envio são exigidas de novo, com a
+ * ficha ALVO lida do banco na hora (`fichaIsTest` é função: só é chamada se o sid for suprimido).
+ */
+export interface OtpConfirmContext {
+  workerId: string;
+  tokenEmail?: string | null;
+  fichaIsTest: () => Promise<boolean>;
+}
+
 export interface ITwilioVerifyService {
-  startVerification(phoneE164: string): Promise<{ verificationSid: string }>;
-  checkVerification(verificationSid: string, code: string): Promise<OtpCheckResult>;
+  startVerification(phoneE164: string, ctx?: OtpSendContext): Promise<{ verificationSid: string }>;
+  checkVerification(verificationSid: string, code: string, ctx?: OtpConfirmContext): Promise<OtpCheckResult>;
 }
 
 /**
@@ -116,7 +137,7 @@ export class TwilioVerifyService implements ITwilioVerifyService {
     }
   }
 
-  async startVerification(phoneE164: string): Promise<{ verificationSid: string }> {
+  async startVerification(phoneE164: string, _ctx?: OtpSendContext): Promise<{ verificationSid: string }> {
     const phoneMasked = maskPhoneForLog(phoneE164);
     const log = logger.child({
       source: 'TwilioVerifyService:start',
@@ -182,7 +203,7 @@ export class TwilioVerifyService implements ITwilioVerifyService {
     }
   }
 
-  async checkVerification(verificationSid: string, code: string): Promise<OtpCheckResult> {
+  async checkVerification(verificationSid: string, code: string, _ctx?: OtpConfirmContext): Promise<OtpCheckResult> {
     // PII-safe: NUNCA logar o código completo. Só metadados pra diagnóstico:
     //   - length: detecta usuário digitando incompleto
     //   - hasNonDigit: detecta usuário colando texto extra (espaço, "código:", etc.)
