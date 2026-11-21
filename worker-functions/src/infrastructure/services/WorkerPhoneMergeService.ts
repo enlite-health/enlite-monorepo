@@ -224,6 +224,13 @@ export class WorkerPhoneMergeService {
     discoveredFks?: FkTableInfo[];
     /** Contexto de auditoria (QUEM/DE ONDE/COMO). Ausente = merge automático em lote. */
     audit?: MergeAuditInput;
+    /**
+     * Client de uma transação JÁ ABERTA pelo chamador (ex.: `withActorContext`, com o contexto de ator/país
+     * carimbado). Presente: o merge roda NELE, sem BEGIN/COMMIT/ROLLBACK/release próprios — quem abriu decide o
+     * commit e o rollback; "já mergeado" vira erro (não dá para dar ROLLBACK parcial) e o recálculo de status
+     * pós-commit fica com o chamador. Ausente: comportamento de sempre (client e transação próprios).
+     */
+    client?: PoolClient;
   }): Promise<{
     auditId: bigint | number;
     fieldsFilled: string[];
@@ -233,9 +240,10 @@ export class WorkerPhoneMergeService {
     const { survivorId, absorbedId, phoneNormalized, category, legalFieldExceptions } = params;
     const audit = params.audit ?? {};
 
-    const client: PoolClient = await this.pool.connect();
+    const external = params.client;
+    const client: PoolClient = external ?? (await this.pool.connect());
     try {
-      await client.query('BEGIN');
+      if (!external) await client.query('BEGIN');
 
       // Reparent de WJA dispara trg_enforce_worker_registered (mig 183/205). Como o
       // principal pode estar INCOMPLETE_REGISTER, o guard abortaria o merge (erro 23514).
@@ -248,6 +256,7 @@ export class WorkerPhoneMergeService {
         [absorbedId],
       );
       if (checkRow.rows[0]?.merged_into_id != null) {
+        if (external) throw new Error('MERGE_ABSORBED_ALREADY_MERGED');
         await client.query('ROLLBACK');
         log.info({ msg: 'merge_skip_already_merged', absorbedId, survivorId });
         return;
@@ -328,7 +337,7 @@ export class WorkerPhoneMergeService {
         [absorbedId, survivorId, auditId],
       );
 
-      await client.query('COMMIT');
+      if (!external) await client.query('COMMIT');
 
       // AUDIT: log completo (Cloud Logging — fora do alcance de quem mexe no DB).
       log.info({
@@ -353,19 +362,21 @@ export class WorkerPhoneMergeService {
       // 7. Recalcula o status do sobrevivente FORA da transação de merge: com o
       //    telefone entrando via move, ele pode virar REGISTERED sem ação do
       //    usuário. Falha aqui não desfaz o merge (já commitado) — só loga.
-      try {
-        await recalculateWorkerStatus(this.pool, survivorId, null);
-      } catch (err) {
-        const e = err instanceof Error ? err : new Error(String(err));
-        log.warn({ msg: 'merge_status_recalc_failed', survivorId, reason: e.message });
+      if (!external) {
+        try {
+          await recalculateWorkerStatus(this.pool, survivorId, null);
+        } catch (err) {
+          const e = err instanceof Error ? err : new Error(String(err));
+          log.warn({ msg: 'merge_status_recalc_failed', survivorId, reason: e.message });
+        }
       }
 
       return { auditId, fieldsFilled, fieldsMoved, rowsReparented };
     } catch (err) {
-      await client.query('ROLLBACK');
+      if (!external) await client.query('ROLLBACK');
       throw err;
     } finally {
-      client.release();
+      if (!external) client.release();
     }
   }
 

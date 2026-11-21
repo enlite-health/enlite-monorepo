@@ -44,7 +44,7 @@ const makeRepo = (overrides = {}) => ({
   hasAbsorbedRealLogin: jest.fn().mockResolvedValue(Result.ok(false)),
   findById: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
   updateImportedWorkerData: jest.fn().mockResolvedValue(Result.ok(claimedWorker)),
-  findByAuthUid: jest.fn(),
+  findByAuthUid: jest.fn().mockResolvedValue(Result.ok(null)),
   findByEmail: jest.fn(),
   findByPhoneCandidates: jest.fn(),
   findByPhone: jest.fn(),
