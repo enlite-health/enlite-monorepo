@@ -28,6 +28,7 @@
  * Run: pnpm test:e2e:integration
  */
 
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { test, expect, type Page, type Route } from '@playwright/test';
 
 // ── Auth constants ─────────────────────────────────────────────────────────────
@@ -40,7 +41,7 @@ const MOCK_ADMIN = {
 };
 
 const MOCK_TOKEN =
-  'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN), 'utf-8').toString('base64');
+  tokenFor(MOCK_ADMIN);
 
 const FAKE_ID_TOKEN =
   'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' +

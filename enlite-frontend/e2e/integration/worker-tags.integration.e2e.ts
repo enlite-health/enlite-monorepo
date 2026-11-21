@@ -13,6 +13,7 @@
  * admin-only catalog menu/route is reachable.
  */
 
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { escolherNoCombo } from '../helpers/combobox';
 
@@ -24,7 +25,7 @@ const MOCK_ADMIN_USER = {
   role: 'admin',
 };
 const MOCK_TOKEN =
-  'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN_USER), 'utf-8').toString('base64');
+  tokenFor(MOCK_ADMIN_USER);
 const FAKE_ID_TOKEN =
   'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' +
   Buffer.from(

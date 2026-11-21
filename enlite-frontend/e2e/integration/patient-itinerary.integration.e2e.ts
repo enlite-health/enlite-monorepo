@@ -6,6 +6,7 @@
  * substituição de um dia pelo fluxo "Nueva sustitución" (feliz), tenta um substituto em conflito (alternativo 1) e faz a saída definitiva
  * "No vuelve más" com substituto (alternativo 2). ADAPTADO à spec 069 (F7): o QUE cada teste prova é o de antes; só o caminho mudou.
  */
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { test, expect, type Page, type Route } from '@playwright/test';
 import {
   seedItinerary,
@@ -24,7 +25,7 @@ import {
 import { swapAreasComToken } from '../helpers/areas-do-painel';
 
 const MOCK_ADMIN_USER = { uid: 'e2e-int-admin-itinerario', email: 'admin.itinerario@e2e.test', role: 'admin' };
-const MOCK_TOKEN = 'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN_USER), 'utf-8').toString('base64');
+const MOCK_TOKEN = tokenFor(MOCK_ADMIN_USER);
 const FAKE_ID_TOKEN =
   'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' +
   Buffer.from(

@@ -15,6 +15,7 @@
  *   - publish-talentum mocked
  */
 
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { test, expect, type Page, type Route } from '@playwright/test';
 import {
   insertTestPatient,
@@ -33,7 +34,7 @@ const MOCK_ADMIN_USER = {
   role: 'admin',
 };
 const MOCK_TOKEN =
-  'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN_USER), 'utf-8').toString('base64');
+  tokenFor(MOCK_ADMIN_USER);
 
 const AI_CONTENT_FIXTURE = {
   description: 'Descripción generada por IA para test de integración — flujo ADMISSION.',
