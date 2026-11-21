@@ -105,6 +105,7 @@ describe('InitWorkerUseCase', () => {
         whatsappPhone: '+5411234567890',
         lgpdOptIn: true,
         country: dto.country,
+        isTest: false,
       });
     });
 
@@ -261,7 +262,7 @@ describe('InitWorkerUseCase', () => {
         verificationSid: 'VE_TEST_SID',
       });
       // o código vai ao número da ficha, NUNCA ao do payload (o atacante mandou o dele)
-      expect(twilio.startVerification).toHaveBeenCalledWith(`+${PHONE_DA_FICHA}`);
+      expect(twilio.startVerification).toHaveBeenCalledWith(`+${PHONE_DA_FICHA}`, expect.objectContaining({ fichaIsTest: false }));
       expect(repo.updateAuthUid).not.toHaveBeenCalled();
       expect(repo.updateImportedWorkerData).not.toHaveBeenCalled();
       expect(repo.create).not.toHaveBeenCalled();
@@ -449,7 +450,7 @@ describe('InitWorkerUseCase', () => {
       // Payload envia phone DIFERENTE da ficha
       await useCase.execute(makeCreateDTO({ phone: '+5411999887766' }));
 
-      expect(twilio.startVerification).toHaveBeenCalledWith(FICHA_PHONE);
+      expect(twilio.startVerification).toHaveBeenCalledWith(FICHA_PHONE, expect.objectContaining({ fichaIsTest: false }));
     });
 
     it('deve retornar fail quando Twilio Verify lança erro', async () => {

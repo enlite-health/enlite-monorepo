@@ -22,6 +22,7 @@ import { QuizResponseRepository } from '../../infrastructure/QuizResponseReposit
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
 import { AvailabilityRepository } from '../../infrastructure/AvailabilityRepository';
 import { TwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
+import { IsTestOtpGuardedVerify } from '@modules/auth/application/IsTestOtpGuard';
 import { markOtpStarted } from '@modules/auth/interfaces/routes/claimRoutes';
 import {
   sendPersonalInfoFailure,
@@ -50,7 +51,7 @@ export class WorkerControllerV2 {
     const serviceAreaRepository = new ServiceAreaRepository();
     const availabilityRepository = new AvailabilityRepository();
 
-    const twilioVerifyService = new TwilioVerifyService();
+    const twilioVerifyService = new IsTestOtpGuardedVerify(new TwilioVerifyService());
     this.initWorkerUseCase = new InitWorkerUseCase(workerRepository, twilioVerifyService);
     this.provisionCountryClaim = new ProvisionCountryClaimUseCase(countryClaim);
     this.saveQuizUseCase = new SaveQuizResponsesUseCase(workerRepository, quizRepository);

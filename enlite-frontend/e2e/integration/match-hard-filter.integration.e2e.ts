@@ -13,6 +13,7 @@
  * GEMINI/Talentum não entram nesse flow — match não dispara nenhum dos dois.
  */
 
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { test, expect } from '@playwright/test';
 import {
   insertTestPatient,
@@ -27,7 +28,7 @@ const BACKEND_URL = 'http://localhost:8080';
 
 const MOCK_ADMIN = { uid: 'e2e-int-match', email: 'admin.match@e2e.test', role: 'admin' };
 const MOCK_TOKEN =
-  'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN), 'utf-8').toString('base64');
+  tokenFor(MOCK_ADMIN);
 const AUTH_HEADERS = {
   Authorization: `Bearer ${MOCK_TOKEN}`,
   'Content-Type': 'application/json',

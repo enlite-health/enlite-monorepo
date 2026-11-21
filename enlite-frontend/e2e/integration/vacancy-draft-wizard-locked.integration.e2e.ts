@@ -16,6 +16,7 @@
  * `vacancy-locked-fields.integration.e2e.ts`, fase 1) — a vaga nasce `is_draft=true` com
  * `contracted_service_id` setado, então `locked_fields` do GET traz os 13 nomes (057/D523).
  */
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
 import { insertTestPatient, cleanupTestPatient, backdateVacancyUpdatedAt } from '../helpers/db-test-helper';
@@ -33,7 +34,7 @@ const MOCK_ADMIN_USER = {
   role: 'admin',
   country: 'AR',
 };
-const MOCK_TOKEN = 'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN_USER), 'utf-8').toString('base64');
+const MOCK_TOKEN = tokenFor(MOCK_ADMIN_USER);
 const AUTH_HEADERS = { Authorization: `Bearer ${MOCK_TOKEN}`, 'Content-Type': 'application/json' };
 
 const FAKE_ID_TOKEN =

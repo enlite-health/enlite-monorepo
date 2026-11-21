@@ -61,6 +61,16 @@ export class ConfirmClaimUseCase {
       checkResult = await this.twilioVerify.checkVerification(
         input.verificationSid,
         input.otp,
+        {
+          // `candidateWorkerId` vem do corpo: a guarda de OTP de teste só aceita se for a ficha do envio,
+          // lida do banco agora, E de teste.
+          workerId: input.candidateWorkerId,
+          tokenEmail: input.email,
+          fichaIsTest: async () => {
+            const found = await this.workerRepository.findById(input.candidateWorkerId);
+            return found.isSuccess && found.getValue()?.isTest === true;
+          },
+        },
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
