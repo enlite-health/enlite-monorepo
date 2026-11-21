@@ -147,15 +147,20 @@ export class ConfirmClaimUseCase {
         existingId: own.id,
         importedId: candidate.id,
         authUid: input.authUid,
+        consentAt,
       });
       if (absorbed.isFailure) {
         log.warn({ msg: 'claim_absorb_refused', error: absorbed.error });
         return Result.fail<Worker>(absorbed.error!);
       }
-      // O consentimento do OTP vale também para a ficha sobrevivente (COALESCE: não sobrescreve o que já há).
-      const consent = await this.workerRepository.updateAuthUid(own.id, input.authUid, undefined, consentAt);
+      // O consentimento do OTP já foi gravado em X dentro da transação da absorção; aqui só relê o resultado.
+      const reread = await this.workerRepository.findByAuthUid(input.authUid);
+      if (reread.isFailure || reread.getValue() === null) {
+        log.error({ msg: 'claim_absorbed_reread_failed' });
+        return Result.fail<Worker>('CLAIM_ABSORB_FAILED');
+      }
       log.info({ msg: 'claim_confirm_success', durationMs: Date.now() - startedAt, absorbedShell: true });
-      return Result.ok<Worker>(consent.isSuccess ? consent.getValue() : own);
+      return Result.ok<Worker>(reread.getValue()!);
     }
 
     // 4. Transferência transacional

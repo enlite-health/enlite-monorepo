@@ -95,6 +95,10 @@ describe('claim confirm com ficha própria (D764)', () => {
     expect(await row(imp)).toMatchObject({ merged_into_id: x });
     expect(await row(x)).toMatchObject({ auth_uid: uid('a'), phone: phone(1), merged_into_id: null });
     expect(await audits(x, imp)).toEqual([{ source: 'claim_shell', executed_by: uid('a') }]);
+    const consent = (await pool.query('SELECT lgpd_consent_at, terms_accepted_at, privacy_accepted_at FROM workers WHERE id = $1', [x])).rows[0];
+    expect(consent.lgpd_consent_at).not.toBeNull(); // consentimento do OTP gravado em X, na transação da absorção
+    expect(consent.terms_accepted_at).not.toBeNull();
+    expect(consent.privacy_accepted_at).not.toBeNull();
   });
 
   it('T-D764 (b) ficha própria com telefone: 409 CLAIM_CONFLICT, rollback total (nada mudou, sem texto do banco)', async () => {

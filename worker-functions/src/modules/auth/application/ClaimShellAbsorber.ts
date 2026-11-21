@@ -17,6 +17,8 @@ export interface IClaimShellAbsorber {
     existingId: string;
     importedId: string;
     authUid: string;
+    /** Instante do consentimento do OTP: gravado em X DENTRO da mesma transação da absorção. */
+    consentAt: Date;
   }): Promise<Result<void>>;
 }
 
@@ -47,6 +49,7 @@ export class ClaimShellAbsorber implements IClaimShellAbsorber {
     existingId: string;
     importedId: string;
     authUid: string;
+    consentAt: Date;
   }): Promise<Result<void>> {
     const log = logger.child({
       source: 'ClaimShellAbsorber',
@@ -80,6 +83,17 @@ export class ClaimShellAbsorber implements IClaimShellAbsorber {
           audit: { source: 'claim_shell', executedBy: args.authUid, confirmedSamePerson: true },
           client,
         });
+        // Consentimento do OTP na ficha sobrevivente, na MESMA transação: só os campos de consentimento
+        // (COALESCE: não sobrescreve o que já há) e NUNCA auth_uid. Falha aqui = rollback do merge inteiro.
+        const consent = await client.query(
+          `UPDATE workers
+              SET lgpd_consent_at = COALESCE(lgpd_consent_at, $2),
+                  terms_accepted_at = COALESCE(terms_accepted_at, $2),
+                  privacy_accepted_at = COALESCE(privacy_accepted_at, $2)
+            WHERE id = $1`,
+          [args.existingId, args.consentAt],
+        );
+        if (consent.rowCount !== 1) throw new Error('CLAIM_CONSENT_NOT_WRITTEN');
       });
       const recalculated = await this.recalc(args.existingId);
       if (!recalculated) log.warn({ msg: 'claim_shell_status_recalc_failed' });

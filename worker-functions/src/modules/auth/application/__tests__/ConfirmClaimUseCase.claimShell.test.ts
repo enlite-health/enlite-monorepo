@@ -37,8 +37,9 @@ describe('ConfirmClaimUseCase — conta que já tem ficha (D764)', () => {
     const result = await new ConfirmClaimUseCase(r as any, twilio() as any, absorber).execute(input);
 
     expect(result.isSuccess).toBe(true);
-    expect(absorber.absorbImportedIntoExisting).toHaveBeenCalledWith({ existingId: OWN_ID, importedId: CANDIDATE_ID, authUid: UID });
+    expect(absorber.absorbImportedIntoExisting).toHaveBeenCalledWith({ existingId: OWN_ID, importedId: CANDIDATE_ID, authUid: UID, consentAt: expect.any(Date) });
     expect(r.updateImportedWorkerData).not.toHaveBeenCalled();
+    expect(r.updateAuthUid).not.toHaveBeenCalled(); // consentimento vai na transação da absorção, não por fora
   });
 
   it('T-D764 (b) ficha própria não é casca: CLAIM_CONFLICT, nada de updateImportedWorkerData', async () => {
