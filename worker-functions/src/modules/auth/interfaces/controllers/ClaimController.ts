@@ -151,6 +151,13 @@ export class ClaimController {
           'NOT_IMPORTABLE',
         ]);
 
+        if (error === 'CLAIM_CONFLICT') {
+          // D764: a conta já tem uma ficha com conteúdo; nada foi gravado. Só o `code` sai.
+          res.status(409).json({ success: false, error, code: error });
+          log.info({ msg: 'claim_request_completed', responseStatus: 409, durationMs: Date.now() - startedAt });
+          return;
+        }
+
         if (clientErrors.has(error)) {
           res.status(400).json({ success: false, error });
           log.info({ msg: 'claim_request_completed', responseStatus: 400, durationMs: Date.now() - startedAt });

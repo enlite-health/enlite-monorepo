@@ -98,8 +98,9 @@ export interface ExecuteMergeParams {
  *   imported   = aba Importados (match por nome)
  *   manual     = "Unificar manualmente"
  *   auto_batch = limpeza automática em lote (sem admin)
+ *   claim_shell = claim de ficha importada por conta que já tinha ficha-casca (D764)
  */
-export type MergeSource = 'fila' | 'imported' | 'manual' | 'auto_batch' | 'self_service_link';
+export type MergeSource = 'fila' | 'imported' | 'manual' | 'auto_batch' | 'self_service_link' | 'claim_shell';
 
 /** Contexto de auditoria capturado na borda (controller) e propagado até o INSERT. */
 export interface MergeAuditContext {

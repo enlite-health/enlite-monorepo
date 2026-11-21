@@ -107,7 +107,15 @@ export class AccountLinkService {
 
   // ── confirm — posse provada: REQUIRES_REVIEW | conflitos | merge direto ──
 
-  async confirm(authUid: string, phoneEntered: string, verificationSid: string, otp: string, tokenEmail?: string | null): Promise<AccountLinkConfirmResult> {
+  async confirm(
+    authUid: string,
+    phoneEntered: string,
+    verificationSid: string,
+    otp: string,
+    tokenEmail?: string | null,
+    // C-46/DT-50: `preview` valida o OTP e devolve o linkToken SEM merge (o merge é do finalize).
+    input: { preview?: boolean } = {},
+  ): Promise<AccountLinkConfirmResult> {
     const me = await this.resolveLoggedWorker(authUid);
     const owner = await this.resolvePhoneOwner(phoneEntered, me.id);
 
@@ -142,6 +150,13 @@ export class AccountLinkService {
     }
 
     const conflicts = await this.buildWorkerConflicts(me.id, owner.id);
+    if (input.preview) {
+      const linkToken = signLinkToken({
+        purpose: 'finalize', survivorId: me.id, absorbedId: owner.id,
+        exp: Date.now() + FINALIZE_TOKEN_TTL_MS,
+      });
+      return { status: 'preview', conflicts, linkToken, accounts: { current: me.id, other: owner.id } };
+    }
     if (conflicts.length > 0) {
       const linkToken = signLinkToken({
         purpose: 'finalize', survivorId: me.id, absorbedId: owner.id,
