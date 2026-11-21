@@ -4,6 +4,7 @@
 
 // Mock do SDK antes de qualquer import do módulo testado
 const mockVerificationsCreate = jest.fn();
+const mockVerificationsUpdate = jest.fn();
 const mockVerificationChecksCreate = jest.fn();
 
 jest.mock('twilio', () => {
@@ -11,7 +12,10 @@ jest.mock('twilio', () => {
     verify: {
       v2: {
         services: jest.fn().mockReturnValue({
-          verifications: { create: mockVerificationsCreate },
+          verifications: Object.assign(
+            jest.fn().mockReturnValue({ update: mockVerificationsUpdate }),
+            { create: mockVerificationsCreate },
+          ),
           verificationChecks: { create: mockVerificationChecksCreate },
         }),
       },
@@ -54,7 +58,7 @@ describe('TwilioVerifyService', () => {
   });
 
   describe('startVerification', () => {
-    it('chama verifications.create com canal sms e retorna verificationSid', async () => {
+    it('chama verifications.create com canal whatsapp e retorna verificationSid', async () => {
       mockVerificationsCreate.mockResolvedValue({
         sid: 'VE_RETURNED_SID',
         status: 'pending',
@@ -69,7 +73,7 @@ describe('TwilioVerifyService', () => {
       expect(mockVerificationsCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           to: '+5491155261243',
-          channel: 'sms',
+          channel: 'whatsapp',
         }),
       );
     });
@@ -80,7 +84,7 @@ describe('TwilioVerifyService', () => {
       const service = new TwilioVerifyService();
 
       await expect(service.startVerification('+5491155261243')).rejects.toThrow(
-        'Twilio API error',
+        'OTP_CHANNEL_UNAVAILABLE',
       );
     });
 
