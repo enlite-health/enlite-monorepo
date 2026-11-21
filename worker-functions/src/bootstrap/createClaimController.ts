@@ -3,6 +3,8 @@ import { TwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifySe
 import { IsTestOtpGuardedVerify } from '@modules/auth/application/IsTestOtpGuard';
 import { StartClaimUseCase } from '@modules/auth/application/StartClaimUseCase';
 import { ConfirmClaimUseCase } from '@modules/auth/application/ConfirmClaimUseCase';
+import { ClaimShellAbsorber } from '@modules/auth/application/ClaimShellAbsorber';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { ClaimController } from '@modules/auth/interfaces/controllers/ClaimController';
 
 /**
@@ -14,6 +16,6 @@ export function createClaimController(): ClaimController {
   const workerRepository = new WorkerRepository();
   return new ClaimController(
     new StartClaimUseCase(workerRepository, twilioVerify),
-    new ConfirmClaimUseCase(workerRepository, twilioVerify),
+    new ConfirmClaimUseCase(workerRepository, twilioVerify, new ClaimShellAbsorber(DatabaseConnection.getInstance().getPool())),
   );
 }

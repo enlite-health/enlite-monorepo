@@ -4,6 +4,7 @@ import { Result } from '@shared/utils/Result';
 import { logger } from '@shared/logging';
 import { isClaimableWorker } from '@modules/worker/application/isClaimableWorker';
 import { ITwilioVerifyService, otpCheckIsForPhone } from '../infrastructure/TwilioVerifyService';
+import { CLAIM_CONFLICT, type IClaimShellAbsorber } from './ClaimShellAbsorber';
 
 export interface ConfirmClaimInput {
   verificationSid: string;
@@ -17,7 +18,8 @@ export type ConfirmClaimError =
   | 'INVALID_OTP'
   | 'EXPIRED_OTP'
   | 'CANDIDATE_NOT_FOUND'
-  | 'NOT_IMPORTABLE';
+  | 'NOT_IMPORTABLE'
+  | 'CLAIM_CONFLICT';
 
 /**
  * Confirma o OTP e executa a transferência da ficha importada para o novo authUid.
@@ -34,11 +36,16 @@ export type ConfirmClaimError =
  *   EXPIRED_OTP        — verificação expirada ou cancelada
  *   CANDIDATE_NOT_FOUND — workerId não encontrado no banco
  *   NOT_IMPORTABLE      — ficha já tem authUid real (race condition ou fraude)
+ *   CLAIM_CONFLICT      — o authUid já tem OUTRA ficha e ela não é casca (D764): nada gravado
+ *
+ * Conta que já tem ficha (X ≠ candidata): o `SET auth_uid` estouraria `workers_auth_uid_key` (500, M-7). Se X é
+ * casca, a importada é absorvida em X (X segura o uid; ver ClaimShellAbsorber); senão CLAIM_CONFLICT.
  */
 export class ConfirmClaimUseCase {
   constructor(
     private readonly workerRepository: IWorkerRepository,
     private readonly twilioVerify: ITwilioVerifyService,
+    private readonly shellAbsorber?: IClaimShellAbsorber,
   ) {}
 
   async execute(input: ConfirmClaimInput): Promise<Result<Worker>> {
@@ -124,8 +131,34 @@ export class ConfirmClaimUseCase {
       return Result.fail<Worker>('NOT_IMPORTABLE');
     }
 
-    // 4. Transferência transacional
+    // 3b. D764: o authUid do token já tem OUTRA ficha? (findByAuthUid segue a corrente de merges.)
     const consentAt = new Date();
+    const ownResult = await this.workerRepository.findByAuthUid(input.authUid);
+    if (ownResult.isFailure) {
+      return Result.fail<Worker>(ownResult.error!);
+    }
+    const own = ownResult.getValue();
+    if (own !== null && own.id !== candidate.id) {
+      if (!this.shellAbsorber) {
+        log.warn({ msg: 'claim_conflict_no_absorber' });
+        return Result.fail<Worker>(CLAIM_CONFLICT);
+      }
+      const absorbed = await this.shellAbsorber.absorbImportedIntoExisting({
+        existingId: own.id,
+        importedId: candidate.id,
+        authUid: input.authUid,
+      });
+      if (absorbed.isFailure) {
+        log.warn({ msg: 'claim_absorb_refused', error: absorbed.error });
+        return Result.fail<Worker>(absorbed.error!);
+      }
+      // O consentimento do OTP vale também para a ficha sobrevivente (COALESCE: não sobrescreve o que já há).
+      const consent = await this.workerRepository.updateAuthUid(own.id, input.authUid, undefined, consentAt);
+      log.info({ msg: 'claim_confirm_success', durationMs: Date.now() - startedAt, absorbedShell: true });
+      return Result.ok<Worker>(consent.isSuccess ? consent.getValue() : own);
+    }
+
+    // 4. Transferência transacional
     const updateResult = await this.workerRepository.updateImportedWorkerData(
       input.candidateWorkerId,
       { authUid: input.authUid, email: input.email, consentAt },
