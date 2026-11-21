@@ -198,6 +198,7 @@ describe('IsTestOtpGuard — o CONFIRM dos 2 fluxos relê a ficha alvo (B2)', ()
     const { verificationSid } = await g.startVerification(FICHA_PHONE, sendCtx());
     const repo = {
       findById: jest.fn().mockResolvedValue(Result.ok(ficha)),
+      findByAuthUid: jest.fn().mockResolvedValue(Result.ok(null)),
       hasAbsorbedRealLogin: jest.fn().mockResolvedValue(Result.ok(false)),
       updateImportedWorkerData: jest.fn().mockResolvedValue(Result.ok({ id: ficha.id })),
     };
