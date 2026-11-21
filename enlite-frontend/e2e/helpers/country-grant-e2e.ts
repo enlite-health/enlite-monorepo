@@ -15,7 +15,7 @@
  *    dos specs; `granted_by` preenchido satisfaz o consolidado multi-pais (resolveCountryScope.ts, D113).
  *
  * Quem DECLARA o proprio escopo (`seedStaffInGroup`, `group_country_scopes`, `grant_country`...) NAO recebe o default:
- * a deteccao le o fonte de quem chamou `tokenFor` (e dos helpers que ele importa). Ver `declaraProprioEscopo`.
+ * a deteccao le o fonte de quem chamou `tokenFor` (e dos helpers que ele importa), por ATOR. Ver `declaraProprioEscopo`.
  *
  * Sem limpeza (diferente do backend): o banco do job de integracao e efemero (compose do CI) e tudo aqui e idempotente
  * (`ON CONFLICT DO NOTHING`); o backend limpa porque os testes dele contam usuarios/grupos no MESMO banco entre arquivos.
@@ -41,7 +41,6 @@ const CONTAINER = process.env.E2E_PG_CONTAINER || 'enlite-postgres';
 /** O spec/helper monta o proprio escopo de pais: o default (AR+BR) colidiria com `uq_group_country_scopes_live`. */
 const DECLARA_ESCOPO = /seedStaffInGroup|group_country_scopes|grant_country|grantCountry|COUNTRY_RLS_ENABLED/;
 
-const jaConcedidos = new Set<string>();
 let instalado = false;
 
 function lerFonte(path: string): string {
@@ -63,22 +62,34 @@ function chamadores(): string[] {
   return [...files];
 }
 
-/** Fonte do chamador mais os `import ... from './x'` relativos dele (1 nivel: o spec delega a montagem a helpers). */
-export function declaraProprioEscopo(files: string[] = chamadores()): boolean {
+/** Ator semeado como staff mock (linha em `users` por `seedMockStaff`/`loginComoStaffMock`): precisa do default mesmo que o arquivo declare escopo para OUTRO ator. */
+const STAFF_MOCK = /seedMockStaff|loginComoStaffMock|seedAdminUser/;
+
+/**
+ * O chamador declara o proprio escopo PARA ESTE ATOR? Fonte do chamador mais os `import ... from './x'` relativos dele
+ * (1 nivel: o spec delega a montagem a helpers). Um arquivo que declara escopo so para um ator dinamico (ex. `seedStaffInGroup`
+ * num teste, uid com `${run}`) mas usa um staff mock de uid literal (`seedMockStaff`/`loginComoStaffMock`) NAO isenta esse staff:
+ * foi o caso do 089 — o arquivo inteiro era isentado e os 12 testes do staff mock levavam 403.
+ */
+export function declaraProprioEscopo(uid: string, files: string[] = chamadores()): boolean {
+  let declara = false;
+  let staffMock = false;
   for (const f of files) {
     const src = lerFonte(f);
-    if (DECLARA_ESCOPO.test(src)) return true;
+    if (src.includes(`'${uid}'`) && STAFF_MOCK.test(src)) staffMock = true;
+    if (DECLARA_ESCOPO.test(src)) declara = true;
     for (const m of src.matchAll(/from\s+'(\.[^']+)'/g)) {
       const base = resolve(dirname(f), m[1]);
       // `abac-stack-helper` DEFINE `seedStaffInGroup`: so o uso (no fonte do chamador) conta, nunca a definicao.
       if (/\/abac-stack-helper$|\/country-grant-e2e$/.test(base)) continue;
-      if (DECLARA_ESCOPO.test(lerFonte(`${base}.ts`))) return true;
+      if (DECLARA_ESCOPO.test(lerFonte(`${base}.ts`))) declara = true;
     }
   }
-  return false;
+  return declara && !staffMock;
 }
 
-const INSTALL_SQL = `
+/** DDL (tabela, funcoes, triggers): so na 1a chamada do processo — nenhum cleanup de spec apaga isso e CREATE TRIGGER trava `users`. */
+const INSTALL_DDL_SQL = `
 SELECT pg_advisory_xact_lock(727002);
 CREATE TABLE IF NOT EXISTS e2e_country_grants (uid VARCHAR PRIMARY KEY);
 CREATE OR REPLACE FUNCTION e2e_country_grant_before_user() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, iam AS $f$
@@ -96,6 +107,10 @@ BEGIN
 END $f$;
 CREATE OR REPLACE TRIGGER e2e_country_grant_before BEFORE INSERT ON users FOR EACH ROW EXECUTE FUNCTION e2e_country_grant_before_user();
 CREATE OR REPLACE TRIGGER e2e_country_grant_after AFTER INSERT ON users FOR EACH ROW EXECUTE FUNCTION e2e_country_grant_after_user();
+`;
+
+/** Linhas (grupo + escopos): a CADA chamada, idempotente — um spec pode ter apagado o grupo. */
+const INSTALL_ROWS_SQL = `
 INSERT INTO iam.permission_groups (id, tenant_id, name) VALUES ('${GROUP}', '${TENANT}', 'e2e frontend default AR+BR') ON CONFLICT DO NOTHING;
 INSERT INTO iam.group_country_scopes (id, group_id, country, granted_by, reason) VALUES
   ('${SCOPE_AR}', '${GROUP}', 'AR', 'e2e-default', 'padrao dos e2e'),
@@ -123,12 +138,13 @@ function psqlStdin(sql: string): void {
 /** Concede AR+BR por grupo ao `uid` (staff). Idempotente; no-op fora do worker, no stack ABAC e para quem declara o proprio escopo. */
 export function ensureDefaultCountries(uid: string, role: string | undefined, files?: string[]): void {
   if (process.env.TEST_WORKER_INDEX === undefined || process.env.ABAC_TEST_DB_URL) return;
-  if (role === 'worker' || jaConcedidos.has(uid)) return;
-  if (declaraProprioEscopo(files)) return;
+  if (role === 'worker') return;
+  if (declaraProprioEscopo(uid, files)) return;
+  // SEM memo por uid: outro spec apaga a linha em `users` do ator (`cleanupMockStaff` no afterAll; cascade leva a filiacao) e um
+  // ator so-token (ex.: ITINERARIO_STAFF) so recupera o grant se ele for refeito a CADA `tokenFor`. Custo: 1 `docker exec`.
   try {
-    psqlStdin(`BEGIN;\n${instalado ? '' : INSTALL_SQL}${grantSql(uid)}COMMIT;`);
+    psqlStdin(`BEGIN;\n${instalado ? '' : INSTALL_DDL_SQL}${INSTALL_ROWS_SQL}${grantSql(uid)}COMMIT;`);
     instalado = true;
-    jaConcedidos.add(uid);
   } catch (err) {
     const e = err as { stderr?: Buffer; message: string };
     console.warn(`[country-grant-e2e] grant de pais falhou para ${uid} (o spec vai ver 403): ${e.stderr?.toString() ?? e.message}`);
