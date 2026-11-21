@@ -97,7 +97,7 @@ describe('InitWorkerUseCase — telefone de worker existente sem telefone', () =
       expect(output.verificationSid).toBe('VE_TEST_SID');
     }
     expect(output).toMatchObject({ code: 'CLAIM_PENDING' });
-    expect(twilio.startVerification).toHaveBeenCalledWith(`+${PHONE_NORMALIZED}`);
+    expect(twilio.startVerification).toHaveBeenCalledWith(`+${PHONE_NORMALIZED}`, expect.objectContaining({ workerId: expect.any(String) }));
     expect(repo.setPhoneIfNull).not.toHaveBeenCalled();
   });
 

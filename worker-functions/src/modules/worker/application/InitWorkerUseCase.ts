@@ -41,7 +41,7 @@ export class InitWorkerUseCase {
     if (existingWorkerResult.getValue() !== null) {
       const found = existingWorkerResult.getValue()!;
       // FR-88/C-43: com telefone no payload, a ficha achada por auth_uid passa pelo ramo do telefone.
-      if (data.phone) return this.applyPhone(found, data.phone);
+      if (data.phone) return this.applyPhone(found, data.phone, data.email);
       return Result.ok<InitWorkerOutput>({ status: 'ok', worker: found });
     }
 
@@ -136,7 +136,7 @@ export class InitWorkerUseCase {
    * Telefone de worker já existente (FR-88/C-43). Só grava se a ficha NÃO tinha telefone; o `code`
    * decide a tela no app. Ficha importada com esse celular → OTP do claim; conta real → PHONE_IN_USE.
    */
-  private async applyPhone(found: Worker, phoneInput: string): Promise<Result<InitWorkerOutput>> {
+  private async applyPhone(found: Worker, phoneInput: string, tokenEmail: string): Promise<Result<InitWorkerOutput>> {
     const worker = { ...found, phone: found.phone ? found.phone : null };
     if (worker.phone === null) {
       const normalized = normalizePhoneAR(phoneInput);
@@ -151,7 +151,7 @@ export class InitWorkerUseCase {
         if (!isImportedWorker(holder.authUid)) {
           return Result.ok<InitWorkerOutput>({ status: 'phone_rejected', code: 'PHONE_IN_USE' });
         }
-        const claim = await this.startClaimOtp(holder, holder.phone ?? phoneInput);
+        const claim = await this.startClaimOtp(holder, holder.phone ?? phoneInput, tokenEmail);
         if (claim.isFailure) return claim;
         return Result.ok<InitWorkerOutput>({ ...(claim.getValue() as InitWorkerOutput & { status: 'claim_pending' }), code: 'CLAIM_PENDING' });
       }
