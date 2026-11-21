@@ -7,6 +7,7 @@
  * agrega o que o leitor devolveu com o `serviceCode`/`liveVacancyId` de cada serviço. `slots`,
  * `workerId` e `applicationId` NÃO saem na resposta (minimização — o board não os mostra).
  */
+import type { CountryCode } from '@shared/domain/countryCodes';
 import { PatientKanbanServicesReader, type KanbanServicesRows } from '../infrastructure/PatientKanbanServicesReader';
 import { operationDateOf, buildServiceCoverages } from './itineraryCoverage';
 import { uncoveredDayAlerts, uncoveredDayCount } from '../domain/itineraryAlerts';
@@ -38,7 +39,7 @@ export interface ListKanbanServicesResult {
 }
 
 export interface KanbanServicesReaderPort {
-  readKanbanServices(country: 'AR' | 'BR' | null): Promise<KanbanServicesRows[]>;
+  readKanbanServices(countries: readonly CountryCode[]): Promise<KanbanServicesRows[]>;
 }
 
 export class ListKanbanServicesUseCase {
@@ -47,8 +48,8 @@ export class ListKanbanServicesUseCase {
     private readonly teamReader: ServiceReserveReaderPort = new ServiceTeamReader(),
   ) {}
 
-  async execute(country: 'AR' | 'BR' | null, now: Date = new Date()): Promise<ListKanbanServicesResult> {
-    const rows = await this.reader.readKanbanServices(country);
+  async execute(countries: readonly CountryCode[], now: Date = new Date()): Promise<ListKanbanServicesResult> {
+    const rows = await this.reader.readKanbanServices(countries);
 
     // Reserva (056 §9): UMA leitura em lote do quadro C, só dos serviços com vaga viva (os demais são `null`).
     const liveServiceIds = rows.flatMap((row) => row.services.filter((s) => s.liveVacancyId !== null).map((s) => s.id));

@@ -15,7 +15,7 @@ import { PatientQueryRepository } from '../PatientQueryRepository';
 import { excludeDischargedSql } from '../patientListScopeSql';
 import { adminPatientsListSchema, type AdminPatientsListParams } from '../../interfaces/validators/adminPatientsListSchema';
 
-const filters = (o: Partial<AdminPatientsListParams> = {}) => ({ limit: 20, offset: 0, ...o }) as AdminPatientsListParams;
+const filters = (o: Partial<AdminPatientsListParams> = {}) => ({ limit: 20, offset: 0, countries: ['AR'] as const, ...o }) as AdminPatientsListParams & { countries: readonly ('AR' | 'BR')[] };
 const STATS_ROW = { total: '0', complete: '0', needs_attention: '0', created_today: '0', created_yesterday: '0', created_last_7_days: '0' };
 const FRAGMENT = (idx: number) => excludeDischargedSql(idx);
 

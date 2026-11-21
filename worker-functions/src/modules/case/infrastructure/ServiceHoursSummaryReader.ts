@@ -15,7 +15,7 @@ import type {
 } from '../../matching/application/ServiceHoursSummaryPort';
 
 export interface KanbanRowsReader {
-  readKanbanServices(country: 'AR' | 'BR' | null): Promise<KanbanServicesRows[]>;
+  readKanbanServices(countries: readonly CountryCode[]): Promise<KanbanServicesRows[]>;
 }
 
 /** Ids dos pacientes de teste dos países (mesmo predicado da antiga `horasAtivasQuery`). */
@@ -52,7 +52,7 @@ export class ServiceHoursSummaryReader implements ServiceHoursSummaryPort {
 
     const testIds = await this.testPatientIds(countries);
     for (const country of countries) {
-      const rows = await this.reader.readKanbanServices(country);
+      const rows = await this.reader.readKanbanServices([country]);
       for (const row of rows) {
         if (testIds.has(row.patientId)) continue; // paciente de teste fora das métricas
         const asOf = operationDateOf(row.country, now);

@@ -3,6 +3,7 @@
  * Admin AR e recrutadora AR no mock auth (ou no emulador, se estiver de pé — `staffAuth` sonda). Com o engine ABAC desligado (CI e p058a), as rotas de
  * célula nova valem `untilEnforced: 'admin'`: o admin passa e a recrutadora leva 403.
  */
+import { removerGrantPadrao } from './countryGrant';
 import { createApiClient, waitForBackend } from '../helpers';
 import { staffAuth, type StaffAuth } from './staffAuth';
 
@@ -34,6 +35,7 @@ const PREFIXO_GRUPO = 'QA058 e2e ';
  */
 export async function concederPaises(pool: Pool, uid: string, countries: string[]): Promise<() => Promise<void>> {
   const groupId = randomUUID();
+  await removerGrantPadrao(pool, uid); // declara o escopo do ator: nada de uniao com o padrao AR+BR dos e2e
   // O usuário também é nosso: staff ACTIVE sem grupo vivo reprova a pré-condição do F12 (iam-config-export-import) em suítes que rodam DEPOIS —
   // então a limpeza apaga o que ESTA chamada criou (um usuário que já existia não é tocado).
   const criou = (await pool.query(

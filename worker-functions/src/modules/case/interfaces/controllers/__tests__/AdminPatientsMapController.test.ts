@@ -10,6 +10,9 @@ const mockQuery = jest.fn();
 const mockReportError = jest.fn();
 const mockLogInfo = jest.fn();
 
+// Hotfix 18/11: o escopo de pais e resolvido por resolveCountriesOrRespond (testado a parte).
+const mockScope = jest.fn().mockResolvedValue(['AR']);
+jest.mock('@modules/identity', () => ({ ...jest.requireActual('@modules/identity'), resolveCountriesOrRespond: (...a: unknown[]) => mockScope(...a) }));
 jest.mock('@shared/logging', () => ({
   logger: { info: (...a: unknown[]) => mockLogInfo(...a), child: jest.fn().mockReturnValue({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }), warn: jest.fn(), error: jest.fn() },
   reportError: (...args: unknown[]) => mockReportError(...args),
@@ -204,6 +207,14 @@ describe('AdminPatientsMapController.getMapPoints — nome do pino por patient_i
 describe('AdminPatientsMapController.getMapPoints', () => {
   let controller: AdminPatientsMapController;
   beforeEach(() => { jest.clearAllMocks(); controller = new AdminPatientsMapController(); });
+
+  it('hotfix 18/11: pais do corpo fora do escopo (resolvedor ja respondeu 403) => NAO consulta o banco', async () => {
+    mockScope.mockResolvedValueOnce(null);
+    const res = mockRes();
+    await controller.getMapPoints(req(SCOPE), res);
+    expect(mockScope).toHaveBeenCalledWith(expect.anything(), expect.anything(), SCOPE.country, 'MapController:getMapPoints');
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
 
   it('400 em corpo inválido / clínico / sem escopo / sem corpo, sem tocar no banco', async () => {
     for (const body of [undefined, {}, { country: 'AR' }, { ...SCOPE, clinical_specialty: 'ASD' }]) {

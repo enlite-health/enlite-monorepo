@@ -8,6 +8,7 @@
  * Sem PII: e-mails sintéticos `<uid>@e2e.local`.
  */
 import axios from 'axios';
+import { grantDefaultCountries } from './countryGrant';
 
 const EMULATOR = process.env.FIREBASE_AUTH_EMULATOR_HOST
   ? `http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}`
@@ -78,7 +79,10 @@ export async function staffAuth(
 ): Promise<StaffAuth> {
   if (await probeEmulator()) {
     const real = await emulatorToken(uid, role, country);
+    await grantDefaultCountries(real.uid);
     return { headers: { Authorization: `Bearer ${real.token}` }, uid: real.uid };
   }
+  // Hotfix 18/11: ator staff herda AR+BR por grupo (countryGrant.ts); os testes de escopo usam getMockToken({ countryGrant: false }).
+  await grantDefaultCountries(uid);
   return { headers: { Authorization: `Bearer ${mockToken(uid, role, country)}` }, uid };
 }

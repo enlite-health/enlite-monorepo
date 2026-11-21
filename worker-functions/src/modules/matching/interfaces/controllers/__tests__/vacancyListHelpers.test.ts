@@ -16,7 +16,7 @@ import { buildListVacanciesQuery, ListVacanciesFilters, loadStageCounts, loadVac
 
 // Minimal filters that satisfy the required fields
 function base(overrides: Partial<ListVacanciesFilters> = {}): ListVacanciesFilters {
-  return { limit: '20', offset: '0', ...overrides };
+  return { countries: ['AR'], limit: '20', offset: '0', ...overrides };
 }
 
 describe('buildListVacanciesQuery — base query', () => {
@@ -30,10 +30,10 @@ describe('buildListVacanciesQuery — base query', () => {
     expect(baseQuery).toContain('LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id');
   });
 
-  it('returns paramIndex=1 and empty params when no filters', () => {
+  it('returns paramIndex=2 and only the country scope param when no filters', () => {
     const { params, paramIndex } = buildListVacanciesQuery(base());
-    expect(params).toEqual([]);
-    expect(paramIndex).toBe(1);
+    expect(params).toEqual([['AR']]);
+    expect(paramIndex).toBe(2);
   });
 });
 
@@ -44,12 +44,12 @@ describe('buildListVacanciesQuery — search filter', () => {
     const { baseQuery, params, paramIndex } = buildListVacanciesQuery(base({ search: 'João' }));
     expect(baseQuery).toContain('ILIKE $1');
     expect(params[0]).toBe('%João%');
-    expect(paramIndex).toBe(2);
+    expect(paramIndex).toBe(3);
   });
 
   it('ignores falsy search value', () => {
     const { params } = buildListVacanciesQuery(base({ search: '' }));
-    expect(params).toEqual([]);
+    expect(params).toEqual([['AR']]);
   });
 });
 
@@ -62,7 +62,7 @@ describe('buildListVacanciesQuery — status filter', () => {
 
   it('ignores invalid status value', () => {
     const { params } = buildListVacanciesQuery(base({ status: 'INVALID_STATUS' }));
-    expect(params).toEqual([]);
+    expect(params).toEqual([['AR']]);
   });
 });
 
@@ -71,8 +71,8 @@ describe('buildListVacanciesQuery — filtro priority removido (spec 046 F1, A4)
     const sem = buildListVacanciesQuery(base());
     const com = buildListVacanciesQuery(base({ priority: 'URGENT' } as unknown as Partial<ListVacanciesFilters>));
     expect(com.baseQuery).toBe(sem.baseQuery);
-    expect(com.params).toEqual([]);
-    expect(com.paramIndex).toBe(1);
+    expect(com.params).toEqual([['AR']]);
+    expect(com.paramIndex).toBe(2);
     expect(com.baseQuery).not.toContain('jp.priority = $');
   });
 });
@@ -141,12 +141,12 @@ describe('buildListVacanciesQuery — workerType filter', () => {
 
   it('ignores invalid workerType (e.g. "PSYCHOLOGIST")', () => {
     const { params } = buildListVacanciesQuery(base({ workerType: 'PSYCHOLOGIST' }));
-    expect(params).toEqual([]);
+    expect(params).toEqual([['AR']]);
   });
 
   it('ignores non-string workerType', () => {
     const { params } = buildListVacanciesQuery(base({ workerType: 42 }));
-    expect(params).toEqual([]);
+    expect(params).toEqual([['AR']]);
   });
 });
 
@@ -164,12 +164,12 @@ describe('buildListVacanciesQuery — state filter', () => {
 
   it('ignores empty string state', () => {
     const { params } = buildListVacanciesQuery(base({ state: '' }));
-    expect(params).toEqual([]);
+    expect(params).toEqual([['AR']]);
   });
 
   it('ignores whitespace-only state', () => {
     const { params } = buildListVacanciesQuery(base({ state: '   ' }));
-    expect(params).toEqual([]);
+    expect(params).toEqual([['AR']]);
   });
 });
 
@@ -182,7 +182,7 @@ describe('buildListVacanciesQuery — city filter', () => {
 
   it('ignores empty city', () => {
     const { params } = buildListVacanciesQuery(base({ city: '' }));
-    expect(params).toEqual([]);
+    expect(params).toEqual([['AR']]);
   });
 });
 
@@ -205,7 +205,7 @@ describe('buildListVacanciesQuery — requiredSex filter', () => {
 
   it('ignores invalid requiredSex value', () => {
     const { params } = buildListVacanciesQuery(base({ requiredSex: 'OTHER' }));
-    expect(params).toEqual([]);
+    expect(params).toEqual([['AR']]);
   });
 });
 
@@ -218,12 +218,12 @@ describe('buildListVacanciesQuery — days filter', () => {
 
   it('discards invalid tokens and ignores empty result', () => {
     const { params } = buildListVacanciesQuery(base({ days: 'abc,xyz' }));
-    expect(params).toEqual([]);
+    expect(params).toEqual([['AR']]);
   });
 
   it('ignores empty days string', () => {
     const { params } = buildListVacanciesQuery(base({ days: '' }));
-    expect(params).toEqual([]);
+    expect(params).toEqual([['AR']]);
   });
 });
 
@@ -240,12 +240,12 @@ describe('buildListVacanciesQuery — time filter (time-only, no days)', () => {
 
   it('ignores partial time (only timeFrom)', () => {
     const { params } = buildListVacanciesQuery(base({ timeFrom: '08:00' }));
-    expect(params).toEqual([]);
+    expect(params).toEqual([['AR']]);
   });
 
   it('ignores invalid time format', () => {
     const { params } = buildListVacanciesQuery(base({ timeFrom: '8:00', timeTo: '18:00' }));
-    expect(params).toEqual([]);
+    expect(params).toEqual([['AR']]);
   });
 });
 
@@ -267,9 +267,9 @@ describe('buildListVacanciesQuery — paramIndex sequencing', () => {
     const { params, paramIndex } = buildListVacanciesQuery(
       base({ status: 'SEARCHING', workerType: 'AT', state: 'BA', city: 'CABA' }),
     );
-    // status=$1, workerType=$2, state=$3, city=$4
-    expect(params).toHaveLength(4);
-    expect(paramIndex).toBe(5);
+    // status=$1, workerType=$2, state=$3, city=$4, paises=$5 (escopo, sempre por ultimo)
+    expect(params).toHaveLength(5);
+    expect(paramIndex).toBe(6);
   });
 
   it('LIMIT/OFFSET params appended correctly after all filters', () => {
@@ -279,9 +279,10 @@ describe('buildListVacanciesQuery — paramIndex sequencing', () => {
     // Simulate what the controller does: push LIMIT + OFFSET
     const allParams = [...baseParams, 20, 0];
     expect(allParams[0]).toBe('SEARCHING'); // $1
-    expect(allParams[1]).toBe(20);           // $paramIndex (LIMIT)
-    expect(allParams[2]).toBe(0);            // $paramIndex+1 (OFFSET)
-    expect(paramIndex).toBe(2);
+    expect(allParams[1]).toEqual(['AR']);   // $2 = escopo de paises
+    expect(allParams[2]).toBe(20);           // $paramIndex (LIMIT)
+    expect(allParams[3]).toBe(0);            // $paramIndex+1 (OFFSET)
+    expect(paramIndex).toBe(3);
   });
 });
 

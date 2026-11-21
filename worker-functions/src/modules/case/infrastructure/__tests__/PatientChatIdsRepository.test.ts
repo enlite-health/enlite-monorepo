@@ -123,7 +123,7 @@ describe('PatientChatIdsRepository', () => {
     it('seleciona SÓ identificadores — nenhuma coluna de PII no SQL', async () => {
       const query = poolFor([], '0');
       await new PatientChatIdsRepository(poolWith(query)).findChatMap({
-        filter: 'linked', limit: 10, offset: 0,
+        filter: 'linked', limit: 10, offset: 0, countries: ['AR'],
       });
 
       const [sql] = query.mock.calls[0];
@@ -138,13 +138,14 @@ describe('PatientChatIdsRepository', () => {
     it('filtra soft-delete, ordena por id e pagina', async () => {
       const query = poolFor([], '0');
       await new PatientChatIdsRepository(poolWith(query)).findChatMap({
-        filter: 'linked', limit: 25, offset: 50,
+        filter: 'linked', limit: 25, offset: 50, countries: ['AR'],
       });
 
       const [sql, params] = query.mock.calls[0];
       expect(sql).toContain('p.deleted_at IS NULL');
       expect(sql).toContain('ORDER BY p.id');
-      expect(params).toEqual([25, 50]);
+      expect(params).toEqual([25, 50, ['AR']]);
+      expect(sql).toContain('p.country = ANY($3::bpchar[])'); // escopo de pais, nunca todos
     });
 
     it.each([
@@ -153,7 +154,7 @@ describe('PatientChatIdsRepository', () => {
       ['all', 'TRUE'],
     ] as const)('filtro %s vira o WHERE certo', async (filter, expected) => {
       const query = poolFor([], '0');
-      await new PatientChatIdsRepository(poolWith(query)).findChatMap({ filter, limit: 1, offset: 0 });
+      await new PatientChatIdsRepository(poolWith(query)).findChatMap({ filter, limit: 1, offset: 0, countries: ['AR'] });
 
       expect(query.mock.calls[0][0]).toContain(expected);
       // o mesmo recorte vale para a contagem, senão total e página divergem
@@ -165,7 +166,7 @@ describe('PatientChatIdsRepository', () => {
       const query = poolFor([row], '357');
 
       const out = await new PatientChatIdsRepository(poolWith(query)).findChatMap({
-        filter: 'linked', limit: 10, offset: 0,
+        filter: 'linked', limit: 10, offset: 0, countries: ['AR'],
       });
 
       expect(out).toEqual({ rows: [row], total: 357 });
@@ -176,19 +177,20 @@ describe('PatientChatIdsRepository', () => {
   describe('findByChatId (direção reversa)', () => {
     it('busca na tabela de vínculos e devolve o papel que bateu', async () => {
       const query = jest.fn().mockResolvedValue({ rows: [] });
-      await new PatientChatIdsRepository(poolWith(query)).findByChatId('1@g.us');
+      await new PatientChatIdsRepository(poolWith(query)).findByChatId('1@g.us', ['AR']);
 
       const [sql, params] = query.mock.calls[0];
       expect(sql).toContain('FROM patient_chat_ids m');
       expect(sql).toContain('m.chat_id = $1');
       expect(sql).toContain('"matchedRole"');
       expect(sql).toContain('p.deleted_at IS NULL');
-      expect(params).toEqual(['1@g.us']);
+      expect(params).toEqual(['1@g.us', ['AR']]);
+      expect(sql).toContain('p.country = ANY($2::bpchar[])');
     });
 
     it('não seleciona nenhuma coluna de PII', async () => {
       const query = jest.fn().mockResolvedValue({ rows: [] });
-      await new PatientChatIdsRepository(poolWith(query)).findByChatId('1@g.us');
+      await new PatientChatIdsRepository(poolWith(query)).findByChatId('1@g.us', ['AR']);
 
       const [sql] = query.mock.calls[0];
       for (const pii of ['first_name', 'last_name', 'phone_whatsapp', 'document_number']) {
@@ -198,7 +200,7 @@ describe('PatientChatIdsRepository', () => {
 
     it('chat sem dono devolve lista vazia', async () => {
       const query = jest.fn().mockResolvedValue({ rows: [] });
-      expect(await new PatientChatIdsRepository(poolWith(query)).findByChatId('1@g.us')).toEqual([]);
+      expect(await new PatientChatIdsRepository(poolWith(query)).findByChatId('1@g.us', ['AR'])).toEqual([]);
     });
 
     it('devolve as linhas encontradas', async () => {
@@ -207,7 +209,7 @@ describe('PatientChatIdsRepository', () => {
         chatIds: { FAMILY: '1@g.us' }, matchedRole: 'FAMILY',
       };
       const query = jest.fn().mockResolvedValue({ rows: [row] });
-      expect(await new PatientChatIdsRepository(poolWith(query)).findByChatId('1@g.us')).toEqual([row]);
+      expect(await new PatientChatIdsRepository(poolWith(query)).findByChatId('1@g.us', ['AR'])).toEqual([row]);
     });
   });
 

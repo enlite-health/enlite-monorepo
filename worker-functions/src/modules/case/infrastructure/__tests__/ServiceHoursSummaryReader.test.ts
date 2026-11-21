@@ -24,8 +24,8 @@ function patient(country: string, services: Array<{ id: string; live: string | n
 describe('ServiceHoursSummaryReader', () => {
   it('soma total/cobertas só de serviço com vaga viva e conta com/sem horário', async () => {
     const reader = {
-      readKanbanServices: jest.fn(async (country: 'AR' | 'BR' | null) =>
-        country === 'AR'
+      readKanbanServices: jest.fn(async (countries: readonly ('AR' | 'BR')[]) =>
+        countries[0] === 'AR'
           ? [
               patient('AR', [{ id: 's1', live: 'v1' }, { id: 's2', live: 'v2' }, { id: 's3', live: null }], [
                 slot('x1', 's1', 1200, true), // 20h coberta
@@ -39,8 +39,8 @@ describe('ServiceHoursSummaryReader', () => {
     const out = await new ServiceHoursSummaryReader(reader, NO_TEST).readServiceHours(['AR', 'BR'], NOW);
     expect(out).toEqual({ total: 40, cobertas: 20, servicesWithSchedule: 1, servicesWithoutSchedule: 1 });
     expect(reader.readKanbanServices).toHaveBeenCalledTimes(2);
-    expect(reader.readKanbanServices).toHaveBeenCalledWith('AR');
-    expect(reader.readKanbanServices).toHaveBeenCalledWith('BR');
+    expect(reader.readKanbanServices).toHaveBeenCalledWith(['AR']);
+    expect(reader.readKanbanServices).toHaveBeenCalledWith(['BR']);
   });
 
   it('sem países → tudo zero e nenhuma leitura', async () => {

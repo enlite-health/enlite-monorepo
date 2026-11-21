@@ -28,6 +28,7 @@ jest.mock('twilio', () => {
 import axios, { AxiosInstance } from 'axios';
 import { Pool } from 'pg';
 import twilio from 'twilio';
+import { grantDefaultCountries } from './helpers/countryGrant';
 import { TwilioMessagingService, MessageTemplateRepository } from '@modules/notification';
 
 const API_URL = process.env.API_URL || 'http://localhost:8080';
@@ -603,6 +604,7 @@ async function getToken(
   email: string,
   role: 'admin' | 'worker',
 ): Promise<string> {
+  if (role !== 'worker') await grantDefaultCountries(uid, { force: true }); // token do mock fora das helpers: concede AR+BR por grupo
   const res = await api.post('/api/test/auth/token', { uid, email, role });
   if (res.status !== 200) throw new Error(`Token failed: ${JSON.stringify(res.data)}`);
   return res.data.data.token;

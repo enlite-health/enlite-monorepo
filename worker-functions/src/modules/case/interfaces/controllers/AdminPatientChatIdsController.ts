@@ -1,4 +1,6 @@
 import { Request, Response } from 'express';
+import { resolveCountriesOrRespond } from '@modules/identity';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { reportError } from '@shared/logging';
 import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema';
 import {
@@ -109,8 +111,12 @@ export class AdminPatientChatIdsController {
       return;
     }
 
+    // Hotfix 18/11: so chat de paciente de pais do escopo do ator (lista derivada de paciente).
+    const countries = await resolveCountriesOrRespond(DatabaseConnection.getInstance().getPool(), res, undefined, 'AdminPatientChatIdsController:getChatMap');
+    if (!countries) return;
+
     try {
-      const result = await this.chatMap.execute(query.data);
+      const result = await this.chatMap.execute({ ...query.data, countries });
       res.status(200).json({ success: true, data: result });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));

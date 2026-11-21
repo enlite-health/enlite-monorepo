@@ -35,6 +35,8 @@ export interface ExportWorkersFilters {
   docs_complete?: string;
   docs_validated?: 'all_validated' | 'pending_validation';
   case_id?: string;
+  /** Escopo de paises JA RESOLVIDO (resolveCountryScope) — obrigatorio; lista vazia = 0 linhas, nunca "todos". */
+  countries: readonly string[];
 }
 
 export interface ExportWorkersInput {
@@ -243,6 +245,8 @@ function buildExportWhere(filters: ExportWorkersFilters): { clause: string; para
   const params: unknown[] = [];
   let idx = 1;
   let clause = 'WHERE w.merged_into_id IS NULL';
+  clause += ` AND w.country = ANY($${idx++}::bpchar[])`;
+  params.push([...filters.countries]);
 
   // Mesma regra da lista: status explícito manda (inclusive DISABLED); sem
   // filtro, quem deu baixa na conta não sai no export. Ver activeWorkerFilter.

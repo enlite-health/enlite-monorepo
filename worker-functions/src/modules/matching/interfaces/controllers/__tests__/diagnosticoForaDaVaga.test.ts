@@ -200,7 +200,7 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
    * a resposta.
    */
   it('🔴 lista de vagas (buildListVacanciesQuery): a allow-list de `p.` continua fechada — um `p.*` futuro não passaria mudo', () => {
-    const { baseQuery } = buildListVacanciesQuery({ search: 'qualquer', limit: '10', offset: '0' });
+    const { baseQuery } = buildListVacanciesQuery({ countries: ['AR'], search: 'qualquer', limit: '10', offset: '0' });
     const colunasDaLista = new Set([...baseQuery.matchAll(/\bp\.([a-z_]+)/gi)].map((m) => m[1]));
 
     // Positivo: apagar o SELECT/filtro por nome reprova aqui.
