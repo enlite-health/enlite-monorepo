@@ -65,24 +65,59 @@ function chamadores(): string[] {
 /** Ator semeado como staff mock (linha em `users` por `seedMockStaff`/`loginComoStaffMock`): precisa do default mesmo que o arquivo declare escopo para OUTRO ator. */
 const STAFF_MOCK = /seedMockStaff|loginComoStaffMock|seedAdminUser/;
 
+const semComentarios = (src: string): string => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const semImports = (src: string): string => src.replace(/^\s*(?:import|export)\s[^;]*?from\s+'[^']+';?/gm, '');
+
 /**
- * O chamador declara o proprio escopo PARA ESTE ATOR? Fonte do chamador mais os `import ... from './x'` relativos dele
- * (1 nivel: o spec delega a montagem a helpers). Um arquivo que declara escopo so para um ator dinamico (ex. `seedStaffInGroup`
- * num teste, uid com `${run}`) mas usa um staff mock de uid literal (`seedMockStaff`/`loginComoStaffMock`) NAO isenta esse staff:
- * foi o caso do 089 — o arquivo inteiro era isentado e os 12 testes do staff mock levavam 403.
+ * Funcoes de um HELPER que declaram escopo de pais (corpo com `DECLARA_ESCOPO`, ou que chamam outra que declara).
+ * O helper so DEFINE a possibilidade: quem declara e o spec que CHAMA a funcao. `export { seedStaffInGroup } from` (re-export) nao conta.
+ */
+function funcoesQueDeclaram(helperSrc: string): Set<string> {
+  const src = semImports(semComentarios(helperSrc));
+  const cabecas = [...src.matchAll(/^(?:export\s+)?(?:async\s+)?(?:function\s+(\w+)|const\s+(\w+)\s*=)/gm)];
+  const trechos = cabecas.map((m, i) => ({ nome: (m[1] ?? m[2])!, corpo: src.slice(m.index, cabecas[i + 1]?.index ?? src.length) }));
+  const declaram = new Set(trechos.filter((t) => DECLARA_ESCOPO.test(t.corpo)).map((t) => t.nome));
+  for (let mudou = true; mudou; ) {
+    mudou = false;
+    for (const t of trechos) {
+      if (declaram.has(t.nome)) continue;
+      if ([...declaram].some((n) => new RegExp(`\\b${n}\\b`).test(t.corpo))) {
+        declaram.add(t.nome);
+        mudou = true;
+      }
+    }
+  }
+  return declaram;
+}
+
+/** O uid literal (`'x'`) do ator aparece neste fonte? (uid de template nao conta: seria casar prefixo com ator dinamico de outro teste.) */
+function mencionaUid(src: string, uid: string): boolean {
+  return src.includes(`'${uid}'`);
+}
+
+/**
+ * O chamador declara o proprio escopo PARA ESTE ATOR?
+ *  - o fonte do proprio spec/helper chamador cita `DECLARA_ESCOPO` (ele monta o grupo do ator), OU
+ *  - o spec CHAMA (fora de import/comentario) uma funcao de um helper importado (1 nivel) que declara escopo. Ver `funcoesQueDeclaram`:
+ *    antes o fonte do helper importado contava inteiro, e `bloqueados-067-helper` (que tem `seedStaffComPais`, nunca chamada pelos
+ *    specs 067 de ficha/lista) isentava o staff deles — 403 COUNTRY_SCOPE_REQUIRED em todas as rotas.
+ * Excecao: arquivo que declara escopo so para um ator dinamico (089: `seedStaffInGroup` no teste 12) mas usa OUTRO ator como staff mock
+ * (`seedMockStaff`/`loginComoStaffMock`, uid literal) NAO isenta esse staff.
  */
 export function declaraProprioEscopo(uid: string, files: string[] = chamadores()): boolean {
   let declara = false;
   let staffMock = false;
   for (const f of files) {
     const src = lerFonte(f);
-    if (src.includes(`'${uid}'`) && STAFF_MOCK.test(src)) staffMock = true;
+    if (mencionaUid(src, uid) && STAFF_MOCK.test(src)) staffMock = true;
     if (DECLARA_ESCOPO.test(src)) declara = true;
+    const corpo = semImports(semComentarios(src));
     for (const m of src.matchAll(/from\s+'(\.[^']+)'/g)) {
       const base = resolve(dirname(f), m[1]);
       // `abac-stack-helper` DEFINE `seedStaffInGroup`: so o uso (no fonte do chamador) conta, nunca a definicao.
       if (/\/abac-stack-helper$|\/country-grant-e2e$/.test(base)) continue;
-      if (DECLARA_ESCOPO.test(lerFonte(`${base}.ts`))) declara = true;
+      const usadas = [...funcoesQueDeclaram(lerFonte(`${base}.ts`))].filter((n) => new RegExp(`\\b${n}\\b`).test(corpo));
+      if (usadas.length > 0) declara = true;
     }
   }
   return declara && !staffMock;
