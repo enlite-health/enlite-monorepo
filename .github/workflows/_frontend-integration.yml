@@ -207,9 +207,9 @@ jobs:
             echo "::warning::COBERTURA REDUZIDA — rodando apenas: ${{ inputs.grep }}"
             echo "Specs presentes no repositório e NÃO exercitados por esta execução:"
             ls e2e/integration/*.integration.e2e.ts | grep -vE "${{ inputs.grep }}" || true
-            npx playwright test --project=integration --ignore-snapshots --shard=${{ matrix.shard }}/2 --grep "${{ inputs.grep }}"
+            npx playwright test --project=integration --ignore-snapshots --reporter=list,html --shard=${{ matrix.shard }}/2 --grep "${{ inputs.grep }}"
           else
-            npx playwright test --project=integration --ignore-snapshots --shard=${{ matrix.shard }}/2
+            npx playwright test --project=integration --ignore-snapshots --reporter=list,html --shard=${{ matrix.shard }}/2
           fi
 
       # ── O portão ESTRUTURAL das telas de plantillas (spec 010) ──
