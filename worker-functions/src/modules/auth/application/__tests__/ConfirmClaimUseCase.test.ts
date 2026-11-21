@@ -113,7 +113,7 @@ describe('ConfirmClaimUseCase', () => {
 
       await useCase.execute(makeInput({ otp: '654321' }));
 
-      expect(twilio.checkVerification).toHaveBeenCalledWith(VERIFICATION_SID, '654321');
+      expect(twilio.checkVerification).toHaveBeenCalledWith(VERIFICATION_SID, '654321', expect.objectContaining({ tokenEmail: expect.any(String) }));
     });
 
     it('loga claim_confirm_success no caminho de sucesso', async () => {

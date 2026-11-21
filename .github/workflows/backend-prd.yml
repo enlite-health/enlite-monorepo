@@ -217,6 +217,7 @@ jobs:
             ANACARE_USERNAME=anacare-username:latest
             ANACARE_PASS=anacare-pass:latest
             SOL_AVISO_GRAVE_DESTINATARIOS=sol-aviso-grave-destinatarios:latest
+            E2E_OTP_CODE=e2e-otp-code-prd:latest
           flags: >-
             --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com

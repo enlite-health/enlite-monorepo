@@ -6,6 +6,7 @@ import { logger } from '@shared/logging';
 import { resourceIdHash } from '@shared/audit/resourceAccessLog';
 import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
+import { isEnliteTestEmail } from '@shared/utils/testAccountEmail';
 import { isClaimableWorker, isImportedWorker } from './isClaimableWorker';
 import { ITwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
 
@@ -62,7 +63,7 @@ export class InitWorkerUseCase {
         // telefone DA FICHA (claim, amarrado ao telefone pela DP-21) quando a ficha é reclamável;
         // senão, EMAIL_NOT_VERIFIED.
         if (!data.emailVerified) {
-          return this.relinkWithoutVerifiedEmail(existingByEmail);
+          return this.relinkWithoutVerifiedEmail(existingByEmail, data.email);
         }
         const phoneToSet = !existingByEmail.phone && data.phone ? data.phone : undefined;
         const updateResult = await this.workerRepository.updateAuthUid(
@@ -102,7 +103,7 @@ export class InitWorkerUseCase {
         const existingByPhone = phoneCheckResult.getValue()!;
 
         if (isImportedWorker(existingByPhone.authUid)) {
-          return this.startClaimOtp(existingByPhone, existingByPhone.phone ?? phoneInput);
+          return this.startClaimOtp(existingByPhone, existingByPhone.phone ?? phoneInput, data.email);
         }
       }
     }
@@ -118,6 +119,8 @@ export class InitWorkerUseCase {
       whatsappPhone: data.whatsappPhone,
       lgpdOptIn: data.lgpdOptIn,
       country: data.country,
+      // C-50/DP-23: conta de E2E nasce is_test no próprio INSERT (e-mail do token, minúsculas).
+      isTest: isEnliteTestEmail(data.email),
     });
 
     if (createResult.isFailure) {
@@ -135,7 +138,7 @@ export class InitWorkerUseCase {
    * Sem telefone, ou não reclamável (login real, `talentum_`, sobrevivente que absorveu login
    * real: o confirm do claim recusaria) → EMAIL_NOT_VERIFIED. Nunca religa nem cria ficha.
    */
-  private async relinkWithoutVerifiedEmail(ficha: Worker): Promise<Result<InitWorkerOutput>> {
+  private async relinkWithoutVerifiedEmail(ficha: Worker, tokenEmail: string): Promise<Result<InitWorkerOutput>> {
     const log = logger.child({ source: 'InitWorkerUseCase:execute', workerIdHash: resourceIdHash(ficha.id) });
     const blocked = (): Result<InitWorkerOutput> => {
       log.warn({ msg: 'worker_relink_blocked_email_not_verified', hasPhone: Boolean(ficha.phone) });
@@ -148,11 +151,11 @@ export class InitWorkerUseCase {
     if (!claimable.getValue()) return blocked();
 
     log.info({ msg: 'worker_relink_email_not_verified_claim_otp' });
-    return this.startClaimOtp(ficha, ficha.phone);
+    return this.startClaimOtp(ficha, ficha.phone, tokenEmail);
   }
 
   /** OTP ao telefone DA FICHA (nunca o do payload — anti-hijack) e `claim_pending`. */
-  private async startClaimOtp(ficha: Worker, phoneForOtp: string): Promise<Result<InitWorkerOutput>> {
+  private async startClaimOtp(ficha: Worker, phoneForOtp: string, tokenEmail: string): Promise<Result<InitWorkerOutput>> {
     const phoneE164 = phoneForOtp.startsWith('+') ? phoneForOtp : `+${normalizePhoneAR(phoneForOtp)}`;
 
     logger.child({ source: 'InitWorkerUseCase:execute', workerId: ficha.id }).info({
@@ -174,7 +177,11 @@ export class InitWorkerUseCase {
     }
 
     try {
-      const { verificationSid } = await this.twilioVerify.startVerification(phoneE164);
+      const { verificationSid } = await this.twilioVerify.startVerification(phoneE164, {
+        workerId: ficha.id,
+        fichaIsTest: ficha.isTest === true,
+        tokenEmail,
+      });
       return Result.ok<InitWorkerOutput>({
         status: 'claim_pending',
         candidateWorkerId: ficha.id,
