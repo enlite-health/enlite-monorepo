@@ -100,12 +100,17 @@ export function cleanupStaffAndGroup(uid: string, groupId: string): void {
 /** Ator do token mock: `country` e opcional (specs antigos nao o trazem); o JSON do token sai identico ao que cada spec montava. */
 export type TokenActor = Omit<MockUser, 'country'> & { country?: string };
 
+/** `semGrant`: o spec testa o PROVISIONAMENTO da linha em `users` (1o login) — o helper nao pode pre-criar o usuario. */
+export interface GrantOpts {
+  semGrant?: boolean;
+}
+
 /**
  * Token `mock_*` do ator. Efeito colateral deliberado: garante pais AR+BR por grupo no banco (`ensureDefaultCountries`) —
  * desde o #893 a API responde 403 COUNTRY_SCOPE_REQUIRED a staff sem pais. Spec que declara o proprio escopo nao recebe o default.
  */
-export function tokenFor(u: TokenActor): string {
-  ensureDefaultCountries(u.uid, u.role);
+export function tokenFor(u: TokenActor, opts: GrantOpts = {}): string {
+  if (!opts.semGrant) ensureDefaultCountries(u.uid, u.role);
   return 'mock_' + Buffer.from(JSON.stringify(u), 'utf-8').toString('base64');
 }
 
@@ -115,9 +120,9 @@ function fakeIdToken(u: TokenActor): string {
   return 'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' + Buffer.from(JSON.stringify(payload)).toString('base64url') + '.';
 }
 
-export async function installAuthInterceptors(page: Page, u: TokenActor): Promise<void> {
+export async function installAuthInterceptors(page: Page, u: TokenActor, opts: GrantOpts = {}): Promise<void> {
   const idToken = fakeIdToken(u);
-  const mockToken = tokenFor(u);
+  const mockToken = tokenFor(u, opts);
 
   await page.route('**/identitytoolkit.googleapis.com/**', async (route: Route) => {
     const url = route.request().url();

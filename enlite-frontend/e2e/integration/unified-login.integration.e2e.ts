@@ -86,7 +86,7 @@ async function assentar(page: Page): Promise<void> {
 
 /** Entra pela tela de login, como uma pessoa: clica no campo, digita, clica no botão. */
 async function entrar(page: Page, u: MockUser, caminho = '/login'): Promise<void> {
-  await installAuthInterceptors(page, u);
+  await installAuthInterceptors(page, u, { semGrant: true }); // 1o login testa o provisionamento: o grant nao pode pre-criar a linha em users
   await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
   await page.goto(caminho);
   const campoEmail = page.locator('input[type="email"]');
