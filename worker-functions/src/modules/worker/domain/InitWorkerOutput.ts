@@ -8,13 +8,17 @@ import { Worker } from './Worker';
  *                            Twilio Verify; claim deve ser confirmado antes de qualquer
  *                            operação no banco.
  *   status: 'not_registered' — chamada do app (canal app) sem ficha: nada foi criado (D734).
+ *   `code` (FR-88/C-43): só no ramo de telefone de worker existente — OK, PHONE_LOCKED (status ok),
+ *   CLAIM_PENDING (claim_pending) e PHONE_IN_USE / INVALID_PHONE (status phone_rejected).
  */
 export type InitWorkerOutput =
-  | { status: 'ok'; worker: Worker }
+  | { status: 'ok'; worker: Worker; code?: 'OK' | 'PHONE_LOCKED' }
   | {
       status: 'claim_pending';
       candidateWorkerId: string;
       phoneMasked: string;
       verificationSid: string;
+      code?: 'CLAIM_PENDING';
     }
-  | { status: 'not_registered' };
+  | { status: 'not_registered' }
+  | { status: 'phone_rejected'; code: 'PHONE_IN_USE' | 'INVALID_PHONE' };
