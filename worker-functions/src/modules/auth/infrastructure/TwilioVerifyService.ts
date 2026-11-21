@@ -45,6 +45,9 @@ function detectE2EBypass(): boolean {
   return true;
 }
 
+/** Erro do envio do código pelo canal WhatsApp (D732): sem 2ª tentativa por outro canal. */
+export const OTP_CHANNEL_UNAVAILABLE = 'OTP_CHANNEL_UNAVAILABLE';
+
 const TEST_SID_PREFIX = 'TEST_';
 
 /**
@@ -100,11 +103,9 @@ export function otpCheckIsForPhone(check: Pick<OtpCheckResult, 'to'>, phoneOnRec
 /**
  * Twilio Verify para OTP de claim de ficha importada.
  *
- * Canal atual: SMS. Migração para WhatsApp pendente — requer que o WhatsApp Sender
- * (waba_id 4410859772526279, +14788003312) esteja online no Twilio + Messaging
- * Service configurado. Atualmente offline (code 63111). Quando reativado,
- * trocar `channel: 'sms'` por `'whatsapp'` e configurar TWILIO_VERIFY_TEMPLATE_SID
- * opcional com Content Template SID aprovado pela Meta.
+ * Canal: SOMENTE WhatsApp (D732/DP-22), sem SMS e sem fallback; plano B do envio pelo número da Luz.
+ * Erro do Twilio vira OTP_CHANNEL_UNAVAILABLE. TWILIO_VERIFY_TEMPLATE_SID segue opcional
+ * (Content Template SID aprovado pela Meta).
  *
  * Variáveis de ambiente obrigatórias:
  *   TWILIO_ACCOUNT_SID          — Twilio Account SID
@@ -142,7 +143,7 @@ export class TwilioVerifyService implements ITwilioVerifyService {
     const log = logger.child({
       source: 'TwilioVerifyService:start',
       phoneMasked,
-      channel: this.bypassE2E ? 'bypass' : 'sms',
+      channel: this.bypassE2E ? 'bypass' : 'whatsapp',
     });
 
     // E2E bypass — retorna sid sintético sem tocar no Twilio.
@@ -161,9 +162,22 @@ export class TwilioVerifyService implements ITwilioVerifyService {
     const startedAt = Date.now();
 
     try {
+      // DT-52/C-49: o reenvio invalida o código anterior. Cancela a verificação pendente do mesmo
+      // telefone ANTES de abrir a nova; sem pendente o Twilio responde 20404 (nada a cancelar).
+      try {
+        const cancelBody: { status: string } = { status: 'canceled' };
+        await this.client.verify.v2
+          .services(this.serviceSid)
+          .verifications(phoneE164)
+          .update(cancelBody as never);
+      } catch (cancelErr: unknown) {
+        if ((cancelErr as { code?: number | string }).code !== 20404) throw cancelErr;
+      }
+
+      // D732/DP-22: o canal é só WhatsApp; sem SMS e sem fallback para SMS.
       const verification = await this.client.verify.v2
         .services(this.serviceSid)
-        .verifications.create({ to: phoneE164, channel: 'sms' });
+        .verifications.create({ to: phoneE164, channel: 'whatsapp' });
 
       const durationMs = Date.now() - startedAt;
 
@@ -199,7 +213,8 @@ export class TwilioVerifyService implements ITwilioVerifyService {
         phoneMasked,
         twilioCode: twilioCode != null ? String(twilioCode) : null,
       });
-      throw e;
+      // Canal indisponível: o chamador não tenta outro canal (nunca SMS).
+      throw new Error(OTP_CHANNEL_UNAVAILABLE, { cause: e });
     }
   }
 
@@ -215,7 +230,7 @@ export class TwilioVerifyService implements ITwilioVerifyService {
       verificationSid,
       codeLength,
       hasNonDigit,
-      channel: this.bypassE2E ? 'bypass' : 'sms',
+      channel: this.bypassE2E ? 'bypass' : 'whatsapp',
     });
 
     // E2E bypass — só aceita sids sintéticos (gerados pelo próprio bypass);
