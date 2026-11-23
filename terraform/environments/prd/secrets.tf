@@ -54,3 +54,13 @@ resource "google_secret_manager_secret_iam_member" "mobile_bff_google_maps_serve
   role      = "roles/secretmanager.secretAccessor"
   member    = module.sa_mobile_bff.member
 }
+
+# FR-95/DP-23 (spec 077): código de OTP de teste (E2E do cadastro). Só vale para ficha `is_test` E token
+# `@enlite.test`; montado como E2E_OTP_CODE no worker-functions (backend-prd.yml). Sem binding próprio: a
+# enlite-functions-sa já lê secrets no projeto (iam.tf, roles/secretmanager.secretAccessor). Como os demais: o TF
+# cria só a estrutura; a versão (o valor) entra por gcloud secrets versions add, nunca pelo HCL/state.
+module "secret_e2e_otp_code_prd" {
+  source     = "../../modules/secret"
+  project_id = var.project_id
+  secret_id  = "e2e-otp-code-prd"
+}

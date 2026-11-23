@@ -22,6 +22,7 @@ import { QuizResponseRepository } from '../../infrastructure/QuizResponseReposit
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
 import { AvailabilityRepository } from '../../infrastructure/AvailabilityRepository';
 import { TwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
+import { IsTestOtpGuardedVerify } from '@modules/auth/application/IsTestOtpGuard';
 import { markOtpStarted } from '@modules/auth/interfaces/routes/claimRoutes';
 import {
   sendPersonalInfoFailure,
@@ -50,7 +51,7 @@ export class WorkerControllerV2 {
     const serviceAreaRepository = new ServiceAreaRepository();
     const availabilityRepository = new AvailabilityRepository();
 
-    const twilioVerifyService = new TwilioVerifyService();
+    const twilioVerifyService = new IsTestOtpGuardedVerify(new TwilioVerifyService());
     this.initWorkerUseCase = new InitWorkerUseCase(workerRepository, twilioVerifyService);
     this.provisionCountryClaim = new ProvisionCountryClaimUseCase(countryClaim);
     this.saveQuizUseCase = new SaveQuizResponsesUseCase(workerRepository, quizRepository);
@@ -98,7 +99,9 @@ export class WorkerControllerV2 {
 
       // Check if worker already exists — if so, return existing record
       const existingResult = await this.getProgressUseCase.execute(authUid);
-      if (!existingResult.isFailure) {
+      // FR-88/C-43: ficha existente e telefone no corpo → o init aplica o ramo do telefone (grava, ou PHONE_LOCKED).
+      const phoneBranch = !existingResult.isFailure && Boolean(phone);
+      if (!existingResult.isFailure && !phoneBranch) {
         await this.provisionCountryClaim.execute({ uid: authUid, principal, country: existingResult.getValue().country });
         res.status(200).json({
           success: true,
@@ -150,12 +153,24 @@ export class WorkerControllerV2 {
             candidateWorkerId: output.candidateWorkerId,
             phoneMasked: output.phoneMasked,
             verificationSid: output.verificationSid,
+            ...(output.code ? { code: output.code } : {}),
           },
         });
         return;
       }
 
+      if (output.status === 'phone_rejected') {
+        // Só o `code` sai (o app o mapeia para tela); nada do banco nem o telefone entra na resposta.
+        const httpStatus = output.code === 'PHONE_IN_USE' ? 409 : 422;
+        res.status(httpStatus).json({ success: false, error: 'Phone rejected', code: output.code });
+        return;
+      }
+
       await this.provisionCountryClaim.execute({ uid: authUid, principal, country: output.worker.country });
+      if (output.code) {
+        res.status(200).json({ success: true, data: { status: 'ok', code: output.code, worker: output.worker } });
+        return;
+      }
       res.status(201).json({
         success: true,
         data: {

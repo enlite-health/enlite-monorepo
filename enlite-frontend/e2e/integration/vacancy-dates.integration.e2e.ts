@@ -17,6 +17,7 @@
  * directly via Playwright's APIRequestContext. No Firebase, no UI.
  */
 
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { test, expect } from '@playwright/test';
 import {
   insertTestPatient,
@@ -35,7 +36,7 @@ const MOCK_ADMIN = {
   role: 'admin',
 };
 const MOCK_TOKEN =
-  'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN), 'utf-8').toString('base64');
+  tokenFor(MOCK_ADMIN);
 
 const AUTH_HEADERS = {
   Authorization: `Bearer ${MOCK_TOKEN}`,

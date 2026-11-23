@@ -89,7 +89,11 @@ export class StartClaimUseCase {
       : `+${normalizePhoneAR(phoneForOtp)}`;
 
     try {
-      const { verificationSid } = await this.twilioVerify.startVerification(phoneE164);
+      const { verificationSid } = await this.twilioVerify.startVerification(phoneE164, {
+        workerId: candidateWorkerId,
+        fichaIsTest: candidate.isTest === true,
+        tokenEmail: input.email,
+      });
 
       log.info({
         msg: 'claim_start_otp_dispatched',

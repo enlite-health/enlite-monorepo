@@ -43,6 +43,7 @@
  *   E2E_PG_CONTAINER=027fase4-postgres PW_BASE_URL=http://localhost:5173 \
  *     pnpm test:e2e:integration --grep "case-select"
  */
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { execSync } from 'child_process';
 
@@ -156,7 +157,7 @@ function cleanup(): void {
 // auto-provisionamento quando NÃO acha a linha por firebase_uid). ─────────────
 
 function buildMockToken(uid: string, email: string, role: string): string {
-  return 'mock_' + Buffer.from(JSON.stringify({ uid, email, role }), 'utf-8').toString('base64');
+  return tokenFor({ uid, email, role });
 }
 
 function buildFakeIdToken(uid: string, email: string): string {

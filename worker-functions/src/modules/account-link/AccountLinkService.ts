@@ -16,7 +16,8 @@ import { logger } from '@shared/logging';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId } from '@shared/database/resolveCanonicalWorkerId';
-import { TwilioVerifyService, otpCheckIsForPhone } from '../auth/infrastructure/TwilioVerifyService';
+import { TwilioVerifyService, otpCheckIsForPhone, type ITwilioVerifyService } from '../auth/infrastructure/TwilioVerifyService';
+import { IsTestOtpGuardedVerify } from '../auth/application/IsTestOtpGuard';
 import { ExecuteAdminMergeUseCase } from '../../application/dedup/ExecuteAdminMergeUseCase';
 import { buildFieldComparisons } from '../../application/dedup/dedupFieldComparison';
 import { SYNTHETIC_AUTH_UID_PREFIXES } from '../../infrastructure/services/WorkerPhoneMergeTypes';
@@ -42,23 +43,25 @@ interface WorkerLite {
   auth_uid: string | null;
   phone: string | null;
   updated_at: Date;
+  is_test?: boolean;
 }
 
 export class AccountLinkService {
   private readonly encryption: KMSEncryptionService;
-  private readonly twilio: TwilioVerifyService;
+  private readonly twilio: ITwilioVerifyService;
   private readonly adminMerge: ExecuteAdminMergeUseCase;
 
   constructor(
     private readonly pool: Pool,
     deps?: {
       encryption?: KMSEncryptionService;
-      twilio?: TwilioVerifyService;
+      twilio?: ITwilioVerifyService;
       adminMerge?: ExecuteAdminMergeUseCase;
     },
   ) {
     this.encryption = deps?.encryption ?? new KMSEncryptionService();
-    this.twilio = deps?.twilio ?? new TwilioVerifyService();
+    // Ponto único de envio do código: a guarda de OTP de teste decora a porta (FR-95/DP-23).
+    this.twilio = new IsTestOtpGuardedVerify(deps?.twilio ?? new TwilioVerifyService());
     this.adminMerge = deps?.adminMerge ?? new ExecuteAdminMergeUseCase(pool);
   }
 
@@ -80,7 +83,7 @@ export class AccountLinkService {
 
   // ── start — OTP pro número DA CONTA ANTIGA, só na intenção ──────────────
 
-  async start(authUid: string, phoneEntered: string): Promise<AccountLinkStartResult> {
+  async start(authUid: string, phoneEntered: string, tokenEmail?: string | null): Promise<AccountLinkStartResult> {
     const me = await this.resolveLoggedWorker(authUid);
     const owner = await this.resolvePhoneOwner(phoneEntered, me.id);
 
@@ -92,7 +95,7 @@ export class AccountLinkService {
     // pro digitado no request.
     const phoneForOtp = owner.phone!;
     const phoneE164 = phoneForOtp.startsWith('+') ? phoneForOtp : `+${normalizePhoneAR(phoneForOtp) ?? phoneForOtp}`;
-    const { verificationSid } = await this.twilio.startVerification(phoneE164);
+    const { verificationSid } = await this.twilio.startVerification(phoneE164, { workerId: owner.id, fichaIsTest: owner.is_test === true, tokenEmail });
 
     await recordAccountLinkEvent(this.pool, {
       event: 'started', workerId: me.id, otherWorkerId: owner.id,
@@ -104,11 +107,24 @@ export class AccountLinkService {
 
   // ── confirm — posse provada: REQUIRES_REVIEW | conflitos | merge direto ──
 
-  async confirm(authUid: string, phoneEntered: string, verificationSid: string, otp: string): Promise<AccountLinkConfirmResult> {
+  async confirm(
+    authUid: string,
+    phoneEntered: string,
+    verificationSid: string,
+    otp: string,
+    tokenEmail?: string | null,
+    // C-46/DT-50: `preview` valida o OTP e devolve o linkToken SEM merge (o merge é do finalize).
+    input: { preview?: boolean } = {},
+  ): Promise<AccountLinkConfirmResult> {
     const me = await this.resolveLoggedWorker(authUid);
     const owner = await this.resolvePhoneOwner(phoneEntered, me.id);
 
-    const check = await this.twilio.checkVerification(verificationSid, otp);
+    const check = await this.twilio.checkVerification(verificationSid, otp, {
+      workerId: owner.id,
+      tokenEmail,
+      // `owner` acabou de ser lido do banco por resolvePhoneOwner (inclui is_test) nesta mesma requisição.
+      fichaIsTest: async () => owner.is_test === true,
+    });
     if (!check.valid) {
       throw new AccountLinkError(check.status === 'expired' ? 'EXPIRED_OTP' : 'INVALID_OTP');
     }
@@ -134,6 +150,13 @@ export class AccountLinkService {
     }
 
     const conflicts = await this.buildWorkerConflicts(me.id, owner.id);
+    if (input.preview) {
+      const linkToken = signLinkToken({
+        purpose: 'finalize', survivorId: me.id, absorbedId: owner.id,
+        exp: Date.now() + FINALIZE_TOKEN_TTL_MS,
+      });
+      return { status: 'preview', conflicts, linkToken, accounts: { current: me.id, other: owner.id } };
+    }
     if (conflicts.length > 0) {
       const linkToken = signLinkToken({
         purpose: 'finalize', survivorId: me.id, absorbedId: owner.id,
@@ -196,11 +219,28 @@ export class AccountLinkService {
     });
 
     // Email de aviso com undo assinado (7d) — best-effort; falha não desfaz o merge.
+    // FR-95/DP-23: absorvida `is_test` não manda e-mail (o e-mail de teste não chama o provedor real).
     if (auditId != null) {
-      await sendLinkedNoticeEmail(this.pool, { survivorId, absorbedId, mergeAuditId: auditId });
+      const absorbed = await this.fetchAbsorbedFlags(absorbedId);
+      if (!absorbed.isTest) {
+        await sendLinkedNoticeEmail(this.pool, { survivorId, absorbedId, mergeAuditId: auditId });
+      } else {
+        await recordAccountLinkEvent(this.pool, {
+          event: 'notice_email_skipped', workerId: survivorId, otherWorkerId: absorbedId,
+          mergeAuditId: auditId, detail: { reason: 'is_test' },
+        });
+      }
     }
 
     return { status: 'merged', recovered, workerStatus };
+  }
+
+  /** Marca de teste da ficha absorvida (a linha continua existindo, com `merged_into_id`). Sem linha = não é teste. */
+  private async fetchAbsorbedFlags(absorbedId: string): Promise<{ isTest: boolean }> {
+    const res = await this.pool.query<{ is_test: boolean }>(
+      `SELECT is_test FROM workers WHERE id = $1::uuid`, [absorbedId],
+    );
+    return { isTest: res.rows[0]?.is_test === true };
   }
 
   private async fetchRecovered(auditId: number): Promise<Record<string, number>> {
@@ -245,7 +285,7 @@ export class AccountLinkService {
     if (candidates.length === 0) throw new AccountLinkError('NO_CONFLICT');
 
     const res = await this.pool.query<WorkerLite>(
-      `SELECT id, email, auth_uid, phone, updated_at
+      `SELECT id, email, auth_uid, phone, updated_at, is_test
        FROM workers
        WHERE phone = ANY($1::text[])
          AND merged_into_id IS NULL

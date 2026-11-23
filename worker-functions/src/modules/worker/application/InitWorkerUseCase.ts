@@ -6,6 +6,7 @@ import { logger } from '@shared/logging';
 import { resourceIdHash } from '@shared/audit/resourceAccessLog';
 import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
+import { isEnliteTestEmail } from '@shared/utils/testAccountEmail';
 import { isClaimableWorker, isImportedWorker } from './isClaimableWorker';
 import { ITwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
 
@@ -38,10 +39,10 @@ export class InitWorkerUseCase {
     }
 
     if (existingWorkerResult.getValue() !== null) {
-      return Result.ok<InitWorkerOutput>({
-        status: 'ok',
-        worker: existingWorkerResult.getValue()!,
-      });
+      const found = existingWorkerResult.getValue()!;
+      // FR-88/C-43: com telefone no payload, a ficha achada por auth_uid passa pelo ramo do telefone.
+      if (data.phone) return this.applyPhone(found, data.phone, data.email);
+      return Result.ok<InitWorkerOutput>({ status: 'ok', worker: found });
     }
 
     const emailCheckResult = await this.workerRepository.findByEmail(data.email);
@@ -62,7 +63,7 @@ export class InitWorkerUseCase {
         // telefone DA FICHA (claim, amarrado ao telefone pela DP-21) quando a ficha é reclamável;
         // senão, EMAIL_NOT_VERIFIED.
         if (!data.emailVerified) {
-          return this.relinkWithoutVerifiedEmail(existingByEmail);
+          return this.relinkWithoutVerifiedEmail(existingByEmail, data.email);
         }
         const phoneToSet = !existingByEmail.phone && data.phone ? data.phone : undefined;
         const updateResult = await this.workerRepository.updateAuthUid(
@@ -102,7 +103,7 @@ export class InitWorkerUseCase {
         const existingByPhone = phoneCheckResult.getValue()!;
 
         if (isImportedWorker(existingByPhone.authUid)) {
-          return this.startClaimOtp(existingByPhone, existingByPhone.phone ?? phoneInput);
+          return this.startClaimOtp(existingByPhone, existingByPhone.phone ?? phoneInput, data.email);
         }
       }
     }
@@ -118,6 +119,8 @@ export class InitWorkerUseCase {
       whatsappPhone: data.whatsappPhone,
       lgpdOptIn: data.lgpdOptIn,
       country: data.country,
+      // C-50/DP-23: conta de E2E nasce is_test no próprio INSERT (e-mail do token, minúsculas).
+      isTest: isEnliteTestEmail(data.email),
     });
 
     if (createResult.isFailure) {
@@ -130,12 +133,59 @@ export class InitWorkerUseCase {
   }
 
   /**
+   * Telefone de worker já existente (FR-88/C-43). Só grava se a ficha NÃO tinha telefone; o `code`
+   * decide a tela no app. Ficha importada com esse celular → OTP do claim; conta real → PHONE_IN_USE.
+   */
+  private async applyPhone(found: Worker, phoneInput: string, tokenEmail: string): Promise<Result<InitWorkerOutput>> {
+    const worker = { ...found, phone: found.phone ? found.phone : null };
+    if (worker.phone === null) {
+      const normalized = normalizePhoneAR(phoneInput);
+      if (normalized.length < 10 || normalized.length > 15) {
+        return Result.ok<InitWorkerOutput>({ status: 'phone_rejected', code: 'INVALID_PHONE' });
+      }
+
+      const holderResult = await this.workerRepository.findByPhoneCandidates(generatePhoneCandidates(phoneInput));
+      if (holderResult.isFailure) return Result.fail<InitWorkerOutput>(holderResult.error!);
+      const holder = holderResult.getValue();
+      if (holder !== null && holder.id !== found.id) {
+        if (!isImportedWorker(holder.authUid)) {
+          return Result.ok<InitWorkerOutput>({ status: 'phone_rejected', code: 'PHONE_IN_USE' });
+        }
+        const claim = await this.startClaimOtp(holder, holder.phone ?? phoneInput, tokenEmail);
+        if (claim.isFailure) return claim;
+        return Result.ok<InitWorkerOutput>({ ...(claim.getValue() as InitWorkerOutput & { status: 'claim_pending' }), code: 'CLAIM_PENDING' });
+      }
+
+      let saved: Worker | null;
+      try {
+        saved = await this.workerRepository.setPhoneIfNull(found.id, normalized);
+      } catch (err: unknown) {
+        // DT-51: corrida de duas contas no mesmo celular. A mensagem do Postgres ecoa a linha (PII):
+        // nunca entra na resposta nem no log; só o código e o hash do id.
+        const pg = err as { code?: string; constraint?: string };
+        const log = logger.child({ source: 'InitWorkerUseCase:applyPhone', workerIdHash: resourceIdHash(found.id) });
+        if (pg.code === '23505' && pg.constraint === 'idx_workers_phone_unique') {
+          log.warn({ msg: 'worker_phone_unique_violation' });
+          return Result.ok<InitWorkerOutput>({ status: 'phone_rejected', code: 'PHONE_IN_USE' });
+        }
+        log.error({ msg: 'worker_phone_update_failed', pgCode: pg.code });
+        return Result.fail<InitWorkerOutput>('PHONE_UPDATE_FAILED');
+      }
+      if (saved === null) return Result.ok<InitWorkerOutput>({ status: 'ok', worker: found, code: 'PHONE_LOCKED' });
+      return Result.ok<InitWorkerOutput>({ status: 'ok', worker: saved, code: 'OK' });
+    }
+    // Ficha com telefone: o MESMO número é idempotente (OK, nada gravado); outro número → PHONE_LOCKED.
+    const same = normalizePhoneAR(worker.phone) === normalizePhoneAR(phoneInput);
+    return Result.ok<InitWorkerOutput>({ status: 'ok', worker: found, code: same ? 'OK' : 'PHONE_LOCKED' });
+  }
+
+  /**
    * Ficha achada por e-mail, de outro login, e token sem `email_verified` (DP-20). Ficha
    * reclamável COM telefone → `claim_pending` (OTP ao telefone dela; o front já abre o modal).
    * Sem telefone, ou não reclamável (login real, `talentum_`, sobrevivente que absorveu login
    * real: o confirm do claim recusaria) → EMAIL_NOT_VERIFIED. Nunca religa nem cria ficha.
    */
-  private async relinkWithoutVerifiedEmail(ficha: Worker): Promise<Result<InitWorkerOutput>> {
+  private async relinkWithoutVerifiedEmail(ficha: Worker, tokenEmail: string): Promise<Result<InitWorkerOutput>> {
     const log = logger.child({ source: 'InitWorkerUseCase:execute', workerIdHash: resourceIdHash(ficha.id) });
     const blocked = (): Result<InitWorkerOutput> => {
       log.warn({ msg: 'worker_relink_blocked_email_not_verified', hasPhone: Boolean(ficha.phone) });
@@ -148,11 +198,11 @@ export class InitWorkerUseCase {
     if (!claimable.getValue()) return blocked();
 
     log.info({ msg: 'worker_relink_email_not_verified_claim_otp' });
-    return this.startClaimOtp(ficha, ficha.phone);
+    return this.startClaimOtp(ficha, ficha.phone, tokenEmail);
   }
 
   /** OTP ao telefone DA FICHA (nunca o do payload — anti-hijack) e `claim_pending`. */
-  private async startClaimOtp(ficha: Worker, phoneForOtp: string): Promise<Result<InitWorkerOutput>> {
+  private async startClaimOtp(ficha: Worker, phoneForOtp: string, tokenEmail: string): Promise<Result<InitWorkerOutput>> {
     const phoneE164 = phoneForOtp.startsWith('+') ? phoneForOtp : `+${normalizePhoneAR(phoneForOtp)}`;
 
     logger.child({ source: 'InitWorkerUseCase:execute', workerId: ficha.id }).info({
@@ -174,7 +224,11 @@ export class InitWorkerUseCase {
     }
 
     try {
-      const { verificationSid } = await this.twilioVerify.startVerification(phoneE164);
+      const { verificationSid } = await this.twilioVerify.startVerification(phoneE164, {
+        workerId: ficha.id,
+        fichaIsTest: ficha.isTest === true,
+        tokenEmail,
+      });
       return Result.ok<InitWorkerOutput>({
         status: 'claim_pending',
         candidateWorkerId: ficha.id,

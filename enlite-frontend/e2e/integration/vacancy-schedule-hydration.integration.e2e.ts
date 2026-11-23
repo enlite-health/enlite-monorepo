@@ -18,6 +18,7 @@
  * (`_worktrees/completar-vacante-f4`). GET/PUT de vaga são o backend REAL, sem mock — é
  * exatamente esse round-trip que o bug quebrava.
  */
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { execSync } from 'child_process';
 import {
@@ -66,7 +67,7 @@ const MOCK_ADMIN_USER = {
   role: 'admin',
   country: 'AR',
 };
-const MOCK_TOKEN = 'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN_USER), 'utf-8').toString('base64');
+const MOCK_TOKEN = tokenFor(MOCK_ADMIN_USER);
 
 const FAKE_ID_TOKEN =
   'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' +
