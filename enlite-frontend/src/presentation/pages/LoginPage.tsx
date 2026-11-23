@@ -128,9 +128,15 @@ export function LoginPage() {
               </FormField>
 
               <div className="text-right">
-                <a href="#" className="font-lexend text-sm font-medium text-primary hover:underline">
+                {/* O e-mail digitado vai por `state` do router, não na URL: query string é PII em log/analytics. */}
+                <Link
+                  to="/forgot-password"
+                  state={{ email }}
+                  data-testid="forgot-password-link"
+                  className="font-lexend text-sm font-medium text-primary hover:underline"
+                >
                   {t('login.forgotPassword')}
-                </a>
+                </Link>
               </div>
             </div>
 

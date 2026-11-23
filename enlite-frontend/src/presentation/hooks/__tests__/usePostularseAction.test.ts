@@ -75,6 +75,7 @@ describe('usePostularseAction', () => {
       login: vi.fn(),
       loginWithGoogle: vi.fn(),
       register: vi.fn(),
+      sendPasswordReset: vi.fn(),
       logout: vi.fn(),
     });
 
@@ -142,6 +143,7 @@ describe('usePostularseAction', () => {
         login: vi.fn(),
         loginWithGoogle: vi.fn(),
         register: vi.fn(),
+        sendPasswordReset: vi.fn(),
         logout: vi.fn(),
       });
     });

@@ -9,6 +9,7 @@ interface UseAuthReturn {
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<User>;
   register: (email: string, password: string) => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -19,6 +20,7 @@ export function useAuth(): UseAuthReturn {
   const login = useAuthStore((state) => state.login);
   const loginWithGoogle = useAuthStore((state) => state.loginWithGoogle);
   const register = useAuthStore((state) => state.register);
+  const sendPasswordReset = useAuthStore((state) => state.sendPasswordReset);
   const logout = useAuthStore((state) => state.logout);
   const initialize = useAuthStore((state) => state.initialize);
   
@@ -34,6 +36,7 @@ export function useAuth(): UseAuthReturn {
     login,
     loginWithGoogle,
     register,
+    sendPasswordReset,
     logout,
   };
 }

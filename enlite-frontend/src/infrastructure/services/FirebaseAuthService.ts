@@ -8,6 +8,7 @@ import {
   User as FirebaseUser,
   getIdToken,
   sendEmailVerification,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import { getFirebaseAuth } from '../config/firebase';
 import { User } from '@domain/entities/User';
@@ -25,14 +26,24 @@ interface MockAuthState {
   };
 }
 
-/** Link de verificação de e-mail: um lugar só (cadastro e reenvio, DP-20). */
-function emailVerificationSettings() {
+/** Mesmo molde para os e-mails de ação do Firebase (verificação e recuperação de senha): muda só a URL de retorno. */
+function actionCodeSettings(continuePath: string) {
   return {
-    url: `${window.location.origin}/login?verified=true`,
+    url: `${window.location.origin}${continuePath}`,
     handleCodeInApp: true,
     iOS: { bundleId: 'com.enlite.app' },
     android: { packageName: 'com.enlite.app', installApp: false, minimumVersion: '1' },
   };
+}
+
+/** Link de verificação de e-mail: um lugar só (cadastro e reenvio, DP-20). */
+function emailVerificationSettings() {
+  return actionCodeSettings('/login?verified=true');
+}
+
+/** Link de recuperação de senha: a pessoa define a senha nova em `/auth/action` e volta ao login. */
+function passwordResetSettings() {
+  return actionCodeSettings('/login');
 }
 
 export class FirebaseAuthService {
@@ -298,6 +309,14 @@ export class FirebaseAuthService {
     const currentUser = getFirebaseAuth().currentUser;
     if (!currentUser) throw new Error('No authenticated user');
     await sendEmailVerification(currentUser, emailVerificationSettings());
+  }
+
+  /**
+   * Envia o link de recuperação de senha. Não decide o que mostrar à pessoa: relança o erro do Firebase
+   * (`auth/user-not-found`, `auth/invalid-email`, ...) para quem chama escolher a resposta neutra.
+   */
+  async sendPasswordResetEmail(email: string): Promise<void> {
+    await sendPasswordResetEmail(getFirebaseAuth(), email, passwordResetSettings());
   }
 
   /**
