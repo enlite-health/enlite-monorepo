@@ -29,15 +29,21 @@ const FORMATO = /Por favor, ingrese un correo electrónico válido/;
 
 const json = { 'Content-Type': 'application/json' };
 
-/** Redireciona o Identity Toolkit do navegador ao emulador real; a resposta é a dele. */
+/**
+ * Redireciona o Identity Toolkit e o Secure Token do navegador ao emulador real; a resposta é a dele. O emulador atende esses
+ * hosts pelo PRIMEIRO segmento do caminho (`/identitytoolkit.googleapis.com/v1/...`, como os helpers abaixo chamam): sem ele a
+ * rota dá 404 (medido no CI: `POST 127.0.0.1:9099/v1/accounts:sendOobCode` → 404 Not Found).
+ */
 async function apontarAoEmulador(page: Page): Promise<{ sendOobCode: () => number }> {
   let sendOobCode = 0;
-  await page.route('**/identitytoolkit.googleapis.com/**', async (route: Route) => {
+  const redirecionar = async (route: Route): Promise<void> => {
     const original = new URL(route.request().url());
     if (original.pathname.includes('sendOobCode')) sendOobCode += 1;
-    const response = await route.fetch({ url: `${EMULATOR}${original.pathname}${original.search}` });
+    const response = await route.fetch({ url: `${EMULATOR}/${original.hostname}${original.pathname}${original.search}` });
     await route.fulfill({ response });
-  });
+  };
+  await page.route('**/identitytoolkit.googleapis.com/**', redirecionar);
+  await page.route('**/securetoken.googleapis.com/**', redirecionar);
   return { sendOobCode: () => sendOobCode };
 }
 
