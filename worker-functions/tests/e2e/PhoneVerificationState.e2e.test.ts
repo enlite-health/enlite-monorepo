@@ -1,8 +1,11 @@
 /**
  * T-F3c-131 — "verificado" é DERIVADO (fn_worker_phone_is_verified / fn_worker_phone_verification_state), contra POSTGRES REAL.
  */
+import fs from 'fs';
+import path from 'path';
 import { Pool } from 'pg';
 import { novaFicha, gravarVerificacao, novoTelefone } from './helpers/phoneVerificationFixtures';
+import { startPhoneVerificationHarness } from './helpers/phoneVerificationHarness';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -105,6 +108,66 @@ describe('estado derivado do celular verificado', () => {
     } finally {
       await c.query('ROLLBACK');
       c.release();
+    }
+  });
+});
+
+describe('T-F3c-166 o mesmo desafio não prova duas fichas; a prova sai com a ficha', () => {
+  const MIGRATION = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '594_phone_verification.sql'), 'utf8');
+
+  it('T-F3c-166 confirmar o mesmo desafio 2x: OTP_ALREADY_USED, e UMA ficha só guarda aquele phone_verified_otp_challenge_id', async () => {
+    const h = await startPhoneVerificationHarness();
+    try {
+      const a = await novaFicha(h.pool, { phone: null });
+      const phone = novoTelefone();
+      const caller = h.as(a.id);
+      const started = await caller.start({ phone });
+      const body = { phone, challengeId: started.json.data.challengeId, code: h.lastCode() };
+      expect((await caller.confirm(body)).status).toBe(200);
+
+      const again = await caller.confirm(body);
+      expect(again.status).toBe(400);
+      expect(again.json).toMatchObject({ code: 'OTP_ALREADY_USED' });
+      const holders = await h.pool.query(`SELECT count(*)::int AS n FROM workers WHERE phone_verified_otp_challenge_id = $1`, [body.challengeId]);
+      expect(holders.rows[0].n).toBe(1);
+
+      // a 2ª barreira, no banco: o índice único parcial da MIGRATION (recriado por ela) recusa outra ficha com o mesmo desafio
+      const c = await h.pool.connect();
+      try {
+        await c.query('BEGIN');
+        await c.query('DROP INDEX uq_workers_phone_verified_otp_challenge');
+        await c.query(MIGRATION);
+        const b = await novaFicha(c);
+        await expect(gravarVerificacao(c, b.id, body.challengeId)).rejects.toThrow(/uq_workers_phone_verified_otp_challenge/);
+      } finally {
+        await c.query('ROLLBACK');
+        c.release();
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('T-F3c-166 apagar a conta ("Eliminar mi cuenta"): as colunas phone_verified_* somem com a ficha, sem linha em outra tabela', async () => {
+    const pool = new Pool({ connectionString: DATABASE_URL });
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      const w = await novaFicha(c);
+      await gravarVerificacao(c, w.id);
+      const norm = (await c.query(`SELECT phone_verified_normalized AS n FROM workers WHERE id = $1`, [w.id])).rows[0].n as string;
+      expect(norm).toMatch(/^\d+$/);
+      await c.query(`DELETE FROM workers WHERE id = $1`, [w.id]);
+      expect((await c.query(`SELECT count(*)::int AS n FROM workers WHERE phone_verified_normalized = $1`, [norm])).rows[0].n).toBe(0);
+      // nenhuma outra tabela guarda a prova (seria dado fora do alcance da exclusão)
+      const outras = await c.query(
+        `SELECT table_name FROM information_schema.columns WHERE column_name LIKE 'phone\\_verified\\_%' AND table_name <> 'workers'`,
+      );
+      expect(outras.rows).toEqual([]);
+    } finally {
+      await c.query('ROLLBACK');
+      c.release();
+      await pool.end();
     }
   });
 });
