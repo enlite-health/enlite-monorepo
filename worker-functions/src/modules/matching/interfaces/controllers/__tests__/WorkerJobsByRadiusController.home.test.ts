@@ -22,6 +22,13 @@ describe('WorkerJobsByRadiusController — view=home', () => {
     expect(execute).toHaveBeenCalledWith('u', 10, { view: 'home' });
     expect(json).toHaveBeenCalledWith({ items: [], center: OK.center, applied: OK.applied, missing: [] });
   });
+  it('096 fallback: `nearest` sai na resposta da view=home e NUNCA na rota sem view', async () => {
+    const near = [{ id: 'n1', distance_km: 197.2 }];
+    const home = await call({ radius_km: '100', view: 'home' }, { ...OK, nearest: near });
+    expect(home.json).toHaveBeenCalledWith({ items: [], center: OK.center, applied: OK.applied, missing: [], nearest: near });
+    const plain = await call({ radius_km: '100' }, { ...OK, nearest: near });
+    expect(plain.json).toHaveBeenCalledWith({ items: [] });
+  });
   it.each(['', 'HOME', 'mobile', 'home2'])('view=%p → ignorada (não é erro): resposta só com items', async (v) => {
     const { execute, json } = await call({ radius_km: '10', view: v }, { ok: true, items: [] });
     expect(execute).toHaveBeenCalledWith('u', 10);

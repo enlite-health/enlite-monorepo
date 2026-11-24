@@ -7,7 +7,7 @@ import { JobsEmbeddedSection } from '@presentation/components/features/worker/Jo
 import { JobsRadiusMap } from '@presentation/components/features/worker/JobsRadiusMap';
 import { CompleteProfileNotice } from '@presentation/components/features/worker/JobsRadiusMap/CompleteProfileNotice';
 import { HomeLoadErrorNotice } from '@presentation/components/features/worker/JobsRadiusMap/HomeLoadErrorNotice';
-import { DEFAULT_RADIUS_KM, itemsWithin } from '@presentation/components/features/worker/JobsRadiusMap/radiusScope';
+import { DEFAULT_RADIUS_KM, itemsWithin, nearestFallback } from '@presentation/components/features/worker/JobsRadiusMap/radiusScope';
 import { useWorkerJobsByRadius } from '@presentation/hooks/useWorkerJobsByRadius';
 import type { JobRadiusKm } from '@domain/entities/WorkerJobByRadius';
 import { useWorkerNavItems } from '@presentation/config/workerNavigation';
@@ -33,9 +33,12 @@ export const WorkerHome = (): JSX.Element => {
   const [attempt, setAttempt] = useState(0);
   const radiusState = useWorkerJobsByRadius(Boolean(user?.id), attempt);
   const [radiusKm, setRadiusKm] = useState<JobRadiusKm>(DEFAULT_RADIUS_KM);
+  // Nada em 100 km mas há vagas mais longe (`nearest`): a lista mostra as mais próximas, em vez de vazia.
+  const nearest = radiusState.status === 'ok' ? nearestFallback(radiusState.data) : null;
   const radiusScope = useMemo(() => {
     if (radiusState.status !== 'ok') return null;
-    return Object.fromEntries(itemsWithin(radiusState.data.items, radiusKm).map((i) => [i.id, i.distance_km]));
+    const scoped = nearestFallback(radiusState.data) ?? itemsWithin(radiusState.data.items, radiusKm);
+    return Object.fromEntries(scoped.map((i) => [i.id, i.distance_km]));
   }, [radiusState, radiusKm]);
 
   // Completude SÓ do servidor (Fase 1/DD1) — `missingFields` é a MESMA
@@ -93,6 +96,7 @@ export const WorkerHome = (): JSX.Element => {
       {radiusState.status !== 'incomplete' && radiusState.status !== 'error' && radiusState.status !== 'loading' && (
         <JobsEmbeddedSection
           radiusScope={radiusScope}
+          nearestFallback={nearest !== null}
           isRegistrationComplete={isFullyRegistered}
           missingFields={workerData?.missingFields ?? null}
           profession={workerData?.profession}

@@ -28,6 +28,22 @@ describe('WorkerJobsByRadiusReader — view=home', () => {
     expect(sql.lastIndexOf('ANY(')).toBeLessThan(sql.lastIndexOf('ORDER BY'));
   });
 
+  it('096 sem teto de raio (null): MESMOS filtros e perfil, só sai o ST_DWithin e o param do raio; com raio o SQL segue igual à fixture', () => {
+    const profile = { hasAvailability: true, occupation: 'AT' };
+    const capped = buildJobsByRadiusSql(W, 100, profile);
+    const open = buildJobsByRadiusSql(W, null, profile);
+    expect(capped.sql).toContain('ST_DWithin');
+    expect(open.sql).not.toContain('ST_DWithin');
+    expect(open.sql.replace(/\n\s*AND ST_DWithin\([^\n]*\* 1000\)/, '')).toBe(
+      capped.sql.replace(/\n\s*AND ST_DWithin\([^\n]*\* 1000\)/, '').replace(/\$4/g, '$3'),
+    );
+    expect(open.sql).toContain('ORDER BY d.meters ASC');
+    expect(capped.params).toEqual(['AR', W, 100, 'AT']);
+    expect(open.params).toEqual(['AR', W, 'AT']);
+    // o filtro público e o realm de teste continuam no SQL sem teto
+    expect(open.sql).toContain('jp.deleted_at IS NULL');
+  });
+
   it('com perfil sem profissão: params não ganham occupation', () => {
     expect(buildJobsByRadiusSql(W, 5, { hasAvailability: false, occupation: null }).params).toEqual(['AR', W, 5]);
   });

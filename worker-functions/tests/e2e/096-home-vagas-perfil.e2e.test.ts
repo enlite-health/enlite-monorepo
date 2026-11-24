@@ -132,7 +132,10 @@ describe('096 home do prestador: vagas por raio com perfil de match @integration
       );
       for (const k of proibidas) expect(item).not.toHaveProperty(k);
     }
-    expect(Object.keys(r.data).sort()).toEqual(['applied', 'center', 'items', 'missing']);
+    expect(Object.keys(r.data).sort()).toEqual(['applied', 'center', 'items', 'missing', 'nearest']);
+    // há vaga no raio de 100 km ⇒ sem fallback
+    expect(r.data.items.length).toBeGreaterThan(0);
+    expect(r.data.nearest).toEqual([]);
   });
 
   it('view desconhecido é ignorado (não é erro): resposta igual à sem view', async () => {
@@ -166,6 +169,30 @@ describe('096 home do prestador: vagas por raio com perfil de match @integration
     expect(r.data.items).toEqual([]);
     expect(r.data.missing).toEqual(missing);
     expect('center' in r.data).toBe(temCenter);
+  });
+
+  it('096 fallback: prestadora longe de tudo (~1000 km) → items vazio e nearest com até 10 vagas por distância, mesmo formato, sem lat/lng', async () => {
+    const w = await createWorker(api, 'longe');
+    extras.push(w);
+    const t = await getWorkerToken(api, w);
+    await saveServiceArea(api, t);
+    await saveAvailability(api, t);
+    await pool.query(`UPDATE workers SET occupation = 'AT', sex_encrypted = $2 WHERE id = $1`, [w.id, Buffer.from('FEMALE', 'utf8').toString('base64')]);
+    // move a zona viva para Mendoza; `location` é coluna GERADA de lat/lng (migration 084), então só lat/lng se atualizam
+    await pool.query(
+      `UPDATE worker_service_areas SET latitude = -32.89, longitude = -68.84
+       WHERE worker_id = $1 AND deleted_at IS NULL`,
+      [w.id],
+    );
+    const r = await api.get('/api/workers/me/jobs?radius_km=100&view=home', { headers: { Authorization: `Bearer ${t}` } });
+    expect(r.status).toBe(200);
+    expect(r.data.items).toEqual([]);
+    expect(r.data.nearest.length).toBeGreaterThan(0);
+    expect(r.data.nearest.length).toBeLessThanOrEqual(10);
+    const dist: number[] = r.data.nearest.map((i: { distance_km: number }) => i.distance_km);
+    expect(dist).toEqual([...dist].sort((x, y) => x - y));
+    expect(dist[0]).toBeGreaterThan(100);
+    for (const item of r.data.nearest) for (const k of ['lat', 'lng', 'address_formatted', 'required_sex']) expect(item).not.toHaveProperty(k);
   });
 
   it('cadastro completo → missing []', async () => {

@@ -50,12 +50,17 @@ describe('contrato 096: view=home', () => {
   });
 
   it('CA-3 center, applied e missing passam no schema, strict; center é opcional (falta o endereço)', () => {
-    const ok = { center: { lat: -37.977, lng: -57.551 }, applied: { schedule: true, profession: false, sex: true }, missing: ['profession'] };
+    const ok = { center: { lat: -37.977, lng: -57.551 }, applied: { schedule: true, profession: false, sex: true }, missing: ['profession'], nearest: [] };
     expect(WorkerJobsByRadiusHomeExtras.strict().safeParse(ok).success).toBe(true);
     const { center: _c, ...semEndereco } = { ...ok, missing: ['address'] };
     expect(WorkerJobsByRadiusHomeExtras.strict().safeParse(semEndereco).success).toBe(true);
     expect(WorkerJobsByRadiusHomeExtras.strict().safeParse({ ...ok, address: 'x' }).success).toBe(false);
     expect(WorkerJobsByRadiusHomeExtras.strict().safeParse({ ...ok, missing: ['clinical_text'] }).success).toBe(false);
+    // 096 fallback: `nearest` é lista de itens no MESMO formato de `items` (strict: nada de lat/lng nem endereço)
+    const item = { id: '11111111-1111-4111-8111-111111111111', case_number: 1, vacancy_number: 1, title: 't', service: null, neighborhood: null, city: null, state: null, schedule: null, worker_type: [], distance_km: 197.2, already_applied: false };
+    expect(WorkerJobsByRadiusHomeExtras.strict().safeParse({ ...ok, nearest: [item] }).success).toBe(true);
+    expect(WorkerJobByRadiusItem.strict().safeParse({ ...item, lat: 1 }).success).toBe(false); // `nearest` reusa o schema do item
+    expect(WorkerJobsByRadiusHomeExtras.strict().safeParse({ ...ok, nearest: undefined }).success).toBe(false);
     expect(Object.keys(WorkerJobByRadiusItem.shape)).not.toEqual(expect.arrayContaining(['lat', 'lng']));
   });
 });

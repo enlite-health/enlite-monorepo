@@ -104,6 +104,8 @@ interface JobsEmbeddedSectionProps {
    * pública inteira, como sempre. Os filtros da 097 valem sobre esta lista.
    */
   radiusScope?: Record<string, number> | null;
+  /** 096: `radiusScope` vem das vagas MAIS PRÓXIMAS (nada no raio); a lista ganha o cabeçalho que explica. */
+  nearestFallback?: boolean;
 }
 
 export const JobsEmbeddedSection = ({
@@ -111,6 +113,7 @@ export const JobsEmbeddedSection = ({
   missingFields = null,
   profession = null,
   radiusScope = null,
+  nearestFallback = false,
 }: JobsEmbeddedSectionProps): JSX.Element => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -318,6 +321,12 @@ export const JobsEmbeddedSection = ({
           </button>
         </div>
       </div>
+
+      {nearestFallback && (
+        <p data-testid="jobs-nearest-header" className="px-6 pb-3 font-lexend text-sm font-medium text-[#180149]">
+          {t('jobs.nearestHeader')}
+        </p>
+      )}
 
       {/* Jobs List */}
       <div

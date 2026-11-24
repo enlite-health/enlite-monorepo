@@ -28,6 +28,7 @@ const data = (items: WorkerJobByRadius[], schedule = true): WorkerJobsByRadius &
   items, center: { lat: -34.6, lng: -58.38 }, applied: { schedule, profession: true, sex: true }, missing: [],
 });
 const ok = (items: WorkerJobByRadius[], schedule = true): WorkerJobsByRadiusState => ({ status: 'ok', data: data(items, schedule) });
+const okNearest = (nearest: WorkerJobByRadius[]): WorkerJobsByRadiusState => ({ status: 'ok', data: { ...data([]), nearest } });
 
 beforeEach(() => { pointsMapProps.mockClear(); });
 
@@ -83,6 +84,28 @@ describe('JobsRadiusMap', () => {
     render(<JobsRadiusMap state={ok([])} radiusKm={100} onRadiusChange={vi.fn()} />);
     expect(screen.getByTestId('radius-empty')).toBeInTheDocument();
     expect(screen.queryByTestId('radius-widen')).not.toBeInTheDocument();
+  });
+
+  it.each([5, 10, 50, 100] as const)('fallback (nada em 100 km, `nearest` cheio), slider em %i km: "Sin vacantes en 100 km" + a mais próxima em km inteiro, SEM "Ampliar"', (r) => {
+    render(<JobsRadiusMap state={okNearest([job('n1', 196.6, 'Luján'), job('n2', 230, 'Pilar')])} radiusKm={r} onRadiusChange={vi.fn()} />);
+    expect(screen.getByTestId('radius-empty')).toHaveTextContent('jobsRadius.empty:{"n":100}');
+    expect(screen.getByTestId('radius-nearest-hint')).toHaveTextContent('jobsRadius.nearestHint:{"km":197}');
+    expect(screen.queryByTestId('radius-widen')).not.toBeInTheDocument();
+    const p = pointsMapProps.mock.calls[pointsMapProps.mock.calls.length - 1][0];
+    expect(p.points).toEqual([]); // o mapa não pina vaga distante
+  });
+
+  it('nada em 100 km e `nearest` vazio: vazio de sempre, sem hint e sem "Ampliar" em raio < 100', () => {
+    render(<JobsRadiusMap state={okNearest([])} radiusKm={10} onRadiusChange={vi.fn()} />);
+    expect(screen.getByTestId('radius-empty')).toHaveTextContent('jobsRadius.empty:{"n":10}');
+    expect(screen.queryByTestId('radius-nearest-hint')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('radius-widen')).not.toBeInTheDocument();
+  });
+
+  it('há vaga no raio: `nearest` é ignorado, sem hint (comportamento inalterado)', () => {
+    render(<JobsRadiusMap state={{ status: 'ok', data: { ...data([job('1', 2, 'Palermo')]), nearest: [job('n', 300, 'X')] } }} radiusKm={10} onRadiusChange={vi.fn()} />);
+    expect(screen.queryByTestId('radius-empty')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('radius-nearest-hint')).not.toBeInTheDocument();
   });
 
   it('prestador sem disponibilidade declarada → aviso para completar; com disponibilidade, sem aviso', () => {

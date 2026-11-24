@@ -28,6 +28,8 @@ export interface WorkerJobsByRadius {
   applied: { schedule: boolean; profession: boolean; sex: boolean };
   /** O que falta no cadastro; `[]` = completo. Com item faltando, `items` vem vazio. */
   missing: MissingProfileItem[];
+  /** Fallback "sem vaga perto" (096): com `items` vazio, até 10 vagas mais próximas SEM teto de raio, por distância. `[]`/ausente = sem fallback. */
+  nearest?: WorkerJobByRadius[];
 }
 
 /** Paradas do controle de raio (D661), em km. */

@@ -18,6 +18,7 @@ import {
   readJobsByRadiusForHome,
   readWorkerHomeProfile,
   type WorkerJobByRadius,
+  type WorkerJobByRadiusWithSex,
 } from '../infrastructure/WorkerJobsByRadiusReader';
 import {
   missingProfileItems,
@@ -34,7 +35,14 @@ export interface HomeExtras {
   applied: MatchProfileApplied;
   /** O que falta no cadastro para mostrar mapa e vagas; `[]` = completo. Com item faltando, `items` vem vazio. */
   missing: MissingProfileItem[];
+  /**
+   * Fallback (096, "sem vaga perto"): só quando `items` vem vazio com cadastro completo — até `NEAREST_LIMIT` vagas visíveis que
+   * casam com o perfil, SEM teto de raio, da mais perto para a mais longe, no mesmo formato de `items`. Senão `[]`.
+   */
+  nearest: WorkerJobByRadius[];
 }
+
+export const NEAREST_LIMIT = 10;
 
 export type ListJobsByRadiusResult =
   | ({ ok: true; items: WorkerJobByRadius[] } & Partial<HomeExtras>)
@@ -104,15 +112,28 @@ export class ListJobsByRadiusForWorkerUseCase {
       sex: profile.sexEncrypted !== null,
     };
     if (missing.length > 0) {
-      return { ok: true, items: [], ...(profile.center ? { center: profile.center } : {}), applied, missing };
+      return { ok: true, items: [], ...(profile.center ? { center: profile.center } : {}), applied, missing, nearest: [] };
     }
-    const rows = await this.home.homeReader(client, { workerId, radiusKm, profile });
-    // 1 decrypt por requisição, e só se alguma vaga restringe sexo.
-    const restricts = rows.some((r) => r.required_sex !== null && r.required_sex !== '');
-    const workerSex = restricts && profile.sexEncrypted ? await this.home.decryptSex(profile.sexEncrypted) : null;
-    const items = rows
-      .filter((r) => passesSex(r.required_sex, workerSex))
-      .map(({ required_sex: _omit, ...item }) => item);
-    return { ok: true, items, center: profile.center as { lat: number; lng: number }, applied, missing };
+    const home = this.home;
+    // 1 decrypt por requisição (memoizado entre `items` e `nearest`), e só se alguma vaga restringe sexo.
+    let workerSex: string | null | undefined;
+    const sexOf = async (rows: WorkerJobByRadiusWithSex[]) => {
+      if (workerSex !== undefined) return workerSex;
+      const restricts = rows.some((r) => r.required_sex !== null && r.required_sex !== '');
+      if (!restricts) return null;
+      workerSex = profile.sexEncrypted ? await home.decryptSex(profile.sexEncrypted) : null;
+      return workerSex;
+    };
+    const visible = async (rows: WorkerJobByRadiusWithSex[]): Promise<WorkerJobByRadius[]> => {
+      const sex = await sexOf(rows);
+      return rows.filter((r) => passesSex(r.required_sex, sex)).map(({ required_sex: _omit, ...item }) => item);
+    };
+    const items = await visible(await home.homeReader(client, { workerId, radiusKm, profile }));
+    // Mesmo reader, mesmos filtros; só o teto de raio sai (`radiusKm: null`). O corte em 10 vem depois do filtro de sexo.
+    const nearest =
+      items.length === 0
+        ? (await visible(await home.homeReader(client, { workerId, radiusKm: null, profile }))).slice(0, NEAREST_LIMIT)
+        : [];
+    return { ok: true, items, center: profile.center as { lat: number; lng: number }, applied, missing, nearest };
   }
 }

@@ -45,13 +45,18 @@ export const ZONE_SQL =
 /** SQL da lista + parâmetros. Pura: o teste e o PREPARE leem o mesmo texto que roda. */
 export function buildJobsByRadiusSql(
   workerId: string,
-  radiusKm: number,
+  radiusKm: number | null,
   profile?: MatchProfile,
 ): { sql: string; params: unknown[] } {
   const pub = buildPublicJobsWhere(PublicJobsFiltersSchema.parse({}));
-  const params: unknown[] = [...pub.params, workerId, radiusKm];
+  // `radiusKm === null` (096, fallback "mais próximas"): MESMO SQL e MESMOS filtros, só sem o teto `ST_DWithin` e sem o param do raio.
+  const params: unknown[] = radiusKm === null ? [...pub.params, workerId] : [...pub.params, workerId, radiusKm];
   const w = `$${pub.params.length + 1}`;
   const r = `$${pub.params.length + 2}`;
+  const withinSql =
+    radiusKm === null
+      ? ''
+      : `\n         AND ST_DWithin(ST_SetSRID(ST_MakePoint(pa.lng::float8, pa.lat::float8), 4326)::geography, w.location, ${r} * 1000)`;
   // 096 (`view=home`): sem `profile` os dois fragmentos são '' e o SQL é byte a byte o de antes (CA-1).
   let profileWhere = '';
   let profileSelect = '';
@@ -95,8 +100,7 @@ export function buildJobsByRadiusSql(
        CROSS JOIN LATERAL (
          SELECT ST_Distance(ST_SetSRID(ST_MakePoint(pa.lng::float8, pa.lat::float8), 4326)::geography, w.location) AS meters
        ) d
-       WHERE pa.lat IS NOT NULL AND pa.lng IS NOT NULL
-         AND ST_DWithin(ST_SetSRID(ST_MakePoint(pa.lng::float8, pa.lat::float8), 4326)::geography, w.location, ${r} * 1000)
+       WHERE pa.lat IS NOT NULL AND pa.lng IS NOT NULL${withinSql}
          AND jp.deleted_at IS NULL
          AND ${sameRealmAsVacancySql('w.id', 'jp.id')}
          AND (NOT (${excludeTestVacancySql('jp')}) OR (${publicConditions}))${profileWhere}
@@ -200,7 +204,7 @@ export async function readWorkerHomeProfile(client: PoolClient, workerId: string
 /** Lista de `view=home`: horário e profissão em SQL; devolve o sexo exigido (interno) para o use case filtrar. */
 export async function readJobsByRadiusForHome(
   client: PoolClient,
-  args: { workerId: string; radiusKm: number; profile: MatchProfile },
+  args: { workerId: string; radiusKm: number | null; profile: MatchProfile },
 ): Promise<WorkerJobByRadiusWithSex[]> {
   const { sql, params } = buildJobsByRadiusSql(args.workerId, args.radiusKm, args.profile);
   const res = await client.query<Row>(sql, params);

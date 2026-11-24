@@ -28,6 +28,9 @@ export const WorkerJobsByRadiusHomeExtras = z.object({
   missing: z.array(z.enum(['address', 'profession', 'sex', 'availability'])).openapi({
     description: 'O que falta no cadastro para a home mostrar mapa e vagas (decisão 19/11). `[]` = completo. Com item faltando, `items` vem vazio.',
   }),
+  nearest: z.array(WorkerJobByRadiusItem).openapi({
+    description: 'Fallback "sem vaga perto" (096): quando `items` vem vazio com cadastro completo, até 10 vagas visíveis que casam com o perfil, SEM teto de raio, por distância, no formato de `items`. `[]` quando há `items` ou o cadastro está incompleto.',
+  }),
 });
 
 const ErrorCode = (code: string) => z.object({ code: z.literal(code) });
