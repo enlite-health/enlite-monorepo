@@ -15,10 +15,10 @@
  * função `fn_worker_missing_fields`, a API real que a serve, e a tela real
  * decidindo o que a prestadora vê.
  *
- * O sinal observado é o banner `complete-registration-banner`, que a
- * `JobsEmbeddedSection` mostra quando `isRegistrationComplete` é falso. Antes do
- * conserto ele NÃO aparecia para quem faltava `title_certificate` — a pessoa
- * era mandada ao WhatsApp e o portão a recusava depois.
+ * O sinal observado (096: vagas na home só com cadastro completo) é o bloco genérico `complete-profile-notice` no lugar da lista
+ * (`WorkerHome`, fonte `missingFields` de /me). Antes do conserto ele NÃO aparecia para quem faltava `title_certificate` — a
+ * pessoa via a vitrine, era mandada ao WhatsApp e o portão a recusava depois. O banner antigo `complete-registration-banner`
+ * (`JobsEmbeddedSection`) ficou inalcançável na home: nunca deve aparecer.
  *
  * Run: pnpm test:e2e:integration  (stack docker + `pnpm dev` — ver CLAUDE.md)
  */
@@ -31,7 +31,8 @@ import {
 } from '../helpers/eligibility-worker-helper';
 import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
 
-const BANNER = '[data-testid="complete-registration-banner"]';
+const BLOCK = '[data-testid="complete-profile-notice"]';
+const OLD_BANNER = '[data-testid="complete-registration-banner"]';
 
 test.describe('@integration Vitrine × portão — a tela não pode liberar quem o portão recusa', () => {
   test.setTimeout(120_000);
@@ -57,38 +58,39 @@ test.describe('@integration Vitrine × portão — a tela não pode liberar quem
   }
 
   // ── O caso do incidente: 18 das 23 travadas envolviam este campo ───────────
-  test('sem título/certificado a tela AVISA que falta completar — não libera', async ({ page }) => {
+  test('sem título/certificado a home BLOQUEIA a vitrine e avisa que falta completar — não libera', async ({ page }) => {
     const w = insertEligibilityWorker({ titleCertificate: false });
     await entrar(page, w);
 
     // Antes do conserto: `isStep1Complete` devolvia true (a lista do frontend
-    // não olhava `title_certificate`) e este banner NÃO aparecia.
-    await expect(page.locator(BANNER)).toBeVisible({ timeout: 30_000 });
+    // não olhava `title_certificate`) e o aviso NÃO aparecia.
+    await expect(page.locator(BLOCK)).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('#jobs-section')).toHaveCount(0);
+    await expect(page.locator(OLD_BANNER)).toHaveCount(0);
 
     // Régua de pronto do enlite-frontend/CLAUDE.md: validação visual.
-    await expect(page.locator(BANNER)).toHaveScreenshot('vitrine-banner-sem-titulo.png', {
+    await expect(page.locator(BLOCK)).toHaveScreenshot('vitrine-bloco-sem-titulo.png', {
       maxDiffPixelRatio: 0.02,
     });
   });
 
-  test('sem telefone a tela AVISA — o outro campo que a lista antiga ignorava', async ({ page }) => {
+  test('sem telefone a home bloqueia a vitrine — o outro campo que a lista antiga ignorava', async ({ page }) => {
     // 129 cadastros ficaram com `workers.phone` nulo enquanto a tela dizia que
     // estava tudo certo.
     const w = insertEligibilityWorker({ phone: false });
     await entrar(page, w);
 
-    await expect(page.locator(BANNER)).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator(BLOCK)).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('#jobs-section')).toHaveCount(0);
   });
 
   // ── CONTROLE — sem ele, os dois acima passariam com a tela avisando SEMPRE,
   //    que é o defeito oposto e igualmente ruim (barrar quem pode postular).
-  test('CONTROLE — cadastro completo NÃO recebe o aviso', async ({ page }) => {
+  test('CONTROLE — cadastro completo vê a vitrine e NÃO recebe o bloqueio', async ({ page }) => {
     const w = insertEligibilityWorker();
     await entrar(page, w);
 
-    // Âncora POSITIVA antes da ausência: `JobsEmbeddedSection` retorna cedo em
-    // `isLoading` e em `error`, ANTES do bloco do banner — sem isto o controle
-    // ficaria verde com a tela morta, que é o oposto de um controle.
+    // Âncora POSITIVA antes da ausência: sem ela o controle ficaria verde com a tela morta, que é o oposto de um controle.
     //
     // A âncora é a SEÇÃO (`#jobs-section`, que só existe no return final), não
     // um card de vaga: o CI não semeia vaga nenhuma, e um feed vazio é estado
@@ -96,7 +98,8 @@ test.describe('@integration Vitrine × portão — a tela não pode liberar quem
     // ausência de dado, não por defeito — foi o blocker 1 da 3ª rodada do gate.
     await expect(page.locator('#jobs-section')).toBeVisible({ timeout: 30_000 });
 
-    await expect(page.locator(BANNER)).toHaveCount(0);
+    await expect(page.locator(BLOCK)).toHaveCount(0);
+    await expect(page.locator(OLD_BANNER)).toHaveCount(0);
   });
 
   // ── A outra metade da causa (R1): o telefone que não persistia ─────────────

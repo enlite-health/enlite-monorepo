@@ -1,5 +1,11 @@
 /**
- * home-vagas-api-publica.integration.e2e.ts @integration
+ * home-vagas-api-publica.integration.e2e.ts
+ *
+ * ATUALIZAÇÃO 096 (vagas na home só com cadastro completo): o caso do prestador INCOMPLETO entra por `/vacantes/:id`
+ * (App.tsx:156 → PublicVacancyPage.tsx:11, mesmo `usePostularseAction`); os demais usam prestador COMPLETO na home. O rótulo
+ * dinâmico longo ("Completá N pasos…") só existia para incompleto na home e ficou inalcançável: o layout mobile/desktop agora
+ * mede o card com o rótulo "Postularse".
+ @integration
  *
  * Nova tarefa (autorizada por Gabriel): a home passa a usar a API pública
  * (`/api/public/v1/jobs`, toggle `window.__USE_PUBLIC_JOBS_API`) como fonte
@@ -106,7 +112,7 @@ test.describe('@integration Home — vagas da API pública, Postularse pelo serv
     for (const v of vacancies) cleanupMinimalVacancy(v);
   });
 
-  test('feliz — worker com cadastro incompleto clica Postularse → modal nomeia a pendência E linha nova em worker_blocked_applications (Postgres real) com channel=\'site\'', async ({ page }) => {
+  test('feliz — worker com cadastro incompleto clica Postularse na vaga (/vacantes/:id) → modal nomeia a pendência E linha nova em worker_blocked_applications (Postgres real) com channel=\'site\'', async ({ page }) => {
     const vacancyId = insertMinimalVacancy({
       talentumWhatsappUrl: 'https://wa.me/5491100000101',
       includeInPublicListing: true,
@@ -120,10 +126,10 @@ test.describe('@integration Home — vagas da API pública, Postularse pelo serv
       if (r.url().includes('/api/worker-applications/track-channel')) trackStatus = r.status();
     });
 
-    await loginAndGoHome(page, w);
-
-    // o card DESTA vaga: a home lista toda vaga pública do banco, inclusive a do teste anterior (ainda não limpa)
-    const postularseBtn = cardDaVagaNaHome(page, vacancyId).getByRole('button', { name: 'Postularse' });
+    // 096: prestador incompleto não tem lista na home; entra pela vaga (/vacantes/:id), onde o MESMO hook chama track-channel.
+    await loginAsWorker(page, w.authUid, `${w.authUid}@test.local`);
+    await page.goto(`/vacantes/${vacancyId}`, { waitUntil: 'networkidle', timeout: 30_000 });
+    const postularseBtn = page.getByRole('button', { name: /Postularse/i }).first();
     await expect(postularseBtn).toBeVisible({ timeout: 15_000 });
     await postularseBtn.click();
 
@@ -197,7 +203,7 @@ test.describe('@integration Home — vagas da API pública, Postularse pelo serv
       includeInPublicListing: true,
     });
     vacancies.push(vacancyId);
-    const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false });
+    const w = insertEligibilityWorker({ occupation: 'AT' }); // completo: só ele tem lista na home (096)
     workers.push(w);
 
     const trackChannelRequests: Request[] = [];
@@ -211,16 +217,12 @@ test.describe('@integration Home — vagas da API pública, Postularse pelo serv
     await expect(detailsBtn).toBeVisible({ timeout: 15_000 });
     await detailsBtn.click();
 
-    // "Ver Detalles" com cadastro incompleto (missingFields não apurado, já
-    // que loginAsWorker estuba /api/workers/me sem esse campo) mostra o
-    // aviso de verificação — não é o foco deste teste, só confirma que o
-    // link externo não abriu por engano. getByRole('heading', ...) evita
-    // ambiguidade com o parágrafo do corpo, que repete o mesmo texto.
-    await expect(page.getByRole('heading', { name: /No pudimos verificar tu registro/i })).toBeVisible({ timeout: 10_000 });
+    // Prestador completo: nenhum modal de cadastro/verificação, e o link do WhatsApp nunca é aberto por "Ver Detalles".
+    await expect(page.getByRole('heading', { name: /Registro incompleto|No pudimos verificar tu registro/i })).toHaveCount(0);
 
     expect(trackChannelRequests, 'Ver Detalles jamais chama track-channel').toHaveLength(0);
     const opened = await getOpenedUrls(page);
-    expect(opened).toHaveLength(0);
+    expect(opened.filter((u) => u.includes('wa.me'))).toEqual([]);
   });
 
   // ── Defeito visual mobile (print depois-1-home-celular.png, 390px): o botão
@@ -234,18 +236,16 @@ test.describe('@integration Home — vagas da API pública, Postularse pelo serv
       includeInPublicListing: true,
     });
     vacancies.push(vacancyId);
-    // 2 pendências (mesmo cenário do print: "Completá 2 pasos para postularte")
-    // — precisa do rótulo DINÂMICO longo pra reproduzir o defeito (o rótulo
-    // curto "Postularse" cabe sem problema em 390px; loginAndGoHomeWithRealLabel
-    // usa loginNewWorker pra deixar missingFields real chegar via GET /api/workers/me).
-    const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false, docResumeCv: false });
+    // 096: só prestador COMPLETO vê o card na home, então o rótulo é "Postularse" (o rótulo longo "Completá 2 pasos…" que
+    // reproduzia o defeito do print era só de incompleto e ficou inalcançável). `loginNewWorker` deixa `/me` real chegar.
+    const w = insertEligibilityWorker({ occupation: 'AT' });
     workers.push(w);
 
     await loginAndGoHomeWithRealLabel(page, w);
 
     const card = page.locator('[data-testid="job-card"]').first();
     const badge = card.locator('[data-testid="job-code-badge"]');
-    const applyBtn = card.getByRole('button', { name: /postularte/i });
+    const applyBtn = card.getByRole('button', { name: 'Postularse' });
     const detailsBtn = card.getByRole('button', { name: 'Ver Detalles' });
     await expect(applyBtn).toBeVisible({ timeout: 15_000 });
     await expect(detailsBtn).toBeVisible();
@@ -283,14 +283,14 @@ test.describe('@integration Home — vagas da API pública, Postularse pelo serv
       includeInPublicListing: true,
     });
     vacancies.push(vacancyId);
-    const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false, docResumeCv: false });
+    const w = insertEligibilityWorker({ occupation: 'AT' });
     workers.push(w);
 
     await loginAndGoHomeWithRealLabel(page, w);
 
     const card = page.locator('[data-testid="job-card"]').first();
     const badge = card.locator('[data-testid="job-code-badge"]');
-    const applyBtn = card.getByRole('button', { name: /postularte/i });
+    const applyBtn = card.getByRole('button', { name: 'Postularse' });
     const detailsBtn = card.getByRole('button', { name: 'Ver Detalles' });
     await expect(applyBtn).toBeVisible({ timeout: 15_000 });
 

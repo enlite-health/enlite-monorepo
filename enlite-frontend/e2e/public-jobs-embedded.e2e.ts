@@ -119,7 +119,8 @@ async function mockWorkerApis(page: import('@playwright/test').Page): Promise<vo
   await page.route('**/api/workers/**', route => route.fulfill({
     status: 200,
     contentType: 'application/json',
-    body: JSON.stringify({ success: true, data: {} }),
+    // `missingFields: []` modela o prestador COMPLETO: a home (096) só mostra a lista com completude apurada e vazia.
+    body: JSON.stringify({ success: true, data: { missingFields: [] } }),
   }));
 }
 
