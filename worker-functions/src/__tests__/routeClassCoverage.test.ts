@@ -100,6 +100,7 @@ const FABRICAS = [
   'modules/identity/interfaces/adminAreaMembershipRoutes',
   'modules/identity/interfaces/meAreasRoute',
   'modules/identity/interfaces/personTreeRoute',
+  'modules/identity/interfaces/workerDeviceRoutes',
   'modules/identity/interfaces/routes/adminStaffDirectoryRoutes',
   'modules/identity/interfaces/routes/adminUsersRoutes',
   'modules/identity/interfaces/routes/authTelemetryRoutes',
@@ -212,6 +213,6 @@ describe('T313 — cobertura de classe sobre os routers reais', () => {
       sem.push(...unclassifiedRoutes(rotas).map((r) => `${arquivo}: ${r.method} ${r.path}`));
     }
     expect(sem).toEqual([]);
-    expect(total).toBe(449);
+    expect(total).toBe(453);
   });
 });
