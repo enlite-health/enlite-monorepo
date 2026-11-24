@@ -121,8 +121,8 @@ function fillForm(overrides: {
   lgpd?: boolean;
 } = {}) {
   const email = overrides.email ?? 'test@example.com';
-  const password = overrides.password ?? 'password123';
-  const confirmPassword = overrides.confirmPassword ?? 'password123';
+  const password = overrides.password ?? 'Password123!';
+  const confirmPassword = overrides.confirmPassword ?? 'Password123!';
 
   fireEvent.change(screen.getByTestId('input-email'), { target: { value: email } });
   fireEvent.change(screen.getByTestId('input-password'), { target: { value: password } });
@@ -210,8 +210,8 @@ describe('RegisterPage', () => {
     it('mostra tanto banner generico quanto erro no checkbox quando ha multiplos erros', async () => {
       render(<RegisterPage />);
       // Email vazio + LGPD desmarcado
-      fireEvent.change(screen.getByTestId('input-password'), { target: { value: 'password123' } });
-      fireEvent.change(screen.getByTestId('input-confirmPassword'), { target: { value: 'password123' } });
+      fireEvent.change(screen.getByTestId('input-password'), { target: { value: 'Password123!' } });
+      fireEvent.change(screen.getByTestId('input-confirmPassword'), { target: { value: 'Password123!' } });
       submitForm();
 
       await waitFor(() => {
@@ -429,8 +429,8 @@ describe('RegisterPage', () => {
   describe('erros de validacao do formulario', () => {
     it('mostra erro de email obrigatorio quando email vazio', async () => {
       render(<RegisterPage />);
-      fireEvent.change(screen.getByTestId('input-password'), { target: { value: 'password123' } });
-      fireEvent.change(screen.getByTestId('input-confirmPassword'), { target: { value: 'password123' } });
+      fireEvent.change(screen.getByTestId('input-password'), { target: { value: 'Password123!' } });
+      fireEvent.change(screen.getByTestId('input-confirmPassword'), { target: { value: 'Password123!' } });
       fireEvent.click(screen.getByTestId('checkbox-input-lgpdOptIn'));
       submitForm();
 
@@ -441,7 +441,7 @@ describe('RegisterPage', () => {
       });
     });
 
-    it('mostra erro de senha curta quando senha tem menos de 6 caracteres', async () => {
+    it('mostra erro de senha curta quando senha tem menos de 8 caracteres', async () => {
       render(<RegisterPage />);
       fireEvent.change(screen.getByTestId('input-email'), { target: { value: 'test@test.com' } });
       fireEvent.change(screen.getByTestId('input-password'), { target: { value: '123' } });

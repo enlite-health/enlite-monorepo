@@ -11,7 +11,7 @@
  *  - registerSchema (RegisterPage.tsx) + es.json:
  *      email vazio      → login.emailRequired      = "El correo electrónico es obligatorio"
  *      email inválido   → register.invalidEmail    = "Por favor, ingrese un correo electrónico válido"
- *      senha <6         → register.passwordTooShort= "La contraseña debe tener al menos 6 caracteres"
+ *      senha <8         → register.passwordTooShort= "La contraseña debe tener al menos 8 caracteres"
  *      senhas ≠         → register.passwordMismatch= "Las contraseñas no coinciden"
  *      LGPD não marcado → register.lgpdRequired    = "Debe aceptar los términos para registrarse"
  *
@@ -67,17 +67,17 @@ test('[@route:/register @depth:error] email inválido é barrado com mensagem de
   // mensagem ES do app nunca renderiza. Pra exercitar a validação DO APP (register.invalidEmail),
   // usamos "a@b": o HTML5 aceita (domínio sem TLD é válido pro browser) mas o `.email()` do
   // zod rejeita (exige TLD) → cai no branch de erro do app. senha/confirm válidas → 1º erro = email.
-  await fillAndSubmit(page, { email: 'a@b', password: '123456', confirm: '123456' });
+  await fillAndSubmit(page, { email: 'a@b', password: 'Abcdef1!', confirm: 'Abcdef1!' });
   await expect(
     page.getByText('Por favor, ingrese un correo electrónico válido'),
   ).toBeVisible();
 });
 
-test('[@route:/register @depth:error] senha com menos de 6 caracteres é barrada', async ({ page }) => {
+test('[@route:/register @depth:error] senha com menos de 8 caracteres é barrada', async ({ page }) => {
   // email válido; senha curta e confirm igual (sem mismatch) → 1º erro = tamanho da senha.
   await fillAndSubmit(page, { email: 'gabriel+e2e@enlite.health', password: '123', confirm: '123' });
   await expect(
-    page.getByText('La contraseña debe tener al menos 6 caracteres'),
+    page.getByText('La contraseña debe tener al menos 8 caracteres'),
   ).toBeVisible();
 });
 
@@ -85,8 +85,8 @@ test('[@route:/register @depth:error] senhas que não coincidem são barradas', 
   // email válido; senhas ≥6 mas diferentes → refine passwordMismatch (path confirmPassword).
   await fillAndSubmit(page, {
     email: 'gabriel+e2e@enlite.health',
-    password: '123456',
-    confirm: '654321',
+    password: 'Abcdef1!',
+    confirm: 'Abcdef2!',
   });
   await expect(page.getByText('Las contraseñas no coinciden')).toBeVisible();
 });
@@ -95,8 +95,8 @@ test('[@route:/register @depth:error] termos LGPD não aceitos são barrados', a
   // Tudo válido, só o LGPD desmarcado → erro renderiza no próprio checkbox (setLgpdError).
   await fillAndSubmit(page, {
     email: 'gabriel+e2e@enlite.health',
-    password: '123456',
-    confirm: '123456',
+    password: 'Abcdef1!',
+    confirm: 'Abcdef1!',
   });
   await expect(
     page.getByText('Debe aceptar los términos para registrarse'),
