@@ -64,3 +64,21 @@ module "secret_e2e_otp_code_prd" {
   project_id = var.project_id
   secret_id  = "e2e-otp-code-prd"
 }
+
+# spec 077, D758 (PR-INF-46): pepper do HMAC do OTP próprio, montado como OTP_HMAC_PEPPER no worker-functions
+# (backend-prd.yml). Replicação automática. O TF cria só a estrutura; a VERSÃO (o valor) NÃO entra no HCL, para o valor não
+# ir ao state: `python3 -I -c 'import secrets;print(secrets.token_hex(32),end="")' | gcloud secrets versions add otp-hmac-pepper-prd --data-file=- --project enlite-prd`
+# (rodar depois do apply). O binding por secret é explícito apesar de a enlite-functions-sa já ter secretAccessor no projeto (iam.tf):
+# deixa registrado quem lê ESTE secret.
+module "secret_otp_hmac_pepper_prd" {
+  source     = "../../modules/secret"
+  project_id = var.project_id
+  secret_id  = "otp-hmac-pepper-prd"
+}
+
+resource "google_secret_manager_secret_iam_member" "worker_functions_otp_hmac_pepper" {
+  project   = var.project_id
+  secret_id = module.secret_otp_hmac_pepper_prd.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = module.sa_enlite_functions.member
+}
