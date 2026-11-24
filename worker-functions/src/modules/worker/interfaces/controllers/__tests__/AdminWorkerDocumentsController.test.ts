@@ -309,6 +309,7 @@ describe('AdminWorkerDocumentsController — cobertura de ramos (401/400/404/500
     await controller.deleteDocument(req, res);
     expect(mockDeleteFile).not.toHaveBeenCalled();
     expect(mockClearDocumentField).toHaveBeenCalled();
+    expect(mockRecalculateStatus).toHaveBeenCalledWith(WORKER_ID, { flow: 'ADMIN_DOCUMENT_REVIEW' });
     expect(res.status).toHaveBeenCalledWith(200);
   });
 

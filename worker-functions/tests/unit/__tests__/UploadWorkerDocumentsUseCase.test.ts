@@ -139,7 +139,7 @@ describe('UploadWorkerDocumentsUseCase', () => {
 
     expect(docsRepo.create).toHaveBeenCalledTimes(1);
     expect(docsRepo.update).not.toHaveBeenCalled();
-    expect(workerRepo.recalculateStatus).toHaveBeenCalledWith(WORKER_ID);
+    expect(workerRepo.recalculateStatus).toHaveBeenCalledWith(WORKER_ID, { flow: 'WORKER_DOCUMENT_UPLOAD' });
   });
 
   // ── Atualização de registro existente ─────────────────────────────────────
@@ -163,7 +163,7 @@ describe('UploadWorkerDocumentsUseCase', () => {
 
     expect(docsRepo.update).toHaveBeenCalledTimes(1);
     expect(docsRepo.create).not.toHaveBeenCalled();
-    expect(workerRepo.recalculateStatus).toHaveBeenCalledWith(WORKER_ID);
+    expect(workerRepo.recalculateStatus).toHaveBeenCalledWith(WORKER_ID, { flow: 'WORKER_DOCUMENT_UPLOAD' });
   });
 
   // ── Mapeamento docType → jsField ──────────────────────────────────────────
@@ -269,7 +269,7 @@ describe('UploadWorkerDocumentsUseCase', () => {
     await useCase.execute({ workerId: WORKER_ID });
 
     expect(workerRepo.recalculateStatus).toHaveBeenCalledTimes(1);
-    expect(workerRepo.recalculateStatus).toHaveBeenCalledWith(WORKER_ID);
+    expect(workerRepo.recalculateStatus).toHaveBeenCalledWith(WORKER_ID, { flow: 'WORKER_DOCUMENT_UPLOAD' });
   });
 
   it('não chama recalculateStatus quando worker não existe', async () => {

@@ -224,7 +224,7 @@ export class AdminWorkerDocumentsController {
       if (existing) {
         await this.documentsRepo.clearDocumentField(workerId, DOC_SQL_COL[docType as DocumentType], docType);
         updatedDocs = await this.documentsRepo.update({ workerId });
-        await this.workerRepo.recalculateStatus(workerId);
+        await this.workerRepo.recalculateStatus(workerId, { flow: 'ADMIN_DOCUMENT_REVIEW' });
       }
 
       // Record admin audit trail

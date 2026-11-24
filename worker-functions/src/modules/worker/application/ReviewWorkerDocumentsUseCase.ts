@@ -37,7 +37,7 @@ export class ReviewWorkerDocumentsUseCase {
     const documents = await this.workerDocumentsRepository.review(dto);
 
     // Recalcula status com base nos campos obrigatórios preenchidos
-    await this.workerRepository.recalculateStatus(dto.workerId);
+    await this.workerRepository.recalculateStatus(dto.workerId, { flow: 'ADMIN_DOCUMENT_REVIEW' });
 
     console.log('[ReviewWorkerDocumentsUseCase] DONE | workerId:', dto.workerId, '| finalStatus:', documents.documentsStatus);
     return documents;
