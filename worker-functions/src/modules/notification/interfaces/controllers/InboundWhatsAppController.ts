@@ -8,6 +8,32 @@ import { matchesOptOut, OPT_OUT_BUTTON_PAYLOAD } from '../../domain/optOutMatch'
 import { RegisterOptOutUseCase } from '../../application/RegisterOptOutUseCase';
 import { ChatwootClient } from '../../infrastructure/ChatwootClient';
 
+/** Mensagem NOVA do botão "Hablar con el equipo" (emenda do celular verificado): nunca é resposta ao código. */
+const UNIR_DATOS_PREFIX = 'quiero unir mis datos';
+
+const foldText = (t: string): string =>
+  t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+/**
+ * A mensagem é RESPOSTA a uma mensagem de template de AUTENTICAÇÃO (código OTP, D758)? Reconhece pela mensagem original:
+ * `OriginalRepliedMessageSid` é o `twilio_sid` de um desafio em `otp_challenges`. Resposta ao código ("gracias", "no me
+ * llegó") não é conversa: não vai à Luz. Texto que começa com "Quiero unir mis datos" é mensagem NOVA e nunca é engolido,
+ * mesmo que venha citando o código. Sem a mensagem original (texto solto) NÃO há como afirmar: segue como conversa.
+ */
+export async function isAuthTemplateReply(db: Pick<Pool, 'query'>, body: Record<string, string>): Promise<boolean> {
+  const originalSid = body['OriginalRepliedMessageSid'] ?? '';
+  if (!originalSid) return false;
+  if (foldText(body['Body'] ?? '').startsWith(UNIR_DATOS_PREFIX)) return false;
+  try {
+    const { rowCount } = await db.query(`SELECT 1 FROM otp_challenges WHERE twilio_sid = $1 LIMIT 1`, [originalSid]);
+    return (rowCount ?? 0) > 0;
+  } catch (err) {
+    // Falha de leitura: segue como conversa (comportamento de hoje); nunca derruba o 200 do Twilio.
+    console.warn('[InboundWhatsApp] isAuthTemplateReply error:', err instanceof Error ? err.name : 'erro');
+    return false;
+  }
+}
+
 /**
  * Controller para mensagens inbound do WhatsApp via Twilio.
  *
@@ -80,6 +106,15 @@ export class InboundWhatsAppController {
         res.status(200).send();
         return;
       }
+    }
+
+    // Resposta a mensagem de código OTP (template de autenticação, D758): não é conversa. Não vai à Luz (nem handover,
+    // nem espelho do Chatwoot) e nada novo sai para a cuidadora. Depois do opt-out e da inferência de botão, de propósito:
+    // "baja" ainda vale, e botão de fluxo conhecido não passa por aqui (só texto livre).
+    if (!buttonPayload && (await isAuthTemplateReply(this.db, body))) {
+      console.info('[InboundWhatsApp] Reply to auth-template message ignored', { from: maskPhoneForLog(from) });
+      res.status(200).send();
+      return;
     }
 
     // Texto livre (sem ButtonPayload)
