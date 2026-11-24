@@ -7,7 +7,7 @@ interface HomeLoadErrorNoticeProps {
 
 /**
  * HomeLoadErrorNotice — quando a rota da home (`/api/workers/me/jobs?view=home`) falha, a home FALHA FECHADA (decisão do
- * Gabriel): nem mapa, nem vagas, nem a lista pública — só este cartão, no mesmo tom do CompleteProfileNotice (convite, sem
+ * Gabriel): nem mapa, nem vagas, nem a lista pública — só este cartão, no mesmo tom do RegistrationLockedNotice (convite, sem
  * vermelho), com "Reintentar" que refaz a chamada. Sem dado nenhum do prestador na tela.
  */
 export function HomeLoadErrorNotice({ onRetry }: HomeLoadErrorNoticeProps): JSX.Element {

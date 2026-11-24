@@ -1,6 +1,14 @@
 /**
  * jobs-card-apply-label.integration.e2e.ts @integration
  *
+ * ATUALIZAÇÃO 096 (regra do Gabriel: "vagas só são mostradas na home quando o cadastro estiver completo"): a home de prestador
+ * INCOMPLETO não tem mais lista, então o rótulo "Subí {documento}" / "Completá {N} pasos" (`buildApplyLabel`, só existe em
+ * `JobsEmbeddedSection`, que só a `WorkerHome` renderiza) ficou INALCANÇÁVEL para incompleto. Os cenários de incompleto abaixo
+ * provam o BLOQUEIO; o rótulo original "Postularse", o contraste do botão e o Passo 0 seguem com prestador COMPLETO. O fluxo
+ * "clique → 403 → modal que nomeia a pendência" continua alcançável em `/vacantes/:id` (PublicVacancyPage.tsx) e é provado em
+ * `postularse-incomplete-modal` e `home-postularse-incomplete`.
+ *
+ *
  * Fase 4 de postulacao-documento-pendente (DD5 · consome F1/F2/F3): o botão
  * "Postularse" do card da vaga (`JobsEmbeddedSection`) passa a nomear o que
  * falta — "Subí {documento} para postularte" (1 pendência de documento),
@@ -54,13 +62,14 @@ import {
 } from '../helpers/eligibility-worker-helper';
 import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
 import { readTextContrastRatio } from '../helpers/contrast-helper';
+import { countJobsRouteCalls, expectHomeBlocked } from '../helpers/home-blocked-helper';
 
 test.use({ video: 'on' });
 
 /** WCAG AA, texto pequeno (< 18pt/24px ou < 14pt/18.5px bold). */
 const WCAG_AA_MIN_CONTRAST = 4.5;
 
-test.describe('@integration Card da vaga — rótulo dinâmico do Postularse (Fase 4, DD5)', () => {
+test.describe('@integration Card da vaga — rótulo do Postularse e bloqueio da home sem cadastro (096)', () => {
   test.setTimeout(90_000);
   const workers: InsertEligibilityWorkerResult[] = [];
   const vacancies: string[] = [];
@@ -70,129 +79,89 @@ test.describe('@integration Card da vaga — rótulo dinâmico do Postularse (Fa
     for (const v of vacancies) cleanupMinimalVacancy(v);
   });
 
-  async function loginAndGoHome(page: Page, w: InsertEligibilityWorkerResult): Promise<void> {
+  async function login(page: Page, w: InsertEligibilityWorkerResult): Promise<void> {
     workers.push(w);
     await page.addInitScript(() => {
       (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
     });
     await loginNewWorker(page, w.authUid, `${w.authUid}@test.local`);
+  }
+
+  async function loginAndGoHome(page: Page, w: InsertEligibilityWorkerResult): Promise<void> {
+    await login(page, w);
     await page.goto('/', { waitUntil: 'networkidle', timeout: 30_000 });
     await expect(page.locator('#jobs-section')).toBeVisible({ timeout: 20_000 });
   }
 
-  test('feliz — 1 pendência de documento (antecedentes): botão nomeia, clique chama track-channel (1x, 403) e abre o modal com o retorno do servidor', async ({ page }) => {
+  test('incompleto (1 documento: antecedentes) → home bloqueada: bloco genérico, sem lista, sem botão "Subí…", sem chamada a /workers/me/jobs', async ({ page }) => {
     const vacancyId = insertMinimalVacancy({ includeInPublicListing: true });
     vacancies.push(vacancyId);
     const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false });
+    await login(page, w);
+    const jobsCalls = countJobsRouteCalls(page);
+    await page.goto('/', { waitUntil: 'networkidle', timeout: 30_000 });
 
-    const trackChannelRequests: Request[] = [];
-    let trackStatus: number | null = null;
-    page.on('request', (req) => {
-      if (req.url().includes('track-channel')) trackChannelRequests.push(req);
-    });
-    page.on('response', (r) => {
-      if (r.url().includes('track-channel')) trackStatus = r.status();
-    });
-
-    await loginAndGoHome(page, w);
-
-    const applyBtn = page.getByRole('button', { name: 'Subí Antecedentes penales para postularte' }).first();
-    await expect(applyBtn).toBeVisible({ timeout: 15_000 });
-
-    // Achado do gate (11/09, rodada 3): o botão "Postularse" (bg-[#25d366],
-    // identidade WhatsApp) mede 1,98:1 sobre o texto branco — bem abaixo do
-    // mínimo WCAG AA (4,5:1) — e agora carrega a frase inteira da entrega,
-    // não só uma palavra curta. Mede o PRÓPRIO botão (o helper começa pelo
-    // elemento passado — aqui o fundo colorido É do botão, não de um
-    // wrapper sem cor, lição da Fase 3/rodada 2 do gate).
-    const applyBtnContrast = await readTextContrastRatio(applyBtn);
-    expect(applyBtnContrast).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
-
-    // `:hover` de verdade (pseudo-classe do navegador, não estado JS) —
-    // `getComputedStyle` já reflete `hover:bg-[#054C44]` com o mouse em
-    // cima. `transition-colors` do Tailwind anima a troca (~150ms
-    // default) — espera passar pra não capturar uma cor NO MEIO da
-    // transição.
-    await applyBtn.hover();
-    await page.waitForTimeout(300);
-    const applyBtnHoverContrast = await readTextContrastRatio(applyBtn);
-    expect(applyBtnHoverContrast).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
-
-    await applyBtn.click();
-
-    const modal = page.getByRole('heading', { name: 'Registro incompleto' });
-    await expect(modal).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByRole('button', { name: /Ir a Antecedentes penales/i })).toBeVisible();
-
-    // Postularse agora passa pelo servidor (usePostularseAction, JobCard.tsx)
-    // — exatamente 1 request, e o servidor bloqueia com 403 (worker
-    // INCOMPLETE_REGISTER). Prova de banco completa (worker_blocked_applications,
-    // channel='site') vive em home-vagas-api-publica.integration.e2e.ts.
-    expect(trackChannelRequests).toHaveLength(1);
-    expect(trackStatus).toBe(403);
-
-    await expect(page.locator('[data-testid="incomplete-modal-pending-list"]')).toHaveScreenshot(
-      'fase4-modal-1-documento.png',
-      { maxDiffPixels: 200 },
-    );
+    await expectHomeBlocked(page, jobsCalls);
+    await expect(page.getByRole('button', { name: /para postularte/i })).toHaveCount(0);
+    await expect(page.getByTestId('complete-profile-notice')).toHaveScreenshot('home-bloqueada-1-documento.png', { maxDiffPixels: 200 });
   });
 
-  test('alt — 3 pendências: botão diz "Completá 3 pasos para postularte" e a lista de tarefas na MESMA tela diz "Te faltan 3 pasos" (MESMO N, buildPendingRows compartilhado)', async ({ page }) => {
+  test('incompleto (3 pendências): o card de tarefas diz "Te faltan 3 pasos" e a home segue bloqueada, sem botão "Completá 3 pasos…"', async ({ page }) => {
     const vacancyId = insertMinimalVacancy({ includeInPublicListing: true });
     vacancies.push(vacancyId);
     // phone (registro) + doc_criminal_record + doc_identity_document (2 documentos) = 3 linhas.
-    // occupation 'AT': a home lista só vagas que cabem no perfil (096) e a vaga semeada exige AT.
     const w = insertEligibilityWorker({
       occupation: 'AT',
       phone: false,
       docCriminalRecord: false,
       docIdentityDocument: false,
     });
-    await loginAndGoHome(page, w);
+    await login(page, w);
+    const jobsCalls = countJobsRouteCalls(page);
+    await page.goto('/', { waitUntil: 'networkidle', timeout: 30_000 });
 
     const card = page.locator('[data-testid="pending-tasks-card"]');
     await expect(card).toBeVisible({ timeout: 15_000 });
     await expect(card.getByText('Te faltan 3 pasos para postularte')).toBeVisible();
-
-    const applyBtn = page.getByRole('button', { name: 'Completá 3 pasos para postularte' }).first();
-    await expect(applyBtn).toBeVisible({ timeout: 15_000 });
-
-    // Screenshot do CARD inteiro (a vaga é semeada por este teste — dado
-    // determinístico, sem precisar de mask). Prova visual do rótulo
-    // "Completá 3 pasos para postularte" no botão de verdade, junto com
-    // "Te faltan 3 pasos" da lista de tarefas logo acima — os DOIS na
-    // mesma imagem, o MESMO número.
-    await expect(page.locator('[data-testid="pending-tasks-card"]')).toHaveScreenshot(
-      'fase4-lista-de-tarefas-3-pendencias.png',
-      { maxDiffPixels: 200 },
-    );
-    await expect(applyBtn).toHaveScreenshot('fase4-botao-3-pendencias.png', { maxDiffPixels: 100 });
+    await expectHomeBlocked(page, jobsCalls);
+    await expect(page.getByRole('button', { name: /Completá 3 pasos para postularte/ })).toHaveCount(0);
+    await expect(card).toHaveScreenshot('fase4-lista-de-tarefas-3-pendencias.png', { maxDiffPixels: 200 });
   });
 
-  test('alt — cadastro completo: botão volta a dizer "Postularse" (rótulo original)', async ({ page }) => {
+  test('cadastro completo: botão diz "Postularse" (rótulo original), com contraste AA (normal e hover) e o clique chama track-channel 1x', async ({ page }) => {
     const vacancyId = insertMinimalVacancy({ includeInPublicListing: true });
     vacancies.push(vacancyId);
     const w = insertEligibilityWorker({ occupation: 'AT' }); // todos os campos/docs default=true; AT porque a vaga semeada exige AT (home por perfil, 096)
+
+    const trackChannelRequests: Request[] = [];
+    page.on('request', (req) => {
+      if (req.url().includes('track-channel')) trackChannelRequests.push(req);
+    });
     await loginAndGoHome(page, w);
 
     await expect(page.locator('[data-testid="pending-tasks-card"]')).toHaveCount(0);
+    await expect(page.getByTestId('complete-profile-notice')).toHaveCount(0);
     const applyBtn = page.getByRole('button', { name: 'Postularse' }).first();
     await expect(applyBtn).toBeVisible({ timeout: 15_000 });
+
+    // O botão "Postularse" (bg-[#25d366], identidade WhatsApp) mede o PRÓPRIO botão: o fundo colorido É dele (lição do gate 11/09).
+    expect(await readTextContrastRatio(applyBtn)).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
+    // `:hover` de verdade; espera a transição do Tailwind (~150ms) para não medir uma cor no meio dela.
+    await applyBtn.hover();
+    await page.waitForTimeout(300);
+    expect(await readTextContrastRatio(applyBtn)).toBeGreaterThanOrEqual(WCAG_AA_MIN_CONTRAST);
+
+    await applyBtn.click();
+    await expect.poll(() => trackChannelRequests.length, { timeout: 10_000 }).toBe(1);
   });
 
-  test('Passo 0 — missingFields chega por PROP: o Nº de requests a /api/workers/me NÃO escala com o Nº de cards', async ({ page }) => {
-    // Isolamento: os testes anteriores deste ARQUIVO semeiam vaga própria e
-    // só limpam em `afterAll` — sem isto, a contagem de botões abaixo
-    // pegaria vagas de testes anteriores (visíveis na MESMA listagem
-    // pública) e falharia por vazamento entre testes, não por defeito.
+  test('Passo 0 — missingFields chega por PROP: o Nº de requests a /api/workers/me NÃO escala com o Nº de cards (prestador completo)', async ({ page }) => {
+    // Isolamento: os testes anteriores deste ARQUIVO semeiam vaga própria e só limpam em `afterAll` — sem isto, a contagem de
+    // botões abaixo pegaria vagas de testes anteriores (visíveis na MESMA listagem pública) e falharia por vazamento entre testes.
     while (vacancies.length > 0) cleanupMinimalVacancy(vacancies.pop()!);
 
-    // Não afirma um número LITERAL de requests (o dev server roda em
-    // React.StrictMode, que dobra o efeito de montagem — um artefato do
-    // AMBIENTE de teste, não do código). A prova robusta é COMPARATIVA:
-    // o nº de chamadas a /api/workers/me com 1 vaga na tela tem de ser
-    // IGUAL ao nº de chamadas com 5 — se algum card fizesse a própria
-    // requisição, o segundo número cresceria junto.
+    // Prova COMPARATIVA (o dev server roda em React.StrictMode e dobra o efeito de montagem): o nº de chamadas a /api/workers/me
+    // com 1 vaga tem de ser IGUAL ao com 5 — se algum card fizesse a própria requisição, o segundo número cresceria.
     function countWorkersMeRequests(): { requests: Request[]; stop: () => void } {
       const requests: Request[] = [];
       const handler = (req: Request): void => {
@@ -203,15 +172,14 @@ test.describe('@integration Card da vaga — rótulo dinâmico do Postularse (Fa
       return { requests, stop: () => page.off('request', handler) };
     }
 
-    const vacancyId1 = insertMinimalVacancy({ includeInPublicListing: true });
-    vacancies.push(vacancyId1);
-    const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false });
+    vacancies.push(insertMinimalVacancy({ includeInPublicListing: true }));
+    const w = insertEligibilityWorker({ occupation: 'AT' });
     await loginAndGoHome(page, w);
-    await expect(page.getByRole('button', { name: 'Subí Antecedentes penales para postularte' })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Postularse' })).toHaveCount(1);
 
     const baseline = countWorkersMeRequests();
     await page.reload({ waitUntil: 'networkidle' });
-    await expect(page.getByRole('button', { name: 'Subí Antecedentes penales para postularte' })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Postularse' })).toHaveCount(1);
     baseline.stop();
     expect(baseline.requests.length).toBeGreaterThan(0); // a captura funcionou
 
@@ -225,7 +193,7 @@ test.describe('@integration Card da vaga — rótulo dinâmico do Postularse (Fa
 
     const withFiveCards = countWorkersMeRequests();
     await page.reload({ waitUntil: 'networkidle' });
-    await expect(page.getByRole('button', { name: 'Subí Antecedentes penales para postularte' })).toHaveCount(5);
+    await expect(page.getByRole('button', { name: 'Postularse' })).toHaveCount(5);
     withFiveCards.stop();
 
     expect(withFiveCards.requests.length).toBe(baseline.requests.length);

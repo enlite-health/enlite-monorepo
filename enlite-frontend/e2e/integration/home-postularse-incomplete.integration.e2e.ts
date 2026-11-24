@@ -1,6 +1,13 @@
 /**
  * home-postularse-incomplete.integration.e2e.ts @integration
  *
+ * ATUALIZAÇÃO 096 (regra do Gabriel: vagas na home só com cadastro completo): prestador INCOMPLETO não vê mais a lista na home.
+ * O fluxo "Postularse → 403 → modal que nomeia a pendência → link ao campo" segue alcançável em `/vacantes/:id`
+ * (App.tsx:156 → PublicVacancyPage.tsx:11,14, MESMO `usePostularseAction` + `IncompleteRegistrationModal` do card da home), e os
+ * dois primeiros testes entram por lá com as mesmas asserções. "Ver Detalles" só existia no card da home: para incompleto o
+ * teste prova o BLOQUEIO. O teste do 500 do track-channel (prestador completo) segue na home.
+ *
+ *
  * CAMADA 0 — bug #2 (versão sem servidor novo, parecer lex 10/09): clicar
  * "Postularse"/"Ver Detalles" na HOME com cadastro incompleto abria um modal
  * genérico que não nomeava o que faltava e não reaproveitava o caminho real
@@ -36,6 +43,7 @@ import {
   type InsertEligibilityWorkerResult,
 } from '../helpers/eligibility-worker-helper';
 import { loginNewWorker } from '../helpers/worker-realreg-auth-helper';
+import { countJobsRouteCalls, expectHomeBlocked } from '../helpers/home-blocked-helper';
 
 test.use({ video: 'on' });
 
@@ -59,6 +67,16 @@ test.describe('@integration Home — Postularse/Ver Detalles com cadastro incomp
     await expect(page.locator('#jobs-section')).toBeVisible({ timeout: 20_000 });
   }
 
+  /** Prestador incompleto chega à vaga pelo link (ex.: WhatsApp): `/vacantes/:id`, página pública que também tem o "Postularse". */
+  async function loginAndOpenVacancy(page: Page, w: InsertEligibilityWorkerResult, vacancyId: string): Promise<void> {
+    workers.push(w);
+    await loginNewWorker(page, w.authUid, `${w.authUid}@test.local`);
+    await page.goto(`/vacantes/${vacancyId}`, { waitUntil: 'networkidle', timeout: 30_000 });
+    const postularseBtn = page.getByRole('button', { name: /Postularse/i }).first();
+    await expect(postularseBtn).toBeVisible({ timeout: 15_000 });
+    await postularseBtn.click();
+  }
+
   test('feliz — AT sem antecedentes e sem CV clica Postularse → modal nomeia os DOIS documentos → "Ir a Antecedentes penales" cai na aba, no slot certo, com o aviso nomeando "Antecedentes penales"', async ({ page }) => {
     // Fase 1 (DD1, postulacao-documento-pendente): GET /api/workers/me deixou
     // de devolver o agregado `worker_documents` — devolve os `doc_*`
@@ -69,16 +87,8 @@ test.describe('@integration Home — Postularse/Ver Detalles com cadastro incomp
     const vacancyId = insertMinimalVacancy({ includeInPublicListing: true });
     vacancies.push(vacancyId);
     const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false, docResumeCv: false });
-    await loginAndGoHome(page, w);
-
-    // Fase 4/DD5: com 2 documentos pendentes (antecedentes + CV), o rótulo
-    // do botão deixa de ser "Postularse" — vira "Completá 2 pasos para
-    // postularte" (buildApplyLabel, mesma contagem de buildPendingRows que
-    // a lista de tarefas da home usa). O CLIQUE continua o MESMO — ainda
-    // abre o modal que nomeia, sem request pra track-channel.
-    const postularseBtn = page.getByRole('button', { name: 'Completá 2 pasos para postularte' }).first();
-    await expect(postularseBtn).toBeVisible({ timeout: 15_000 });
-    await postularseBtn.click();
+    // 096: entra pela vaga (/vacantes/:id); o rótulo "Completá 2 pasos…" só existia no card da home (inalcançável p/ incompleto).
+    await loginAndOpenVacancy(page, w, vacancyId);
 
     const modal = page.getByRole('heading', { name: 'Registro incompleto' });
     await expect(modal).toBeVisible({ timeout: 10_000 });
@@ -107,13 +117,8 @@ test.describe('@integration Home — Postularse/Ver Detalles com cadastro incomp
     const vacancyId = insertMinimalVacancy({ includeInPublicListing: true });
     vacancies.push(vacancyId);
     const w = insertEligibilityWorker({ occupation: 'AT', phone: false });
-    await loginAndGoHome(page, w);
-
-    // Fase 4/DD5: 1 pendência de REGISTRO (phone → aba general) → "Completá
-    // Información General para postularte".
-    const postularseBtn = page.getByRole('button', { name: 'Completá Información General para postularte' }).first();
-    await expect(postularseBtn).toBeVisible({ timeout: 15_000 });
-    await postularseBtn.click();
+    // 096: entra pela vaga (/vacantes/:id), onde 1 pendência de REGISTRO (phone → aba general) abre o mesmo modal.
+    await loginAndOpenVacancy(page, w, vacancyId);
 
     const phoneItem = page.getByRole('button', { name: /Ir a Teléfono/i });
     await expect(phoneItem).toBeVisible({ timeout: 10_000 });
@@ -125,36 +130,27 @@ test.describe('@integration Home — Postularse/Ver Detalles com cadastro incomp
     await expect(generalTab).toHaveScreenshot('home-incomplete-modal-phone-general-tab.png', { maxDiffPixels: 200 });
   });
 
-  test('alt — "Ver Detalles" com cadastro incompleto abre o MESMO modal e NENHUMA request pra track-channel', async ({ page }) => {
+  test('alt — cadastro incompleto: a home NÃO mostra "Ver Detalles" nem "Postularse" (bloco genérico), sem track-channel e sem /workers/me/jobs', async ({ page }) => {
     const vacancyId = insertMinimalVacancy({ includeInPublicListing: true });
     vacancies.push(vacancyId);
     const w = insertEligibilityWorker({ occupation: 'AT', docCriminalRecord: false });
+    workers.push(w);
 
     const trackChannelRequests: Request[] = [];
     page.on('request', (req) => {
       if (req.url().includes('track-channel')) trackChannelRequests.push(req);
     });
+    await page.addInitScript(() => {
+      (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
+    });
+    await loginNewWorker(page, w.authUid, `${w.authUid}@test.local`);
+    const jobsCalls = countJobsRouteCalls(page);
+    await page.goto('/', { waitUntil: 'networkidle', timeout: 30_000 });
 
-    await loginAndGoHome(page, w);
-
-    const detailsBtn = page.getByRole('button', { name: 'Ver Detalles' }).first();
-    await expect(detailsBtn).toBeVisible({ timeout: 15_000 });
-
-    // O link externo da vaga NUNCA deve abrir com cadastro incompleto —
-    // interceptamos popup pra provar que nenhuma nova aba/navegação ocorre.
-    let popupOpened = false;
-    page.once('popup', () => { popupOpened = true; });
-
-    await detailsBtn.click();
-
-    const modal = page.getByRole('heading', { name: 'Registro incompleto' });
-    await expect(modal).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('[data-testid="incomplete-modal-pending-list"]')).toHaveScreenshot(
-      'home-incomplete-modal-ver-detalles.png',
-      { maxDiffPixels: 200 },
-    );
-
-    expect(popupOpened).toBe(false);
+    await expectHomeBlocked(page, jobsCalls);
+    await expect(page.getByRole('button', { name: 'Ver Detalles' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Postularse|postularte/ })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Registro incompleto' })).toHaveCount(0);
     expect(trackChannelRequests).toHaveLength(0);
   });
 
