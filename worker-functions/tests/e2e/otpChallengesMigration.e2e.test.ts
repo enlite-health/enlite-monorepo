@@ -45,4 +45,25 @@ describe('migration 592 — otp_challenges', () => {
       client.release();
     }
   });
+
+  it('T-F3c-107 o CHECK de purpose aceita claim, link e phone_verify e recusa outro valor', async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const w = await client.query<{ id: string }>(`INSERT INTO workers (auth_uid) VALUES ($1) RETURNING id`, [`otp-mig-${Date.now()}`]);
+      const insert = (purpose: string) =>
+        client.query(
+          `INSERT INTO otp_challenges (id, worker_id, purpose, phone_e164, code_hmac, expires_at, status)
+           VALUES (gen_random_uuid(), $1, $2, '+5491100000000', 'aa', NOW() + INTERVAL '10 minutes', 'canceled')`,
+          [w.rows[0].id, purpose],
+        );
+      for (const ok of ['claim', 'link', 'phone_verify']) await insert(ok);
+      await client.query('SAVEPOINT recusa');
+      await expect(insert('marketing')).rejects.toThrow(/otp_challenges_purpose_check/);
+      await client.query('ROLLBACK TO SAVEPOINT recusa');
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
 });

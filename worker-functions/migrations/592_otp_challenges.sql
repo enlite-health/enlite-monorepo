@@ -7,8 +7,11 @@
 --
 -- Finalidade (`purpose`) é CHECK com LISTA, de propósito: acrescentar uma finalidade nova é
 --   ALTER TABLE otp_challenges DROP CONSTRAINT otp_challenges_purpose_check,
---     ADD CONSTRAINT otp_challenges_purpose_check CHECK (purpose IN ('claim','link', '<nova>'));
+--     ADD CONSTRAINT otp_challenges_purpose_check CHECK (purpose IN ('claim','link','phone_verify', '<nova>'));
 -- sem recriar tabela, sem tocar dado (relaxar a lista nunca invalida linha existente).
+--
+-- Finalidades: `claim` e `link` (conta/vínculo) e `phone_verify` (celular verificado, emenda §3.2: o SERVIDOR decide a
+-- finalidade; o cliente não a escolhe). Entrou na própria 592 porque ela ainda não foi para a main.
 --
 -- Um desafio PENDENTE por (ficha, finalidade): índice único parcial. Um start de outra finalidade não cancela este.
 -- `phone_e164` é o telefone para o qual o código foi emitido (DP-21: a conferência o compara com o telefone da FICHA).
@@ -30,7 +33,7 @@ CREATE TABLE IF NOT EXISTS otp_challenges (
   twilio_sid  TEXT,
   send_status TEXT,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT otp_challenges_purpose_check CHECK (purpose IN ('claim', 'link')),
+  CONSTRAINT otp_challenges_purpose_check CHECK (purpose IN ('claim', 'link', 'phone_verify')),
   CONSTRAINT otp_challenges_status_check CHECK (status IN ('pending', 'consumed', 'canceled')),
   CONSTRAINT otp_challenges_attempts_check CHECK (attempts >= 0)
 );
