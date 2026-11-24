@@ -336,7 +336,7 @@
       "tooManyRequests": "Muitas tentativas. Tente novamente mais tarde",
       "emailAlreadyInUse": "Este e-mail já está em uso",
       "weakPassword": "A senha deve ter pelo menos 8 caracteres e incluir maiúscula, minúscula, número e caractere especial",
-      "passwordRequirements": "A senha deve incluir maiúscula, minúscula, número e caractere especial",
+      "passwordRequirements": "A senha deve incluir maiúscula, minúscula, número e um caractere especial desta lista: ^ $ * . [ ] { } ( ) ? \" ! @ # % & / \\ , > < ' : ; | _ ~ `",
       "operationNotAllowed": "Operação não permitida",
       "popupClosedByUser": "Login cancelado - popup fechado",
       "popupBlocked": "Popup bloqueado pelo navegador",

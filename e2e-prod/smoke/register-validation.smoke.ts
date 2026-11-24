@@ -11,7 +11,7 @@
  *  - registerSchema (RegisterPage.tsx) + es.json:
  *      email vazio      → login.emailRequired      = "El correo electrónico es obligatorio"
  *      email inválido   → register.invalidEmail    = "Por favor, ingrese un correo electrónico válido"
- *      senha <8         → register.passwordTooShort= "La contraseña debe tener al menos 8 caracteres"
+ *      senha <8         → auth.action.passwordMin= "La contraseña debe tener al menos 8 caracteres"
  *      senhas ≠         → register.passwordMismatch= "Las contraseñas no coinciden"
  *      LGPD não marcado → register.lgpdRequired    = "Debe aceptar los términos para registrarse"
  *
