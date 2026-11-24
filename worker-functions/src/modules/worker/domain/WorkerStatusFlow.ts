@@ -5,6 +5,8 @@
  * Sem valor "UNDECLARED": caller novo = valor novo aqui + no CHECK.
  */
 
+import type { ActorContext } from '@shared/audit/actorSource';
+
 export type WorkerStatusFlow =
   | 'WIZARD_PERSONAL_INFO'
   | 'WIZARD_AVAILABILITY'
@@ -45,3 +47,9 @@ export const WORKER_STATUS_FLOWS: readonly WorkerStatusFlow[] = [
   'MANUAL_SCRIPT',
   'TEST_FIXTURE',
 ] as const;
+
+/** O que o CHAMADOR declara ao pedir recálculo/escrita de status: fluxo obrigatório, ator opcional. */
+export type WorkerStatusDeclaration = {
+  flow: WorkerStatusFlow;
+  actor?: ActorContext;
+};

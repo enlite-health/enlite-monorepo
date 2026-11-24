@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { IWorkerRepository } from '../ports/IWorkerRepository';
 import { Worker, WorkerStatus, CreateWorkerDTO, SavePersonalInfoDTO } from '../domain/Worker';
+import type { WorkerStatusDeclaration } from '../domain/WorkerStatusFlow';
 import { Result } from '@shared/utils/Result';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
@@ -367,7 +368,7 @@ export class WorkerRepository implements IWorkerRepository {
   async updateFromImport(workerId: string, data: WorkerImportData): Promise<void> {
     return _updateFromImport(
       this.pool, this.encryptionService, this.blindIndexService, workerId, data,
-      (id) => this.recalculateStatus(id),
+      (id) => this.recalculateStatus(id, { flow: 'WORKER_IMPORT' }),
     );
   }
 
@@ -381,8 +382,8 @@ export class WorkerRepository implements IWorkerRepository {
    * trg_worker_status_history fires and records the transition.
    * Delegates to WorkerStatusRepository.
    */
-  async updateStatus(workerId: string, status: WorkerStatus): Promise<void> {
-    return _updateWorkerStatus(this.pool, workerId, status);
+  async updateStatus(workerId: string, status: WorkerStatus, declaration: WorkerStatusDeclaration): Promise<void> {
+    return _updateWorkerStatus(this.pool, workerId, status, declaration);
   }
 
   /**
@@ -390,8 +391,8 @@ export class WorkerRepository implements IWorkerRepository {
    * UPDATE and domain_events INSERT are atomic (same transaction). After
    * commit, publishes to Pub/Sub best-effort. Delegates to WorkerStatusRepository.
    */
-  async recalculateStatus(workerId: string): Promise<WorkerStatus | null> {
-    return _recalculateWorkerStatus(this.pool, workerId, this.pubsub);
+  async recalculateStatus(workerId: string, declaration: WorkerStatusDeclaration): Promise<WorkerStatus | null> {
+    return _recalculateWorkerStatus(this.pool, workerId, { ...declaration, pubsub: this.pubsub });
   }
 
   async updateImportedWorkerData(
