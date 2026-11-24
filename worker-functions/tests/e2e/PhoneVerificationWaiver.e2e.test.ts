@@ -71,6 +71,29 @@ describe('dispensa por legado do celular verificado', () => {
     });
   });
 
+  it('T-F3c-132 o carimbo preserva o updated_at das fichas (decisão do orquestrador: ninguém editou a ficha)', async () => {
+    await emTransacao(async (c) => {
+      const f = await novaFicha(c, { status: 'REGISTERED' });
+      // fixa um updated_at antigo (o gatilho é BEFORE UPDATE e o now() da transação seria igual ao da inserção)
+      await c.query('ALTER TABLE workers DISABLE TRIGGER update_workers_updated_at');
+      await c.query(`UPDATE workers SET updated_at = '2026-01-15 10:00:00+00' WHERE id = $1`, [f.id]);
+      await c.query('ALTER TABLE workers ENABLE TRIGGER update_workers_updated_at');
+      const lerUpdatedAt = async () =>
+        (await c.query<{ u: string }>(`SELECT updated_at::text AS u FROM workers WHERE id = $1`, [f.id])).rows[0].u;
+      const antes = await lerUpdatedAt();
+      await aplicarMigration(c);
+      expect(await waived(c, f.id)).not.toBeNull(); // o carimbo rodou nesta ficha
+      expect(await lerUpdatedAt()).toBe(antes); // e o updated_at é idêntico
+      // o gatilho voltou a ligado: edição real continua tocando updated_at
+      const { rows } = await c.query<{ tgenabled: string }>(
+        `SELECT tgenabled FROM pg_trigger WHERE tgrelid = 'workers'::regclass AND tgname = 'update_workers_updated_at'`,
+      );
+      expect(rows[0].tgenabled).toBe('O');
+      await c.query(`UPDATE workers SET timezone = timezone WHERE id = $1`, [f.id]);
+      expect(await lerUpdatedAt()).not.toBe(antes);
+    });
+  });
+
   it('T-F3c-132 UPDATE ... SET phone_verification_waived_at = NULL falha', async () => {
     await emTransacao(async (c) => {
       const f = await novaFicha(c, { status: 'REGISTERED' });

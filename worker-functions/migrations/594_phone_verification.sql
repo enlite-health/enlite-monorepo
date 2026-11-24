@@ -115,9 +115,14 @@ DECLARE
   v_vivas    bigint;
 BEGIN
   PERFORM set_config('enlite.merge_in_progress', 'on', true);
+  -- O carimbo NÃO é edição da ficha: update_workers_updated_at tocaria updated_at das ~864 REGISTERED (painéis e sincronizações leem
+  -- updated_at; ninguém editou). Mesmo precedente da 265: desliga o gatilho SÓ neste UPDATE (enlite_app é dono de workers). O bloco DO é
+  -- uma instrução só: se algo falhar, o DISABLE volta junto (nunca fica gatilho desligado).
+  ALTER TABLE workers DISABLE TRIGGER update_workers_updated_at;
   UPDATE workers SET phone_verification_waived_at = now()
    WHERE status = 'REGISTERED' AND merged_into_id IS NULL AND phone_verification_waived_at IS NULL;
   GET DIAGNOSTICS v_marcadas = ROW_COUNT;
+  ALTER TABLE workers ENABLE TRIGGER update_workers_updated_at;
   PERFORM set_config('enlite.merge_in_progress', 'off', true);
   SELECT count(*) INTO v_vivas FROM workers WHERE status = 'REGISTERED' AND merged_into_id IS NULL;
   RAISE NOTICE 'migration 594: % fichas dispensadas por legado; REGISTERED vivas no corte = %', v_marcadas, v_vivas;
