@@ -337,7 +337,7 @@
       "invalidLoginCredentials": "E-mail ou senha incorretos",
       "tooManyRequests": "Muitas tentativas. Tente novamente mais tarde",
       "emailAlreadyInUse": "Este e-mail já está em uso",
-      "weakPassword": "A senha deve ter pelo menos 6 caracteres",
+      "weakPassword": "A senha deve ter pelo menos 8 caracteres e incluir maiúscula, minúscula, número e caractere especial",
       "operationNotAllowed": "Operação não permitida",
       "popupClosedByUser": "Login cancelado - popup fechado",
       "popupBlocked": "Popup bloqueado pelo navegador",
