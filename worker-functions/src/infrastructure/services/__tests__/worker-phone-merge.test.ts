@@ -27,7 +27,8 @@ jest.mock('@shared/database/DatabaseConnection');
 jest.mock('@shared/logging', () => ({
   logger:      { child: jest.fn().mockReturnValue({ info: jest.fn(), error: jest.fn(), warn: jest.fn() }) },
   reportError: jest.fn(),
-  loggingAls:  { run: jest.fn() },
+  // getStore: o recálculo de status (WorkerStatusTransitions) lê o traceId do ALS; sem ele o mock lançava TypeError
+  loggingAls:  { run: jest.fn(), getStore: jest.fn() },
 }));
 
 import type { Pool } from 'pg';
