@@ -1,3 +1,4 @@
+import { TwilioVerifyOtpAdapter } from '@modules/auth/infrastructure/TwilioVerifyOtpAdapter';
 jest.mock('@shared/logging', () => ({
   logger:      { child: jest.fn().mockReturnValue({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }) },
   reportError: jest.fn(),
@@ -252,7 +253,7 @@ describe('InitWorkerUseCase', () => {
     it('ficha reclamável COM telefone → claim_pending: OTP ao telefone DA FICHA, sem religar nem criar', async () => {
       const repo = makeRepository({ findByEmail: jest.fn().mockResolvedValue(Result.ok(fichaImportadaComTelefone)) });
       const twilio = makeTwilioVerify();
-      const result = await new InitWorkerUseCase(repo as any, twilio as any).execute(makeCreateDTO(atacante));
+      const result = await new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any)).execute(makeCreateDTO(atacante));
 
       expect(result.isSuccess).toBe(true);
       expect(result.getValue()).toEqual({
@@ -275,7 +276,7 @@ describe('InitWorkerUseCase', () => {
     ])('%s → EMAIL_NOT_VERIFIED, sem OTP, sem religar e sem criar', async (_c, ficha) => {
       const repo = makeRepository({ findByEmail: jest.fn().mockResolvedValue(Result.ok(ficha)) });
       const twilio = makeTwilioVerify();
-      const result = await new InitWorkerUseCase(repo as any, twilio as any).execute(makeCreateDTO(atacante));
+      const result = await new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any)).execute(makeCreateDTO(atacante));
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('EMAIL_NOT_VERIFIED');
@@ -290,7 +291,7 @@ describe('InitWorkerUseCase', () => {
         hasAbsorbedRealLogin: jest.fn().mockResolvedValue(Result.ok(true)),
       });
       const twilio = makeTwilioVerify();
-      const result = await new InitWorkerUseCase(repo as any, twilio as any).execute(makeCreateDTO(atacante));
+      const result = await new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any)).execute(makeCreateDTO(atacante));
 
       expect(result.error).toBe('EMAIL_NOT_VERIFIED');
       expect(twilio.startVerification).not.toHaveBeenCalled();
@@ -299,7 +300,7 @@ describe('InitWorkerUseCase', () => {
     it('Twilio falha no OTP → TWILIO_ERROR, sem religar', async () => {
       const repo = makeRepository({ findByEmail: jest.fn().mockResolvedValue(Result.ok(fichaImportadaComTelefone)) });
       const twilio = makeTwilioVerify({ startVerification: jest.fn().mockRejectedValue(new Error('63111')) });
-      const result = await new InitWorkerUseCase(repo as any, twilio as any).execute(makeCreateDTO(atacante));
+      const result = await new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any)).execute(makeCreateDTO(atacante));
 
       expect(result.error).toBe('TWILIO_ERROR:63111');
       expect(repo.updateAuthUid).not.toHaveBeenCalled();
@@ -311,7 +312,7 @@ describe('InitWorkerUseCase', () => {
         updateAuthUid: jest.fn().mockResolvedValue(Result.ok({ ...fichaImportadaComTelefone, authUid: 'uidNovoDaDona' })),
       });
       const twilio = makeTwilioVerify();
-      const result = await new InitWorkerUseCase(repo as any, twilio as any).execute(makeCreateDTO({ authUid: 'uidNovoDaDona', emailVerified: true }));
+      const result = await new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any)).execute(makeCreateDTO({ authUid: 'uidNovoDaDona', emailVerified: true }));
 
       expect(result.isSuccess).toBe(true);
       expect(repo.updateAuthUid).toHaveBeenCalledWith(fichaImportadaComTelefone.id, 'uidNovoDaDona', undefined, undefined);
@@ -415,7 +416,7 @@ describe('InitWorkerUseCase', () => {
           findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
           findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
         });
-        const useCase = new InitWorkerUseCase(repo as any, twilio as any);
+        const useCase = new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
         const result = await useCase.execute(makeCreateDTO());
 
@@ -445,7 +446,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
       });
-      const useCase = new InitWorkerUseCase(repo as any, twilio as any);
+      const useCase = new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       // Payload envia phone DIFERENTE da ficha
       await useCase.execute(makeCreateDTO({ phone: '+5411999887766' }));
@@ -462,7 +463,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorkerAnacare)),
       });
-      const useCase = new InitWorkerUseCase(repo as any, twilio as any);
+      const useCase = new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeCreateDTO());
 
@@ -505,7 +506,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorkerSentinel)),
       });
-      const useCase = new InitWorkerUseCase(repo as any, twilio as any);
+      const useCase = new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       await useCase.execute(makeCreateDTO());
 
@@ -742,7 +743,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorkerWithCanonical)),
       });
-      const useCase = new InitWorkerUseCase(repo as any, twilio as any);
+      const useCase = new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeCreateDTO({ phone: '+5491155555555' }));
 
@@ -759,7 +760,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorkerWithCanonical)),
       });
-      const useCase = new InitWorkerUseCase(repo as any, twilio as any);
+      const useCase = new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeCreateDTO({ phone: '1155555555' }));
 
@@ -800,7 +801,7 @@ describe('InitWorkerUseCase', () => {
         findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorkerWithCanonical)),
       });
-      const useCase = new InitWorkerUseCase(repo as any, twilio as any);
+      const useCase = new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(
         makeCreateDTO({ phone: undefined, whatsappPhone: '+5491155555555' })

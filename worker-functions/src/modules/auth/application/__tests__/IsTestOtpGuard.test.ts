@@ -165,7 +165,7 @@ describe('IsTestOtpGuard — os 3 caminhos de envio passam pela guarda', () => {
       findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
       findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(ficha)),
     };
-    const uc = new InitWorkerUseCase(repo as never, guarded(sender));
+    const uc = new InitWorkerUseCase(repo as never, new TwilioVerifyOtpAdapter(guarded(sender)));
     const res = await uc.execute({ authUid: 'uid-1', email: TEST_TOKEN, emailVerified: false, phone: FICHA_PHONE });
     expect(res.getValue()).toMatchObject({ status: 'claim_pending' });
     expect(sender.startVerification).toHaveBeenCalledTimes(ctxCases(isTest).expectedCalls);

@@ -8,7 +8,7 @@ import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNo
 import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
 import { isEnliteTestEmail } from '@shared/utils/testAccountEmail';
 import { isClaimableWorker, isImportedWorker } from './isClaimableWorker';
-import { ITwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
+import { OTP_CHANNEL_UNAVAILABLE, OTP_RATE_LIMITED, type OtpChallengePort } from '@modules/auth/ports/OtpChallengePort';
 
 /**
  * `emailVerified` vem do token verificado (nunca do corpo): sem ele, o e-mail é só o que
@@ -26,7 +26,7 @@ export const EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED';
 export class InitWorkerUseCase {
   constructor(
     private workerRepository: IWorkerRepository,
-    private twilioVerify?: ITwilioVerifyService,
+    private otp?: OtpChallengePort,
   ) {}
 
   async execute(data: InitWorkerInput): Promise<Result<InitWorkerOutput>> {
@@ -212,9 +212,9 @@ export class InitWorkerUseCase {
       phoneE164: maskPhoneForLog(phoneE164),
     });
 
-    if (!this.twilioVerify) {
+    if (!this.otp) {
       // Fallback em ambientes sem Twilio configurado (testes de integração E2E
-      // que não passam twilioVerify): retorna claim_pending com sid sintético.
+      // que não passam o port de OTP): retorna claim_pending com sid sintético.
       return Result.ok<InitWorkerOutput>({
         status: 'claim_pending',
         candidateWorkerId: ficha.id,
@@ -224,10 +224,11 @@ export class InitWorkerUseCase {
     }
 
     try {
-      const { verificationSid } = await this.twilioVerify.startVerification(phoneE164, {
+      const { challengeId: verificationSid } = await this.otp.start({
         workerId: ficha.id,
-        fichaIsTest: ficha.isTest === true,
-        tokenEmail,
+        purpose: 'claim',
+        phoneE164,
+        ctx: { workerId: ficha.id, fichaIsTest: ficha.isTest === true, tokenEmail },
       });
       return Result.ok<InitWorkerOutput>({
         status: 'claim_pending',
@@ -237,6 +238,7 @@ export class InitWorkerUseCase {
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      if (msg === OTP_RATE_LIMITED || msg === OTP_CHANNEL_UNAVAILABLE) return Result.fail<InitWorkerOutput>(msg);
       return Result.fail<InitWorkerOutput>(`TWILIO_ERROR:${msg}`);
     }
   }
