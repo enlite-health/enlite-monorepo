@@ -23,6 +23,7 @@
 import type { PoolClient } from 'pg';
 import { logger, reportError } from '@shared/logging';
 import type { FkTableInfo } from './WorkerPhoneMergeFkDiscovery';
+import { disable, recalculateInTransaction } from '../../modules/worker/infrastructure/WorkerStatusTransitions';
 
 const log = logger.child({ source: 'WorkerMergeSnapshotService' });
 
@@ -189,6 +190,9 @@ export async function restoreSnapshot(
     });
   }
 
+  // 4b. Status pelo escritor único (DF-9), DEPOIS das FKs: o recálculo lê documentos/áreas já restaurados.
+  await restoreStatusAfterUndo(client, absorbedId, payload.worker_row.status);
+
   // 5. Marca snapshot como desfeito
   await client.query(
     `UPDATE worker_merge_snapshots SET undone_at = NOW() WHERE id = $1::uuid`,
@@ -259,7 +263,8 @@ async function restoreWorkerRow(
   workerRow: Record<string, unknown>,
 ): Promise<void> {
   // Exclui colunas geradas/imutáveis que não podem ser escritas diretamente
-  const SKIP_COLS = new Set(['id', 'phone_normalized', 'created_at']);
+  // `status` fica de fora (spec 093 DF-9): só o escritor único grava status — ver `restoreStatusAfterUndo`.
+  const SKIP_COLS = new Set(['id', 'phone_normalized', 'created_at', 'status']);
 
   const setClauses: string[] = [];
   const values: unknown[] = [];
@@ -279,6 +284,22 @@ async function restoreWorkerRow(
     `UPDATE workers SET ${setClauses.join(', ')} WHERE id = $${idx}::uuid`,
     values,
   );
+}
+
+/**
+ * DF-9: o snapshot guarda o status, mas o undo não o escreve por fora. Era DISABLED → `disable`;
+ * senão `recalculateInTransaction` (eventos enfileirados saem pelo sweep — sem Pub/Sub em escopo).
+ */
+async function restoreStatusAfterUndo(
+  client: PoolClient,
+  absorbedId: string,
+  snapshotStatus: unknown,
+): Promise<void> {
+  if (snapshotStatus === 'DISABLED') {
+    await disable(client, absorbedId, { flow: 'MERGE_UNDO' });
+    return;
+  }
+  await recalculateInTransaction(client, absorbedId, { flow: 'MERGE_UNDO' });
 }
 
 /**

@@ -18,6 +18,9 @@ import type {
   MergeAuditContext,
 } from './DedupTypes';
 import { resolveAdminEmail } from './resolveAdminEmail';
+import { withActorContext } from '@shared/database/actorContext';
+import { staffActor } from '@shared/audit/actorSource';
+import { recalculateInTransaction } from '../../modules/worker/infrastructure/WorkerStatusTransitions';
 
 const log = logger.child({ source: 'ExecuteAdminMergeUseCase' });
 
@@ -133,6 +136,16 @@ export class ExecuteAdminMergeUseCase {
       }
     }
 
+    // DF-8: status NÃO é campo sobrescrevível — depois do merge, o escritor único recalcula o do
+    // sobrevivente (flow ADMIN_MERGE), na MESMA transação do recálculo. Sem Pub/Sub em escopo aqui:
+    // os domain_events enfileirados saem pelo sweep do DomainEventProcessor (sem publish pós-commit).
+    const statusActor = staffActor(executedBy) ?? undefined;
+    await withActorContext(
+      this.pool,
+      (client) => recalculateInTransaction(client, survivorId, { flow: 'ADMIN_MERGE', actor: statusActor }),
+      statusActor,
+    );
+
     log.info({
       msg: 'admin_merge_done',
       survivorId,
@@ -205,13 +218,15 @@ export class ExecuteAdminMergeUseCase {
  * públicos + as colunas `*_encrypted` que aparecem no comparativo do detalhe
  * (GetDedupGroupDetailUseCase.ENCRYPTED_FIELDS). Para encriptados copiamos o
  * ciphertext, nunca o plaintext.
+ *
+ * `status` NÃO entra (spec 093 DF-8): é derivado/decisão de staff e só sai do escritor único
+ * (`WorkerStatusTransitions`). Um choice para `status` é ignorado pelo filtro de `applyFieldChoices`.
  */
-const OVERRIDABLE_FIELDS = new Set<string>([
+export const OVERRIDABLE_FIELDS = new Set<string>([
   // Públicos
   'profession',
   'knowledge_level',
   'years_experience',
-  'status',
   // Encriptados (ciphertext copiado direto)
   'first_name_encrypted',
   'last_name_encrypted',
