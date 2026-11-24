@@ -7,27 +7,7 @@
 
 import type { ActorContext } from '@shared/audit/actorSource';
 
-export type WorkerStatusFlow =
-  | 'WIZARD_PERSONAL_INFO'
-  | 'WIZARD_AVAILABILITY'
-  | 'WIZARD_SERVICE_AREA'
-  | 'WIZARD_STEP'
-  | 'WORKER_DOCUMENT_UPLOAD'
-  | 'ADMIN_DOCUMENT_REVIEW'
-  | 'PROFILE_FIELDS_EDIT'
-  | 'ADMIN_STATUS_CHANGE'
-  | 'WORKER_IMPORT'
-  | 'PHONE_MERGE'
-  | 'CLAIM_SHELL_ABSORB'
-  | 'ADMIN_MERGE'
-  | 'MERGE_UNDO'
-  | 'ARCHIVE_REACTIVATION'
-  | 'ACCOUNT_DEACTIVATION'
-  | 'MIGRATION'
-  | 'MANUAL_SCRIPT'
-  | 'TEST_FIXTURE';
-
-export const WORKER_STATUS_FLOWS: readonly WorkerStatusFlow[] = [
+export const WORKER_STATUS_FLOWS = [
   'WIZARD_PERSONAL_INFO',
   'WIZARD_AVAILABILITY',
   'WIZARD_SERVICE_AREA',
@@ -47,6 +27,8 @@ export const WORKER_STATUS_FLOWS: readonly WorkerStatusFlow[] = [
   'MANUAL_SCRIPT',
   'TEST_FIXTURE',
 ] as const;
+
+export type WorkerStatusFlow = (typeof WORKER_STATUS_FLOWS)[number];
 
 /** O que o CHAMADOR declara ao pedir recálculo/escrita de status: fluxo obrigatório, ator opcional. */
 export type WorkerStatusDeclaration = {

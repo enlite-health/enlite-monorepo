@@ -18,9 +18,6 @@ import type {
   MergeAuditContext,
 } from './DedupTypes';
 import { resolveAdminEmail } from './resolveAdminEmail';
-import { withActorContext } from '@shared/database/actorContext';
-import { staffActor } from '@shared/audit/actorSource';
-import { recalculateInTransaction } from '../../modules/worker/infrastructure/WorkerStatusTransitions';
 
 const log = logger.child({ source: 'ExecuteAdminMergeUseCase' });
 
@@ -137,15 +134,9 @@ export class ExecuteAdminMergeUseCase {
       }
     }
 
-    // DF-8: status NÃO é campo sobrescrevível — depois do merge, o escritor único recalcula o do
-    // sobrevivente (flow ADMIN_MERGE), na MESMA transação do recálculo. Sem Pub/Sub em escopo aqui:
-    // os domain_events enfileirados saem pelo sweep do DomainEventProcessor (sem publish pós-commit).
-    const statusActor = staffActor(executedBy) ?? undefined;
-    await withActorContext(
-      this.pool,
-      (client) => recalculateInTransaction(client, survivorId, { flow: 'ADMIN_MERGE', actor: statusActor }),
-      statusActor,
-    );
+    // DF-8: status NÃO é campo sobrescrevível. O recálculo do sobrevivente (flow ADMIN_MERGE) já roda dentro de
+    // `executeSingleMerge` (sem client externo), e lá falha vira warn — não repetimos aqui, senão uma falha
+    // pós-commit viraria erro ao admin de um merge que deu certo.
 
     log.info({
       msg: 'admin_merge_done',

@@ -12,21 +12,11 @@ jest.mock('@shared/logging', () => ({
   reportError: jest.fn(),
 }));
 
-const mockTxClient = { query: jest.fn() };
-jest.mock('@shared/database/actorContext', () => ({
-  withActorContext: jest.fn((_pool: unknown, fn: (c: unknown) => Promise<unknown>) => fn(mockTxClient)),
-}));
-jest.mock('../../../modules/worker/infrastructure/WorkerStatusTransitions', () => ({
-  recalculateInTransaction: jest
-    .fn()
-    .mockResolvedValue({ newStatus: null, eventIds: { mirror: null, registrationCompleted: null } }),
-}));
 jest.mock('../../../infrastructure/services/WorkerPhoneMergeService');
 jest.mock('../../../infrastructure/services/WorkerPhoneMergeFkDiscovery');
 
 import type { Pool } from 'pg';
 import { ExecuteAdminMergeUseCase, OVERRIDABLE_FIELDS } from '../ExecuteAdminMergeUseCase';
-import { recalculateInTransaction } from '../../../modules/worker/infrastructure/WorkerStatusTransitions';
 import { WorkerPhoneMergeService } from '../../../infrastructure/services/WorkerPhoneMergeService';
 import { discoverWorkerFkTables } from '../../../infrastructure/services/WorkerPhoneMergeFkDiscovery';
 
@@ -465,7 +455,7 @@ describe('ExecuteAdminMergeUseCase — status pelo escritor único (CA-6)', () =
     expect(OVERRIDABLE_FIELDS.has('status')).toBe(false);
   });
 
-  it('CA-6: choice para status é ignorado (sem UPDATE) e o recálculo roda com flow ADMIN_MERGE', async () => {
+  it('CA-6: choice para status é ignorado (sem UPDATE) e o serviço recebe flow ADMIN_MERGE (o recálculo do sobrevivente é dele)', async () => {
     const pool = makePool([
       { rows: [{ id: SURVIVOR_ID, phone_normalized: PHONE_NORM, merged_into_id: null }] },
       { rows: [{ merged_into_id: null }] },
@@ -481,10 +471,9 @@ describe('ExecuteAdminMergeUseCase — status pelo escritor único (CA-6)', () =
 
     const sqls = (pool.query as jest.Mock).mock.calls.map((c: [string]) => c[0]);
     expect(sqls.some((q: string) => q.includes('UPDATE workers SET'))).toBe(false);
-    expect(recalculateInTransaction).toHaveBeenCalledWith(mockTxClient, SURVIVOR_ID, {
-      flow: 'ADMIN_MERGE',
-      actor: undefined,
-    });
+    expect(MockMergeService.prototype.executeSingleMerge).toHaveBeenCalledWith(
+      expect.objectContaining({ flow: 'ADMIN_MERGE', survivorId: SURVIVOR_ID }),
+    );
   });
 
   it('DF-8: o serviço de merge recebe flow ADMIN_MERGE (o log do recálculo interno não diz PHONE_MERGE)', async () => {

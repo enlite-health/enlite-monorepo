@@ -15,7 +15,7 @@
  * Em prd: subir o cloud-sql-proxy da instância de produção na porta 5436 (conforme a memória
  * `acesso-operacional-prod.md`) e exportar DATABASE_URL apontando para ela, com a credencial lida do
  * Secret Manager NA HORA — a senha nunca vai para este arquivo, para o shell history nem para o chat.
- * Rodar o dry-run primeiro e conferir `would_promote` antes do `--execute`.
+ * Rodar o dry-run primeiro e conferir `candidates` (teto) antes do `--execute`.
  *
  * O que ela faz com cada tentativa: `PromoteBlockedApplicationsUseCase.executeForBlockedApplication`
  * (a mesma porta do botão "Promover"), que revalida vaga válida, WJA já existente, elegibilidade do

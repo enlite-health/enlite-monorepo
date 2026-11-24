@@ -39,25 +39,12 @@ describe('Spec 093 CA-8 — carga única de promoção das tentativas bloqueadas
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE '${PREFIX}%'`);
   };
 
-  /** Worker com status declarado: a migration 591 exige `app.status_flow` na mesma transação. */
-  const criarWorker = async (tag: string, status: string): Promise<string> => {
-    const c = await pool.connect();
-    try {
-      await c.query('BEGIN');
-      await c.query(`SELECT set_config('app.status_flow', 'TEST_FIXTURE', true)`);
-      const { rows } = await c.query<{ id: string }>(
-        `INSERT INTO workers (auth_uid, email, country, status, occupation) VALUES ($1, $2, 'AR', $3, 'AT') RETURNING id`,
-        [`${PREFIX}${tag}`, `${PREFIX}${tag}@e2e.local`, status],
-      );
-      await c.query('COMMIT');
-      return rows[0].id;
-    } catch (e) {
-      await c.query('ROLLBACK');
-      throw e;
-    } finally {
-      c.release();
-    }
-  };
+  /** INSERT com status inicial: o trigger da migration 591 é só de UPDATE, então não precisa declarar fluxo. */
+  const criarWorker = async (tag: string, status: string): Promise<string> =>
+    (await pool.query<{ id: string }>(
+      `INSERT INTO workers (auth_uid, email, country, status, occupation) VALUES ($1, $2, 'AR', $3, 'AT') RETURNING id`,
+      [`${PREFIX}${tag}`, `${PREFIX}${tag}@e2e.local`, status],
+    )).rows[0].id;
 
   const bloquear = async (workerId: string): Promise<string> =>
     (await pool.query<{ id: string }>(

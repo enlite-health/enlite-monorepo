@@ -11,6 +11,7 @@ import { reactivateIfArchivedByUs } from '../../src/modules/worker/application/R
 import { DomainEventProcessor } from '../../src/shared/events/DomainEventProcessor';
 import { createPromoteBlockedApplicationsHandler } from '../../src/modules/matching/application/PromoteBlockedApplicationsEventHandler';
 import { completeWorkerProfile, cleanWorkerProfile } from './helpers/aptoWorkerFixture';
+import { setWorkerStatusForTest } from './helpers/setWorkerStatusForTest';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
 const PREFIX = 'br093-';
@@ -53,18 +54,14 @@ describe('Spec 093 CA-5 — reativação promove a tentativa bloqueada @integrat
       [`${PREFIX}w`, `${PREFIX}w@e2e.local`])).rows[0].id;
     await completeWorkerProfile(pool, workerId, 'validated');
 
-    // Baixa administrativa do lote reversível (changed_by = ARQUIVADOR), com fluxo declarado.
+    // Baixa administrativa do lote reversível (changed_by = ARQUIVADOR). O helper abre a própria transação e declara o
+    // fluxo (TEST_FIXTURE); o ator vai no escopo da SESSÃO (set_config is_local=false) e é zerado ao devolver o client.
     const c = await pool.connect();
     try {
-      await c.query('BEGIN');
-      await c.query(`SELECT set_config('app.status_flow', 'MANUAL_SCRIPT', true)`);
-      await c.query(`SELECT set_config('app.current_uid', $1, true)`, [ARQUIVADOR]);
-      await c.query(`UPDATE workers SET status = 'DISABLED' WHERE id = $1`, [workerId]);
-      await c.query('COMMIT');
-    } catch (e) {
-      await c.query('ROLLBACK');
-      throw e;
+      await c.query(`SELECT set_config('app.current_uid', $1, false)`, [ARQUIVADOR]);
+      await setWorkerStatusForTest(c, workerId, 'DISABLED');
     } finally {
+      await c.query(`SELECT set_config('app.current_uid', '', false)`).catch(() => undefined);
       c.release();
     }
 
