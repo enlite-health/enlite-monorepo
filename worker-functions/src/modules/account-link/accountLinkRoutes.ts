@@ -4,7 +4,7 @@
  * Flag ACCOUNT_LINK_ENABLED (checada POR REQUEST): OFF → 404 em tudo, prod
  * neutro — o front trata 404 como "fluxo não existe" e mantém o toast atual.
  *
- * Rate-limits por IP (mesma régua do claim, que já protege o Twilio) além do
+ * Lookup: limite por conta (uid) E por IP. Start/confirm: rate-limits por IP (mesma régua do claim, que já protege o Twilio) além do
  * limite por conta (3 starts/h) checado no service via account_link_events.
  */
 
@@ -13,6 +13,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import type { AccountLinkController } from './AccountLinkController';
 import type { AuthMiddleware } from '../identity/interfaces/middleware/AuthMiddleware';
 import { routeClass } from '../identity/permissions';
+import { selfUid } from '@shared/http/selfUid';
 
 function flagGate(req: Request, res: Response, next: NextFunction): void {
   if (process.env.ACCOUNT_LINK_ENABLED !== 'true') {
@@ -42,6 +43,30 @@ const confirmIpLimit = rateLimit({
   message: { success: false, code: 'RATE_LIMITED', error: 'Too many attempts. Try again later.' },
 });
 
+// LOOKUP: oráculo de enumeração (409 NO_CONFLICT × 200 mascarado × 409 USE_CLAIM
+// revela se um telefone é de outra conta). O front só chama depois de um 409 de
+// telefone ao salvar o perfil (1-2 por tentativa), então 10/15 min POR CONTA
+// folga o uso real e trava quem varre números. A chave é o uid do JWT (a rota é
+// autenticada), por isso o limitador por conta roda DEPOIS do auth. O por IP é
+// mais folgado (30/15 min) e roda ANTES: IP de saída compartilhado (NAT, BFF)
+// não pode virar balde de todo mundo. Store = memória por instância (como os
+// irmãos): com N instâncias o teto efetivo é até N× o valor.
+export const LOOKUP_UID_MAX = 10;
+export const LOOKUP_IP_MAX = 30;
+const LOOKUP_WINDOW_MS = 15 * 60 * 1000;
+
+const lookupIpLimit = rateLimit({
+  windowMs: LOOKUP_WINDOW_MS, max: LOOKUP_IP_MAX, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: ipKey,
+  message: { success: false, code: 'RATE_LIMITED', error: 'Too many lookups. Try again later.' },
+});
+
+const lookupUidLimit = rateLimit({
+  windowMs: LOOKUP_WINDOW_MS, max: LOOKUP_UID_MAX, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: (req: Request) => `uid:${selfUid(req) ?? ipKey(req)}`,
+  message: { success: false, code: 'RATE_LIMITED', error: 'Too many lookups. Try again later.' },
+});
+
 export function createAccountLinkRoutes(
   controller: AccountLinkController,
   authMiddleware: AuthMiddleware,
@@ -49,7 +74,7 @@ export function createAccountLinkRoutes(
   const router = Router();
   const auth = [authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update')];
 
-  router.post('/workers/me/account-link/lookup', flagGate, routeClass('client-policy'), ...auth,
+  router.post('/workers/me/account-link/lookup', flagGate, routeClass('client-policy'), lookupIpLimit, ...auth, lookupUidLimit,
     (req: Request, res: Response) => void controller.lookup(req, res));
 
   router.post('/workers/me/account-link/start', flagGate, routeClass('client-policy'), startIpLimit, ...auth,
