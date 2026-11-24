@@ -17,16 +17,11 @@ import { GoogleLoginButton } from '@presentation/components/features/auth/Google
 import { WorkerInitOutcomePanel } from '@presentation/components/features/auth/WorkerInitOutcomePanel';
 import { runWorkerInit, type WorkerInitOutcome } from '@presentation/utils/workerInitOutcome';
 import { getAuthErrorMessage } from '@presentation/utils/authErrorMapper';
+import { passwordSchema } from '@presentation/utils/passwordSchema';
 
 const registerSchema = z.object({
   email: z.string().min(1, 'login.emailRequired').email('register.invalidEmail'),
-  // D770: mínimo 8 + maiúscula + minúscula + número + especial (igual à política do Identity Platform, Notify).
-  password: z.string()
-    .min(8, 'register.passwordTooShort')
-    .regex(/[A-Z]/, 'register.passwordRequirements')
-    .regex(/[a-z]/, 'register.passwordRequirements')
-    .regex(/[0-9]/, 'register.passwordRequirements')
-    .regex(/[^A-Za-z0-9]/, 'register.passwordRequirements'),
+  password: passwordSchema,
   confirmPassword: z.string().min(1, 'login.passwordRequired'),
   whatsapp: z.string().optional(),
   lgpdOptIn: z.boolean().refine((v) => v === true, 'register.lgpdRequired'),

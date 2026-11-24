@@ -188,8 +188,6 @@
     "loginButtonNav": "Iniciar sesión",
     "passwordMismatch": "Las contraseñas no coinciden",
     "invalidEmail": "Por favor, ingrese un correo electrónico válido",
-    "passwordTooShort": "La contraseña debe tener al menos 8 caracteres",
-    "passwordRequirements": "La contraseña debe incluir mayúscula, minúscula, número y carácter especial",
     "registeringAs": "Registrándose como",
     "whatsapp": "WhatsApp",
     "whatsappPlaceholder": "+54 (11) 9999-9999",

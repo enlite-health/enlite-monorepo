@@ -66,15 +66,15 @@ const banner = () => document.querySelector('.bg-red-50')?.textContent;
 describe('RegisterPage senha 8 + 4 classes (D770)', () => {
   it('T-F3c-39: 7 caracteres (Abcde1!) recusa por tamanho', async () => {
     enviar('Abcde1!');
-    await waitFor(() => expect(banner()).toBe('register.passwordTooShort'));
+    await waitFor(() => expect(banner()).toBe('auth.action.passwordMin'));
   });
   it('T-F3c-39: sem maiúscula (abcdef1!) recusa pelos requisitos', async () => {
     enviar('abcdef1!');
-    await waitFor(() => expect(banner()).toBe('register.passwordRequirements'));
+    await waitFor(() => expect(banner()).toBe('auth.errors.passwordRequirements'));
   });
   it('T-F3c-39: sem especial (Abcdefg1) recusa pelos requisitos', async () => {
     enviar('Abcdefg1');
-    await waitFor(() => expect(banner()).toBe('register.passwordRequirements'));
+    await waitFor(() => expect(banner()).toBe('auth.errors.passwordRequirements'));
   });
   it('T-F3c-39: completa (Abcdef1!) aceita e segue para o cadastro', async () => {
     mockInitWorker.mockResolvedValue({ id: 'w1' });

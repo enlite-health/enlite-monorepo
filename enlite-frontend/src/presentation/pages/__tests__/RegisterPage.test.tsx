@@ -452,7 +452,7 @@ describe('RegisterPage', () => {
       await waitFor(() => {
         const banner = document.querySelector('.bg-red-50');
         expect(banner).toBeTruthy();
-        expect(banner!.textContent).toBe('register.passwordTooShort');
+        expect(banner!.textContent).toBe('auth.action.passwordMin');
       });
     });
   });
