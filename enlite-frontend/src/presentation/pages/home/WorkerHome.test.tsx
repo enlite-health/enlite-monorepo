@@ -9,7 +9,7 @@
  * `missingFields`/`profession` crus e decide sozinho o que mostrar.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { WorkerHome } from './WorkerHome';
 import type { WorkerProgressResponse } from '@infrastructure/http/WorkerApiService';
 import { makeWorkerProgress } from '../../../test/workerProgressFixtures';
@@ -226,16 +226,36 @@ describe('WorkerHome — completude não apurada (missingFields null/ausente)', 
 // ── Falha no fetch ────────────────────────────────────────────────────────────
 
 describe('WorkerHome — falha no fetch', () => {
-  it('getProgress rejeita → console.error, workerData null, bloco genérico, sem lista', async () => {
+  it('getProgress rejeita → console.error, workerData null, cartão de erro (não o bloco de cadastro)', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mockGetProgress.mockRejectedValue(new Error('network down'));
     mockGetAvailability.mockResolvedValue([]);
 
     render(<WorkerHome />);
 
-    expect(await screen.findByTestId('complete-profile-notice')).toBeInTheDocument();
+    // Falha de carga ≠ cadastro incompleto: cartão de erro com "Reintentar", NUNCA o bloco de cadastro.
+    expect(await screen.findByTestId('home-load-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('complete-profile-notice')).not.toBeInTheDocument();
     expect(screen.queryByTestId('jobs-embedded-section')).not.toBeInTheDocument();
     expect(consoleSpy).toHaveBeenCalledWith('Failed to fetch worker data:', expect.any(Error));
+    consoleSpy.mockRestore();
+  });
+});
+
+describe('WorkerHome — falha de carga: Reintentar', () => {
+  it('getAvailability rejeita → cartão de erro; "Reintentar" refaz a carga e, completo, mostra a lista', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mockGetProgress.mockResolvedValue(makeWorker({ missingFields: [] }));
+    mockGetAvailability.mockRejectedValueOnce(new Error('boom')).mockResolvedValue([]);
+
+    render(<WorkerHome />);
+
+    expect(await screen.findByTestId('home-load-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('complete-profile-notice')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('home-load-error-retry'));
+    expect(await screen.findByTestId('jobs-embedded-section')).toBeInTheDocument();
+    expect(screen.queryByTestId('home-load-error')).not.toBeInTheDocument();
+    expect(mockGetProgress).toHaveBeenCalledTimes(2);
     consoleSpy.mockRestore();
   });
 });

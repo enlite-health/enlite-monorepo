@@ -103,10 +103,16 @@ async function injectMockAuthIntoLocalStorage(
   }
 }
 
+export interface WorkerInterceptorOptions {
+  /** true = `GET /api/workers/me` vai ao backend REAL (com o token `mock_*`), sem o stub abaixo: a completude vem da massa semeada. */
+  realMe?: boolean;
+}
+
 export async function installWorkerInterceptors(
   page: Page,
   authUid: string,
   email: string,
+  options: WorkerInterceptorOptions = {},
 ): Promise<void> {
   const fakeIdToken = buildFakeIdToken(authUid, email);
   const mockToken = buildMockToken(authUid, email);
@@ -205,14 +211,15 @@ export async function installWorkerInterceptors(
       });
       return;
     }
-    if (url.includes('/api/workers/me') && route.request().method() === 'GET') {
+    // Stub do prestador COMPLETO (`missingFields: []`): a home bloqueia quem não tem completude apurada (096).
+    if (!options.realMe && url.includes('/api/workers/me') && route.request().method() === 'GET') {
       await route.fulfill({
         status: 200, contentType: 'application/json',
         body: JSON.stringify({
           success: true,
           data: {
             id: authUid, authUid, email,
-            status: 'INCOMPLETE_REGISTER', country: 'AR',
+            status: 'INCOMPLETE_REGISTER', country: 'AR', missingFields: [],
             timezone: 'America/Argentina/Buenos_Aires',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -237,8 +244,9 @@ export async function loginAsWorker(
   page: Page,
   authUid: string,
   email: string,
+  options: WorkerInterceptorOptions = {},
 ): Promise<void> {
-  await installWorkerInterceptors(page, authUid, email);
+  await installWorkerInterceptors(page, authUid, email, options);
   await page.goto('/login');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill('TestWorker123!');

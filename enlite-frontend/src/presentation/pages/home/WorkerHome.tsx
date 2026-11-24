@@ -23,6 +23,9 @@ export const WorkerHome = (): JSX.Element => {
   const { getProgress, getAvailability } = useWorkerApi();
   const [workerData, setWorkerData] = useState<WorkerProgressResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // Falha ao carregar /me ou a disponibilidade ≠ cadastro incompleto: cartão de erro com "Reintentar", nunca o bloco de cadastro.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const navItems = useWorkerNavItems();
   const profilePhoto = useWorkerRegistrationStore((state) => state.data.generalInfo.profilePhoto);
 
@@ -43,7 +46,7 @@ export const WorkerHome = (): JSX.Element => {
   // Cadastro incompleto (ou ainda não apurado = fail-closed) ⇒ bloco genérico no lugar do mapa e da lista, e a rota
   // `/workers/me/jobs` (e o Google Maps) nem são acionados: o hook só é habilitado com o cadastro COMPLETO segundo o servidor.
   const radiusState = useWorkerJobsByRadius(Boolean(user?.id) && !isLoading && isFullyRegistered, attempt);
-  const isLocked = !isLoading && (!isFullyRegistered || radiusState.status === 'incomplete');
+  const isLocked = !isLoading && !loadFailed && (!isFullyRegistered || radiusState.status === 'incomplete');
 
   const [radiusKm, setRadiusKm] = useState<JobRadiusKm>(DEFAULT_RADIUS_KM);
   // Nada em 100 km mas há vagas mais longe (`nearest`): a lista mostra as mais próximas, em vez de vazia.
@@ -57,6 +60,8 @@ export const WorkerHome = (): JSX.Element => {
   useEffect(() => {
     const fetchWorkerData = async () => {
       if (!user?.id) return;
+      setIsLoading(true);
+      setLoadFailed(false);
 
       try {
         const [data, availability] = await Promise.all([
@@ -71,19 +76,20 @@ export const WorkerHome = (): JSX.Element => {
       } catch (error) {
         console.error('Failed to fetch worker data:', error);
         setWorkerData(null);
+        setLoadFailed(true);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchWorkerData();
-  }, [user?.id, getProgress, getAvailability]);
+  }, [user?.id, getProgress, getAvailability, loadAttempt]);
 
   return (
     <AppLayout navItems={navItems} userName={user?.name || t('common.userFallback')} userAvatar={profilePhoto || undefined}>
       <TopNavbar userName={user?.name || t('common.userFallback')} className="w-full mb-6" />
 
-      {!isLoading && hasPendingTasks && (
+      {!isLoading && !loadFailed && hasPendingTasks && (
         <PendingTasksCard
           missingFields={missingFields as string[]}
           profession={workerData?.profession}
@@ -94,11 +100,12 @@ export const WorkerHome = (): JSX.Element => {
 
       {isLoading && <div data-testid="radius-loading" className="mb-6 h-24 animate-pulse rounded-[20px] bg-gray-100" />}
       {isLocked && <RegistrationLockedNotice />}
-      {!isLoading && !isLocked && radiusState.status === 'error' && <HomeLoadErrorNotice onRetry={() => setAttempt((n) => n + 1)} />}
-      {!isLoading && !isLocked && <JobsRadiusMap state={radiusState} radiusKm={radiusKm} onRadiusChange={setRadiusKm} />}
+      {!isLoading && loadFailed && <HomeLoadErrorNotice onRetry={() => setLoadAttempt((n) => n + 1)} />}
+      {!isLoading && !isLocked && !loadFailed && radiusState.status === 'error' && <HomeLoadErrorNotice onRetry={() => setAttempt((n) => n + 1)} />}
+      {!isLoading && !isLocked && !loadFailed && <JobsRadiusMap state={radiusState} radiusKm={radiusKm} onRadiusChange={setRadiusKm} />}
 
       {/* Sem lista enquanto carrega (evita o "pisca" da lista pública), com cadastro incompleto ou com a rota da home falhando. */}
-      {!isLoading && !isLocked && radiusState.status !== 'error' && radiusState.status !== 'loading' && (
+      {!isLoading && !isLocked && !loadFailed && radiusState.status !== 'error' && radiusState.status !== 'loading' && (
         <JobsEmbeddedSection
           radiusScope={radiusScope}
           nearestFallback={nearest !== null}

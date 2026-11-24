@@ -217,7 +217,8 @@ test.describe('@integration Home do prestador — mapa por raio (096)', () => {
     await page.addInitScript(() => {
       (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
     });
-    await loginAsWorker(page, uid, `${uid}@test.local`);
+    // `/me` vai ao backend REAL: a completude (incompleta) vem da massa semeada, não de stub.
+    await loginAsWorker(page, uid, `${uid}@test.local`, { realMe: true });
     let jobsRouteCalls = 0;
     await page.route('**/api/workers/me/jobs**', async (route) => {
       jobsRouteCalls += 1;
@@ -236,25 +237,32 @@ test.describe('@integration Home do prestador — mapa por raio (096)', () => {
     await shot(page, print);
   }
 
-  test('home mapa raio — A1: sem endereço → aviso "Tu dirección" com botão para a aba certa; nem mapa nem lista', async ({ page }) => {
+  test('home mapa raio — A0 controle: conta completa (/me com missingFields vazio) vê mapa e lista, sem o bloco de cadastro', async ({ page }) => {
+    await goHome(page, uidMain);
+    await expect(page.getByTestId('jobs-radius-section')).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('#jobs-section')).toBeVisible();
+    await expect(page.getByTestId('complete-profile-notice')).toHaveCount(0);
+  });
+
+  test('home mapa raio — A1: sem endereço (massa incompleta, /me real) → bloco genérico com botão para o perfil; nem mapa nem lista', async ({ page }) => {
     await expectAviso(page, uidSemEndereco, 'aviso-sem-endereco-1440x900.png');
     await page.getByRole('button', { name: 'Completar registro' }).click();
     await expect(page).toHaveURL(/\/worker\/profile/);
   });
 
-  test('home mapa raio — A2: sem profissão → aviso "Tu profesión"; o botão leva ao campo', async ({ page }) => {
+  test('home mapa raio — A2: sem profissão (massa incompleta) → bloco genérico; nem mapa nem lista', async ({ page }) => {
     await expectAviso(page, uidSemProfissao, 'aviso-sem-profissao-1440x900.png');
   });
 
-  test('home mapa raio — A3: sem disponibilidade → aviso "Tu disponibilidad"; o botão leva à aba', async ({ page }) => {
+  test('home mapa raio — A3: sem disponibilidade (massa incompleta) → bloco genérico; nem mapa nem lista', async ({ page }) => {
     await expectAviso(page, uidSemDisp, 'aviso-sem-disponibilidade-1440x900.png');
   });
 
-  test('home mapa raio — A4: sem sexo → aviso "Tu sexo"', async ({ page }) => {
+  test('home mapa raio — A4: sem sexo (massa incompleta) → bloco genérico; nem mapa nem lista', async ({ page }) => {
     await expectAviso(page, uidSemSexo, 'aviso-sem-sexo-1440x900.png');
   });
 
-  test('home mapa raio — A5: dois faltando (profissão e disponibilidade) → os dois itens, e a versão celular', async ({ page }) => {
+  test('home mapa raio — A5: dois faltando (profissão e disponibilidade) → o MESMO bloco genérico, e a versão celular', async ({ page }) => {
     await expectAviso(page, uidDois, 'aviso-dois-faltando-1440x900.png');
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByTestId('complete-profile-notice')).toBeVisible();
