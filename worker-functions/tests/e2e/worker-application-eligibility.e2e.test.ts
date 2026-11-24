@@ -22,6 +22,7 @@
 import { Pool } from 'pg';
 import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
 import { completeWorkerProfile, cleanWorkerProfile } from './helpers/aptoWorkerFixture';
+import { setWorkerStatusForTest } from './helpers/setWorkerStatusForTest';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -286,7 +287,7 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
         );
 
         // Worker perde elegibilidade
-        await pool.query(`UPDATE workers SET status = 'INCOMPLETE_REGISTER' WHERE id = $1`, [workerId]);
+        await setWorkerStatusForTest(pool, workerId, 'INCOMPLETE_REGISTER');
 
         // UPDATE de funnel_stage deve falhar — trigger reavalia status do worker
         await expect(

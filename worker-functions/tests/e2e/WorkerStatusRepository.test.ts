@@ -21,6 +21,7 @@
  */
 
 import { Pool } from 'pg';
+import { setWorkerStatusForTest } from './helpers/setWorkerStatusForTest';
 
 const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -109,7 +110,7 @@ describe('WS2 — UPDATE status → DISABLED', () => {
     const id = await insertTestWorker();
 
     // Act
-    await pool.query('UPDATE workers SET status = $1 WHERE id = $2', ['DISABLED', id]);
+    await setWorkerStatusForTest(pool, id, 'DISABLED');
 
     // Assert
     const status = await getWorkerStatus(id);
@@ -125,7 +126,7 @@ describe('WS3 — UPDATE status → DISABLED', () => {
     const id = await insertTestWorker();
 
     // Act
-    await pool.query('UPDATE workers SET status = $1 WHERE id = $2', ['DISABLED', id]);
+    await setWorkerStatusForTest(pool, id, 'DISABLED');
 
     // Assert
     const status = await getWorkerStatus(id);
@@ -163,7 +164,7 @@ describe('WS6 — Constraint violation: status antigo "in_progress"', () => {
 
     // Act / Assert
     await expect(
-      pool.query('UPDATE workers SET status = $1 WHERE id = $2', ['in_progress', id]),
+      setWorkerStatusForTest(pool, id, 'in_progress'),
     ).rejects.toThrow();
   });
 });
@@ -180,7 +181,7 @@ describe('WS7 — Trigger worker_status_history: UPDATE gera linha de histórico
     expect(beforeCount).toBe(0);
 
     // Act — DISABLED passa livre pelo trigger guard
-    await pool.query('UPDATE workers SET status = $1 WHERE id = $2', ['DISABLED', id]);
+    await setWorkerStatusForTest(pool, id, 'DISABLED');
 
     // Assert
     const afterCount = await countHistoryRows(id);
@@ -192,7 +193,7 @@ describe('WS7 — Trigger worker_status_history: UPDATE gera linha de histórico
     const id = await insertTestWorker();
 
     // Act — INCOMPLETE_REGISTER → DISABLED (livre pelo trigger guard)
-    await pool.query('UPDATE workers SET status = $1 WHERE id = $2', ['DISABLED', id]);
+    await setWorkerStatusForTest(pool, id, 'DISABLED');
 
     // Assert
     const result = await pool.query(
@@ -220,9 +221,9 @@ describe('WS8 — Trigger worker_status_history: múltiplos UPDATEs geram N linh
     const id = await insertTestWorker();
 
     // Act — 3 transições de status sem passar por REGISTERED (guard ativo)
-    await pool.query('UPDATE workers SET status = $1 WHERE id = $2', ['DISABLED', id]);
-    await pool.query('UPDATE workers SET status = $1 WHERE id = $2', ['INCOMPLETE_REGISTER', id]);
-    await pool.query('UPDATE workers SET status = $1 WHERE id = $2', ['DISABLED', id]);
+    await setWorkerStatusForTest(pool, id, 'DISABLED');
+    await setWorkerStatusForTest(pool, id, 'INCOMPLETE_REGISTER');
+    await setWorkerStatusForTest(pool, id, 'DISABLED');
 
     // Assert
     const count = await countHistoryRows(id);
@@ -234,8 +235,8 @@ describe('WS8 — Trigger worker_status_history: múltiplos UPDATEs geram N linh
     const id = await insertTestWorker();
 
     // Act — INCOMPLETE_REGISTER → DISABLED → INCOMPLETE_REGISTER
-    await pool.query('UPDATE workers SET status = $1 WHERE id = $2', ['DISABLED', id]);
-    await pool.query('UPDATE workers SET status = $1 WHERE id = $2', ['INCOMPLETE_REGISTER', id]);
+    await setWorkerStatusForTest(pool, id, 'DISABLED');
+    await setWorkerStatusForTest(pool, id, 'INCOMPLETE_REGISTER');
 
     // Assert — ordena por created_at ASC
     const result = await pool.query(
@@ -260,7 +261,7 @@ describe('WS9 — Trigger worker_status_history: UPDATE sem mudança real não g
     const id = await insertTestWorker();
 
     // Act — atualiza status com o mesmo valor (INCOMPLETE_REGISTER → INCOMPLETE_REGISTER)
-    await pool.query('UPDATE workers SET status = $1 WHERE id = $2', ['INCOMPLETE_REGISTER', id]);
+    await setWorkerStatusForTest(pool, id, 'INCOMPLETE_REGISTER');
 
     // Assert — OLD.status IS DISTINCT FROM NEW.status = false → sem linha
     const count = await countHistoryRows(id);

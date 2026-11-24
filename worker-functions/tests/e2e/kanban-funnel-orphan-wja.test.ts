@@ -23,6 +23,7 @@
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, waitForBackend } from './helpers';
 import { completeWorkerProfile, cleanWorkerProfile } from './helpers/aptoWorkerFixture';
+import { setWorkerStatusForTest } from './helpers/setWorkerStatusForTest';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -199,7 +200,7 @@ async function seedFixtures(pool: Pool): Promise<string> {
   // spec 067: a coluna Completado agora só recebe prestador APTO (os sem documento validado vão a Bloqueados).
   // A intenção do O4 é "WJA órfã em COMPLETED aparece em Completado" → o prestador dela é REGISTERED com documentos validados.
   await completeWorkerProfile(pool, IDS.wOrphan4, 'validated');
-  await pool.query(`UPDATE workers SET status = 'REGISTERED' WHERE id = $1`, [IDS.wOrphan4]);
+  await setWorkerStatusForTest(pool, IDS.wOrphan4, 'REGISTERED');
 
   // WJAs for 5 "orphans" — disable Fase 2 trigger so encuadres are NOT auto-created.
   // This preserves the Fase 1 test scenario: WJAs without encuadres must still appear

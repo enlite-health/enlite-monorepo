@@ -11,6 +11,7 @@
  */
 
 import { Pool } from 'pg';
+import { setWorkerStatusForTest } from './helpers/setWorkerStatusForTest';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -370,10 +371,7 @@ describe('N5 — worker_eligibility view', () => {
   // worker_eligibility view removed in migration 096
   it.skip('view reflete mudanças após REFRESH', async () => {
     // Update worker status to make them matchable
-    await pool.query(
-      `UPDATE workers SET status = 'INCOMPLETE_REGISTER' WHERE id = $1`,
-      [WORKER_IDS.w2],
-    );
+    await setWorkerStatusForTest(pool, WORKER_IDS.w2, 'INCOMPLETE_REGISTER');
 
     // Before refresh — should still show old value
     const before = await pool.query<{ is_matchable: boolean }>(
@@ -479,9 +477,11 @@ describe('D7 — worker_status_history', () => {
     await pool.query(
       `INSERT INTO workers (id, auth_uid, email, phone, status, country, timezone)
        VALUES ($1, 'e2e-w5-hist-1', 'hist1@wave5.test', '54118880001', 'INCOMPLETE_REGISTER', 'AR', 'America/Buenos_Aires')
-       ON CONFLICT (id) DO UPDATE SET status = 'INCOMPLETE_REGISTER'`,
+       ON CONFLICT (id) DO NOTHING`,
       [WORKER_IDS.w1],
     );
+    // 093: reposicionar o status de um resíduo de execução anterior exige fluxo declarado
+    await setWorkerStatusForTest(pool, WORKER_IDS.w1, 'INCOMPLETE_REGISTER');
   });
 
   afterAll(async () => {
@@ -584,10 +584,7 @@ describe('D7 — worker_status_history', () => {
     // Worker was inserted with INCOMPLETE_REGISTER; change to DISABLED
     // (UPDATE para REGISTERED em worker sem campos obrigatórios é bloqueado pelo
     // trigger trg_guard_registered_status — migration 111)
-    await pool.query(
-      `UPDATE workers SET status = 'DISABLED' WHERE id = $1`,
-      [WORKER_IDS.w1],
-    );
+    await setWorkerStatusForTest(pool, WORKER_IDS.w1, 'DISABLED');
 
     const result = await pool.query<{
       field_name: string;
