@@ -1,7 +1,8 @@
 import crypto from 'crypto';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { logger, safeErrorFields } from '@shared/logging';
 import {
+  OTP_RATE_LIMITED,
   OtpChallengePort,
   OtpCheckInput,
   OtpCheckOutcome,
@@ -18,6 +19,27 @@ const MAX_ATTEMPTS = 5;
 const MIN_PEPPER_LENGTH = 32;
 
 /**
+ * Limites de ENVIO de código, contados NO BANCO (`otp_challenges`): sobrevivem a reinício e valem para N instâncias. Não
+ * duplicam o `MAX_ATTEMPTS` (esse é de ADIVINHAÇÃO, por desafio): estes são de EMISSÃO, por telefone e por ficha, somando
+ * TODAS as finalidades (claim, link, phone_verify: o custo do envio é o mesmo). Janela curta e janela de 24 h móveis.
+ * Envio que falhou no canal (`send_status = 'failed'`) não conta: ninguém recebeu código nem houve custo.
+ */
+export interface OtpSendLimits {
+  windowMinutes: number;
+  perPhoneInWindow: number;
+  perWorkerInWindow: number;
+  perPhonePerDay: number;
+  perWorkerPerDay: number;
+}
+export const DEFAULT_OTP_SEND_LIMITS: OtpSendLimits = {
+  windowMinutes: 15,
+  perPhoneInWindow: 3,
+  perWorkerInWindow: 3,
+  perPhonePerDay: 10,
+  perWorkerPerDay: 10,
+};
+
+/**
  * OTP próprio (D758): gera o código de 6 dígitos, grava SÓ o HMAC em `otp_challenges` e delega o envio ao
  * `TwilioAuthTemplateSender`. O pepper vem de secret (`OTP_HMAC_PEPPER`); sem ele (ou curto demais) NADA é emitido nem
  * aceito — falha fechada. Código e telefone nunca vão para log.
@@ -29,7 +51,41 @@ export class PgOtpChallengeService implements OtpChallengePort {
     private readonly pepper: () => string | undefined = () => process.env.OTP_HMAC_PEPPER,
     /** Código fixo para ficha de teste suprimida (E2E_OTP_CODE): sem ele, nenhum código vale (falha fechada). */
     private readonly suppressedCode: () => string | undefined = () => process.env.E2E_OTP_CODE,
+    private readonly limits: OtpSendLimits = DEFAULT_OTP_SEND_LIMITS,
   ) {}
+
+  /** Dentro da transação do start: conta as emissões das últimas 24 h e recusa se algum teto estourou. */
+  private async assertWithinSendLimits(client: Pick<PoolClient, 'query'>, workerId: string, phoneE164: string): Promise<void> {
+    // Dois starts simultâneos do mesmo escopo passariam juntos por um conta-depois-grava: o lock transacional os serializa.
+    // Ordem fixa (ficha, depois telefone) evita deadlock entre starts cruzados.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('otp_send:worker:' || $1::text, 0))`, [workerId]);
+    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('otp_send:phone:' || $1::text, 0))`, [phoneE164]);
+
+    const { rows } = await client.query<Record<'phone_win' | 'phone_day' | 'worker_win' | 'worker_day', string>>(
+      `SELECT
+         count(*) FILTER (WHERE phone_e164 = $2 AND created_at > NOW() - make_interval(mins => $3)) AS phone_win,
+         count(*) FILTER (WHERE phone_e164 = $2)                                                    AS phone_day,
+         count(*) FILTER (WHERE worker_id = $1 AND created_at > NOW() - make_interval(mins => $3))  AS worker_win,
+         count(*) FILTER (WHERE worker_id = $1)                                                     AS worker_day
+       FROM otp_challenges
+       WHERE (worker_id = $1 OR phone_e164 = $2)
+         AND created_at > NOW() - INTERVAL '24 hours'
+         AND send_status IS DISTINCT FROM 'failed'`,
+      [workerId, phoneE164, this.limits.windowMinutes],
+    );
+    const n = (k: 'phone_win' | 'phone_day' | 'worker_win' | 'worker_day') => Number(rows[0]?.[k] ?? 0);
+    const { limits } = this;
+    const scope =
+      n('phone_win') >= limits.perPhoneInWindow || n('phone_day') >= limits.perPhonePerDay
+        ? 'phone'
+        : n('worker_win') >= limits.perWorkerInWindow || n('worker_day') >= limits.perWorkerPerDay
+          ? 'worker'
+          : null;
+    if (scope) {
+      logger.child({ source: 'PgOtpChallengeService:start' }).warn({ msg: 'otp_rate_limited', scope, workerId });
+      throw new Error(OTP_RATE_LIMITED);
+    }
+  }
 
   /** Falha FECHADA: sem pepper (ou curto demais) nada é emitido nem conferido, e nenhuma linha é tocada. */
   private assertPepper(): string {
@@ -51,6 +107,7 @@ export class PgOtpChallengeService implements OtpChallengePort {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await this.assertWithinSendLimits(client, input.workerId, input.phoneE164);
       await client.query(
         `UPDATE otp_challenges SET status = 'canceled'
           WHERE worker_id = $1 AND purpose = $2 AND status = 'pending'`,

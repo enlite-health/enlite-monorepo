@@ -4,10 +4,12 @@
  * Sender = dublê (nenhuma chamada Twilio, nenhuma rede). Dados sintéticos; código e telefone não entram em log.
  */
 import { Pool } from 'pg';
-import { PgOtpChallengeService } from '../../src/modules/auth/infrastructure/PgOtpChallengeService';
+import { DEFAULT_OTP_SEND_LIMITS, PgOtpChallengeService } from '../../src/modules/auth/infrastructure/PgOtpChallengeService';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
+// Estes testes exercitam OUTRA coisa (conferência/porta) e reusam telefone e ficha: o teto de envio (T-F3c-111) tem teste próprio.
+const SEM_LIMITE_DE_ENVIO = { ...DEFAULT_OTP_SEND_LIMITS, perPhoneInWindow: 1e6, perWorkerInWindow: 1e6, perPhonePerDay: 1e6, perWorkerPerDay: 1e6 };
 const PEPPER = 'p'.repeat(40);
 const PHONE_A = '+5491100000001';
 const PHONE_B = '+5491100000002';
@@ -17,7 +19,7 @@ describe('PgOtpChallengeService.check', () => {
   const workers: string[] = [];
   let lastCode = '';
   const sender = { send: jest.fn(async ({ code }: { code: string }) => { lastCode = code; return { twilioSid: 'SM_FAKE', suppressed: false }; }) };
-  const service = () => new PgOtpChallengeService(pool, sender, () => PEPPER);
+  const service = () => new PgOtpChallengeService(pool, sender, () => PEPPER, undefined, SEM_LIMITE_DE_ENVIO);
 
   async function novaFicha(): Promise<string> {
     const { rows } = await pool.query<{ id: string }>(`INSERT INTO workers (auth_uid) VALUES ($1) RETURNING id`, [`otp-test-${Date.now()}-${Math.random()}`]);

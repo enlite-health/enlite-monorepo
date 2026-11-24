@@ -13,6 +13,9 @@ export type OtpPurpose = 'claim' | 'link' | 'phone_verify';
 /** O envio pelo canal falhou. Sem 2º canal (D732): quem chama mostra "tente de novo", nunca cai em SMS. */
 export const OTP_CHANNEL_UNAVAILABLE = 'OTP_CHANNEL_UNAVAILABLE';
 
+/** Limite de envio de código estourado (por telefone ou por ficha, contado no banco). Quem chama mapeia para 429 `RATE_LIMITED`. */
+export const OTP_RATE_LIMITED = 'RATE_LIMITED';
+
 export type OtpCheckFailure = 'INVALID_OTP' | 'EXPIRED_OTP' | 'OTP_ALREADY_USED';
 
 export type OtpCheckOutcome = { ok: true } | { ok: false; code: OtpCheckFailure };
@@ -36,7 +39,7 @@ export interface OtpCheckInput {
 }
 
 export interface OtpChallengePort {
-  /** Cancela o pendente da mesma ficha e finalidade, grava o novo (só o HMAC) e envia. Falha de canal → `OTP_CHANNEL_UNAVAILABLE`. */
+  /** Cancela o pendente da mesma ficha e finalidade, grava o novo (só o HMAC) e envia. Falha de canal → `OTP_CHANNEL_UNAVAILABLE`; limite por telefone/ficha estourado → `RATE_LIMITED` (nada é cancelado, gravado nem enviado). */
   start(input: OtpStartInput): Promise<{ challengeId: string }>;
   /** Consome o desafio de forma atômica: o mesmo código nunca vale duas vezes. */
   check(input: OtpCheckInput): Promise<OtpCheckOutcome>;
