@@ -7,6 +7,7 @@ import { Pool, PoolClient } from 'pg';
 import fs from 'fs';
 import path from 'path';
 import { novaFicha, gravarVerificacao } from './helpers/phoneVerificationFixtures';
+import { recalculateStatus } from '../../src/modules/worker/infrastructure/WorkerImportRepository';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -101,6 +102,66 @@ describe('dispensa por legado do celular verificado', () => {
       await c.query(`SET LOCAL enlite.merge_in_progress = 'on'`);
       await c.query(`UPDATE workers SET phone_verification_waived_at = now() WHERE id = $1`, [f.id]);
       expect(await waived(c, f.id)).not.toBeNull();
+    });
+  });
+
+  // ── T-F3c-165 (AC-18 e AC-20) ──────────────────────────────────────────────────────────────────────────────
+  /** Ficha com TODO o cadastro (menos a verificação do celular): é o que o dono da completude pede além do telefone. */
+  async function fichaCompleta(c: PoolClient, status: string): Promise<string> {
+    const w = await novaFicha(c, { status });
+    await c.query(
+      `UPDATE workers SET profession = 'CAREGIVER', first_name_encrypted = 'a', last_name_encrypted = 'b', sex_encrypted = 'c',
+              gender_encrypted = 'd', birth_date_encrypted = 'e', document_number_encrypted = 'f', document_type = 'DNI',
+              languages_encrypted = 'g', knowledge_level = 'BASIC', title_certificate = 'DEGREE', years_experience = '1-2',
+              experience_types = ARRAY['TEA'], preferred_types = ARRAY['TEA'], preferred_age_range = ARRAY['CHILD']
+        WHERE id = $1`,
+      [w.id],
+    );
+    await c.query(`INSERT INTO worker_service_areas (worker_id, address_line, radius_km) VALUES ($1, 'Av. X 1', 5)`, [w.id]);
+    await c.query(
+      `INSERT INTO worker_availability (worker_id, day_of_week, start_time, end_time, timezone)
+       VALUES ($1, 2, '08:00', '18:00', 'America/Argentina/Buenos_Aires')`,
+      [w.id],
+    );
+    await c.query(
+      `INSERT INTO worker_documents (worker_id, identity_document_url, criminal_record_url) VALUES ($1, 'http://e.com/id', 'http://e.com/cr')`,
+      [w.id],
+    );
+    return w.id;
+  }
+  const mudarStatus = (c: PoolClient) => async (id: string, status: string) => {
+    await c.query(`SELECT set_config('app.status_flow', 'TEST_FIXTURE', true)`);
+    await c.query(`UPDATE workers SET status = $2 WHERE id = $1`, [id, status]);
+  };
+
+  it('T-F3c-165 o recálculo mantém a legada REGISTERED, sem linha nova no histórico (AC-18)', async () => {
+    await emTransacao(async (c) => {
+      const id = await fichaCompleta(c, 'REGISTERED'); // nasceu REGISTERED (importação): sem linha no histórico
+      await aplicarMigration(c); // o corte: ganha a marca
+      expect(await waived(c, id)).not.toBeNull();
+      const hist = async () => Number((await c.query(`SELECT count(*) AS n FROM worker_status_history WHERE worker_id = $1`, [id])).rows[0].n);
+      const antes = await hist();
+      expect(await recalculateStatus(c as unknown as Pool, id, mudarStatus(c))).toBeNull();
+      expect((await c.query(`SELECT status FROM workers WHERE id = $1`, [id])).rows[0].status).toBe('REGISTERED');
+      expect(await hist()).toBe(antes);
+    });
+  });
+
+  it('T-F3c-165 ficha nova sem verificação: o guard recusa REGISTERED com phone_unverified (AC-20)', async () => {
+    await emTransacao(async (c) => {
+      const id = await fichaCompleta(c, 'INCOMPLETE_REGISTER');
+      await c.query('SAVEPOINT s');
+      await expect(mudarStatus(c)(id, 'REGISTERED')).rejects.toThrow(/phone_unverified/);
+      await c.query('ROLLBACK TO SAVEPOINT s');
+    });
+  });
+
+  it('T-F3c-165 a mesma ficha, depois de verificar, passa no guard', async () => {
+    await emTransacao(async (c) => {
+      const id = await fichaCompleta(c, 'INCOMPLETE_REGISTER');
+      await gravarVerificacao(c, id);
+      await mudarStatus(c)(id, 'REGISTERED');
+      expect((await c.query(`SELECT status FROM workers WHERE id = $1`, [id])).rows[0].status).toBe('REGISTERED');
     });
   });
 });

@@ -54,8 +54,11 @@ CREATE OR REPLACE FUNCTION public.fn_worker_phone_is_verified(p_w public.workers
   LANGUAGE sql
   STABLE
 AS $func$
+  -- Compara com normalize_phone_ar(phone) (a MESMA expressão da coluna gerada `phone_normalized`), não com a coluna: num trigger
+  -- BEFORE UPDATE (o guard de REGISTERED) a coluna gerada ainda não foi recalculada, e um UPDATE que troca o phone e muda o status
+  -- no mesmo comando leria o número ANTIGO.
   SELECT p_w.phone_verified_normalized IS NOT NULL
-     AND p_w.phone_verified_normalized = p_w.phone_normalized
+     AND p_w.phone_verified_normalized = public.normalize_phone_ar(p_w.phone)
      AND p_w.merged_into_id IS NULL;
 $func$;
 
