@@ -54,7 +54,7 @@ export class SaveServiceAreaUseCase {
       ]), attribution);
     }
 
-    await this.workerRepository.recalculateStatus(data.workerId);
+    await this.workerRepository.recalculateStatus(data.workerId, { flow: 'WIZARD_SERVICE_AREA' });
 
     return Result.ok<Worker>(worker);
   }

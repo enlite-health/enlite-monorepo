@@ -74,6 +74,7 @@ describe('SaveAvailabilityUseCase', () => {
       // O caminho antigo (delete e insert em transações separadas) não existe mais
       expect(availabilityRepo.deleteByWorkerId).not.toHaveBeenCalled();
       expect(availabilityRepo.createBatch).not.toHaveBeenCalled();
+      expect(workerRepo.recalculateStatus).toHaveBeenCalledWith('worker-123', { flow: 'WIZARD_AVAILABILITY' });
     });
 
     it('NÃO deve chamar updateStep — sem avanço de step na edição por abas', async () => {

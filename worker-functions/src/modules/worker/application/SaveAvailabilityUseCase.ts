@@ -106,7 +106,7 @@ export class SaveAvailabilityUseCase {
       await recordProfileEditTrail(data.workerId, changedFields([['availability', gridOf(before), gridOf(slots)]]), attribution);
     }
 
-    await this.workerRepository.recalculateStatus(data.workerId);
+    await this.workerRepository.recalculateStatus(data.workerId, { flow: 'WIZARD_AVAILABILITY' });
 
     return Result.ok<Worker>(worker);
   }

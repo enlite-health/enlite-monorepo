@@ -79,6 +79,7 @@ describe('SavePersonalInfoUseCase', () => {
           profession: 'CAREGIVER',
         })
       );
+      expect(repo.recalculateStatus).toHaveBeenCalledWith('worker-123', { flow: 'WIZARD_PERSONAL_INFO' });
     });
 
     it('NÃO deve chamar updateStep — sem avanço de step na edição por abas', async () => {

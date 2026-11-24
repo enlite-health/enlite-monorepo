@@ -35,7 +35,7 @@ export class SaveStepUseCase {
     }
 
     // Recalcula status com base nos campos obrigatórios preenchidos
-    await this.workerRepository.recalculateStatus(input.workerId);
+    await this.workerRepository.recalculateStatus(input.workerId, { flow: 'WIZARD_STEP' });
 
     return Result.ok<Worker>(worker);
   }
