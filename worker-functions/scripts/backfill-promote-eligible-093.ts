@@ -22,8 +22,10 @@
  * worker e OPT-OUT (SUP-2: quem está em `messaging_opt_out` é pulado com reason `worker_opted_out`).
  * Promover só cria WJA + encuadre + carimba a tentativa; NÃO envia mensagem ao prestador (RF-7).
  *
- * Saída (RF-6): UMA linha JSON, só contagens — `{scanned, promoted, skipped, reasons}`; no dry-run
- * `promoted` é 0 e vem `would_promote`. Sem id, nome, telefone ou e-mail. O logger é silenciado aqui
+ * Saída (RF-6): UMA linha JSON, só contagens. `--execute`: `{scanned, promoted, skipped, reasons}`.
+ * Dry-run: `{scanned, skipped_opt_out, candidates}` — `candidates` é um TETO (universo menos opt-out), não
+ * previsão: as guardas de vaga válida e de WJA existente são do use case (dono único) e o dry-run não as
+ * reescreve; o que o `--execute` promove de fato pode ser menor. Sem id, nome, telefone ou e-mail. O logger é silenciado aqui
  * porque o use case loga `workerId`/`blockedApplicationId`.
  *
  * Esta carga não muda `workers.status` (por isso não declara `app.status_flow`).
@@ -33,7 +35,6 @@ import { systemActor } from '@shared/audit/actorSource';
 import { logger } from '@shared/logging';
 import { optedOutExistsSql } from '@shared/database/messagingOptOutFilter';
 import { PromoteBlockedApplicationsUseCase } from '@modules/matching/application/PromoteBlockedApplicationsUseCase';
-import { preIniciadoWjaSql } from '@modules/matching/infrastructure/BlockedApplicationQueryRepository';
 
 const ACTOR = systemActor('promote-blocked-backfill-093');
 
@@ -42,28 +43,24 @@ export interface BackfillResult {
   promoted: number;
   skipped: number;
   reasons: Record<string, number>;
-  /** Só no dry-run: quantas o `--execute` promoveria hoje (previsão por SQL; a verdade é a do use case). */
-  would_promote?: number;
+}
+
+/** Saída do dry-run: `candidates` é TETO (universo menos opt-out), nunca previsão exata. */
+export interface DryRunResult {
+  scanned: number;
+  skipped_opt_out: number;
+  candidates: number;
 }
 
 interface CandidateRow {
   id: string;
   opted_out: boolean;
-  vacancy_ok: boolean;
-  wja_exists: boolean;
 }
 
-/** Pendentes de worker elegível. Os 3 flags só alimentam a previsão do dry-run. */
+/** Pendentes de worker elegível; `opted_out` vem do predicado único `optedOutExistsSql`. */
 async function listCandidates(pool: Pool): Promise<CandidateRow[]> {
   const { rows } = await pool.query<CandidateRow>(
-    `SELECT b.id,
-            ${optedOutExistsSql('b.worker_id')} AS opted_out,
-            EXISTS (SELECT 1 FROM job_postings jp
-                     WHERE jp.id = b.job_posting_id AND jp.deleted_at IS NULL
-                       AND jp.is_draft = false AND jp.status NOT IN ('CLOSED', 'DE_BAJA')) AS vacancy_ok,
-            EXISTS (SELECT 1 FROM worker_job_applications wja
-                     WHERE wja.worker_id = b.worker_id AND wja.job_posting_id = b.job_posting_id
-                       AND NOT ${preIniciadoWjaSql('wja')}) AS wja_exists
+    `SELECT b.id, ${optedOutExistsSql('b.worker_id')} AS opted_out
        FROM worker_blocked_applications b
        JOIN workers w ON w.id = b.worker_id
       WHERE w.status = 'REGISTERED' AND w.merged_into_id IS NULL
@@ -77,23 +74,18 @@ function bump(reasons: Record<string, number>, reason: string): void {
   reasons[reason] = (reasons[reason] ?? 0) + 1;
 }
 
-export async function runBackfill(pool: Pool, opts: { execute: boolean }): Promise<BackfillResult> {
+export async function runBackfill(pool: Pool, opts: { execute: true }): Promise<BackfillResult>;
+export async function runBackfill(pool: Pool, opts: { execute: false }): Promise<DryRunResult>;
+export async function runBackfill(pool: Pool, opts: { execute: boolean }): Promise<BackfillResult | DryRunResult>;
+export async function runBackfill(pool: Pool, opts: { execute: boolean }): Promise<BackfillResult | DryRunResult> {
   const candidates = await listCandidates(pool);
-  const result: BackfillResult = { scanned: candidates.length, promoted: 0, skipped: 0, reasons: {} };
 
   if (!opts.execute) {
-    let wouldPromote = 0;
-    for (const c of candidates) {
-      const reason = c.opted_out ? 'worker_opted_out'
-        : !c.vacancy_ok ? 'vacancy_invalid'
-        : c.wja_exists ? 'wja_already_exists'
-        : null;
-      if (reason) { result.skipped += 1; bump(result.reasons, reason); } else wouldPromote += 1;
-    }
-    result.would_promote = wouldPromote;
-    return result;
+    const optedOut = candidates.filter((c) => c.opted_out).length;
+    return { scanned: candidates.length, skipped_opt_out: optedOut, candidates: candidates.length - optedOut };
   }
 
+  const result: BackfillResult = { scanned: candidates.length, promoted: 0, skipped: 0, reasons: {} };
   const useCase = new PromoteBlockedApplicationsUseCase(pool);
   for (const c of candidates) {
     const r = await useCase.executeForBlockedApplication(c.id, ACTOR);

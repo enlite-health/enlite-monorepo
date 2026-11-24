@@ -9,7 +9,7 @@
  *   B  REGISTERED, opt-out vigente → pulada (SUP-2, reason worker_opted_out)
  *   C  INCOMPLETE_REGISTER        → fora do universo (não é elegível)
  *
- *   (a) dry-run não escreve (promoted_at NULL, nenhuma WJA nova) e prevê would_promote=1
+ *   (a) dry-run não escreve (promoted_at NULL, nenhuma WJA nova); `candidates` é teto (universo menos opt-out)
  *   (b) --execute promove só a A (WJA criada + promoted_at preenchido); B e C seguem intactas
  *   (c) a saída só tem as chaves do contrato (RF-6) e nenhum id/telefone/e-mail
  */
@@ -100,15 +100,15 @@ describe('Spec 093 CA-8 — carga única de promoção das tentativas bloqueadas
     await pool.end();
   });
 
-  it('(a) dry-run não escreve e prevê a promoção da elegível sem opt-out', async () => {
+  it('(a) dry-run não escreve e devolve o teto de candidatas (sem opt-out)', async () => {
     const antes = await estado();
     const r = await runBackfill(pool, { execute: false });
 
     expect(await estado()).toEqual(antes);
     expect(antes.promovidas).toBe(0);
-    expect(r.promoted).toBe(0);
-    expect(r.would_promote).toBeGreaterThanOrEqual(1);
-    expect(r.reasons.worker_opted_out).toBeGreaterThanOrEqual(1);
+    expect(r.skipped_opt_out).toBeGreaterThanOrEqual(1);
+    expect(r.candidates).toBeGreaterThanOrEqual(1);
+    expect(r.scanned).toBe(r.candidates + r.skipped_opt_out);
   });
 
   it('(b) --execute promove só a elegível sem opt-out; pula opt-out e não-elegível; não enfileira mensagem', async () => {
@@ -134,7 +134,7 @@ describe('Spec 093 CA-8 — carga única de promoção das tentativas bloqueadas
     const dry = await runBackfill(pool, { execute: false });
     const exe = await runBackfill(pool, { execute: true });
 
-    expect(Object.keys(dry).sort()).toEqual(['reasons', 'scanned', 'skipped', 'promoted', 'would_promote'].sort());
+    expect(Object.keys(dry).sort()).toEqual(['candidates', 'scanned', 'skipped_opt_out']);
     expect(Object.keys(exe).sort()).toEqual(['promoted', 'reasons', 'scanned', 'skipped']);
     const texto = JSON.stringify([dry, exe]);
     for (const v of Object.values(ids)) {
