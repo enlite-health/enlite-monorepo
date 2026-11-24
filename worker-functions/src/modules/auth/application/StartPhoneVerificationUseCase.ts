@@ -5,9 +5,8 @@ import { resourceIdHash } from '@shared/audit/resourceAccessLog';
 import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { maskPhone } from '@shared/utils/phoneMask';
 import { isClaimableWorker } from '@modules/worker/application/isClaimableWorker';
-import { OTP_CHANNEL_UNAVAILABLE, OTP_RATE_LIMITED, OtpChallengePort, OtpPurpose } from '../ports/OtpChallengePort';
+import { OTP_CHANNEL_UNAVAILABLE, OTP_RATE_LIMITED, OTP_TTL_MINUTES, OtpChallengePort, OtpPurpose } from '../ports/OtpChallengePort';
 import type { IPhoneVerificationRepository } from '../ports/IPhoneVerificationRepository';
-import { OTP_TTL_MINUTES } from '../infrastructure/PgOtpChallengeService';
 
 export interface StartPhoneVerificationInput {
   authUid: string;

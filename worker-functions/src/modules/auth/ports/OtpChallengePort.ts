@@ -10,6 +10,9 @@ import type { OtpConfirmContext, OtpSendContext } from '../infrastructure/Twilio
  */
 export type OtpPurpose = 'claim' | 'link' | 'phone_verify';
 
+/** Validade do código (a mesma do Verify), em minutos. Um dono só: o adapter expira com ela e quem responde ao app informa. */
+export const OTP_TTL_MINUTES = 10;
+
 /** O envio pelo canal falhou. Sem 2º canal (D732): quem chama mostra "tente de novo", nunca cai em SMS. */
 export const OTP_CHANNEL_UNAVAILABLE = 'OTP_CHANNEL_UNAVAILABLE';
 
