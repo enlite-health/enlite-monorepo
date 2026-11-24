@@ -7,6 +7,13 @@
 # (identitytoolkit admin/v2) é a fonte; o PATCH usa só o updateMask dela e não toca em mais nada da config.
 # O gatilho é o JSON da política: mudou a política, o PATCH roda de novo.
 #
+# ATENCAO: remover este recurso (ou dar `terraform destroy`) NAO reverte a politica no Identity Platform; o
+# terraform_data nao tem provisioner de destroy. Reverter e um PATCH manual (impersonation tf-admin):
+#   TOKEN=$(gcloud auth print-access-token --impersonate-service-account=tf-admin@enlite-prd.iam.gserviceaccount.com)
+#   curl --fail-with-body -X PATCH -H "Authorization: Bearer $TOKEN" -H "x-goog-user-project: enlite-prd" \
+#     -H 'Content-Type: application/json' -d '{"passwordPolicyConfig":{"passwordPolicyEnforcementState":"OFF"}}' \
+#     "https://identitytoolkit.googleapis.com/admin/v2/projects/enlite-prd/config?updateMask=passwordPolicyConfig.passwordPolicyEnforcementState"
+#
 # Apply só com o "vai" do Gabriel, manual e com -target (nenhum workflow aplica o terraform de prd):
 #   export GOOGLE_IMPERSONATE_SERVICE_ACCOUNT=tf-admin@enlite-prd.iam.gserviceaccount.com
 #   terraform apply -target=terraform_data.identity_password_policy
@@ -53,17 +60,27 @@ resource "terraform_data" "identity_password_policy" {
     command = <<-EOT
       set -euo pipefail
       URL="https://identitytoolkit.googleapis.com/admin/v2/projects/$PROJECT_ID/config"
-      TOKEN="$(gcloud auth print-access-token --impersonate-service-account="$TF_ADMIN")"
+      # Token fora do argv: vai por arquivo temporario 0600 (-H @arquivo), removido no trap.
+      umask 077
+      HDR="$(mktemp)"; ERR="$(mktemp)"
+      trap 'rm -f "$HDR" "$ERR"' EXIT
+      printf 'Authorization: Bearer %s\n' "$(gcloud auth print-access-token --impersonate-service-account="$TF_ADMIN")" > "$HDR"
+      # --fail-with-body: o corpo do erro da API vai para stderr (nunca o token).
       curl --fail-with-body -sS -X PATCH "$URL?updateMask=passwordPolicyConfig" \
-        -H "Authorization: Bearer $TOKEN" -H "x-goog-user-project: $PROJECT_ID" \
-        -H 'Content-Type: application/json' -d "$BODY" >/dev/null
-      curl --fail-with-body -sS "$URL" \
-        -H "Authorization: Bearer $TOKEN" -H "x-goog-user-project: $PROJECT_ID" \
+        -H @"$HDR" -H "x-goog-user-project: $PROJECT_ID" -H 'Content-Type: application/json' \
+        -d "$BODY" >/dev/null 2>"$ERR" || { cat "$ERR" >&2; exit 1; }
+      curl --fail-with-body -sS "$URL" -H @"$HDR" -H "x-goog-user-project: $PROJECT_ID" 2>"$ERR" \
         | jq -e --argjson min "$MIN_LENGTH" '
             .passwordPolicyConfig as $p
+            | ($p.passwordPolicyVersions | last | .customStrengthOptions) as $o
             | $p.passwordPolicyEnforcementState == "ENFORCE"
             and (($p.forceUpgradeOnSignin // false) == false)
-            and ($p.passwordPolicyVersions | last | .customStrengthOptions.minPasswordLength) == $min' >/dev/null
+            and $o.minPasswordLength == $min
+            and $o.containsUppercaseCharacter == true
+            and $o.containsLowercaseCharacter == true
+            and $o.containsNumericCharacter == true
+            and $o.containsNonAlphanumericCharacter == true' >/dev/null \
+        || { cat "$ERR" >&2; echo "politica lida de volta nao confere" >&2; exit 1; }
     EOT
   }
 }
