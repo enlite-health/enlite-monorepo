@@ -9,6 +9,8 @@ import path from 'path';
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const ROLLBACK_SQL = path.join(__dirname, '..', '..', 'migrations', 'pending', 'ROLLBACK_592_otp_challenges.sql');
+// A 594 (celular verificado) tem FK para otp_challenges: o rollback segue a ordem inversa (594 antes da 592).
+const ROLLBACK_594_SQL = path.join(__dirname, '..', '..', 'migrations', 'pending', 'ROLLBACK_594_phone_verification.sql');
 
 describe('migration 592 — otp_challenges', () => {
   let pool: Pool;
@@ -37,6 +39,7 @@ describe('migration 592 — otp_challenges', () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query(fs.readFileSync(ROLLBACK_594_SQL, 'utf8'));
       await client.query(fs.readFileSync(ROLLBACK_SQL, 'utf8'));
       const { rows } = await client.query<{ t: string | null }>(`SELECT to_regclass('public.otp_challenges') AS t`);
       expect(rows[0].t).toBeNull();

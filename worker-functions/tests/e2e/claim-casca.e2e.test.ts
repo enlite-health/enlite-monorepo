@@ -54,12 +54,13 @@ describe('claim confirm com ficha própria (D764)', () => {
     const { ClaimController } = await import('../../src/modules/auth/interfaces/controllers/ClaimController');
     const { ConfirmClaimUseCase } = await import('../../src/modules/auth/application/ConfirmClaimUseCase');
     const { ClaimShellAbsorber } = await import('../../src/modules/auth/application/ClaimShellAbsorber');
+    const { TwilioVerifyOtpAdapter } = await import('../../src/modules/auth/infrastructure/TwilioVerifyOtpAdapter');
     const { WorkerRepository } = await import('../../src/modules/worker/infrastructure/WorkerRepository');
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     // Twilio: o único dublê. `to` vem do cabeçalho do teste (telefone da ficha reclamada).
     let to = '';
     const twilio = { startVerification: async () => ({ verificationSid: 'VE_STUB' }), checkVerification: async () => ({ valid: true, status: 'approved', to }) };
-    const useCase = new ConfirmClaimUseCase(new WorkerRepository(), twilio as never, new ClaimShellAbsorber(DatabaseConnection.getInstance().getPool()));
+    const useCase = new ConfirmClaimUseCase(new WorkerRepository(), new TwilioVerifyOtpAdapter(twilio as never), new ClaimShellAbsorber(DatabaseConnection.getInstance().getPool()));
     const controller = new ClaimController({} as never, useCase);
     const app = express();
     app.use(express.json());
