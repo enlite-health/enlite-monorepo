@@ -178,9 +178,9 @@ describe('096 home do prestador: vagas por raio com perfil de match @integration
     await saveServiceArea(api, t);
     await saveAvailability(api, t);
     await pool.query(`UPDATE workers SET occupation = 'AT', sex_encrypted = $2 WHERE id = $1`, [w.id, Buffer.from('FEMALE', 'utf8').toString('base64')]);
-    // move a zona viva para Mendoza (lat/lng + geography, as duas colunas que a rota lê)
+    // move a zona viva para Mendoza; `location` é coluna GERADA de lat/lng (migration 084), então só lat/lng se atualizam
     await pool.query(
-      `UPDATE worker_service_areas SET latitude = -32.89, longitude = -68.84, location = ST_SetSRID(ST_MakePoint(-68.84, -32.89), 4326)::geography
+      `UPDATE worker_service_areas SET latitude = -32.89, longitude = -68.84
        WHERE worker_id = $1 AND deleted_at IS NULL`,
       [w.id],
     );
