@@ -486,4 +486,19 @@ describe('ExecuteAdminMergeUseCase — status pelo escritor único (CA-6)', () =
       actor: undefined,
     });
   });
+
+  it('DF-8: o serviço de merge recebe flow ADMIN_MERGE (o log do recálculo interno não diz PHONE_MERGE)', async () => {
+    const pool = makePool([
+      { rows: [{ id: SURVIVOR_ID, phone_normalized: PHONE_NORM, merged_into_id: null }] },
+      { rows: [{ merged_into_id: null }] },
+      { rows: [{ id: 92 }] },
+    ]);
+    await new ExecuteAdminMergeUseCase(pool as unknown as Pool).execute({
+      survivorId: SURVIVOR_ID,
+      absorbedIds: [ABSORBED_ID],
+    });
+    expect(MockMergeService.prototype.executeSingleMerge).toHaveBeenCalledWith(
+      expect.objectContaining({ flow: 'ADMIN_MERGE' }),
+    );
+  });
 });

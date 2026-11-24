@@ -116,6 +116,7 @@ export class ExecuteAdminMergeUseCase {
           legalFieldExceptions: [],
           discoveredFks,
           audit: { ...baseAudit, fieldChoices, appliedOverrides },
+          flow: 'ADMIN_MERGE',
         });
 
         // Recupera o auditId do último merge inserido

@@ -663,6 +663,7 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
       category:             'firebase',
       legalFieldExceptions: [],
       discoveredFks:        MOCK_DISCOVERED_FKS,
+      flow:                 'PHONE_MERGE',
     });
 
     const calls = mockClient.query.mock.calls.map((c: unknown[]) => String(c[0]));
@@ -704,6 +705,7 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
       category:             'firebase',
       legalFieldExceptions: [],
       discoveredFks:        [], // sem FKs = sem reparent queries
+      flow:                 'PHONE_MERGE',
     });
 
     const calls = mockClient.query.mock.calls.map((c: unknown[]) => String(c[0]));
@@ -759,6 +761,7 @@ describe('WorkerPhoneMergeService.executeSingleMerge', () => {
         category:             'firebase',
         legalFieldExceptions: [],
         discoveredFks:        oneFk,
+        flow:                 'PHONE_MERGE',
       }),
     ).rejects.toThrow('FK constraint failed');
 

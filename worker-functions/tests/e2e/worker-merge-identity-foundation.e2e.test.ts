@@ -161,6 +161,7 @@ describe('merge move phone/whatsapp/ana_care_id (regressão do caso Edith)', () 
       legalFieldExceptions: [],
       discoveredFks: await discoverWorkerFkTables(pool),
       audit: { source: 'manual' },
+      flow: 'PHONE_MERGE',
     })) as unknown as { auditId: bigint | number } | undefined;
     if (outcome?.auditId != null) {
       mergeAuditId = Number(outcome.auditId);

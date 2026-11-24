@@ -52,6 +52,7 @@ import {
   discoverWorkerFkTables,
   type FkTableInfo,
 } from './WorkerPhoneMergeHelpers';
+import type { WorkerStatusFlow } from '../../modules/worker/domain/WorkerStatusFlow';
 import { recalculateWorkerStatus } from '../../modules/worker/infrastructure/WorkerStatusRepository';
 import { captureSnapshot } from './WorkerMergeSnapshotService';
 import { insertMergeAuditRow, type MergeAuditInput } from './WorkerMergeAuditWriter';
@@ -153,6 +154,7 @@ export class WorkerPhoneMergeService {
             category:             groupPlan.category as MergeCategory,
             legalFieldExceptions: groupPlan.legal_field_exceptions,
             discoveredFks,
+            flow:                 'PHONE_MERGE',
           });
           mergesExecuted++;
         } catch (err) {
@@ -178,6 +180,7 @@ export class WorkerPhoneMergeService {
           category:             'ghost',
           legalFieldExceptions: [],
           discoveredFks,
+          flow:                 'PHONE_MERGE',
         });
         mergesExecuted++;
       } catch (err) {
@@ -231,6 +234,8 @@ export class WorkerPhoneMergeService {
      * pós-commit fica com o chamador. Ausente: comportamento de sempre (client e transação próprios).
      */
     client?: PoolClient;
+    /** Fluxo do CHAMADOR (spec 093, DF-8): vai ao log do recálculo de status. Obrigatório, sem default. */
+    flow: WorkerStatusFlow;
   }): Promise<{
     auditId: bigint | number;
     fieldsFilled: string[];
@@ -364,7 +369,7 @@ export class WorkerPhoneMergeService {
       //    usuário. Falha aqui não desfaz o merge (já commitado) — só loga.
       if (!external) {
         try {
-          await recalculateWorkerStatus(this.pool, survivorId, { flow: 'PHONE_MERGE' });
+          await recalculateWorkerStatus(this.pool, survivorId, { flow: params.flow });
         } catch (err) {
           const e = err instanceof Error ? err : new Error(String(err));
           log.warn({ msg: 'merge_status_recalc_failed', survivorId, reason: e.message });

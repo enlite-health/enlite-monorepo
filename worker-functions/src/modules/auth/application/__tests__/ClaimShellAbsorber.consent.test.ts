@@ -50,6 +50,7 @@ describe('ClaimShellAbsorber — consentimento na mesma transação (D764)', () 
     const h = harness(null);
     const r = await h.absorber.absorbImportedIntoExisting(args);
     expect(r.isSuccess).toBe(true);
+    expect(h.merge).toHaveBeenCalledWith(expect.objectContaining({ flow: 'CLAIM_SHELL_ABSORB' }));
     const i = h.calls.indexOf('MERGE');
     expect(h.calls.indexOf('UPDATE:consent')).toBeGreaterThan(i);
     expect(h.calls.indexOf('COMMIT')).toBeGreaterThan(h.calls.indexOf('UPDATE:consent'));
