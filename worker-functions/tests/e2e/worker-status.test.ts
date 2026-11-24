@@ -19,6 +19,7 @@
 
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, postWorkerInit, waitForBackend } from './helpers';
+import { setWorkerStatusForTest } from './helpers/setWorkerStatusForTest';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -277,17 +278,11 @@ describe('Worker Status Refactor — Fluxo Principal (E2E)', () => {
   describe('Cenário 6 — Trigger bloqueia SET REGISTERED direto em worker incompleto', () => {
     it('deve lançar exceção ao tentar UPDATE direto no banco', async () => {
       // Voltar para INCOMPLETE_REGISTER para testar o guard
-      await pool.query(
-        `UPDATE workers SET status = 'INCOMPLETE_REGISTER' WHERE id = $1`,
-        [workerId],
-      );
+      await setWorkerStatusForTest(pool, workerId, 'INCOMPLETE_REGISTER');
 
       // Tentar SET REGISTERED direto — a trigger deve bloquear
       await expect(
-        pool.query(
-          `UPDATE workers SET status = 'REGISTERED' WHERE id = $1`,
-          [workerId],
-        ),
+        setWorkerStatusForTest(pool, workerId, 'REGISTERED'),
       ).rejects.toThrow();
     });
   });

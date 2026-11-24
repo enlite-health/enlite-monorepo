@@ -22,6 +22,7 @@
 
 import { Pool } from 'pg';
 import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
+import { setWorkerStatusForTest } from './helpers/setWorkerStatusForTest';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -80,7 +81,7 @@ describe('Worker com baixa de conta (DISABLED) some das superfícies operacionai
     }
     // A baixa acontece DEPOIS da candidatura — como no caso real (o worker é
     // convidado, responde "baja", e a Luz desativa a conta).
-    await pool.query(`UPDATE workers SET status = 'DISABLED' WHERE id = $1`, [disabledWorkerId]);
+    await setWorkerStatusForTest(pool, disabledWorkerId, 'DISABLED');
 
     // Nada a inserir em encuadres: trg_ensure_encuadre_on_wja_insert (migration 189)
     // já criou 1 encuadre por WJA automaticamente.
@@ -242,9 +243,7 @@ describe('Worker com baixa de conta (DISABLED) some das superfícies operacionai
     // INCOMPLETE_REGISTER, não REGISTERED: o trigger do banco recusa promover a
     // REGISTERED sem os campos obrigatórios ("Campos obrigatórios incompletos").
     // É também o estado real de quem dá baixa antes de completar o cadastro.
-    await pool.query(`UPDATE workers SET status = 'INCOMPLETE_REGISTER' WHERE id = $1`, [
-      disabledWorkerId,
-    ]);
+    await setWorkerStatusForTest(pool, disabledWorkerId, 'INCOMPLETE_REGISTER');
 
     const res = await api.get(`/api/admin/vacancies/${vacancyId}/funnel-table`, auth());
     const ids = (res.data.data.rows as Array<{ workerId: string }>).map((r) => r.workerId);
@@ -252,6 +251,6 @@ describe('Worker com baixa de conta (DISABLED) some das superfícies operacionai
     expect(ids).toContain(disabledWorkerId);
     expect(res.data.data.counts.ALL).toBe(2);
 
-    await pool.query(`UPDATE workers SET status = 'DISABLED' WHERE id = $1`, [disabledWorkerId]);
+    await setWorkerStatusForTest(pool, disabledWorkerId, 'DISABLED');
   });
 });

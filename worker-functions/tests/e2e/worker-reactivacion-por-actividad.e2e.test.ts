@@ -197,10 +197,10 @@ describe('Reativação por atividade — só desfaz o que foi ato administrativo
   });
 
   // Achado do code-review (PR #286): o lote arquiva QUALQUER status, não só INCOMPLETE_REGISTER.
-  // Contra o banco real isto mostra o que nenhum mock mostraria: restituir a REGISTERED passa pelo
-  // trigger `fn_guard_registered_status`, que exige cadastro completo. Worker mínimo não passa →
-  // a transação falha e a reativação NÃO acontece (falha fechada, request do prestador intacto).
-  it('arquivado quando era REGISTERED, com cadastro incompleto → guard do banco barra, falha fechada', async () => {
+  // DF-10 (spec 093): a reativação NÃO restitui `statusBefore` literal — grava INCOMPLETE_REGISTER e
+  // chama `recalculate` na mesma transação; quem decide REGISTERED é a completude. Worker mínimo
+  // (sem cadastro completo) volta INCOMPLETE_REGISTER e nunca vira REGISTERED (falha fechada).
+  it('arquivado quando era REGISTERED, com cadastro incompleto → volta INCOMPLETE_REGISTER (DF-10), nunca REGISTERED', async () => {
     const { workerId, uid, email } = await createArchivedWorker(
       'era-registered',
       'system:bulk-archive-stale-2026-01-30',
@@ -212,9 +212,29 @@ describe('Reativação por atividade — só desfaz o que foi ato administrativo
     expect(res.status).toBe(200);
 
     const after = await readState(workerId);
-    expect(after.status).toBe('DISABLED');
-    // Não houve promoção indevida nem rebaixamento silencioso: nada mudou.
-    expect(after.lastHistory.changed_by).toBe('system:bulk-archive-stale-2026-01-30');
+    expect(after.status).toBe('INCOMPLETE_REGISTER');
+    expect(after.status).not.toBe('REGISTERED');
+
+    // Última transição de status: a reativação, com fluxo declarado e autoria do job.
+    const h = await pool.query(
+      `SELECT flow, old_value, new_value, changed_by FROM worker_status_history
+        WHERE worker_id = $1 AND field_name = 'status' ORDER BY created_at DESC LIMIT 1`,
+      [workerId],
+    );
+    expect(h.rows[0]).toMatchObject({
+      flow: 'ARCHIVE_REACTIVATION',
+      old_value: 'DISABLED',
+      new_value: 'INCOMPLETE_REGISTER',
+      changed_by: 'system:reactivacion-por-actividad',
+    });
+
+    // Completude não foi atingida: nenhum evento de cadastro completo para este worker.
+    const ev = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM domain_events
+        WHERE event = 'worker.registration_completed' AND payload->>'workerId' = $1`,
+      [workerId],
+    );
+    expect(ev.rows[0].n).toBe(0);
   });
 
   it('é idempotente: abrir o app de novo não gera nova transição', async () => {

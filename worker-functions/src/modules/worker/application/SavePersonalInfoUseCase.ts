@@ -120,7 +120,7 @@ export class SavePersonalInfoUseCase {
       return updateResult;
     }
 
-    await this.workerRepository.recalculateStatus(data.workerId);
+    await this.workerRepository.recalculateStatus(data.workerId, { flow: 'WIZARD_PERSONAL_INFO' });
 
     // Trilha de fonte: o prestador editando o próprio cadastro deixava ZERO
     // rastro (self cego — change luz-cadastro-assistido-rastreavel). Grava

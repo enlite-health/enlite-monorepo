@@ -24,6 +24,7 @@ const MOTIVO = 'Pedido por telefone, ticket 4412';
 const mockQuery = jest.fn();
 const mockConnect = jest.fn();
 const mockRecalculateStatus = jest.fn();
+const mockUpdateStatus = jest.fn();
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
@@ -40,6 +41,7 @@ jest.mock('@modules/worker', () => ({
   ...jest.requireActual('@modules/worker'),
   WorkerRepository: jest.fn().mockImplementation(() => ({
     recalculateStatus: mockRecalculateStatus,
+    updateStatus: mockUpdateStatus,
   })),
 }));
 
@@ -111,7 +113,10 @@ describe('EncuadreController — updateWorkerStatus', () => {
 
     await controller.updateWorkerStatus(req, res);
 
-    expect(mockRecalculateStatus).toHaveBeenCalledWith('w1');
+    expect(mockRecalculateStatus).toHaveBeenCalledWith('w1', {
+      flow: 'ADMIN_STATUS_CHANGE',
+      actor: { source: 'admin_panel', id: 'staff:admin-1' },
+    });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       success: true,
@@ -128,7 +133,10 @@ describe('EncuadreController — updateWorkerStatus', () => {
 
     await controller.updateWorkerStatus(req, res);
 
-    expect(mockRecalculateStatus).toHaveBeenCalledWith('w1');
+    expect(mockRecalculateStatus).toHaveBeenCalledWith('w1', {
+      flow: 'ADMIN_STATUS_CHANGE',
+      actor: { source: 'admin_panel', id: 'staff:admin-1' },
+    });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       success: true,
@@ -144,8 +152,9 @@ describe('EncuadreController — updateWorkerStatus', () => {
 
     await controller.updateWorkerStatus(req, res);
 
-    // connect é usado por runWorkerUpdate — não deve ter sido chamado
+    // nenhum UPDATE cru: nem connect (runWorkerUpdate) nem updateStatus
     expect(mockConnect).not.toHaveBeenCalled();
+    expect(mockUpdateStatus).not.toHaveBeenCalled();
   });
 
   // ── DISABLED → SET direto via runWorkerUpdate ──────────────────────────
@@ -164,8 +173,12 @@ describe('EncuadreController — updateWorkerStatus', () => {
 
     // recalculateStatus NÃO deve ser chamado
     expect(mockRecalculateStatus).not.toHaveBeenCalled();
-    // connect é chamado (runWorkerUpdate usa transação)
-    expect(mockConnect).toHaveBeenCalled();
+    // o status vai pela port, com o fluxo ADMIN_STATUS_CHANGE e o ator staff — sem UPDATE cru
+    expect(mockUpdateStatus).toHaveBeenCalledWith('w1', 'DISABLED', {
+      flow: 'ADMIN_STATUS_CHANGE',
+      actor: { source: 'admin_panel', id: 'staff:admin-1' },
+    });
+    expect(mockConnect).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       success: true,
@@ -185,7 +198,11 @@ describe('EncuadreController — updateWorkerStatus', () => {
     await controller.updateWorkerStatus(req, res);
 
     expect(mockRecalculateStatus).not.toHaveBeenCalled();
-    expect(mockConnect).toHaveBeenCalled();
+    expect(mockUpdateStatus).toHaveBeenCalledWith('w1', 'INCOMPLETE_REGISTER', {
+      flow: 'ADMIN_STATUS_CHANGE',
+      actor: { source: 'admin_panel', id: 'staff:admin-1' },
+    });
+    expect(mockConnect).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       success: true,
@@ -271,7 +288,10 @@ describe('EncuadreController — updateWorkerStatus', () => {
     await controller.updateWorkerStatus(req, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(mockRecalculateStatus).toHaveBeenCalledWith('w1');
+    expect(mockRecalculateStatus).toHaveBeenCalledWith('w1', {
+      flow: 'ADMIN_STATUS_CHANGE',
+      actor: { source: 'admin_panel', id: 'staff:admin-1' },
+    });
   });
 
   it('worker inexistente é 404, e não 403 — a causa dita tem de ser a real', async () => {

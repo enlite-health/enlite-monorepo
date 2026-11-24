@@ -239,7 +239,7 @@ export class WorkerDocumentsMeController {
         // Recalculate documents_status after removing a file: update with no new URLs so
         // determineStatusFromUpdate reads the remaining docs from the DB and recomputes status.
         await this.documentsRepo.update({ workerId: worker.id });
-        await this.workerRepo.recalculateStatus(worker.id);
+        await this.workerRepo.recalculateStatus(worker.id, { flow: 'WORKER_DOCUMENT_UPLOAD' });
       }
       console.log('[WorkerDocsMeCtrl.deleteDocument] SUCCESS | workerId:', worker.id, '| docType:', docType);
       res.status(200).json({ success: true });

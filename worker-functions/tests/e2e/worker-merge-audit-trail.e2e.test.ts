@@ -168,6 +168,7 @@ describe('Merge audit trail — Postgres real', () => {
       category: 'ghost',
       legalFieldExceptions: [],
       // sem audit → defaults de sistema
+      flow: 'PHONE_MERGE',
     });
 
     const { rows } = await pool.query(

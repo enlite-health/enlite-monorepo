@@ -113,6 +113,7 @@ export class ExecuteAdminMergeUseCase {
           legalFieldExceptions: [],
           discoveredFks,
           audit: { ...baseAudit, fieldChoices, appliedOverrides },
+          flow: 'ADMIN_MERGE',
         });
 
         // Recupera o auditId do último merge inserido
@@ -132,6 +133,10 @@ export class ExecuteAdminMergeUseCase {
         throw e;
       }
     }
+
+    // DF-8: status NÃO é campo sobrescrevível. O recálculo do sobrevivente (flow ADMIN_MERGE) já roda dentro de
+    // `executeSingleMerge` (sem client externo), e lá falha vira warn — não repetimos aqui, senão uma falha
+    // pós-commit viraria erro ao admin de um merge que deu certo.
 
     log.info({
       msg: 'admin_merge_done',
@@ -205,13 +210,15 @@ export class ExecuteAdminMergeUseCase {
  * públicos + as colunas `*_encrypted` que aparecem no comparativo do detalhe
  * (GetDedupGroupDetailUseCase.ENCRYPTED_FIELDS). Para encriptados copiamos o
  * ciphertext, nunca o plaintext.
+ *
+ * `status` NÃO entra (spec 093 DF-8): é derivado/decisão de staff e só sai do escritor único
+ * (`WorkerStatusTransitions`). Um choice para `status` é ignorado pelo filtro de `applyFieldChoices`.
  */
-const OVERRIDABLE_FIELDS = new Set<string>([
+export const OVERRIDABLE_FIELDS = new Set<string>([
   // Públicos
   'profession',
   'knowledge_level',
   'years_experience',
-  'status',
   // Encriptados (ciphertext copiado direto)
   'first_name_encrypted',
   'last_name_encrypted',

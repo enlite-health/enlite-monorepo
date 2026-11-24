@@ -25,6 +25,7 @@
 import { Pool } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
+import { setWorkerStatusForTest } from './helpers/setWorkerStatusForTest';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -447,7 +448,12 @@ describe('Guard fn_guard_registered_status — decide pelo dono, lendo a linha n
       `INSERT INTO worker_documents (worker_id, identity_document_url, criminal_record_url) VALUES ($1, 'http://e.com/id', 'http://e.com/cr')`,
       [id],
     );
-    await pool.query(
+    // 093: o status muda no MESMO comando; o fluxo é declarado na mesma transação (a guarda de completude segue valendo)
+    const c = await pool.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`SELECT set_config('app.status_flow', 'TEST_FIXTURE', true)`);
+      await c.query(
       `UPDATE workers SET
          status = 'REGISTERED',
          first_name_encrypted = 'a', last_name_encrypted = 'b', sex_encrypted = 'c', gender_encrypted = 'd',
@@ -456,20 +462,27 @@ describe('Guard fn_guard_registered_status — decide pelo dono, lendo a linha n
          experience_types = ARRAY['TEA'], preferred_types = ARRAY['TEA'], preferred_age_range = ARRAY['CHILD']
        WHERE id = $1`,
       [id, `+54118${String(Date.now()).slice(-6)}001`],
-    );
+      );
+      await c.query('COMMIT');
+    } catch (e) {
+      await c.query('ROLLBACK');
+      throw e;
+    } finally {
+      c.release();
+    }
     const { rows } = await pool.query<{ status: string }>(`SELECT status FROM workers WHERE id = $1`, [id]);
     expect(rows[0].status).toBe('REGISTERED');
   });
 
   it('REGISTERED sem cadastro → recusa, com os tokens faltantes na mensagem (sem PII)', async () => {
     const id = await makeWorker('INCOMPLETE_REGISTER', 'guard-recusa', 'CAREGIVER');
-    await expect(pool.query(`UPDATE workers SET status = 'REGISTERED' WHERE id = $1`, [id]))
+    await expect(setWorkerStatusForTest(pool, id, 'REGISTERED'))
       .rejects.toThrow(/Cadastro incompleto.*first_name.*worker_documents/s);
   });
 
   it('REGISTERED com cadastro completo mas documento SEM validação → PASSA (o guard usa o modo padrão)', async () => {
     const id = await makeWorkerWithDocs('INCOMPLETE_REGISTER', 'guard-sem-validacao', 'CAREGIVER', 'unvalidated');
-    await pool.query(`UPDATE workers SET status = 'REGISTERED' WHERE id = $1`, [id]);
+    await setWorkerStatusForTest(pool, id, 'REGISTERED');
     const { rows } = await pool.query<{ status: string }>(`SELECT status FROM workers WHERE id = $1`, [id]);
     expect(rows[0].status).toBe('REGISTERED');
   });
@@ -478,7 +491,7 @@ describe('Guard fn_guard_registered_status — decide pelo dono, lendo a linha n
     const id = await makeWorkerWithDocs('INCOMPLETE_REGISTER', 'guard-mesc', 'CAREGIVER', 'validated');
     const destino = await makeWorker('INCOMPLETE_REGISTER', 'guard-mesc-dest');
     await pool.query(`UPDATE workers SET merged_into_id = $1 WHERE id = $2`, [destino, id]);
-    await expect(pool.query(`UPDATE workers SET status = 'REGISTERED' WHERE id = $1`, [id]))
+    await expect(setWorkerStatusForTest(pool, id, 'REGISTERED'))
       .rejects.toThrow(/mesclado/);
   });
 

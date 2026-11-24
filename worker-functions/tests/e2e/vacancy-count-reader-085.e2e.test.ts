@@ -15,6 +15,7 @@ import { VacancyCountReader, type VacancyCountRequest } from '../../src/modules/
 import { OPEN_JOB_STATUSES, LIVE_JOB_POSTING_SQL } from '../../src/modules/matching/domain/openJobStatuses';
 import { POSTULATED_STAGES, toSqlInList } from '../../src/modules/matching/domain/applicationFunnelStages';
 import { resolveZoneKey, UNRESOLVED_ZONE_LABEL } from '../../src/shared/utils/zoneKey';
+import { setWorkerStatusForTest } from './helpers/setWorkerStatusForTest';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -141,7 +142,7 @@ describe('VacancyCountReader × donos (banco real)', () => {
     }
     for (const v of SEEDS) await seedVacancy(v);
     // o trigger de candidatura exige REGISTERED: a baixa vem DEPOIS de a candidatura existir (cenário real)
-    await pool.query(`UPDATE workers SET status = 'DISABLED' WHERE id = $1`, [W.baixa]);
+    await setWorkerStatusForTest(pool, W.baixa, 'DISABLED');
   });
 
   afterAll(async () => {

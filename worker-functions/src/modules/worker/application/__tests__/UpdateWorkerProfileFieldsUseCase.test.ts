@@ -223,6 +223,7 @@ describe('UpdateWorkerProfileFieldsUseCase — recálculo de status (043 A1 → 
 
     expect(mockRecalculateWorkerStatus).toHaveBeenCalledTimes(1);
     expect(mockRecalculateWorkerStatus.mock.calls[0][1]).toBe(WORKER_ID);
+    expect(mockRecalculateWorkerStatus.mock.calls[0][2]).toEqual(expect.objectContaining({ flow: 'PROFILE_FIELDS_EDIT' }));
   });
 
   it('worker REGISTERED: o recálculo É chamado (067 FR-23: promove e rebaixa) — A8 v', async () => {

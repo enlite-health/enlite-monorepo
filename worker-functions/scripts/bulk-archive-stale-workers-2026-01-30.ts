@@ -1,4 +1,9 @@
 /**
+ * ⚠️ Desde a migration 591 (spec 093, DF-11) este script FALHA no trigger trg_worker_status_require_flow se rodado sem
+ * `SELECT set_config('app.status_flow', 'MANUAL_SCRIPT', true)` na mesma transação do UPDATE de status. Não foi migrado
+ * (script histórico, manual): falhar alto é o comportamento desejado.
+ */
+/**
  * bulk-archive-stale-workers-2026-01-30.ts
  *
  * Arquiva (status='DISABLED' + opt-out formal) workers cujo histórico de

@@ -1,4 +1,5 @@
 import { Worker, WorkerStatus, CreateWorkerDTO, UpdateWorkerStepDTO, SavePersonalInfoDTO } from '../domain/Worker';
+import type { WorkerStatusDeclaration } from '../domain/WorkerStatusFlow';
 import { Result } from '@shared/utils/Result';
 
 export interface IWorkerRepository {
@@ -19,9 +20,9 @@ export interface IWorkerRepository {
    */
   setPhoneIfNull(workerId: string, phone: string): Promise<Worker | null>;
   updateImportedWorkerData(workerId: string, data: { authUid: string; email: string; consentAt?: Date }): Promise<Result<Worker>>;
-  updateStatus(workerId: string, status: WorkerStatus): Promise<void>;
+  updateStatus(workerId: string, status: WorkerStatus, declaration: WorkerStatusDeclaration): Promise<void>;
   /** Retorna o novo status se houve mudança, ou null se inalterado / DISABLED. */
-  recalculateStatus(workerId: string): Promise<WorkerStatus | null>;
+  recalculateStatus(workerId: string, declaration: WorkerStatusDeclaration): Promise<WorkerStatus | null>;
   delete(workerId: string): Promise<Result<void>>;
   deleteByAuthUid(authUid: string): Promise<Result<void>>;
   /** Marca/desmarca worker como conta de teste. Retorna o flag resultante, ou null se não existir. */

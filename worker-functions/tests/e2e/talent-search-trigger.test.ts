@@ -21,6 +21,7 @@
 import { Pool } from 'pg';
 import { OutboxProcessor, IMessagingService, MessageSentResult, SendWhatsAppOptions } from '@modules/notification';
 import { Result } from '@shared/utils/Result';
+import { setWorkerStatusForTest } from './helpers/setWorkerStatusForTest';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -239,10 +240,7 @@ describe('Trigger trg_talent_search_welcome', () => {
     expect(await getOutboxForWorker(workerId)).toHaveLength(1);
 
     // Segundo update sem adicionar talent_search novamente → sem novo registro
-    await pool.query(
-      `UPDATE workers SET status = 'INCOMPLETE_REGISTER' WHERE id = $1`,
-      [workerId],
-    );
+    await setWorkerStatusForTest(pool, workerId, 'INCOMPLETE_REGISTER');
 
     expect(await getOutboxForWorker(workerId)).toHaveLength(1);
   });

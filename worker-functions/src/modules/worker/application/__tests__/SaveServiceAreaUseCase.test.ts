@@ -81,6 +81,7 @@ describe('SaveServiceAreaUseCase', () => {
           lng: -58.381592,
         })
       );
+      expect(workerRepo.recalculateStatus).toHaveBeenCalledWith('worker-123', { flow: 'WIZARD_SERVICE_AREA' });
     });
 
     it('NÃO deve chamar updateStep — sem avanço de step na edição por abas', async () => {

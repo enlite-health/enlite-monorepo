@@ -472,7 +472,7 @@ describe('WorkerDocumentsMeController', () => {
       await controller.deleteDocument(req, res);
       expect(mockDeleteFile).not.toHaveBeenCalled();
       expect(mockClearDocumentField).toHaveBeenCalled();
-      expect(mockRecalculateStatus).toHaveBeenCalledWith(WORKER_ID);
+      expect(mockRecalculateStatus).toHaveBeenCalledWith(WORKER_ID, { flow: 'WORKER_DOCUMENT_UPLOAD' });
       expect(res.status).toHaveBeenCalledWith(200);
     });
 

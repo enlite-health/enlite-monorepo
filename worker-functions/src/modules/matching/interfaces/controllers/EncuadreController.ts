@@ -323,8 +323,10 @@ export class EncuadreController {
       }
 
       // REGISTERED não pode ser forçado manualmente — recalcular com base nos campos obrigatórios
-      if (status === 'REGISTERED') await this.workerRepo.recalculateStatus(id);
-      else await this.runWorkerUpdate(id, 'UPDATE workers SET status = $2 WHERE id = $1', status, (req as any).user?.uid);
+      // Escritor único (spec 093, SUP-6): o fluxo é declarado e o ator carimbado como `staff:<uid>`.
+      const declaration = { flow: 'ADMIN_STATUS_CHANGE' as const, actor: staffActor((req as any).user?.uid) ?? undefined };
+      if (status === 'REGISTERED') await this.workerRepo.recalculateStatus(id, declaration);
+      else await this.workerRepo.updateStatus(id, status as WorkerStatus, declaration);
       const { rows } = await this.db.query('SELECT status FROM workers WHERE id = $1', [id]);
       res.status(200).json({ success: true, data: { workerId: id, status: rows[0]?.status ?? status } });
     } catch (err) {

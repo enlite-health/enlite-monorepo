@@ -18,7 +18,15 @@ jest.mock('@shared/logging', () => ({
   loggingAls:  { run: jest.fn() },
 }));
 
+jest.mock('../../../modules/worker/infrastructure/WorkerStatusTransitions', () => ({
+  disable: jest.fn().mockResolvedValue(undefined),
+  recalculateInTransaction: jest
+    .fn()
+    .mockResolvedValue({ newStatus: null, eventIds: { mirror: null, registrationCompleted: null } }),
+}));
+
 import type { PoolClient } from 'pg';
+import { disable, recalculateInTransaction } from '../../../modules/worker/infrastructure/WorkerStatusTransitions';
 import { captureSnapshot, restoreSnapshot } from '../WorkerMergeSnapshotService';
 import type { FkTableInfo } from '../WorkerPhoneMergeFkDiscovery';
 
@@ -239,6 +247,38 @@ describe('restoreSnapshot', () => {
       c[0].includes('UPDATE worker_merge_snapshots SET undone_at'),
     );
     expect(undoneCall).toBeDefined();
+  });
+
+  // ── DF-9 / CA-7: o undo não grava `status` por fora ─────────────────────
+
+  async function undoWithSnapshotStatus(status: string): Promise<PoolClient> {
+    const client = makeClient([
+      { rows: [{ id: 'snap-s', payload: { worker_row: { id: 'absorbed-uuid', email: 'old@example.com', status, merged_into_id: null }, fk_rows: {} }, undone_at: null }] },
+    ]);
+    await restoreSnapshot(client, { mergeAuditId: 11, survivorId: 'survivor-uuid', absorbedId: 'absorbed-uuid' });
+    return client;
+  }
+
+  it('CA-7: o SQL de restauração da linha NÃO contém a coluna status', async () => {
+    const client = await undoWithSnapshotStatus('REGISTERED');
+    const sqls = (client.query as jest.Mock).mock.calls.map((c: [string]) => c[0]);
+    const restore = sqls.find((q: string) => /UPDATE workers SET .*email = /.test(q));
+    expect(restore).toBeDefined();
+    expect(restore).not.toMatch(/\bstatus\b/);
+  });
+
+  it('CA-7: snapshot não-DISABLED → recalculateInTransaction com flow MERGE_UNDO', async () => {
+    jest.clearAllMocks();
+    const client = await undoWithSnapshotStatus('REGISTERED');
+    expect(recalculateInTransaction).toHaveBeenCalledWith(client, 'absorbed-uuid', { flow: 'MERGE_UNDO' });
+    expect(disable).not.toHaveBeenCalled();
+  });
+
+  it('CA-7: snapshot DISABLED → disable com flow MERGE_UNDO (sem recálculo)', async () => {
+    jest.clearAllMocks();
+    const client = await undoWithSnapshotStatus('DISABLED');
+    expect(disable).toHaveBeenCalledWith(client, 'absorbed-uuid', { flow: 'MERGE_UNDO' });
+    expect(recalculateInTransaction).not.toHaveBeenCalled();
   });
 
   it('retorna alreadyUndone=true quando undone_at já está preenchido', async () => {

@@ -28,6 +28,7 @@ process.env.DATABASE_URL = DATABASE_URL;
 
 import { createApiClient, getMockToken, waitForBackend } from './helpers';
 import { completeWorkerProfile, cleanWorkerProfile, type AptoDocs } from './helpers/aptoWorkerFixture';
+import { setWorkerStatusForTest } from './helpers/setWorkerStatusForTest';
 
 /** As 9 colunas do quadro da vaga (VACANCY_BOARD_COLUMNS). IN_PROGRESS é dobrada em PRE_SCREENING e não conta. */
 const NOVE_COLUNAS = ['COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'BLOQUEADO', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED'];
@@ -70,7 +71,7 @@ async function novoPrestador(tag: string, docs: AptoDocs, status: 'REGISTERED' |
   workers.push(id);
   // o guard só deixa virar REGISTERED com cadastro completo; "sem documento" é o REGISTERED legado que perdeu o arquivo depois
   await completeWorkerProfile(pool, id, docs === 'none' && status === 'REGISTERED' ? 'unvalidated' : docs);
-  if (status === 'REGISTERED') await pool.query(`UPDATE workers SET status = 'REGISTERED' WHERE id = $1`, [id]);
+  if (status === 'REGISTERED') await setWorkerStatusForTest(pool, id, 'REGISTERED');
   if (docs === 'none' && status === 'REGISTERED') await pool.query(`DELETE FROM worker_documents WHERE worker_id = $1`, [id]);
   return { id, authUid, email };
 }

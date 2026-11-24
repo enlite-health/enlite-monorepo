@@ -34,6 +34,15 @@ function runSQL(sql: string): string {
   }
 }
 
+/**
+ * Único ponto que muda `workers.status` neste helper (spec 093): a migration 591 recusa o UPDATE sem
+ * `app.status_flow` na MESMA transação. `psql -c "A; B"` manda A e B numa só mensagem (transação implícita),
+ * então o `set_config(..., true)` (local à transação) vale para o UPDATE seguinte. Fluxo: TEST_FIXTURE.
+ */
+function runStatusFixtureSQL(updateSql: string): string {
+  return runSQL(`SELECT set_config('app.status_flow', 'TEST_FIXTURE', true); ${updateSql}`);
+}
+
 function extractUUID(psqlOutput: string): string | null {
   const m = psqlOutput.match(
     /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
@@ -264,7 +273,7 @@ export function insertAptoWorker(
   const { docs = 'validated', occupation = 'CAREGIVER', firstName, lastName, lat, lng } = opts;
   const isAt = occupation === 'AT';
   const w = insertEligibilityWorker({ occupation, docResumeCv: isAt, docAtCertificate: isAt });
-  runSQL(`UPDATE workers SET status = 'REGISTERED' WHERE id = '${w.workerId}'`);
+  runStatusFixtureSQL(`UPDATE workers SET status = 'REGISTERED' WHERE id = '${w.workerId}'`);
   if (firstName) runSQL(`UPDATE workers SET first_name_encrypted = ${enc(firstName)} WHERE id = '${w.workerId}'`);
   if (lastName) runSQL(`UPDATE workers SET last_name_encrypted = ${enc(lastName)} WHERE id = '${w.workerId}'`);
   if (lat != null && lng != null) {
@@ -444,7 +453,7 @@ export function setWorkerStatus(
   status: 'REGISTERED' | 'INCOMPLETE_REGISTER' | 'DISABLED',
 ): void {
   if (!workerId) return;
-  runSQL(`UPDATE workers SET status = '${status}', updated_at = NOW() WHERE id = '${workerId}'`);
+  runStatusFixtureSQL(`UPDATE workers SET status = '${status}', updated_at = NOW() WHERE id = '${workerId}'`);
 }
 
 /** Reads a worker's status by auth_uid (e.g. to assert REGISTERED after a real journey). */

@@ -37,7 +37,7 @@ export class UploadWorkerDocumentsUseCase {
 
     log.info({ msg: '[UploadWorkerDocumentsUseCase] documents saved', newStatus: documents.documentsStatus });
 
-    await this.workerRepository.recalculateStatus(dto.workerId);
+    await this.workerRepository.recalculateStatus(dto.workerId, { flow: 'WORKER_DOCUMENT_UPLOAD' });
 
     log.info({ msg: '[UploadWorkerDocumentsUseCase] DONE', finalStatus: documents.documentsStatus });
     return documents;

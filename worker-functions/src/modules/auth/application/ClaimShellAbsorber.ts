@@ -82,6 +82,7 @@ export class ClaimShellAbsorber implements IClaimShellAbsorber {
           legalFieldExceptions: [],
           audit: { source: 'claim_shell', executedBy: args.authUid, confirmedSamePerson: true },
           client,
+          flow: 'CLAIM_SHELL_ABSORB',
         });
         // Consentimento do OTP na ficha sobrevivente, na MESMA transação: só os campos de consentimento
         // (COALESCE: não sobrescreve o que já há) e NUNCA auth_uid. Falha aqui = rollback do merge inteiro.
@@ -115,7 +116,7 @@ export class ClaimShellAbsorber implements IClaimShellAbsorber {
   private async recalc(workerId: string): Promise<boolean> {
     try {
       const { recalculateWorkerStatus } = await import('../../worker/infrastructure/WorkerStatusRepository');
-      await recalculateWorkerStatus(this.pool, workerId, null);
+      await recalculateWorkerStatus(this.pool, workerId, { flow: 'CLAIM_SHELL_ABSORB' });
       return true;
     } catch {
       return false;

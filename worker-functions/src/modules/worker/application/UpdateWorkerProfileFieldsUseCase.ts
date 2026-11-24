@@ -196,7 +196,7 @@ export class UpdateWorkerProfileFieldsUseCase {
       // (a guarda de `recalculateWorkerStatus` também devolve null para ele; a checagem aqui evita a ida ao banco).
       // ⚠️ Este caso de uso também serve à MCP (`mountMcpRoutes`, `ConfirmWorkerProfileUpdateUseCase`).
       if (statusBefore !== 'DISABLED') {
-        await recalculateWorkerStatus(this.pool, workerId, this.pubsub);
+        await recalculateWorkerStatus(this.pool, workerId, { flow: 'PROFILE_FIELDS_EDIT', pubsub: this.pubsub });
       }
     }
 

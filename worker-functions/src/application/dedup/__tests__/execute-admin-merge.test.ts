@@ -16,7 +16,7 @@ jest.mock('../../../infrastructure/services/WorkerPhoneMergeService');
 jest.mock('../../../infrastructure/services/WorkerPhoneMergeFkDiscovery');
 
 import type { Pool } from 'pg';
-import { ExecuteAdminMergeUseCase } from '../ExecuteAdminMergeUseCase';
+import { ExecuteAdminMergeUseCase, OVERRIDABLE_FIELDS } from '../ExecuteAdminMergeUseCase';
 import { WorkerPhoneMergeService } from '../../../infrastructure/services/WorkerPhoneMergeService';
 import { discoverWorkerFkTables } from '../../../infrastructure/services/WorkerPhoneMergeFkDiscovery';
 
@@ -445,5 +445,49 @@ describe('ExecuteAdminMergeUseCase — propagação de erro', () => {
       survivorId: SURVIVOR_ID,
       absorbedIds: [ABSORBED_ID],
     })).rejects.toThrow('string error');
+  });
+});
+
+// ── DF-8 / CA-6: status só sai do escritor único ──────────────────────────────
+
+describe('ExecuteAdminMergeUseCase — status pelo escritor único (CA-6)', () => {
+  it('CA-6: status NÃO é campo sobrescrevível', () => {
+    expect(OVERRIDABLE_FIELDS.has('status')).toBe(false);
+  });
+
+  it('CA-6: choice para status é ignorado (sem UPDATE) e o serviço recebe flow ADMIN_MERGE (o recálculo do sobrevivente é dele)', async () => {
+    const pool = makePool([
+      { rows: [{ id: SURVIVOR_ID, phone_normalized: PHONE_NORM, merged_into_id: null }] },
+      { rows: [{ merged_into_id: null }] },
+      { rows: [{ id: 91 }] }, // auditId (nenhum SELECT/UPDATE de override entre os dois)
+    ]);
+
+    const useCase = new ExecuteAdminMergeUseCase(pool as unknown as Pool);
+    await useCase.execute({
+      survivorId: SURVIVOR_ID,
+      absorbedIds: [ABSORBED_ID],
+      fieldChoices: { status: `absorbed:${ABSORBED_ID}` },
+    });
+
+    const sqls = (pool.query as jest.Mock).mock.calls.map((c: [string]) => c[0]);
+    expect(sqls.some((q: string) => q.includes('UPDATE workers SET'))).toBe(false);
+    expect(MockMergeService.prototype.executeSingleMerge).toHaveBeenCalledWith(
+      expect.objectContaining({ flow: 'ADMIN_MERGE', survivorId: SURVIVOR_ID }),
+    );
+  });
+
+  it('DF-8: o serviço de merge recebe flow ADMIN_MERGE (o log do recálculo interno não diz PHONE_MERGE)', async () => {
+    const pool = makePool([
+      { rows: [{ id: SURVIVOR_ID, phone_normalized: PHONE_NORM, merged_into_id: null }] },
+      { rows: [{ merged_into_id: null }] },
+      { rows: [{ id: 92 }] },
+    ]);
+    await new ExecuteAdminMergeUseCase(pool as unknown as Pool).execute({
+      survivorId: SURVIVOR_ID,
+      absorbedIds: [ABSORBED_ID],
+    });
+    expect(MockMergeService.prototype.executeSingleMerge).toHaveBeenCalledWith(
+      expect.objectContaining({ flow: 'ADMIN_MERGE' }),
+    );
   });
 });
