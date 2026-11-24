@@ -96,6 +96,15 @@ async function pinnedClientFor(pool: Pool): Promise<PoolClient | undefined> {
 }
 
 /**
+ * Carimba `app.current_uid` / `app.change_source` (LOCAL à transação) no client recebido.
+ * Dono único desses dois `set_config`: `withActorContext` (no BEGIN) e quem já está numa transação alheia.
+ */
+export async function stampActorOnClient(client: PoolClient, actor: ActorContext): Promise<void> {
+  await client.query(`SELECT set_config('app.current_uid', $1, true)`, [actor.id]);
+  await client.query(`SELECT set_config('app.change_source', $1, true)`, [actor.source]);
+}
+
+/**
  * Abre transação, carimba o ator e roda `fn`. Commit no sucesso, rollback em
  * qualquer erro (o erro é repropagado — quem chama decide o que fazer).
  *
@@ -123,10 +132,7 @@ export async function withActorContext<T>(
   const client = pinned ?? (await pool.connect());
   try {
     await client.query('BEGIN');
-    if (resolved) {
-      await client.query(`SELECT set_config('app.current_uid', $1, true)`, [resolved.id]);
-      await client.query(`SELECT set_config('app.change_source', $1, true)`, [resolved.source]);
-    }
+    if (resolved) await stampActorOnClient(client, resolved);
     await applyCountryContext(client);
     const result = await fn(client);
     await client.query('COMMIT');

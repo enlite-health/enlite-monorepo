@@ -12,7 +12,7 @@ import type { WorkerStatus } from '../domain/Worker';
 import type { WorkerStatusFlow } from '../domain/WorkerStatusFlow';
 import { logger, loggingAls } from '@shared/logging';
 import { enqueueDomainEvent } from '@shared/events/enqueueDomainEvent';
-import { withActorContext } from '@shared/database/actorContext';
+import { stampActorOnClient, withActorContext } from '@shared/database/actorContext';
 import type { ActorContext } from '@shared/audit/actorSource';
 import type { PubSubClient } from '@shared/events/PubSubClient';
 import { recalculateStatus as _recalculateStatus } from './WorkerImportRepository';
@@ -51,9 +51,7 @@ async function declareFlow(client: PoolClient, flow: WorkerStatusFlow): Promise<
 
 /** Carimbo de ator para quem já está numa transação alheia (withActorContext faz o seu no BEGIN). */
 async function stampActor(client: PoolClient, actor: ActorContext | undefined): Promise<void> {
-  if (!actor) return;
-  await client.query(`SELECT set_config('app.current_uid', $1, true)`, [actor.id]);
-  await client.query(`SELECT set_config('app.change_source', $1, true)`, [actor.source]);
+  if (actor) await stampActorOnClient(client, actor);
 }
 
 async function writeStatus(
