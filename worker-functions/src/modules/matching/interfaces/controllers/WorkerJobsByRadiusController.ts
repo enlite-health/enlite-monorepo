@@ -25,7 +25,7 @@ export class WorkerJobsByRadiusController {
     try {
       const out = view ? await this.useCase.execute(uid, radiusKm, { view }) : await this.useCase.execute(uid, radiusKm);
       if (out.ok) {
-        res.status(200).json(view === 'home' ? { items: out.items, center: out.center, applied: out.applied, missing: out.missing } : { items: out.items });
+        res.status(200).json(view === 'home' ? { items: out.items, center: out.center, applied: out.applied, missing: out.missing, nearest: out.nearest } : { items: out.items });
         return;
       }
       res.status(STATUS_BY_CODE[out.code]).json({ code: out.code });

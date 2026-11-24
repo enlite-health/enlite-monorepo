@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { PointsMap, type MapRing } from '@presentation/components/molecules/PointsMap/PointsMap';
 import type { JobRadiusKm } from '@domain/entities/WorkerJobByRadius';
 import type { WorkerJobsByRadiusState } from '@presentation/hooks/useWorkerJobsByRadius';
-import { groupByRegion, itemsWithin, nextRadius } from './radiusScope';
+import { groupByRegion, itemsWithin, nearestFallback, nextRadius } from './radiusScope';
 import { RadiusSlider } from './RadiusSlider';
 import { useInView } from './useInView';
 
@@ -47,6 +47,10 @@ export function JobsRadiusMap({ state, radiusKm, onRadiusChange }: JobsRadiusMap
   if (!data) return null;
 
   const next = nextRadius(radiusKm);
+  // Fallback (096): nada em 100 km e há vaga mais longe ⇒ o card diz isso e a distância da mais próxima; sem "Ampliar" (não há
+  // o que ampliar dentro de 100 km), em qualquer posição do slider. Sem vaga nenhuma em 100 km também não há botão.
+  const fallback = nearestFallback(data);
+  const nothingIn100 = data.items.length === 0;
   return (
     <section data-testid="jobs-radius-section" aria-label={t('jobsRadius.title')} className="mb-6 rounded-[20px] border border-[#d9d9d9] bg-white p-4 md:p-6">
       <h2 className="mb-4 font-lexend text-xl font-semibold text-[#180149]">{t('jobsRadius.title')}</h2>
@@ -72,8 +76,13 @@ export function JobsRadiusMap({ state, radiusKm, onRadiusChange }: JobsRadiusMap
           <RadiusSlider value={radiusKm} count={inRadius.length} onChange={onRadiusChange} />
           {inRadius.length === 0 ? (
             <div data-testid="radius-empty" className="font-lexend text-sm text-[#180149]">
-              <p className="font-medium">{t('jobsRadius.empty', { n: radiusKm })}</p>
-              {next !== null && (
+              <p className="font-medium">{t('jobsRadius.empty', { n: fallback ? 100 : radiusKm })}</p>
+              {fallback && (
+                <p data-testid="radius-nearest-hint" className="mt-1">
+                  {t('jobsRadius.nearestHint', { km: Math.round(fallback[0].distance_km) })}
+                </p>
+              )}
+              {next !== null && !nothingIn100 && (
                 <button
                   type="button"
                   onClick={() => onRadiusChange(next)}

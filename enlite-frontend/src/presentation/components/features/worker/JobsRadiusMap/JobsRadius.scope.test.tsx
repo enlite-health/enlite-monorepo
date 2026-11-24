@@ -6,7 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { WorkerJobByRadius } from '@domain/entities/WorkerJobByRadius';
 import { JOB_RADII_KM } from '@domain/entities/WorkerJobByRadius';
-import { groupByRegion, itemsWithin, nextRadius } from './radiusScope';
+import { groupByRegion, itemsWithin, nearestFallback, nextRadius } from './radiusScope';
 import { RadiusSlider } from './RadiusSlider';
 
 vi.mock('react-i18next', () => ({
@@ -63,5 +63,15 @@ describe('RadiusSlider', () => {
     expect(screen.getByTestId('radius-count')).toHaveTextContent('jobsRadius.count:{"count":4}');
     fireEvent.change(range, { target: { value: '4' } });
     expect(onChange).toHaveBeenCalledWith(50);
+  });
+});
+
+describe('nearestFallback (096)', () => {
+  const far = [job('x', 197, 'Luján')];
+  it('items vazio + nearest cheio → nearest', () => expect(nearestFallback({ items: [], nearest: far })).toEqual(far));
+  it('items cheio → null mesmo com nearest', () => expect(nearestFallback({ items: ITEMS, nearest: far })).toBeNull());
+  it('nearest ausente/vazio → null', () => {
+    expect(nearestFallback({ items: [] })).toBeNull();
+    expect(nearestFallback({ items: [], nearest: [] })).toBeNull();
   });
 });

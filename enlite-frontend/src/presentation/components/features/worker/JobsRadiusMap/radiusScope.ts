@@ -39,3 +39,10 @@ export function groupByRegion(items: WorkerJobByRadius[]): RegionCount[] {
     }))
     .sort((a, b) => Number(a.key === '') - Number(b.key === '') || b.count - a.count || a.label.localeCompare(b.label));
 }
+
+/**
+ * Fallback "sem vaga perto" (096): `items` (100 km) vazio e `nearest` preenchido ⇒ as vagas mais próximas, já por distância,
+ * sem teto de raio; senão `null` (comportamento de sempre). Fonte única para o card do mapa, a lista e a home.
+ */
+export const nearestFallback = (data: { items: WorkerJobByRadius[]; nearest?: WorkerJobByRadius[] }): WorkerJobByRadius[] | null =>
+  data.items.length === 0 && data.nearest && data.nearest.length > 0 ? data.nearest : null;
