@@ -18,6 +18,8 @@ const AUTH_ERROR_CODES: Record<string, string> = {
   // Erros de registro
   'auth/email-already-in-use': 'auth.errors.emailAlreadyInUse',
   'auth/weak-password': 'auth.errors.weakPassword',
+  // Política do Identity Platform (D770): o servidor recusa senha fora de 8 + 4 classes.
+  'auth/password-does-not-meet-requirements': 'auth.errors.passwordRequirements',
   'auth/operation-not-allowed': 'auth.errors.operationNotAllowed',
   
   // Erros de Google/Popup
@@ -48,6 +50,9 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   'Network error': 'auth.errors.networkError',
   'A network error has occurred': 'auth.errors.networkError',
   'Weak password': 'auth.errors.weakPassword',
+  // Texto cru do servidor quando o SDK não traz o código (ex.: PASSWORD_DOES_NOT_MEET_REQUIREMENTS).
+  'PASSWORD_DOES_NOT_MEET_REQUIREMENTS': 'auth.errors.passwordRequirements',
+  'Missing password requirements': 'auth.errors.passwordRequirements',
   'Password should be at least 6 characters': 'auth.errors.weakPassword',
   'User not found': 'auth.errors.userNotFound',
   'There is no user record corresponding to this identifier': 'auth.errors.userNotFound',
