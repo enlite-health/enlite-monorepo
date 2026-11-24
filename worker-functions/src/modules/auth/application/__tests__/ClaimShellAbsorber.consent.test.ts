@@ -4,6 +4,10 @@ jest.mock('@shared/logging', () => {
   const shared = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
   return { logger: { child: () => shared, ...shared }, reportError: jest.fn(), __shared: shared };
 });
+const mockRecalculate = jest.fn().mockResolvedValue(null);
+jest.mock('../../../worker/infrastructure/WorkerStatusRepository', () => ({
+  recalculateWorkerStatus: (...args: unknown[]) => mockRecalculate(...args),
+}));
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mockLogs = (require('@shared/logging') as { __shared: { error: jest.Mock } }).__shared;
 
@@ -52,6 +56,7 @@ describe('ClaimShellAbsorber — consentimento na mesma transação (D764)', () 
     const sql = h.client.query.mock.calls.map((c) => String(c[0])).find((q) => q.includes('lgpd_consent_at'))!;
     expect(sql).not.toMatch(/auth_uid/);
     expect(h.client.query).toHaveBeenCalledWith(expect.stringContaining('lgpd_consent_at'), [X, consentAt]);
+    expect(mockRecalculate).toHaveBeenCalledWith(expect.anything(), X, { flow: 'CLAIM_SHELL_ABSORB' });
   });
 
   it('falha no UPDATE de consentimento: ROLLBACK, sem COMMIT, devolve falha e loga só o pgCode', async () => {

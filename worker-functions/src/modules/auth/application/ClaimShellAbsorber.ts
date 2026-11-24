@@ -115,7 +115,7 @@ export class ClaimShellAbsorber implements IClaimShellAbsorber {
   private async recalc(workerId: string): Promise<boolean> {
     try {
       const { recalculateWorkerStatus } = await import('../../worker/infrastructure/WorkerStatusRepository');
-      await recalculateWorkerStatus(this.pool, workerId, null);
+      await recalculateWorkerStatus(this.pool, workerId, { flow: 'CLAIM_SHELL_ABSORB' });
       return true;
     } catch {
       return false;

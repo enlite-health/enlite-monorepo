@@ -364,7 +364,7 @@ export class WorkerPhoneMergeService {
       //    usuário. Falha aqui não desfaz o merge (já commitado) — só loga.
       if (!external) {
         try {
-          await recalculateWorkerStatus(this.pool, survivorId, null);
+          await recalculateWorkerStatus(this.pool, survivorId, { flow: 'PHONE_MERGE' });
         } catch (err) {
           const e = err instanceof Error ? err : new Error(String(err));
           log.warn({ msg: 'merge_status_recalc_failed', survivorId, reason: e.message });
