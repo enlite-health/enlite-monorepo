@@ -8,7 +8,7 @@ import type { OtpSendContext } from '../infrastructure/TwilioVerifyService';
  * Finalidade: lista FECHADA no banco (CHECK em `otp_challenges.purpose`); estendê-la é ALTER de CHECK, sem migration
  * destrutiva. Este tipo e o CHECK andam juntos.
  */
-export type OtpPurpose = 'claim' | 'link';
+export type OtpPurpose = 'claim' | 'link' | 'phone_verify';
 
 /** O envio pelo canal falhou. Sem 2º canal (D732): quem chama mostra "tente de novo", nunca cai em SMS. */
 export const OTP_CHANNEL_UNAVAILABLE = 'OTP_CHANNEL_UNAVAILABLE';
