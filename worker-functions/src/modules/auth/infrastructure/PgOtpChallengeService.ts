@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import type { Pool } from 'pg';
-import { logger } from '@shared/logging';
+import { logger, safeErrorFields } from '@shared/logging';
 import {
   OtpChallengePort,
   OtpCheckInput,
@@ -31,10 +31,15 @@ export class PgOtpChallengeService implements OtpChallengePort {
     private readonly suppressedCode: () => string | undefined = () => process.env.E2E_OTP_CODE,
   ) {}
 
-  private hmac(challengeId: string, purpose: string, code: string): string {
+  /** Falha FECHADA: sem pepper (ou curto demais) nada é emitido nem conferido, e nenhuma linha é tocada. */
+  private assertPepper(): string {
     const pepper = this.pepper();
     if (!pepper || pepper.length < MIN_PEPPER_LENGTH) throw new Error('OTP_HMAC_PEPPER not configured');
-    return crypto.createHmac('sha256', pepper).update(`${challengeId}|${purpose}|${code}`).digest('hex');
+    return pepper;
+  }
+
+  private hmac(challengeId: string, purpose: string, code: string): string {
+    return crypto.createHmac('sha256', this.assertPepper()).update(`${challengeId}|${purpose}|${code}`).digest('hex');
   }
 
   async start(input: OtpStartInput): Promise<{ challengeId: string }> {
@@ -64,13 +69,9 @@ export class PgOtpChallengeService implements OtpChallengePort {
       client.release();
     }
 
+    let sent: Awaited<ReturnType<typeof this.sender.send>>;
     try {
-      const sent = await this.sender.send({ toE164: input.phoneE164, code, ctx: input.ctx });
-      await this.pool.query(`UPDATE otp_challenges SET twilio_sid = $2, send_status = $3 WHERE id = $1`, [
-        challengeId,
-        sent.twilioSid ?? null,
-        sent.suppressed ? 'suppressed' : 'sent',
-      ]);
+      sent = await this.sender.send({ toE164: input.phoneE164, code, ctx: input.ctx });
     } catch (err) {
       // Canal indisponível: o desafio não pode ficar pendente (ninguém recebeu o código).
       await this.pool.query(
@@ -80,31 +81,61 @@ export class PgOtpChallengeService implements OtpChallengePort {
       throw err;
     }
 
+    // O código JÁ foi entregue: se só o registro do sid falhar, o desafio vale. Cancelá-lo deixaria a cuidadora com um
+    // código na mão que o sistema recusa. Registra o erro (sem PII) e segue.
+    try {
+      await this.pool.query(`UPDATE otp_challenges SET twilio_sid = $2, send_status = $3 WHERE id = $1`, [
+        challengeId,
+        sent.twilioSid ?? null,
+        sent.suppressed ? 'suppressed' : 'sent',
+      ]);
+    } catch (err) {
+      logger.child({ source: 'PgOtpChallengeService:start' }).warn({ msg: 'otp_send_record_failed', challengeId, ...safeErrorFields(err) });
+    }
+
     logger.child({ source: 'PgOtpChallengeService:start' }).info({ msg: 'otp_challenge_started', challengeId, purpose: input.purpose });
     return { challengeId };
   }
 
   async check(input: OtpCheckInput): Promise<OtpCheckOutcome> {
-    // O purpose entra no HMAC: lê-se do desafio. Um SELECT sem efeito colateral, depois o consumo atômico.
-    const found = await this.pool.query<{ purpose: OtpPurpose }>(
-      `SELECT purpose FROM otp_challenges WHERE id = $1 AND worker_id = $2`,
-      [input.challengeId, input.workerId],
-    );
-    if (found.rowCount === 0) return { ok: false, code: 'INVALID_OTP' };
-    const codeHmac = this.hmac(input.challengeId, found.rows[0].purpose, input.code);
+    this.assertPepper();
 
-    // CONSUMO atômico: um UPDATE condicional. Duas conferências simultâneas do mesmo código: só uma devolve linha.
-    const consumed = await this.pool.query(
-      `UPDATE otp_challenges SET status = 'consumed'
+    // 1. A tentativa é CONTADA ANTES de comparar, num único UPDATE atômico com o teto na própria condição: N conferências
+    //    paralelas não passam de MAX_ATTEMPTS (compare-depois-incrementa deixaria todas passarem). O telefone da ficha (DP-21)
+    //    entra aqui: código emitido para outro telefone não chega à comparação.
+    const counted = await this.pool.query<{ code_hmac: string; purpose: OtpPurpose; attempts: number }>(
+      `UPDATE otp_challenges SET attempts = attempts + 1
         WHERE id = $1 AND worker_id = $2
-          AND status = 'pending' AND expires_at > NOW() AND attempts < $5
-          AND phone_e164 = $3 AND code_hmac = $4
-        RETURNING id`,
-      [input.challengeId, input.workerId, input.phoneOnRecord, codeHmac, MAX_ATTEMPTS],
+          AND status = 'pending' AND expires_at > NOW() AND attempts < $4
+          AND phone_e164 = $3
+        RETURNING code_hmac, purpose, attempts`,
+      [input.challengeId, input.workerId, input.phoneOnRecord, MAX_ATTEMPTS],
     );
-    if (consumed.rowCount === 1) return { ok: true };
 
-    // Não consumiu: diagnostica e, se o desafio segue vivo, conta a tentativa errada.
+    if (counted.rowCount === 1) {
+      const { code_hmac: stored, purpose, attempts } = counted.rows[0];
+      const given = Buffer.from(this.hmac(input.challengeId, purpose, input.code), 'hex');
+      const expected = Buffer.from(stored, 'hex');
+      if (given.length === expected.length && crypto.timingSafeEqual(given, expected)) {
+        // 2. Consumo único: só uma conferência simultânea do mesmo código devolve linha.
+        const consumed = await this.pool.query(
+          `UPDATE otp_challenges SET status = 'consumed' WHERE id = $1 AND status = 'pending' AND expires_at > NOW() RETURNING id`,
+          [input.challengeId],
+        );
+        if (consumed.rowCount === 1) return { ok: true };
+        return this.diagnose(input);
+      }
+      if (attempts >= MAX_ATTEMPTS) {
+        await this.pool.query(`UPDATE otp_challenges SET status = 'canceled' WHERE id = $1 AND status = 'pending'`, [input.challengeId]);
+      }
+      return { ok: false, code: 'INVALID_OTP' };
+    }
+
+    return this.diagnose(input);
+  }
+
+  /** Não houve tentativa contada: diz POR QUE o desafio não vale. */
+  private async diagnose(input: OtpCheckInput): Promise<OtpCheckOutcome> {
     const state = await this.pool.query<{ status: string; expired: boolean; attempts: number }>(
       `SELECT status, (expires_at <= NOW()) AS expired, attempts FROM otp_challenges WHERE id = $1 AND worker_id = $2`,
       [input.challengeId, input.workerId],
@@ -113,14 +144,7 @@ export class PgOtpChallengeService implements OtpChallengePort {
     if (!row) return { ok: false, code: 'INVALID_OTP' };
     if (row.status === 'consumed') return { ok: false, code: 'OTP_ALREADY_USED' };
     if (row.status === 'canceled' || row.expired || row.attempts >= MAX_ATTEMPTS) return { ok: false, code: 'EXPIRED_OTP' };
-
-    await this.pool.query(
-      `UPDATE otp_challenges
-          SET attempts = attempts + 1,
-              status = CASE WHEN attempts + 1 >= $2 THEN 'canceled' ELSE status END
-        WHERE id = $1 AND status = 'pending'`,
-      [input.challengeId, MAX_ATTEMPTS],
-    );
+    // Vivo, mas o telefone da ficha não é o do desafio (DP-21): recusa sem contar (o telefone vem do banco, não do cliente).
     return { ok: false, code: 'INVALID_OTP' };
   }
 
