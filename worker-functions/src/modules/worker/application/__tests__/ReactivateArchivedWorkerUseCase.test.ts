@@ -5,6 +5,13 @@ import {
 } from '../ReactivateArchivedWorkerUseCase';
 import { reportError } from '@shared/logging';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { restoreFromDisabled } from '../../infrastructure/WorkerStatusTransitions';
+
+jest.mock('../../infrastructure/WorkerStatusTransitions', () => ({
+  restoreFromDisabled: jest.fn(),
+}));
+const mockRestore = restoreFromDisabled as jest.Mock;
+const NO_EVENTS = { mirror: null, registrationCompleted: null };
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: { getInstance: jest.fn() },
@@ -20,7 +27,7 @@ const WID = '84eb35fe-73d1-4b79-b186-c41b0b64fd31';
 
 /**
  * `originRow` = o que a leitura de origem devolve.
- * `updateRowCount` = linhas afetadas pelo UPDATE de `workers` (0 = alguém correu na frente).
+ * `updateRowCount` = 0 → alguém correu na frente: a leitura travada (FOR UPDATE) já não vê DISABLED.
  */
 function makeDeps(
   originRow: {
@@ -37,8 +44,8 @@ function makeDeps(
   }
   const client = {
     query: jest.fn().mockImplementation((sql: string) => {
-      if (String(sql).includes('UPDATE workers')) {
-        return Promise.resolve({ rows: [], rowCount: updateRowCount });
+      if (String(sql).includes('FOR UPDATE')) {
+        return Promise.resolve({ rows: [{ status: updateRowCount === 0 ? 'REGISTERED' : 'DISABLED' }], rowCount: 1 });
       }
       return Promise.resolve({ rows: [], rowCount: 0 });
     }),
@@ -63,7 +70,10 @@ const archivedByUs = (job: string, statusBefore = 'INCOMPLETE_REGISTER') => ({
 
 const sqlsOf = (client: { query: jest.Mock }) => client.query.mock.calls.map((c) => String(c[0]));
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  mockRestore.mockResolvedValue({ newStatus: null, eventIds: NO_EVENTS });
+});
 
 describe('reactivateIfArchivedByUs', () => {
   describe('reativa apenas os jobs da allow-list', () => {
@@ -77,7 +87,8 @@ describe('reactivateIfArchivedByUs', () => {
         const sqls = sqlsOf(client);
         expect(sqls.some((s) => s.includes('BEGIN'))).toBe(true);
         expect(sqls.some((s) => s.includes('COMMIT'))).toBe(true);
-        expect(sqls.some((s) => s.includes('UPDATE workers'))).toBe(true);
+        expect(sqls.some((s) => s.includes('UPDATE workers'))).toBe(false); // nenhum UPDATE cru
+        expect(mockRestore).toHaveBeenCalledTimes(1);
       },
     );
 
@@ -113,9 +124,10 @@ describe('reactivateIfArchivedByUs', () => {
 
       await reactivateIfArchivedByUs(pool as never, WID);
 
-      const call = client.query.mock.calls.find((c) => String(c[0]).includes('UPDATE workers'));
-      expect(String(call![0])).toContain("AND status = 'DISABLED'");
-      expect(call![1]).toEqual([WID, 'INCOMPLETE_REGISTER']);
+      // a guarda virou leitura travada explícita; a escrita é do escritor único, com o fluxo declarado
+      const lock = client.query.mock.calls.find((c) => String(c[0]).includes('FOR UPDATE'));
+      expect(String(lock![0])).toContain('FROM workers');
+      expect(mockRestore).toHaveBeenCalledWith(client, WID, { flow: 'ARCHIVE_REACTIVATION' });
     });
   });
 
@@ -186,10 +198,12 @@ describe('reactivateIfArchivedByUs', () => {
         archivedByUs('system:bulk-archive-stale-2026-01-30', 'REGISTERED'),
       );
 
-      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe('REGISTERED');
+      // DF-10: o destino sai do recálculo do escritor único (cadastro completo → REGISTERED)
+      mockRestore.mockResolvedValue({ newStatus: 'REGISTERED', eventIds: NO_EVENTS });
 
-      const call = client.query.mock.calls.find((c) => String(c[0]).includes('UPDATE workers'));
-      expect(call![1]).toEqual([WID, 'REGISTERED']);
+      await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe('REGISTERED');
+      expect(mockRestore).toHaveBeenCalledWith(client, WID, { flow: 'ARCHIVE_REACTIVATION' });
+      expect(sqlsOf(client).some((q) => q.includes('UPDATE workers'))).toBe(false);
     });
 
     it.each([[null], ['DISABLED'], ['LEGADO_QUALQUER'], ['']])(
@@ -281,9 +295,10 @@ describe('reactivateIfArchivedByUs', () => {
       expect(pool.connect).not.toHaveBeenCalled();
     });
 
-    it('outra transação reativou primeiro (UPDATE afeta 0) → false', async () => {
+    it('outra transação reativou primeiro (já não está DISABLED sob o lock) → null, sem escrita', async () => {
       const { pool } = makeDeps(archivedByUs('system:bulk-archive-stale-2026-01-30'), 0);
       await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBeNull();
+      expect(mockRestore).not.toHaveBeenCalled();
     });
   });
 });
@@ -301,7 +316,7 @@ describe('D751 — blacklist nunca reativa', () => {
   it('blacklisted: false + mesmo job → continua reativando', async () => {
     const { pool, client } = makeDeps({ ...archivedByUs(JOB), blacklisted: false });
     await expect(reactivateIfArchivedByUs(pool as never, WID)).resolves.toBe('INCOMPLETE_REGISTER');
-    expect(sqlsOf(client).some((s) => s.includes('UPDATE workers'))).toBe(true);
+    expect(mockRestore).toHaveBeenCalledTimes(1);
   });
 
   it('a query de origem consulta blacklist E encuadres.resultado = BLACKLIST', async () => {
@@ -316,7 +331,7 @@ describe('D751 — blacklist nunca reativa', () => {
 describe('reactivateOnActivity — o guard do caminho quente', () => {
   function mockPool(originRow: Record<string, unknown> | null) {
     const client = {
-      query: jest.fn().mockResolvedValue({ rows: [], rowCount: 1 }),
+      query: jest.fn().mockResolvedValue({ rows: [{ status: 'DISABLED' }], rowCount: 1 }),
       release: jest.fn(),
     };
     const pool = {

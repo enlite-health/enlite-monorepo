@@ -24,6 +24,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { systemActor } from '@shared/audit/actorSource';
 import { reportError } from '@shared/logging';
+import { restoreFromDisabled } from '../infrastructure/WorkerStatusTransitions';
 
 /** Job desta reativação. Vira `worker_status_history.changed_by` = `system:<isto>`. */
 export const REACTIVATION_JOB = 'reactivacion-por-actividad';
@@ -95,10 +96,10 @@ export async function reactivateIfArchivedByUs(
     if (!isReversibleJob(origin.archivedBy)) return null;
     if (origin.blacklisted) return null;
 
-    const target = origin.statusBefore as WorkerStatus;
-    if (!RESTORABLE_STATUSES.includes(target)) return null;
+    // O destino NÃO é mais escrito daqui (DF-10): só a elegibilidade segue validada contra `statusBefore`.
+    if (!RESTORABLE_STATUSES.includes(origin.statusBefore as WorkerStatus)) return null;
 
-    return (await applyReactivation(pool, workerId, target)) ? target : null;
+    return await applyReactivation(pool, workerId);
   } catch (err) {
     // Nunca propaga: quem chama está servindo um request do prestador. Mas também nunca some em
     // silêncio — retificação quebrada e invisível deixa o prazo do art. 16 inc. 2 correr sem que
@@ -210,24 +211,24 @@ async function readArchivalOrigin(pool: Pool, workerId: string): Promise<Archiva
  * pediu — mas a mentira está no LEITOR, que ignora `reason`, e é lá que ela deve ser consertada.
  * Reescrever o registro de vontade de alguém para corrigir a frase de uma tela é o negócio errado.
  */
-async function applyReactivation(
-  pool: Pool,
-  workerId: string,
-  target: WorkerStatus,
-): Promise<boolean> {
+async function applyReactivation(pool: Pool, workerId: string): Promise<WorkerStatus | null> {
   return withActorContext(
     pool,
     async (client) => {
-      const updated = await client.query(
-        `UPDATE workers
-            SET status = $2
-          WHERE id = $1
-            AND status = 'DISABLED'`,
-        [workerId, target],
+      // A guarda `status = 'DISABLED'` saiu do WHERE do UPDATE (agora é do escritor único) e virou
+      // checagem explícita, com a linha travada: entre ler e escrever, outra transação pode ter
+      // reativado (ou desativado de novo). Mesmo efeito: só reativa quem está DISABLED.
+      const { rows } = await client.query<{ status: WorkerStatus }>(
+        'SELECT status FROM workers WHERE id = $1 FOR UPDATE',
+        [workerId],
       );
+      // Outra transação já reativou (ou a linha sumiu). Não é erro; não é reativação.
+      if (rows[0]?.status !== 'DISABLED') return null;
 
-      // 0 linhas → outra transação já reativou (ou desativou de novo). Não é erro; não é reativação.
-      return updated.rowCount === 1;
+      // DF-10: o escritor único grava INCOMPLETE_REGISTER e recalcula (pode virar REGISTERED).
+      // Os domain_events enfileirados saem pelo sweep — não há Pub/Sub neste caminho.
+      const { newStatus } = await restoreFromDisabled(client, workerId, { flow: 'ARCHIVE_REACTIVATION' });
+      return newStatus ?? 'INCOMPLETE_REGISTER';
     },
     systemActor(REACTIVATION_JOB),
   );

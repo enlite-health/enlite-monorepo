@@ -1,4 +1,9 @@
 import { DeactivateWorkerAccountUseCase } from '../DeactivateWorkerAccountUseCase';
+import { disable } from '../../infrastructure/WorkerStatusTransitions';
+
+jest.mock('../../infrastructure/WorkerStatusTransitions', () => ({
+  disable: jest.fn().mockResolvedValue(undefined),
+}));
 
 function makeDeps(statusRow: { status: string } | null) {
   const client = {
@@ -34,7 +39,9 @@ describe('DeactivateWorkerAccountUseCase', () => {
     const sqls = client.query.mock.calls.map((c) => String(c[0]));
     expect(sqls.some((s) => s.includes('BEGIN'))).toBe(true);
     expect(sqls.some((s) => s.includes('app.current_uid'))).toBe(true);
-    expect(sqls.some((s) => s.includes("status = 'DISABLED'"))).toBe(true);
+    // a baixa vai pelo escritor único, na MESMA transação, com o fluxo declarado — sem UPDATE cru
+    expect(sqls.some((s) => s.includes('UPDATE workers'))).toBe(false);
+    expect(disable).toHaveBeenCalledWith(client, WID, { flow: 'ACCOUNT_DEACTIVATION' });
     expect(sqls.some((s) => s.includes('COMMIT'))).toBe(true);
     expect(optOut.execute).toHaveBeenCalledWith({
       workerId: WID,
@@ -45,9 +52,11 @@ describe('DeactivateWorkerAccountUseCase', () => {
 
   it('já DISABLED → idempotente (não abre transação de UPDATE, mas garante o opt-out)', async () => {
     const { uc, db, optOut } = makeDeps({ status: 'DISABLED' });
+    (disable as jest.Mock).mockClear();
     const res = await uc.execute({ workerId: WID });
     expect(res).toEqual({ ok: true, alreadyDisabled: true });
     expect(db.connect).not.toHaveBeenCalled();
+    expect(disable).not.toHaveBeenCalled();
     expect(optOut.execute).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { disable } from '../infrastructure/WorkerStatusTransitions';
 import { RegisterOptOutUseCase } from '../../notification/application/RegisterOptOutUseCase';
 
 export interface DeactivateWorkerAccountInput {
@@ -56,10 +57,8 @@ export class DeactivateWorkerAccountUseCase {
         await client.query(`SELECT set_config('app.current_uid', $1, true)`, [
           DeactivateWorkerAccountUseCase.AUDIT_UID,
         ]);
-        await client.query(
-          `UPDATE workers SET status = 'DISABLED', updated_at = NOW() WHERE id = $1`,
-          [input.workerId],
-        );
+        // DF-2: a baixa passa pelo escritor único (declara o fluxo antes do UPDATE).
+        await disable(client, input.workerId, { flow: 'ACCOUNT_DEACTIVATION' });
         await client.query('COMMIT');
       } catch (err) {
         await client.query('ROLLBACK');
