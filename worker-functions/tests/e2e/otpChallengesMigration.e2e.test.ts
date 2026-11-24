@@ -66,4 +66,25 @@ describe('migration 592 — otp_challenges', () => {
       client.release();
     }
   });
+
+  it('T-F3c-107 os 3 índices dos limites de envio e da busca por twilio_sid existem (pg_indexes) e o planner usa o de telefone', async () => {
+    const { rows } = await pool.query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes WHERE tablename = 'otp_challenges' AND indexname LIKE 'idx_otp_challenges_%'`,
+    );
+    expect(rows.map((r) => r.indexname).sort()).toEqual(
+      ['idx_otp_challenges_phone_created', 'idx_otp_challenges_twilio_sid', 'idx_otp_challenges_worker_created'],
+    );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL enable_seqscan = off');
+      const plan = await client.query<Record<string, string>>(
+        `EXPLAIN SELECT 1 FROM otp_challenges WHERE phone_e164 = '+5491100000000' AND created_at > NOW() - INTERVAL '24 hours'`,
+      );
+      expect(plan.rows.map((r) => r['QUERY PLAN']).join('\n')).toMatch(/idx_otp_challenges_phone_created/);
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
+    }
+  });
 });

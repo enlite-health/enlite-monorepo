@@ -41,5 +41,11 @@ CREATE TABLE IF NOT EXISTS otp_challenges (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_otp_challenges_pending_por_ficha_finalidade
   ON otp_challenges (worker_id, purpose) WHERE status = 'pending';
 
+-- Índices dos limites de envio (`WHERE worker_id = $1 OR phone_e164 = $2 AND created_at > NOW() - 24h`, que roda a cada start sob
+-- lock) e da busca da resposta ao código por `twilio_sid` (InboundWhatsAppController). Sem eles, cada start varre a tabela inteira.
+CREATE INDEX IF NOT EXISTS idx_otp_challenges_phone_created ON otp_challenges (phone_e164, created_at);
+CREATE INDEX IF NOT EXISTS idx_otp_challenges_worker_created ON otp_challenges (worker_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_otp_challenges_twilio_sid ON otp_challenges (twilio_sid);
+
 COMMENT ON TABLE otp_challenges IS 'Código OTP próprio (D758). Dono do conceito "código válido". Só o HMAC do código; nunca em claro.';
 COMMENT ON COLUMN otp_challenges.code_hmac IS 'HMAC-SHA256(pepper, id|purpose|code) em hex. O código nunca é gravado.';
