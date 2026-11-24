@@ -5,6 +5,7 @@ import { logger } from '@shared/logging';
 import { isClaimableWorker } from '@modules/worker/application/isClaimableWorker';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import type { OtpChallengePort } from '../ports/OtpChallengePort';
+import type { PoolClient } from 'pg';
 import { CLAIM_CONFLICT, type IClaimShellAbsorber } from './ClaimShellAbsorber';
 
 export interface ConfirmClaimInput {
@@ -50,7 +51,11 @@ export class ConfirmClaimUseCase {
     private readonly shellAbsorber?: IClaimShellAbsorber,
   ) {}
 
-  async execute(input: ConfirmClaimInput): Promise<Result<Worker>> {
+  /**
+   * `afterAbsorb` (só no ramo da casca): roda na transação da absorção, depois do consentimento. É por onde o
+   * `confirm` do celular verificado grava a prova na ficha sobrevivente, na MESMA transação da união.
+   */
+  async execute(input: ConfirmClaimInput, hooks: { afterAbsorb?: (tx: PoolClient) => Promise<void> } = {}): Promise<Result<Worker>> {
     const startedAt = Date.now();
 
     const log = logger.child({
@@ -131,6 +136,7 @@ export class ConfirmClaimUseCase {
         importedId: candidate.id,
         authUid: input.authUid,
         consentAt,
+        afterAbsorb: hooks.afterAbsorb,
       });
       if (absorbed.isFailure) {
         log.warn({ msg: 'claim_absorb_refused', error: absorbed.error });

@@ -13,7 +13,7 @@ import { shouldSuppressOtp } from '../application/IsTestOtpGuard';
 import type { TwilioAuthTemplateSender } from './TwilioAuthTemplateSender';
 
 /** Validade do código (a mesma do Verify). */
-const OTP_TTL_MINUTES = 10;
+export const OTP_TTL_MINUTES = 10;
 /** Tentativas erradas por desafio; a N-ésima cancela. O quadro completo de limites é do cartão de limites (T-F3c-111). */
 const MAX_ATTEMPTS = 5;
 const MIN_PEPPER_LENGTH = 32;

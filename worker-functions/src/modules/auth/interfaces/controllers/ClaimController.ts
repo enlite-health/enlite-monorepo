@@ -10,7 +10,7 @@ type TokenUser = { uid?: string; email?: string };
  * H3 (D650): identidade SÓ do token (`requireAuth` popula `req.user`). Devolve a identidade
  * ou já responde 401 (sem token) / 403 (body com authUid de outra identidade) e devolve null.
  */
-function identidadeDoToken(req: Request, res: Response): { authUid: string; email: string } | null {
+export function identidadeDoToken(req: Request, res: Response): { authUid: string; email: string } | null {
   const user = (req as Request & { user?: TokenUser }).user;
   if (!user?.uid) {
     res.status(401).json({ success: false, error: 'Authentication required' });

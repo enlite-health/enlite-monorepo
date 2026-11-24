@@ -17,6 +17,7 @@ import { GetWorkerProgressUseCase } from '../../application/GetWorkerProgressUse
 import { LookupWorkerByEmailUseCase } from '../../application/LookupWorkerByEmailUseCase';
 import { reactivateOnActivity } from '../../application/ReactivateArchivedWorkerUseCase';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
+import { PgPhoneVerificationRepository } from '../../infrastructure/PgPhoneVerificationRepository';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { QuizResponseRepository } from '../../infrastructure/QuizResponseRepository';
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
@@ -57,7 +58,7 @@ export class WorkerControllerV2 {
     this.saveServiceAreaUseCase = new SaveServiceAreaUseCase(workerRepository, serviceAreaRepository);
     this.saveAvailabilityUseCase = new SaveAvailabilityUseCase(workerRepository, availabilityRepository);
     this.getAvailabilityUseCase = new GetWorkerAvailabilityUseCase(workerRepository, availabilityRepository);
-    this.getProgressUseCase = new GetWorkerProgressUseCase(workerRepository);
+    this.getProgressUseCase = new GetWorkerProgressUseCase(workerRepository, new PgPhoneVerificationRepository(DatabaseConnection.getInstance().getPool()));
     this.lookupWorkerByEmailUseCase = new LookupWorkerByEmailUseCase(workerRepository);
   }
 
@@ -282,7 +283,7 @@ export class WorkerControllerV2 {
         return;
       }
 
-      const result = await this.getProgressUseCase.execute(authUid);
+      const result = await this.getProgressUseCase.executeWithPhoneVerification(authUid);
 
       if (result.isFailure) {
         res.status(404).json({
@@ -292,12 +293,12 @@ export class WorkerControllerV2 {
         return;
       }
 
-      const worker = result.getValue();
+      const { worker, phoneVerification } = result.getValue();
       const restored = await reactivateOnActivity(worker.id, worker.status);
       if (restored) worker.status = restored;
       res.status(200).json({
         success: true,
-        data: await withMissingFields(this.pool(), worker),
+        data: { ...(await withMissingFields(this.pool(), worker)), phoneVerification },
       });
     } catch (error: any) {
       res.status(500).json({

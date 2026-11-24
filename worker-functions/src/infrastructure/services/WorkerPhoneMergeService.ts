@@ -298,6 +298,10 @@ export class WorkerPhoneMergeService {
       //     ANTES de gravar no sobrevivente, nesta mesma transação.
       const { fieldsMoved } = await moveUniqueIdentityFields(client, survivorId, absorbedId);
 
+      // 4c. A PROVA do celular e a dispensa por legado viajam com o phone (emenda 077 §2.2, §7.1): sem isso a sobrevivente
+      //     herdaria o número sem a prova (falha fechada: `unverified`, nunca verificado por engano).
+      await moveVerificationFields(client, survivorId, absorbedId, fieldsMoved.includes('phone'));
+
       // Atualiza fields_filled/fields_moved no audit agora que temos os valores reais
       await client.query(
         `UPDATE worker_merge_audit
@@ -431,3 +435,46 @@ export {
   LEGAL_FIELDS,
   FK_TABLES_TO_REPARENT,
 };
+
+/**
+ * Move as 4 colunas `phone_verified_*` JUNTO com o `phone` (só quando o phone mudou de dono neste merge) e propaga a marca de
+ * dispensa (`phone_verification_waived_at`) se QUALQUER uma das duas fichas a tinha (é a mesma pessoa).
+ *  - Limpa o casco ANTES de gravar na sobrevivente: o índice único parcial do desafio não admite duas fichas com o mesmo desafio.
+ *  - A marca só passa pelo gatilho do T-F3c-132 com `enlite.merge_in_progress = 'on'` (o gatilho recusa tirar ou trocar a marca).
+ *  - A prova da sobrevivente sobre OUTRO telefone nunca é tocada: o phone dela não mudou.
+ */
+async function moveVerificationFields(client: PoolClient, survivorId: string, absorbedId: string, phoneMoved: boolean): Promise<void> {
+  if (phoneMoved) {
+    const proof = await client.query<{
+      phone_verified_normalized: string;
+      phone_verified_at: Date;
+      phone_verified_method: string;
+      phone_verified_otp_challenge_id: string | null;
+    }>(
+      `SELECT phone_verified_normalized, phone_verified_at, phone_verified_method, phone_verified_otp_challenge_id
+         FROM workers WHERE id = $1 AND phone_verified_normalized IS NOT NULL`,
+      [absorbedId],
+    );
+    const p = proof.rows[0];
+    if (p) {
+      await client.query(
+        `UPDATE workers SET phone_verified_normalized = NULL, phone_verified_at = NULL, phone_verified_method = NULL,
+                phone_verified_otp_challenge_id = NULL WHERE id = $1`,
+        [absorbedId],
+      );
+      await client.query(
+        `UPDATE workers SET phone_verified_normalized = $2, phone_verified_at = $3, phone_verified_method = $4,
+                phone_verified_otp_challenge_id = $5 WHERE id = $1`,
+        [survivorId, p.phone_verified_normalized, p.phone_verified_at, p.phone_verified_method, p.phone_verified_otp_challenge_id],
+      );
+    }
+  }
+  await client.query(`SELECT set_config('enlite.merge_in_progress', 'on', true)`);
+  await client.query(
+    `UPDATE workers s SET phone_verification_waived_at = a.phone_verification_waived_at
+       FROM workers a
+      WHERE s.id = $1 AND a.id = $2 AND s.phone_verification_waived_at IS NULL AND a.phone_verification_waived_at IS NOT NULL`,
+    [survivorId, absorbedId],
+  );
+  await client.query(`SELECT set_config('enlite.merge_in_progress', 'off', true)`);
+}

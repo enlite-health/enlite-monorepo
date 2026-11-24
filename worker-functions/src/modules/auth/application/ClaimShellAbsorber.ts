@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { Result } from '@shared/utils/Result';
 import { logger } from '@shared/logging';
 import { resourceIdHash } from '@shared/audit/resourceAccessLog';
@@ -19,6 +19,8 @@ export interface IClaimShellAbsorber {
     authUid: string;
     /** Instante do consentimento do OTP: gravado em X DENTRO da mesma transação da absorção. */
     consentAt: Date;
+    /** Roda DENTRO da transação da absorção, depois do consentimento: o que falhar aqui desfaz a união (ex.: gravar a verificação do celular). */
+    afterAbsorb?: (client: PoolClient) => Promise<void>;
   }): Promise<Result<void>>;
 }
 
@@ -50,6 +52,7 @@ export class ClaimShellAbsorber implements IClaimShellAbsorber {
     importedId: string;
     authUid: string;
     consentAt: Date;
+    afterAbsorb?: (client: PoolClient) => Promise<void>;
   }): Promise<Result<void>> {
     const log = logger.child({
       source: 'ClaimShellAbsorber',
@@ -95,6 +98,7 @@ export class ClaimShellAbsorber implements IClaimShellAbsorber {
           [args.existingId, args.consentAt],
         );
         if (consent.rowCount !== 1) throw new Error('CLAIM_CONSENT_NOT_WRITTEN');
+        if (args.afterAbsorb) await args.afterAbsorb(client);
       });
       const recalculated = await this.recalc(args.existingId);
       if (!recalculated) log.warn({ msg: 'claim_shell_status_recalc_failed' });

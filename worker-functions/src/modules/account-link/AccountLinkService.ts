@@ -21,6 +21,8 @@ import type { ITwilioVerifyService } from '../auth/infrastructure/TwilioVerifySe
 import { TwilioVerifyOtpAdapter } from '../auth/infrastructure/TwilioVerifyOtpAdapter';
 import { createOtpChallengePort } from '../../bootstrap/createOtpChallengePort';
 import { IsTestOtpGuardedVerify } from '../auth/application/IsTestOtpGuard';
+import { PgPhoneVerificationRepository } from '../worker/infrastructure/PgPhoneVerificationRepository';
+import type { IPhoneVerificationRepository } from '../auth/ports/IPhoneVerificationRepository';
 import { ExecuteAdminMergeUseCase } from '../../application/dedup/ExecuteAdminMergeUseCase';
 import { buildFieldComparisons } from '../../application/dedup/dedupFieldComparison';
 import { SYNTHETIC_AUTH_UID_PREFIXES } from '../../infrastructure/services/WorkerPhoneMergeTypes';
@@ -53,6 +55,7 @@ export class AccountLinkService {
   private readonly encryption: KMSEncryptionService;
   private readonly otp: OtpChallengePort;
   private readonly adminMerge: ExecuteAdminMergeUseCase;
+  private readonly verification: IPhoneVerificationRepository;
 
   constructor(
     private readonly pool: Pool,
@@ -62,6 +65,7 @@ export class AccountLinkService {
       /** Semente de teste do plano B: um Twilio Verify (dublê) embrulhado no adapter + guarda de ficha de teste. */
       twilio?: ITwilioVerifyService;
       adminMerge?: ExecuteAdminMergeUseCase;
+      verification?: IPhoneVerificationRepository;
     },
   ) {
     this.encryption = deps?.encryption ?? new KMSEncryptionService();
@@ -70,6 +74,7 @@ export class AccountLinkService {
       deps?.otp ??
       (deps?.twilio ? new TwilioVerifyOtpAdapter(new IsTestOtpGuardedVerify(deps.twilio)) : createOtpChallengePort());
     this.adminMerge = deps?.adminMerge ?? new ExecuteAdminMergeUseCase(pool);
+    this.verification = deps?.verification ?? new PgPhoneVerificationRepository(pool);
   }
 
   // ── lookup — SEM SMS, SÓ mascarados ─────────────────────────────────────
@@ -213,6 +218,8 @@ export class AccountLinkService {
     authUid: string,
     fieldChoices: Record<string, string> | undefined,
   ): Promise<AccountLinkConfirmResult> {
+    // O `confirm` já provou a posse do telefone da conta ABSORVIDA: lê a prova ANTES do merge (que reparenta os desafios).
+    const proof = await this.verification.linkProof(absorbedId);
     const result = await this.adminMerge.execute({
       survivorId,
       absorbedIds: [absorbedId],
@@ -224,6 +231,7 @@ export class AccountLinkService {
       },
     });
     const auditId = result.audit_ids[0] ?? null;
+    await this.verifySurvivor(survivorId, proof);
 
     const recovered = auditId != null ? await this.fetchRecovered(auditId) : {};
     const statusRes = await this.pool.query<{ status: string }>(
@@ -251,6 +259,25 @@ export class AccountLinkService {
     }
 
     return { status: 'merged', recovered, workerStatus };
+  }
+
+  /**
+   * A sobrevivente ficou com o telefone da conta absorvida (o merge o move) mas sem a prova que acompanha o número: grava a
+   * prova que o `confirm` acabou de estabelecer. Se o merge já levou a prova junto (absorvida verificada) ou a sobrevivente
+   * ficou com outro número, não faz nada. Falha aqui NÃO desfaz o merge: a ficha fica `unverified` (falha fechada).
+   */
+  private async verifySurvivor(
+    survivorId: string,
+    proof: Awaited<ReturnType<IPhoneVerificationRepository['linkProof']>>,
+  ): Promise<void> {
+    if (!proof) return;
+    try {
+      const state = await this.verification.readState(survivorId);
+      if (!state || state.state !== 'unverified' || !state.phone || normalizePhoneAR(state.phone) !== proof.phoneNormalized) return;
+      await this.verification.markPhoneVerified(this.pool, { workerId: survivorId, challengeId: proof.challengeId, method: proof.method });
+    } catch (err: unknown) {
+      log().warn({ msg: 'link_phone_verification_not_written', code: (err as { code?: string }).code ?? null });
+    }
   }
 
   /** Marca de teste da ficha absorvida (a linha continua existindo, com `merged_into_id`). Sem linha = não é teste. */
