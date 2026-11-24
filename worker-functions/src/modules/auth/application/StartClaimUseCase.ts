@@ -4,7 +4,7 @@ import { logger } from '@shared/logging';
 import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
 import { isClaimableWorker } from '@modules/worker/application/isClaimableWorker';
-import { ITwilioVerifyService } from '../infrastructure/TwilioVerifyService';
+import { OTP_CHANNEL_UNAVAILABLE, OTP_RATE_LIMITED, OtpChallengePort } from '../ports/OtpChallengePort';
 
 export interface StartClaimInput {
   authUid: string;
@@ -17,14 +17,14 @@ export type StartClaimOutput =
   | { candidateWorkerId: string; phoneMasked: string; verificationSid: string };
 
 /**
- * Inicia um claim de ficha importada via OTP SMS.
+ * Inicia um claim de ficha importada: código OTP pelo `OtpChallengePort` (D758; o Twilio Verify é só o plano B de canal).
  *
  * Fluxo:
  *   1. Valida se o phone tem comprimento razoável (≥10 dígitos após normalização).
  *   2. Busca candidatos no banco (variantes do número).
- *   3. Se encontrou ficha importada (fake authUid), dispara Twilio Verify
+ *   3. Se encontrou ficha importada (fake authUid), dispara o OTP
  *      para o phone DA FICHA (não o do payload — proteção anti-hijack).
- *   4. Retorna verificationSid + phoneMasked para o frontend exibir.
+ *   4. Retorna verificationSid (= id do desafio) + phoneMasked para o frontend exibir.
  *   5. Se nenhum candidato encontrado, retorna { noCandidate: true }.
  *
  * Rate limit: delegado ao controller (express-rate-limit por IP).
@@ -32,7 +32,7 @@ export type StartClaimOutput =
 export class StartClaimUseCase {
   constructor(
     private readonly workerRepository: IWorkerRepository,
-    private readonly twilioVerify: ITwilioVerifyService,
+    private readonly otp: OtpChallengePort,
   ) {}
 
   async execute(input: StartClaimInput): Promise<Result<StartClaimOutput>> {
@@ -89,10 +89,11 @@ export class StartClaimUseCase {
       : `+${normalizePhoneAR(phoneForOtp)}`;
 
     try {
-      const { verificationSid } = await this.twilioVerify.startVerification(phoneE164, {
+      const { challengeId: verificationSid } = await this.otp.start({
         workerId: candidateWorkerId,
-        fichaIsTest: candidate.isTest === true,
-        tokenEmail: input.email,
+        purpose: 'claim',
+        phoneE164,
+        ctx: { workerId: candidateWorkerId, fichaIsTest: candidate.isTest === true, tokenEmail: input.email },
       });
 
       log.info({
@@ -119,6 +120,9 @@ export class StartClaimUseCase {
         durationMs: Date.now() - startedAt,
       });
 
+      if (errorMessage === OTP_RATE_LIMITED || errorMessage === OTP_CHANNEL_UNAVAILABLE) {
+        return Result.fail<StartClaimOutput>(errorMessage);
+      }
       return Result.fail<StartClaimOutput>(`TWILIO_ERROR:${errorMessage}`);
     }
   }

@@ -1,3 +1,4 @@
+import { TwilioVerifyOtpAdapter } from '../../infrastructure/TwilioVerifyOtpAdapter';
 import { StartClaimUseCase } from '../StartClaimUseCase';
 import { Result } from '@shared/utils/Result';
 import { Worker } from '@modules/worker/domain/Worker';
@@ -66,7 +67,7 @@ describe('StartClaimUseCase', () => {
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
       });
       const twilio = makeTwilio();
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute({
         authUid: 'newUid123',
@@ -89,7 +90,7 @@ describe('StartClaimUseCase', () => {
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
       });
       const twilio = makeTwilio();
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       await useCase.execute({
         authUid: 'newUid',
@@ -107,7 +108,7 @@ describe('StartClaimUseCase', () => {
       const twilio = makeTwilio({
         startVerification: jest.fn().mockRejectedValue(new Error('Network error')),
       });
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute({
         authUid: 'newUid',
@@ -127,7 +128,7 @@ describe('StartClaimUseCase', () => {
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
       });
       const twilio = makeTwilio();
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       await useCase.execute({
         authUid: 'newUid',
@@ -150,7 +151,7 @@ describe('StartClaimUseCase', () => {
       const twilio = makeTwilio({
         startVerification: jest.fn().mockRejectedValue(new Error('Twilio unavailable')),
       });
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       await useCase.execute({
         authUid: 'newUid',
@@ -170,7 +171,7 @@ describe('StartClaimUseCase', () => {
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(null)),
       });
       const twilio = makeTwilio();
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute({
         authUid: 'newUid',
@@ -193,7 +194,7 @@ describe('StartClaimUseCase', () => {
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(realWorker)),
       });
       const twilio = makeTwilio();
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute({
         authUid: 'newUid',
@@ -212,7 +213,7 @@ describe('StartClaimUseCase', () => {
         hasAbsorbedRealLogin: jest.fn().mockResolvedValue(Result.ok(true)),
       });
       const twilio = makeTwilio();
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute({ authUid: 'newUid', email: 'joana@gmail.com', phone: '+5491155261243' });
 
@@ -228,7 +229,7 @@ describe('StartClaimUseCase', () => {
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorker)),
       });
       const twilio = makeTwilio();
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute({ authUid: 'newUid', email: 'joana@gmail.com', phone: '+5491155261243' });
 
@@ -243,7 +244,7 @@ describe('StartClaimUseCase', () => {
         hasAbsorbedRealLogin: jest.fn().mockResolvedValue(Result.fail('db down')),
       });
       const twilio = makeTwilio();
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute({ authUid: 'newUid', email: 'joana@gmail.com', phone: '+5491155261243' });
 
@@ -259,7 +260,7 @@ describe('StartClaimUseCase', () => {
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(null)),
       });
       const twilio = makeTwilio();
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       await useCase.execute({
         authUid: 'newUid',
@@ -277,7 +278,7 @@ describe('StartClaimUseCase', () => {
     it('retorna INVALID_PHONE para número com menos de 10 dígitos', async () => {
       const repo = makeRepo();
       const twilio = makeTwilio();
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute({
         authUid: 'newUid',
@@ -299,7 +300,7 @@ describe('StartClaimUseCase', () => {
         ),
       });
       const twilio = makeTwilio();
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute({
         authUid: 'newUid',
@@ -325,7 +326,7 @@ describe('StartClaimUseCase', () => {
         findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(worker)),
       });
       const twilio = makeTwilio();
-      const useCase = new StartClaimUseCase(repo as any, twilio as any);
+      const useCase = new StartClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute({
         authUid: 'newUid',

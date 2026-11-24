@@ -3,7 +3,8 @@ import { Worker } from '@modules/worker/domain/Worker';
 import { Result } from '@shared/utils/Result';
 import { logger } from '@shared/logging';
 import { isClaimableWorker } from '@modules/worker/application/isClaimableWorker';
-import { ITwilioVerifyService, otpCheckIsForPhone } from '../infrastructure/TwilioVerifyService';
+import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
+import type { OtpChallengePort } from '../ports/OtpChallengePort';
 import { CLAIM_CONFLICT, type IClaimShellAbsorber } from './ClaimShellAbsorber';
 
 export interface ConfirmClaimInput {
@@ -17,6 +18,7 @@ export interface ConfirmClaimInput {
 export type ConfirmClaimError =
   | 'INVALID_OTP'
   | 'EXPIRED_OTP'
+  | 'OTP_ALREADY_USED'
   | 'CANDIDATE_NOT_FOUND'
   | 'NOT_IMPORTABLE'
   | 'CLAIM_CONFLICT';
@@ -44,7 +46,7 @@ export type ConfirmClaimError =
 export class ConfirmClaimUseCase {
   constructor(
     private readonly workerRepository: IWorkerRepository,
-    private readonly twilioVerify: ITwilioVerifyService,
+    private readonly otp: OtpChallengePort,
     private readonly shellAbsorber?: IClaimShellAbsorber,
   ) {}
 
@@ -61,45 +63,7 @@ export class ConfirmClaimUseCase {
 
     log.info({ msg: 'claim_confirm_requested' });
 
-    // 1. Validar OTP via Twilio Verify
-    let checkResult: Awaited<ReturnType<ITwilioVerifyService['checkVerification']>>;
-
-    try {
-      checkResult = await this.twilioVerify.checkVerification(
-        input.verificationSid,
-        input.otp,
-        {
-          // `candidateWorkerId` vem do corpo: a guarda de OTP de teste só aceita se for a ficha do envio,
-          // lida do banco agora, E de teste.
-          workerId: input.candidateWorkerId,
-          tokenEmail: input.email,
-          fichaIsTest: async () => {
-            const found = await this.workerRepository.findById(input.candidateWorkerId);
-            return found.isSuccess && found.getValue()?.isTest === true;
-          },
-        },
-      );
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return Result.fail<Worker>(`TWILIO_ERROR:${msg}`);
-    }
-
-    if (!checkResult.valid) {
-      const error: ConfirmClaimError =
-        checkResult.status === 'expired' || checkResult.status === 'canceled'
-          ? 'EXPIRED_OTP'
-          : 'INVALID_OTP';
-
-      if (error === 'EXPIRED_OTP') {
-        log.warn({ msg: 'claim_confirm_otp_expired', twilioStatus: checkResult.status });
-      } else {
-        log.warn({ msg: 'claim_confirm_otp_invalid', twilioStatus: checkResult.status });
-      }
-
-      return Result.fail<Worker>(error);
-    }
-
-    // 2. Re-fetch defensivo (proteção contra race condition)
+    // 1. Re-fetch defensivo (proteção contra race condition) — também dá o telefone GRAVADO, que o OTP confere (DP-21)
     const candidateResult = await this.workerRepository.findById(input.candidateWorkerId);
     if (candidateResult.isFailure) {
       return Result.fail<Worker>(candidateResult.error!);
@@ -111,11 +75,30 @@ export class ConfirmClaimUseCase {
       return Result.fail<Worker>('CANDIDATE_NOT_FOUND');
     }
 
-    // 2b. DP-21: o código tem de ter ido ao telefone DESTA ficha. Sem isso, um código aprovado
-    //     para o telefone A (do atacante) reivindicava a ficha B. Compara com o telefone do banco.
-    if (!otpCheckIsForPhone(checkResult, candidate.phone)) {
-      log.warn({ msg: 'claim_confirm_otp_phone_mismatch', hasTo: Boolean(checkResult.to) });
-      return Result.fail<Worker>('INVALID_OTP');
+    // 2. Validar o OTP pelo port. DP-21: o desafio só vale se foi emitido para o telefone DESTA ficha (lido do banco aqui,
+    //    nunca o do cliente): código aprovado para o telefone A (do atacante) não reivindica a ficha B.
+    const phoneOnRecord = candidate.phone
+      ? candidate.phone.startsWith('+') ? candidate.phone : `+${normalizePhoneAR(candidate.phone)}`
+      : '';
+    let outcome: Awaited<ReturnType<OtpChallengePort['check']>>;
+    try {
+      outcome = await this.otp.check({
+        challengeId: input.verificationSid,
+        workerId: input.candidateWorkerId,
+        phoneOnRecord,
+        code: input.otp,
+        // `candidateWorkerId` vem do corpo: a guarda de OTP de teste (plano B) só aceita se for a ficha do envio,
+        // lida do banco agora, E de teste.
+        ctx: { workerId: input.candidateWorkerId, tokenEmail: input.email, fichaIsTest: async () => candidate.isTest === true },
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return Result.fail<Worker>(`TWILIO_ERROR:${msg}`);
+    }
+
+    if (!outcome.ok) {
+      log.warn({ msg: outcome.code === 'EXPIRED_OTP' ? 'claim_confirm_otp_expired' : 'claim_confirm_otp_invalid', code: outcome.code });
+      return Result.fail<Worker>(outcome.code);
     }
 
     // 3. Verifica que a ficha ainda é importable (não foi reclamada em paralelo)

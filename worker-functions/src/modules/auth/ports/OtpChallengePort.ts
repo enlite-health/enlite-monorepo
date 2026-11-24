@@ -1,4 +1,4 @@
-import type { OtpSendContext } from '../infrastructure/TwilioVerifyService';
+import type { OtpConfirmContext, OtpSendContext } from '../infrastructure/TwilioVerifyService';
 
 /**
  * Port do OTP próprio (D758). Quem confirma claim/link fala com ESTE port; o domínio e a aplicação não importam
@@ -36,6 +36,8 @@ export interface OtpCheckInput {
   /** Telefone GRAVADO na ficha, lido do banco — nunca o que o cliente manda (DP-21). */
   phoneOnRecord: string;
   code: string;
+  /** Fatos da guarda de ficha de teste para o CONFIRM. Só o plano B (Twilio Verify) os usa; o adapter próprio decide no `start`. */
+  ctx?: OtpConfirmContext;
 }
 
 export interface OtpChallengePort {
