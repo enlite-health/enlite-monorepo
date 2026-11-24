@@ -211,21 +211,24 @@ test.describe('@integration Home do prestador — mapa por raio (096)', () => {
     console.log('CONTAGEM LIDA NA TELA  10km=3 (Palermo 2, Recoleta 1) | 15km=4 (+Quilmes 1) | 5km=2');
   });
 
-  /** Cadastro incompleto: aviso amigável com EXATAMENTE os itens que faltam, e nem mapa nem lista (nem a pública). */
-  async function expectAviso(page: Page, uid: string, itens: string[], print: string): Promise<void> {
+  /** Cadastro incompleto: UM bloco genérico (sem listar o que falta), nem mapa nem lista (nem a pública), nem chamada à rota de vagas. */
+  async function expectAviso(page: Page, uid: string, print: string): Promise<void> {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.addInitScript(() => {
       (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
     });
     await loginAsWorker(page, uid, `${uid}@test.local`);
+    let jobsRouteCalls = 0;
     await page.route('**/api/workers/me/jobs**', async (route) => {
-      const headers = { ...route.request().headers(), authorization: `Bearer ${buildMockToken(uid, `${uid}@test.local`)}` };
-      await route.continue({ headers });
+      jobsRouteCalls += 1;
+      await route.continue();
     });
     await page.goto('/', { waitUntil: 'networkidle', timeout: 30_000 });
     await expect(page.getByTestId('complete-profile-notice')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId('profile-notice-item')).toHaveCount(itens.length);
-    expect(await page.getByTestId('profile-notice-item').evaluateAll((els) => els.map((e) => e.getAttribute('data-item')))).toEqual(itens);
+    await expect(page.getByText('Completá tu registro para ver las vacantes')).toBeVisible();
+    await expect(page.getByTestId('profile-notice-item')).toHaveCount(0);
+    await expect(page.getByTestId('complete-registration-banner')).toHaveCount(0);
+    expect(jobsRouteCalls).toBe(0);
     await expect(page.getByTestId('jobs-radius-section')).toHaveCount(0);
     await expect(page.getByTestId('points-map')).toHaveCount(0);
     await expect(page.locator('#jobs-section')).toHaveCount(0);
@@ -234,31 +237,25 @@ test.describe('@integration Home do prestador — mapa por raio (096)', () => {
   }
 
   test('home mapa raio — A1: sem endereço → aviso "Tu dirección" com botão para a aba certa; nem mapa nem lista', async ({ page }) => {
-    await expectAviso(page, uidSemEndereco, ['address'], 'aviso-sem-endereco-1440x900.png');
-    await page.getByRole('button', { name: 'Cargar mi dirección' }).click();
-    await expect(page).toHaveURL(/\/worker\/profile\?tab=address/);
+    await expectAviso(page, uidSemEndereco, 'aviso-sem-endereco-1440x900.png');
+    await page.getByRole('button', { name: 'Completar registro' }).click();
+    await expect(page).toHaveURL(/\/worker\/profile/);
   });
 
   test('home mapa raio — A2: sem profissão → aviso "Tu profesión"; o botão leva ao campo', async ({ page }) => {
-    await expectAviso(page, uidSemProfissao, ['profession'], 'aviso-sem-profissao-1440x900.png');
-    await page.getByRole('button', { name: 'Completar mi profesión' }).click();
-    await expect(page).toHaveURL(/tab=general&focus=profession/);
+    await expectAviso(page, uidSemProfissao, 'aviso-sem-profissao-1440x900.png');
   });
 
   test('home mapa raio — A3: sem disponibilidade → aviso "Tu disponibilidad"; o botão leva à aba', async ({ page }) => {
-    await expectAviso(page, uidSemDisp, ['availability'], 'aviso-sem-disponibilidade-1440x900.png');
-    await page.getByRole('button', { name: 'Cargar mi disponibilidad' }).click();
-    await expect(page).toHaveURL(/tab=availability/);
+    await expectAviso(page, uidSemDisp, 'aviso-sem-disponibilidade-1440x900.png');
   });
 
   test('home mapa raio — A4: sem sexo → aviso "Tu sexo"', async ({ page }) => {
-    await expectAviso(page, uidSemSexo, ['sex'], 'aviso-sem-sexo-1440x900.png');
-    await page.getByRole('button', { name: 'Completar mis datos' }).click();
-    await expect(page).toHaveURL(/tab=general&focus=sex/);
+    await expectAviso(page, uidSemSexo, 'aviso-sem-sexo-1440x900.png');
   });
 
   test('home mapa raio — A5: dois faltando (profissão e disponibilidade) → os dois itens, e a versão celular', async ({ page }) => {
-    await expectAviso(page, uidDois, ['profession', 'availability'], 'aviso-dois-faltando-1440x900.png');
+    await expectAviso(page, uidDois, 'aviso-dois-faltando-1440x900.png');
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByTestId('complete-profile-notice')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

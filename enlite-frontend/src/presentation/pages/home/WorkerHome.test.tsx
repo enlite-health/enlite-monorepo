@@ -21,6 +21,8 @@ vi.mock('react-i18next', () => ({
 }));
 
 let mockUser: { id: string; name: string } | null = { id: 'worker-1', name: 'Ana Prestadora' };
+vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+
 vi.mock('@presentation/hooks/useAuth', () => ({
   useAuth: () => ({ user: mockUser }),
 }));
@@ -124,16 +126,14 @@ beforeEach(() => {
 // ── Sem usuário ───────────────────────────────────────────────────────────────
 
 describe('WorkerHome — sem user.id', () => {
-  it('não dispara fetch nenhum; JobsEmbeddedSection recebe isRegistrationComplete=false, missingFields=null', () => {
+  it('não dispara fetch nenhum; sem lista de vagas (esqueleto de carregamento, nunca a lista)', () => {
     mockUser = null;
     render(<WorkerHome />);
 
     expect(mockGetProgress).not.toHaveBeenCalled();
     expect(mockGetAvailability).not.toHaveBeenCalled();
 
-    const jobs = screen.getByTestId('jobs-embedded-section');
-    expect(jobs).toHaveAttribute('data-registration-complete', 'false');
-    expect(jobs).toHaveAttribute('data-missing-fields', 'null');
+    expect(screen.queryByTestId('jobs-embedded-section')).not.toBeInTheDocument();
     expect(screen.queryByTestId('pending-tasks-card')).not.toBeInTheDocument();
   });
 });
@@ -182,7 +182,7 @@ describe('WorkerHome — cadastro completo (missingFields: [] do servidor)', () 
 // ── Fetch com sucesso — cadastro incompleto ──────────────────────────────────
 
 describe('WorkerHome — cadastro incompleto (missingFields com pendência)', () => {
-  it('PendingTasksCard aparece com os missingFields e a profession crus; JobsEmbeddedSection incompleto', async () => {
+  it('PendingTasksCard aparece com os missingFields e a profession crus; sem lista de vagas, só o bloco genérico', async () => {
     const worker = makeWorker({ missingFields: ['phone', 'doc_criminal_record'], profession: 'AT' });
     mockGetProgress.mockResolvedValue(worker);
     mockGetAvailability.mockResolvedValue([]);
@@ -198,13 +198,8 @@ describe('WorkerHome — cadastro incompleto (missingFields com pendência)', ()
     // workerData.country (GET /api/workers/me), sem fetch novo.
     expect(card).toHaveAttribute('data-country', 'AR');
 
-    const jobs = screen.getByTestId('jobs-embedded-section');
-    expect(jobs).toHaveAttribute('data-registration-complete', 'false');
-    expect(jobs).toHaveAttribute('data-missing-fields', '["phone","doc_criminal_record"]');
-    // Fase 4/DD5: JobsEmbeddedSection precisa da profession pro MESMO
-    // motivo que PendingTasksCard precisa — buildPendingRows/buildApplyLabel
-    // decidem quais documentos a política exige (paridade com o portão).
-    expect(jobs).toHaveAttribute('data-profession', 'AT');
+    expect(screen.queryByTestId('jobs-embedded-section')).not.toBeInTheDocument();
+    expect(screen.getByTestId('complete-profile-notice')).toBeInTheDocument();
   });
 });
 
@@ -219,9 +214,9 @@ describe('WorkerHome — completude não apurada (missingFields null/ausente)', 
     render(<WorkerHome />);
 
     await waitFor(() => expect(mockIdentifyClarity).toHaveBeenCalled());
-    const jobs = screen.getByTestId('jobs-embedded-section');
-    // Fail-closed (D302/camada 0): null NUNCA vira "registro completo".
-    expect(jobs).toHaveAttribute('data-registration-complete', 'false');
+    // Fail-closed (D302/camada 0): null NUNCA vira "registro completo" — sem lista, só o bloco genérico.
+    expect(await screen.findByTestId('complete-profile-notice')).toBeInTheDocument();
+    expect(screen.queryByTestId('jobs-embedded-section')).not.toBeInTheDocument();
     // Sem tokens conhecidos, não há linha para montar — o card não aparece,
     // mas isso não afirma completude (JobsEmbeddedSection acima já barra).
     expect(screen.queryByTestId('pending-tasks-card')).not.toBeInTheDocument();
@@ -231,17 +226,15 @@ describe('WorkerHome — completude não apurada (missingFields null/ausente)', 
 // ── Falha no fetch ────────────────────────────────────────────────────────────
 
 describe('WorkerHome — falha no fetch', () => {
-  it('getProgress rejeita → console.error, workerData null, JobsEmbeddedSection incompleto sem missingFields', async () => {
+  it('getProgress rejeita → console.error, workerData null, bloco genérico, sem lista', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mockGetProgress.mockRejectedValue(new Error('network down'));
     mockGetAvailability.mockResolvedValue([]);
 
     render(<WorkerHome />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('jobs-embedded-section')).toHaveAttribute('data-registration-complete', 'false');
-    });
-    expect(screen.getByTestId('jobs-embedded-section')).toHaveAttribute('data-missing-fields', 'null');
+    expect(await screen.findByTestId('complete-profile-notice')).toBeInTheDocument();
+    expect(screen.queryByTestId('jobs-embedded-section')).not.toBeInTheDocument();
     expect(consoleSpy).toHaveBeenCalledWith('Failed to fetch worker data:', expect.any(Error));
     consoleSpy.mockRestore();
   });

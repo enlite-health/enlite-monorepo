@@ -549,32 +549,10 @@
     "body": "Algo falhou do nosso lado e não queremos mostrar informação incompleta. Tente de novo em alguns segundos.",
     "retry": "Tentar de novo"
   },
-  "profileNotice": {
-    "title": "Falta pouquinho para mostrar vagas perto de você",
-    "intro": "Para montar seu mapa e mostrar só as vagas que combinam com você, precisamos que complete estes dados:",
-    "items": {
-      "address": {
-        "label": "Seu endereço",
-        "why": "Assim calculamos quais vagas ficam perto de você.",
-        "action": "Cadastrar meu endereço"
-      },
-      "profession": {
-        "label": "Sua profissão",
-        "why": "Para mostrar as vagas do seu perfil (AT ou cuidador/a).",
-        "action": "Completar minha profissão"
-      },
-      "sex": {
-        "label": "Seu sexo",
-        "why": "Algumas vagas pedem um sexo específico.",
-        "action": "Completar meus dados"
-      },
-      "availability": {
-        "label": "Sua disponibilidade",
-        "why": "Os dias e horários em que você pode trabalhar.",
-        "action": "Cadastrar minha disponibilidade"
-      }
-    },
-    "footer": "Leva um instantinho, e depois seu mapa e suas vagas aparecem aqui."
+  "registrationLocked": {
+    "title": "Complete seu cadastro para ver as vagas",
+    "text": "Você vai ver as vagas quando terminar seu cadastro.",
+    "cta": "Completar cadastro"
   },
   "jobsRadius": {
     "title": "Vagas perto do seu endereço",

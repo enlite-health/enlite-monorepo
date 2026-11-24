@@ -1,18 +1,21 @@
 /**
- * WorkerHome × cadastro (096, decisão 19/11): incompleto → aviso, NADA de mapa nem de lista (nem a pública); completo → mapa + lista;
+ * WorkerHome × cadastro (096): incompleto (fonte: `missingFields` de /me) → UM bloco genérico, sem listar o que falta, NADA de mapa nem de lista (nem a pública) e a rota de vagas nem é habilitada; completo → mapa + lista;
  * carregando → nenhuma lista (sem "pisca"); falha da rota da home → cartão de erro com "Reintentar" (falha fechada: nem mapa, nem vagas, nem lista pública); conta inativa → a lista pública de sempre. O WorkerHome.test.tsx antigo segue sem edição.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { WorkerJobsByRadiusState } from '@presentation/hooks/useWorkerJobsByRadius';
 import { WorkerHome } from './WorkerHome';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
-vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', () => ({ useNavigate: () => mockNavigate }));
+let missingFieldsMock: string[] | null = [];
 vi.mock('@presentation/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'w1', name: 'Ana' } }) }));
-vi.mock('@presentation/hooks/useWorkerApi', () => ({
-  useWorkerApi: () => ({ getProgress: vi.fn(async () => ({ id: 'w1', authUid: 'a', status: 'REGISTERED', missingFields: [] })), getAvailability: vi.fn(async () => []) }),
-}));
+// Funções ESTÁVEIS (o efeito da home depende delas; novas a cada render = laço de fetch).
+const getProgressMock = vi.fn(async () => ({ id: 'w1', authUid: 'a', status: 'REGISTERED', missingFields: missingFieldsMock }));
+const getAvailabilityMock = vi.fn(async () => []);
+vi.mock('@presentation/hooks/useWorkerApi', () => ({ useWorkerApi: () => ({ getProgress: getProgressMock, getAvailability: getAvailabilityMock }) }));
 vi.mock('@infrastructure/analytics/clarity', () => ({ identifyClarity: vi.fn() }));
 vi.mock('@presentation/config/workerNavigation', () => ({ useWorkerNavItems: () => [] }));
 vi.mock('@presentation/stores/workerRegistrationStore', () => ({ useWorkerRegistrationStore: () => null }));
@@ -24,8 +27,9 @@ vi.mock('@presentation/components/molecules/PointsMap/PointsMap', () => ({ Point
 
 let hookState: WorkerJobsByRadiusState = { status: 'loading' };
 const hookCalls: number[] = [];
+const enabledCalls: boolean[] = [];
 vi.mock('@presentation/hooks/useWorkerJobsByRadius', () => ({
-  useWorkerJobsByRadius: (_enabled: boolean, attempt = 0) => { hookCalls.push(attempt); return hookState; },
+  useWorkerJobsByRadius: (enabled: boolean, attempt = 0) => { enabledCalls.push(enabled); hookCalls.push(attempt); return hookState; },
 }));
 
 const OK: WorkerJobsByRadiusState = {
@@ -33,39 +37,73 @@ const OK: WorkerJobsByRadiusState = {
   data: { items: [], center: { lat: -34.6, lng: -58.38 }, applied: { schedule: true, profession: true, sex: true }, missing: [] },
 };
 
-beforeEach(() => { hookState = { status: 'loading' }; hookCalls.length = 0; });
+beforeEach(() => { hookState = { status: 'loading' }; hookCalls.length = 0; enabledCalls.length = 0; missingFieldsMock = []; mockNavigate.mockClear(); });
+
+const lockedBlock = () => screen.findByTestId('complete-profile-notice');
 
 describe('WorkerHome — cadastro para o mapa (096)', () => {
-  it.each([
-    [['address']], [['profession']], [['sex']], [['availability']], [['address', 'profession']],
-  ] as const)('incompleto %j → aviso com esses itens; sem mapa e sem lista', (missing) => {
-    hookState = { status: 'incomplete', missing: [...missing] };
+  it.each([[['address']], [['profession', 'availability']]] as const)('cadastro incompleto %j (missingFields) → bloco genérico; sem mapa, sem lista, sem banner antigo, rota de vagas nunca habilitada', async (missing) => {
+    missingFieldsMock = [...missing];
+    hookState = OK;
     render(<WorkerHome />);
-    expect(screen.getByTestId('complete-profile-notice')).toBeInTheDocument();
-    expect(screen.getAllByTestId('profile-notice-item').map((e) => e.getAttribute('data-item'))).toEqual([...missing]);
+    await lockedBlock();
+    expect(screen.getByText('registrationLocked.title')).toBeInTheDocument();
+    expect(screen.getByText('registrationLocked.text')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'registrationLocked.cta' })).toBeInTheDocument();
     expect(screen.queryByTestId('jobs-radius-section')).not.toBeInTheDocument();
     expect(screen.queryByTestId('points-map')).not.toBeInTheDocument();
     expect(screen.queryByTestId('jobs-embedded-section')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('complete-registration-banner')).not.toBeInTheDocument();
+    expect(enabledCalls).not.toContain(true);
   });
 
-  it('completo → mapa + lista, sem aviso', () => {
-    hookState = OK;
+  it('botão do bloco leva a /worker/profile (mesmo destino do "Completar" do banner)', async () => {
+    missingFieldsMock = ['address'];
     render(<WorkerHome />);
-    expect(screen.getByTestId('jobs-radius-section')).toBeInTheDocument();
-    expect(screen.getByTestId('jobs-embedded-section')).toBeInTheDocument();
-    expect(screen.queryByTestId('complete-profile-notice')).not.toBeInTheDocument();
+    await lockedBlock();
+    fireEvent.click(screen.getByTestId('complete-profile-cta'));
+    expect(mockNavigate).toHaveBeenCalledWith('/worker/profile');
   });
 
-  it('carregando → esqueleto, sem lista (nada de lista pública que depois some)', () => {
+  it('estado `incomplete` da rota → o MESMO bloco genérico, sem listar campos', async () => {
+    hookState = { status: 'incomplete', missing: ['address', 'sex'] };
     render(<WorkerHome />);
-    expect(screen.getByTestId('radius-loading')).toBeInTheDocument();
+    await lockedBlock();
+    expect(screen.queryByTestId('profile-notice-item')).not.toBeInTheDocument();
+    expect(screen.queryByText(/profileNotice/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('jobs-radius-section')).not.toBeInTheDocument();
     expect(screen.queryByTestId('jobs-embedded-section')).not.toBeInTheDocument();
   });
 
-  it('erro da rota → cartão de erro; sem mapa, sem vagas, sem lista pública, sem aviso de cadastro', () => {
+  it('completude não apurada (missingFields ausente) → fail-closed: bloco, sem mapa nem lista', async () => {
+    missingFieldsMock = null;
+    render(<WorkerHome />);
+    await lockedBlock();
+    expect(screen.queryByTestId('jobs-embedded-section')).not.toBeInTheDocument();
+    expect(enabledCalls).not.toContain(true);
+  });
+
+  it('completo → mapa + lista, sem aviso, rota de vagas habilitada', async () => {
+    hookState = OK;
+    render(<WorkerHome />);
+    expect(await screen.findByTestId('jobs-radius-section')).toBeInTheDocument();
+    expect(screen.getByTestId('jobs-embedded-section')).toBeInTheDocument();
+    expect(enabledCalls).toContain(true);
+    expect(screen.queryByTestId('complete-profile-notice')).not.toBeInTheDocument();
+  });
+
+  it('carregando → esqueleto, sem lista (nada de lista pública que depois some)', async () => {
+    render(<WorkerHome />);
+    expect(screen.getByTestId('radius-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('complete-profile-notice')).not.toBeInTheDocument();
+    await waitFor(() => expect(enabledCalls).toContain(true));
+    expect(screen.queryByTestId('jobs-embedded-section')).not.toBeInTheDocument();
+  });
+
+  it('erro da rota → cartão de erro; sem mapa, sem vagas, sem lista pública, sem aviso de cadastro', async () => {
     hookState = { status: 'error' };
     render(<WorkerHome />);
-    expect(screen.getByTestId('home-load-error')).toBeInTheDocument();
+    expect(await screen.findByTestId('home-load-error')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'homeLoadError.retry' })).toBeInTheDocument();
     expect(screen.queryByTestId('jobs-embedded-section')).not.toBeInTheDocument();
     expect(screen.queryByTestId('jobs-radius-section')).not.toBeInTheDocument();
@@ -73,18 +111,19 @@ describe('WorkerHome — cadastro para o mapa (096)', () => {
     expect(screen.queryByTestId('complete-profile-notice')).not.toBeInTheDocument();
   });
 
-  it('"Reintentar" refaz a chamada (o hook recebe attempt+1)', () => {
+  it('"Reintentar" refaz a chamada (o hook recebe attempt+1)', async () => {
     hookState = { status: 'error' };
     render(<WorkerHome />);
+    await screen.findByTestId('home-load-error');
     expect(Math.max(...hookCalls)).toBe(0);
     fireEvent.click(screen.getByTestId('home-load-error-retry'));
     expect(Math.max(...hookCalls)).toBe(1);
   });
 
-  it('conta inativa → lista pública de sempre, sem cartão de erro', () => {
+  it('conta inativa → lista pública de sempre, sem cartão de erro', async () => {
     hookState = { status: 'inactive' };
     render(<WorkerHome />);
-    expect(screen.getByTestId('jobs-embedded-section')).toBeInTheDocument();
+    expect(await screen.findByTestId('jobs-embedded-section')).toBeInTheDocument();
     expect(screen.queryByTestId('home-load-error')).not.toBeInTheDocument();
     expect(screen.queryByTestId('complete-profile-notice')).not.toBeInTheDocument();
   });
