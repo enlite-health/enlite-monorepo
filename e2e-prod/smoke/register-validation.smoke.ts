@@ -8,7 +8,7 @@
  * cedo com a mensagem de erro. Zero mock (regra da suíte).
  *
  * Mensagens batidas contra o source em 2026-07-11:
- *  - registerSchema (RegisterPage.tsx) + es.json:
+ *  - registerSchema (RegisterPage.tsx) + passwordSchema (utils/passwordSchema.ts, política D770: 8 + 4 classes) + es.json:
  *      email vazio      → login.emailRequired      = "El correo electrónico es obligatorio"
  *      email inválido   → register.invalidEmail    = "Por favor, ingrese un correo electrónico válido"
  *      senha <8         → auth.action.passwordMin= "La contraseña debe tener al menos 8 caracteres"
@@ -82,7 +82,7 @@ test('[@route:/register @depth:error] senha com menos de 8 caracteres é barrada
 });
 
 test('[@route:/register @depth:error] senhas que não coincidem são barradas', async ({ page }) => {
-  // email válido; senhas ≥6 mas diferentes → refine passwordMismatch (path confirmPassword).
+  // email válido; senhas válidas pela política (8 + 4 classes) mas diferentes → refine passwordMismatch (path confirmPassword).
   await fillAndSubmit(page, {
     email: 'gabriel+e2e@enlite.health',
     password: 'Abcdef1!',
