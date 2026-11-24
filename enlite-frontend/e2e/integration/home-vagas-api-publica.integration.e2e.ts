@@ -112,7 +112,7 @@ test.describe('@integration Home — vagas da API pública, Postularse pelo serv
     for (const v of vacancies) cleanupMinimalVacancy(v);
   });
 
-  test('feliz — worker com cadastro incompleto clica Postularse na vaga (/vacantes/:id) → modal nomeia a pendência E linha nova em worker_blocked_applications (Postgres real) com channel=\'site\'', async ({ page }) => {
+  test('feliz — worker com cadastro incompleto clica Postularse na vaga (/vacantes/:id) → modal nomeia a pendência E linha nova em worker_blocked_applications (Postgres real) com channel=\'whatsapp\' (UTM)', async ({ page }) => {
     const vacancyId = insertMinimalVacancy({
       talentumWhatsappUrl: 'https://wa.me/5491100000101',
       includeInPublicListing: true,
@@ -128,7 +128,8 @@ test.describe('@integration Home — vagas da API pública, Postularse pelo serv
 
     // 096: prestador incompleto não tem lista na home; entra pela vaga (/vacantes/:id), onde o MESMO hook chama track-channel.
     await loginAsWorker(page, w.authUid, `${w.authUid}@test.local`);
-    await page.goto(`/vacantes/${vacancyId}`, { waitUntil: 'networkidle', timeout: 30_000 });
+    // Em /vacantes/:id o canal vem do UTM (sessionStorage), não é o 'site' fixo da home: entra com utm_source=whatsapp (como o 043).
+    await page.goto(`/vacantes/${vacancyId}?utm_source=whatsapp`, { waitUntil: 'networkidle', timeout: 30_000 });
     const postularseBtn = page.getByRole('button', { name: /Postularse/i }).first();
     await expect(postularseBtn).toBeVisible({ timeout: 15_000 });
     await postularseBtn.click();
@@ -138,11 +139,11 @@ test.describe('@integration Home — vagas da API pública, Postularse pelo serv
     await expect(page.getByRole('button', { name: /Antecedentes penales/i })).toBeVisible();
     expect(trackStatus, 'track-channel deve bloquear com 403 (worker INCOMPLETE_REGISTER)').toBe(403);
 
-    // Prova de banco: linha nova em worker_blocked_applications, canal 'site'
-    // (fixo — não é UTM). Lida direto do Postgres, não inferida da UI.
+    // Prova de banco: linha nova em worker_blocked_applications, canal = o UTM da entrada ('whatsapp'). O canal fixo 'site' da
+    // home segue provado no teste do prestador elegível (WJA com acquisitionChannel 'site'). Lida direto do Postgres.
     await expect
       .poll(() => getBlockedApplicationChannel(w.workerId, vacancyId), { timeout: 10_000 })
-      .toBe('site');
+      .toBe('whatsapp');
 
     await expect(page.locator('[data-testid="incomplete-modal-pending-list"]')).toHaveScreenshot(
       'home-vagas-api-publica-blocked-modal.png',
