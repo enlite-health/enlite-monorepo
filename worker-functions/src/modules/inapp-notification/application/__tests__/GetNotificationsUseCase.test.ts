@@ -321,6 +321,20 @@ describe('GetNotificationsUseCase — aviso do vínculo do Tactiq (spec 049 F4):
         reason: 'seat_missing', audience: 'host',
       });
     });
+
+    it('F5: seat_ready só ao host com firstLink boolean; seat_pending só ao master; fora disso, sem payload', async () => {
+      expect(await payloadOfRow({ reason: 'seat_ready', audience: 'host', firstLink: false, email: 'ana@example.test' })).toEqual({
+        reason: 'seat_ready', audience: 'host', firstLink: false,
+      });
+      expect(await payloadOfRow({ reason: 'seat_ready', audience: 'master', firstLink: true })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_ready', audience: 'host', firstLink: 'sim' })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_ready', audience: 'host' })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_pending', audience: 'master', hostName: 'Fulana Fake', firstLink: true })).toEqual({
+        reason: 'seat_pending', audience: 'master', hostName: 'Fulana Fake',
+      });
+      expect(await payloadOfRow({ reason: 'seat_pending', audience: 'host' })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_pending' })).toBeNull();
+    });
   });
 });
 

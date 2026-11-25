@@ -520,6 +520,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/interview-hosts/candidates → interview_host:update',
         'POST /api/admin/interview-hosts → interview_host:update',
         'PATCH /api/admin/interview-hosts/:id → interview_host:update',
+        // tactiq-vinculo-resiliente F5 (D16): "Licencia asignada", mesma célula de escrita (nenhuma célula nova).
+        'POST /api/admin/interview-hosts/:id/tactiq-seat → interview_host:update',
         // acesso-do-cliente F1 (T111, `adminAreaMembershipRoutes.ts`): família admin.users, células area_membership:read|write.
         'GET /api/admin/area-memberships → area_membership:read',
         'GET /api/admin/area-memberships/people → area_membership:read',

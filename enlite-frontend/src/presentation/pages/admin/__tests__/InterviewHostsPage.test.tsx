@@ -8,8 +8,10 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import i18n from '@infrastructure/i18n/config';
 import type { InterviewHost } from '@domain/entities/InterviewHost';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
-const api = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn(), create: vi.fn(), searchCandidates: vi.fn() }));
+const api = vi.hoisted(() => ({ list: vi.fn(), update: vi.fn(), create: vi.fn(), searchCandidates: vi.fn(), setTactiqSeat: vi.fn() }));
 vi.mock('@infrastructure/http/AdminInterviewHostApiService', () => ({ AdminInterviewHostApiService: api }));
 
 import InterviewHostsPage from '../InterviewHostsPage';
@@ -32,8 +34,9 @@ beforeEach(() => {
   Object.values(api).forEach((m) => m.mockReset());
   api.list.mockResolvedValue([FLOR, MAYRA, ANA, OFF]);
   api.update.mockResolvedValue({ id: 'x' });
+  api.setTactiqSeat.mockResolvedValue({});
 });
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }); });
 
 describe('InterviewHostsPage', () => {
   it('lista nome, e-mail, países e estado do Tactiq', async () => {
@@ -110,3 +113,40 @@ describe('InterviewHostsPage', () => {
     expect(screen.getByTestId('interview-host-panel')).toBeInTheDocument();
   });
 });
+
+describe('InterviewHostsPage — F5: "Licencia asignada" (D16)', () => {
+  const contrato = (permissions: string[]): AuthzContract => ({
+    uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement: 'on',
+  });
+
+  it('marcar manda a licença declarada (true) e recarrega; campo ausente = desmarcado; declarada vem marcada e desmarca com false', async () => {
+    api.list.mockResolvedValue([FLOR, host({ id: 'dec', displayName: 'Con Licencia', tactiqSeatDeclared: true })]);
+    mount();
+    await screen.findByText('Florencia Uberti');
+    const flor = screen.getByLabelText('Licencia asignada — Florencia Uberti') as HTMLInputElement;
+    expect(flor.checked).toBe(false);
+    expect((screen.getByLabelText('Licencia asignada — Con Licencia') as HTMLInputElement).checked).toBe(true);
+    await userEvent.click(flor);
+    await waitFor(() => expect(api.setTactiqSeat).toHaveBeenCalledWith('flor', true));
+    await waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
+    await userEvent.click(screen.getByLabelText('Licencia asignada — Con Licencia'));
+    await waitFor(() => expect(api.setTactiqSeat).toHaveBeenCalledWith('dec', false));
+  });
+
+  it('sem interview_host:update (enforcement on) o controle e a coluna NÃO existem', async () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['interview_host:read']) });
+    mount();
+    await screen.findByText('Florencia Uberti');
+    expect(screen.queryByTestId('licencia-flor')).toBeNull();
+    expect(screen.queryByText('Licencia de Tactiq')).toBeNull();
+  });
+
+  it('com interview_host:update o controle existe; linha sem usuário não o tem', async () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['interview_host:read', 'interview_host:update']) });
+    mount();
+    await screen.findByText('Florencia Uberti');
+    expect(screen.getByTestId('licencia-flor')).toBeInTheDocument();
+    expect(screen.queryByTestId('licencia-ana')).toBeNull();
+  });
+});
+

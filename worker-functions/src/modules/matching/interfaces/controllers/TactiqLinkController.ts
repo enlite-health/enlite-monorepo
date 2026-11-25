@@ -6,6 +6,7 @@ import {
   TactiqAccessDeniedError,
   TactiqExchangeFailedError,
   TactiqLinkService,
+  TactiqSeatNotDeclaredError,
   TactiqStateInvalidError,
 } from '../../application/TactiqLinkService';
 import { TactiqNotConfiguredError } from '../../application/ports/TactiqPorts';
@@ -16,7 +17,7 @@ const callbackQuery = z.object({ code: z.string().min(1).max(2048), state: z.str
  * TactiqLinkController — o operador vê e gerencia o PRÓPRIO vínculo (spec 049 F4).
  *
  *   GET  /me/tactiq-link            own_tactiq_link:read   estado do vínculo (SEM token, nunca)
- *   POST /me/tactiq-link            own_tactiq_link:create inicia o OAuth → { authorizeUrl }
+ *   POST /me/tactiq-link            own_tactiq_link:create inicia o OAuth → { authorizeUrl }; 409 `TACTIQ_SEAT_NOT_DECLARED` sem licença declarada e sem vínculo anterior (F5)
  *   GET  /me/tactiq-link/callback   (sem Bearer)           o Tactiq redireciona o NAVEGADOR para cá
  *
  * O callback é uma navegação do browser: não carrega o header de autorização. A identidade vem do `state` (criado no
@@ -100,6 +101,10 @@ export class TactiqLinkController {
     } catch (err: unknown) {
       if (err instanceof MissingActorError) {
         res.status(401).json({ success: false, error: err.message, code: err.code });
+        return;
+      }
+      if (err instanceof TactiqSeatNotDeclaredError) {
+        res.status(409).json({ success: false, error: err.message, code: err.code });
         return;
       }
       if (err instanceof TactiqNotConfiguredError) {

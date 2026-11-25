@@ -21,6 +21,7 @@ import { capturingLogger } from '../../src/modules/matching/infrastructure/doubl
 import { ACESSO_MASTER_GROUP_ID } from '../../src/modules/identity/permissions/domain/PermissionCell';
 import { TENANT_E2E, limparIamFixtures } from './helpers/permissionFamilyHarness';
 import { deleteInterviewHosts, insertInterviewHost } from './helpers/interviewHostFixture';
+import { declareTactiqSeat } from './helpers/tactiqSeatFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -198,6 +199,9 @@ describe('falta de assento avisa o Acesso Master — Postgres real (change tacti
   it('(d) duas recusas no callback (`completeLink` real, `request_seat`) → 1 cópia por master; o host não leva sino (está na tela)', async () => {
     const h = await newHost({ link: false });
     oauth.exchangeScope = DETAILS;
+    // F5 (D16): quem nunca vinculou só começa com a licença declarada. Declarada e recusada por assento = MARCAÇÃO FALSA: a 1ª recusa derruba a
+    // declaração e o Master recebe a cópia com `autoReactivates=false` (a pessoa cai no caminho do legado); a 2ª já tem linha e não repete nada.
+    await declareTactiqSeat(admin, h.email);
     const svc = service();
     for (const n of [1, 2]) {
       const code = `rt-d${n}-${seq}-${RUN}`;
@@ -207,7 +211,7 @@ describe('falta de assento avisa o Acesso Master — Postgres real (change tacti
       tick();
     }
     expect(await linkStatus(h.email)).toBe('broken');
-    expect(await copiesAbout(MASTERS.vivoA, h.name)).toEqual([{ reason: 'seat_missing', audience: 'master', hostName: h.name, autoReactivates: true }]);
+    expect(await copiesAbout(MASTERS.vivoA, h.name)).toEqual([{ reason: 'seat_missing', audience: 'master', hostName: h.name, autoReactivates: false }]);
     expect(await copiesAbout(MASTERS.vivoB, h.name)).toHaveLength(1);
     expect(await sino(h.uid)).toEqual([]);
     expect((await notified(h.email)).filter((e) => e.outcome === 'sent')).toEqual([{ outcome: 'sent', reason: 'seat_missing_master' }]);

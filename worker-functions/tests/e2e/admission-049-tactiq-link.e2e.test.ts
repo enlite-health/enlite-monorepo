@@ -27,6 +27,7 @@ import { TactiqTransientError, TactiqUnauthorizedError } from '../../src/modules
 import type { TactiqLinkService } from '../../src/modules/matching/application/TactiqLinkService';
 import { pkceChallenge } from '../../src/modules/matching/infrastructure/tactiq/pkce';
 import { insertInterviewHost, deleteInterviewHosts } from './helpers/interviewHostFixture';
+import { declareTactiqSeat } from './helpers/tactiqSeatFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -212,6 +213,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     const TOKEN = `rt-dublado-${RUN}`;
 
     it('POST /me/tactiq-link → authorizeUrl com state e desafio S256; o banco guarda o HASH do state e o verifier CIFRADO', async () => {
+      await declareTactiqSeat(admin, emailOf(U.linker)); // F5: sem linha prévia o início do vínculo exige a licença declarada (D16)
       const res = await http('POST', '/api/admin/me/tactiq-link', U.linker);
       expect(res.status).toBe(200);
       const url = new URL(res.body.data.authorizeUrl as string);
@@ -267,7 +269,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       const call = oauth.exchangeCalls[oauth.exchangeCalls.length - 1];
       expect(call.code).toBe(TOKEN);
       expect(pkceChallenge(call.codeVerifier)).toBe(challenge);
-      expect((await eventKinds(emailOf(U.linker))).map((e) => e.kind)).toEqual(['tactiq_link.linked']);
+      expect((await eventKinds(emailOf(U.linker))).map((e) => e.kind)).toEqual(['tactiq_link.seat_declared', 'tactiq_link.linked']);
     });
 
     it('A4-2: o MESMO state de novo (uso único) → 400 e o vínculo não muda', async () => {
@@ -315,6 +317,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       const t0 = new Date();
       clock = t0;
       // inicia o vínculo como a operadora de teste: usa o serviço direto (o POST HTTP está provado acima)
+      await declareTactiqSeat(admin, u.email);
       const { authorizeUrl } = await service.startLink({ uid: `tq049-exp-${RUN}`, email: u.email });
       const st = new URL(authorizeUrl).searchParams.get('state')!;
       clock = new Date(t0.getTime() + 10 * 60_000 + 1_000);
@@ -326,6 +329,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
 
     it('troca de código recusada pelo Tactiq (invalid_grant) → 502 com code estável, sem vínculo; o state foi gasto', async () => {
       const u = await newHost({ user: false });
+      await declareTactiqSeat(admin, u.email);
       const { authorizeUrl } = await service.startLink({ uid: `tq049-bad-${RUN}`, email: u.email });
       const st = new URL(authorizeUrl).searchParams.get('state')!;
       const res = await http('GET', `/api/admin/me/tactiq-link/callback?code=bad-code&state=${st}`, null);
@@ -353,6 +357,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       setEnv('TACTIQ_LINK_RETURN_URL', 'https://app.example.test/profile');
       try {
         const u = await newHost({ user: false });
+        await declareTactiqSeat(admin, u.email);
         const { authorizeUrl } = await service.startLink({ uid: `tq049-ret-${RUN}`, email: u.email });
         const st = new URL(authorizeUrl).searchParams.get('state')!;
         const res = await http('GET', `/api/admin/me/tactiq-link/callback?code=rt-ret-${RUN}&state=${st}`, null);
@@ -371,6 +376,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     const rejectedEvents = async (email: string) =>
       (await admin.query(`SELECT outcome, reason, ref FROM admission_events WHERE lower(host_email) = lower($1) AND kind = 'tactiq_link.link_rejected' ORDER BY at`, [email])).rows as Array<{ outcome: string; reason: string; ref: unknown }>;
     async function callback(email: string, code: string) {
+      if (!(await linkRow(email))) await declareTactiqSeat(admin, email); // F5 (D16): quem já tem linha nunca é travado, só quem nunca vinculou precisa da licença declarada
       const { authorizeUrl } = await service.startLink({ uid: `tq049-acc-${RUN}`, email });
       const st = new URL(authorizeUrl).searchParams.get('state')!;
       return http('GET', `/api/admin/me/tactiq-link/callback?code=${code}&state=${st}`, null);
@@ -412,7 +418,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       expect(await linkRow(u.email)).toBeUndefined();
       expect(await tokensRows(u.email)).toBe(0);
       expect(await rejectedEvents(u.email)).toEqual([expect.objectContaining({ outcome: 'access_denied', reason: 'access_action:upgrade' })]);
-      expect((await eventKinds(u.email)).map((e) => e.kind)).toEqual(['tactiq_link.link_rejected']);
+      expect((await eventKinds(u.email)).map((e) => e.kind)).toEqual(['tactiq_link.seat_declared', 'tactiq_link.link_rejected']);
     });
 
     it('ping `ready` → `linked` como sempre, com o evento `linked`', async () => {
@@ -420,7 +426,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       const res = await callback(u.email, `rt-rdy-${RUN}`);
       expect(res.status).toBe(200);
       expect(await linkRow(u.email)).toMatchObject({ status: 'linked' });
-      expect((await eventKinds(u.email)).map((e) => e.kind)).toEqual(['tactiq_link.linked']);
+      expect((await eventKinds(u.email)).map((e) => e.kind)).toEqual(['tactiq_link.seat_declared', 'tactiq_link.linked']);
       expect(await rejectedEvents(u.email)).toEqual([]);
     });
 
@@ -729,6 +735,7 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (F4:
     expect(own.status).toBe(200);
     expect(own.body.data).toMatchObject({ status: 'missing' });
 
+    await declareTactiqSeat(pool, emailOf(uids.com)); // F5: a licença declarada libera o início do vínculo (D16)
     const started = await call('POST', '/api/admin/me/tactiq-link', uids.com);
     expect(started.status).toBe(200);
     const state = new URL(started.body.data.authorizeUrl as string).searchParams.get('state')!;

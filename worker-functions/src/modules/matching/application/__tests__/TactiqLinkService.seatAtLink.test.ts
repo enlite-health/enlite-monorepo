@@ -33,6 +33,7 @@ function build(o: { masters?: string[]; frozen?: boolean; scope?: string; master
     consumeOAuthState: jest.fn().mockResolvedValue({ email: HOST, uid: HOST_UID, verifierEncrypted: 'venc' }),
     upsertLinked: jest.fn().mockResolvedValue(undefined),
     insertBrokenFromRejection: jest.fn().mockResolvedValue(true),
+    seatDeclared: jest.fn().mockResolvedValue(false),
     appendEvent: jest.fn(async (e: Ev) => void events.push(e)),
     claimSeatEpisode: jest.fn(async () => !episodeNotified()),
     activeMasterUids: jest.fn(async () => {

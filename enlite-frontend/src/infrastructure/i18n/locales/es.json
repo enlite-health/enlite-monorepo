@@ -6792,6 +6792,9 @@
         "masterSeat": "{{host}} no tiene licencia de Tactiq y sus entrevistas no se pueden grabar. Asignale un asiento en Tactiq.",
         "masterSeatAuto": " Cuando lo tenga, su vínculo se activa solo.",
         "masterSeatWait": " {{host}} autorizó Tactiq antes de tener el asiento y Tactiq no amplía esa autorización: cuando el asiento exista, la plataforma le va a pedir una única autorización nueva.",
+        "seatReadyFirst": "Ya tenés licencia de Tactiq. Entrá a Mi perfil y vinculá tu cuenta con tu correo @enlite.health. Se hace una sola vez.",
+        "seatReadyAgain": "Ya tenés licencia de Tactiq. Como autorizaste Tactiq antes de tenerla, Tactiq pide una única autorización nueva: entrá a Mi perfil y vinculá tu cuenta. Antes, en Tactiq andá a Settings → MCP y quitá la conexión anterior; si no, Tactiq repite la autorización que ya tenías.",
+        "masterSeatPending": "{{host}} es entrevistador/a y todavía no tiene la licencia de Tactiq confirmada. Asignale un asiento en Tactiq y marcá «Licencia asignada» en Entrevistadores.",
         "masterBroken": "El vínculo de Tactiq de {{host}} fue revocado o venció en Tactiq. Solo {{host}} puede autorizarlo de nuevo, en Mi perfil."
       },
       "tactiqExtension": {
@@ -6939,6 +6942,8 @@
       "seatAuto": "Falta tu licencia de Tactiq. Ya avisamos al administrador. Cuando te la asigne, tu vínculo se activa solo: no tenés que hacer nada.",
       "seatWait": "Falta tu licencia de Tactiq. Ya avisamos al administrador. Te vamos a avisar cuando esté resuelto.",
       "seatAskAdmin": "Falta tu licencia de Tactiq. Pedile a un administrador de Tactiq (Ana Joulie, Javier o Marcel) que te asigne una; cuando la tengas, tu vínculo se activa solo.",
+      "seatNotDeclared": "Todavía no tenés licencia de Tactiq. Ya avisamos al administrador; cuando la asigne, te avisamos para que vincules tu cuenta una sola vez.",
+      "signInHint": "Entrá con tu correo @enlite.health.",
       "accessGeneric": "Tactiq indicó que tu cuenta no tiene acceso: «{{title}}». Verificá que en app.tactiq.io estés con tu correo @enlite.health, resolvelo con un administrador de Tactiq y después volvé a vincular acá.",
       "accessGenericNoTitle": "Tactiq indicó que tu cuenta no tiene acceso a los resúmenes y transcripciones. Verificá que en app.tactiq.io estés con tu correo @enlite.health, consultá con un administrador de Tactiq y después volvé a vincular acá."
     },
@@ -6959,6 +6964,7 @@
         "encuadre": "Encuadre",
         "admission": "Admisión",
         "tactiq": "Tactiq",
+        "seat": "Licencia de Tactiq",
         "actions": "Acciones"
       },
       "userInactive": "Usuario inactivo",
@@ -6969,6 +6975,8 @@
       "quit": "Quitar",
       "tactiqLinked": "Vinculado",
       "tactiqUnlinked": "Sin vincular",
+      "seatAssigned": "Licencia asignada",
+      "seatLabel": "Licencia asignada — {{name}}",
       "tactiqTip": "La persona vincula su cuenta en Mi perfil",
       "saveError": "No pudimos guardar el cambio.",
       "errors": {

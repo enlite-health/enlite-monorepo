@@ -3,6 +3,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import type { TactiqLinkState } from '../application/ports/TactiqPorts';
 import type { LastDegrade } from '../domain/tactiqRecheck';
 import { activeMasterUids } from './MasterRecipients';
+import { SEAT_DECLARED_KIND, SEAT_UNDECLARED_KIND } from '../domain/tactiqSeatGate';
 
 type Db = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
 
@@ -372,6 +373,60 @@ export class TactiqLinkRepository {
   async claimSeatEpisode(email: string, ex: Db): Promise<boolean> {
     await ex.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`tactiq_seat:${email.toLowerCase()}`]);
     return !(await this.seatEpisodeNotified(email, ex));
+  }
+
+  // ── licença antes do 1º vínculo (change tactiq-vinculo-resiliente, F5, D16) ─────────────────────────
+  /** A licença está declarada? = o evento MAIS NOVO entre `seat_declared` e `seat_undeclared` é o `declared`. Dono: a trilha (nenhuma coluna). */
+  async seatDeclared(email: string, ex: Db = this.db): Promise<boolean> {
+    const { rows } = await ex.query<{ kind: string }>(
+      `SELECT e.kind FROM admission_events e
+        WHERE lower(e.host_email) = lower($1) AND e.kind = ANY($2::text[])
+        ORDER BY e.at DESC, e.id DESC LIMIT 1`,
+      [email, [SEAT_DECLARED_KIND, SEAT_UNDECLARED_KIND]],
+    );
+    return rows[0]?.kind === SEAT_DECLARED_KIND;
+  }
+
+  /** Quais e-mails (minúsculos) têm a licença declarada — a listagem de Entrevistadores lê DAQUI, nunca recalcula. */
+  async seatDeclaredAmong(emails: string[], ex: Db = this.db): Promise<Set<string>> {
+    const lowered = emails.map((e) => e.toLowerCase());
+    if (lowered.length === 0) return new Set();
+    const { rows } = await ex.query<{ mail: string; kind: string }>(
+      `SELECT DISTINCT ON (lower(e.host_email)) lower(e.host_email) AS mail, e.kind
+         FROM admission_events e
+        WHERE lower(e.host_email) = ANY($1::text[]) AND e.kind = ANY($2::text[])
+        ORDER BY lower(e.host_email), e.at DESC, e.id DESC`,
+      [lowered, [SEAT_DECLARED_KIND, SEAT_UNDECLARED_KIND]],
+    );
+    return new Set(rows.filter((r) => r.kind === SEAT_DECLARED_KIND).map((r) => r.mail));
+  }
+
+  /** Trava transacional por (assunto, e-mail): serializa quem declara/avisa ao mesmo tempo. Dentro da transação do chamador. */
+  async lockSeatTopic(topic: string, email: string, ex: Db): Promise<void> {
+    await ex.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`tactiq_${topic}:${email.toLowerCase()}`]);
+  }
+
+  /** "Já avisei" 1× por PESSOA (o `notified` `sent` com este `reason` já existe?). Chamar DEPOIS de `lockSeatTopic`. Só leitura. */
+  async oneTimeNoticeSent(email: string, reason: string, ex: Db): Promise<boolean> {
+    const { rows } = await ex.query(
+      `SELECT 1 FROM admission_events WHERE lower(host_email) = lower($1) AND kind = $2 AND reason = $3 AND outcome = $4 LIMIT 1`,
+      [email, 'tactiq_link.notified', reason, 'sent'],
+    );
+    return rows.length > 0;
+  }
+
+  /**
+   * O assento já CHEGOU neste episódio? Episódio = desde o último `linked`/`reactivated`; "chegou" = o `seat_arrived` mais novo vem depois deles.
+   * Chamar DEPOIS de `lockSeatTopic('seat_arrived', …)`. Os kinds vão por parâmetro (sql-schema-sync).
+   */
+  async seatArrivedInEpisode(email: string, ex: Db): Promise<boolean> {
+    const { rows } = await ex.query<{ kind: string }>(
+      `SELECT e.kind FROM admission_events e
+        WHERE lower(e.host_email) = lower($1) AND e.kind = ANY($2::text[])
+        ORDER BY e.at DESC, e.id DESC LIMIT 1`,
+      [email, ['tactiq_link.linked', 'tactiq_link.reactivated', 'tactiq_link.seat_arrived']],
+    );
+    return rows[0]?.kind === 'tactiq_link.seat_arrived';
   }
 
   // ── estado do OAuth (508) ──────────────────────────────────────────────────────────────────────────

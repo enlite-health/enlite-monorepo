@@ -92,7 +92,9 @@ function patientFileDeepLink(n: AdminNotification): NotificationDeepLink | null 
 /** spec 049 (§3.0.1): o motivo decide a frase; payload ausente/estranho cai na frase de "sem vínculo". */
 function tactiqReason(n: AdminNotification): AdmissionTactiqLinkReason {
   const reason = n.payload && 'reason' in n.payload ? n.payload.reason : null;
-  return reason === 'wrong_account' || reason === 'broken' || reason === 'seat_missing' ? reason : 'missing';
+  return reason === 'wrong_account' || reason === 'broken' || reason === 'seat_missing' || reason === 'seat_pending' || reason === 'seat_ready'
+    ? reason
+    : 'missing';
 }
 
 /**
@@ -112,6 +114,10 @@ function tactiqText(n: AdminNotification, t: Translate): string {
     if (p?.adminNotified !== true) return t(`${base}.seatAskAdmin`);
     return t(`${base}.${p.autoReactivates === false ? 'seatWait' : 'seatAuto'}`);
   }
+  // F5 (D16): `seat_pending` só existe para o Master e `seat_ready` só para o host; combinação estranha cai em "missing", nunca em texto trocado.
+  if (reason === 'seat_pending' && isMaster) return t(`${base}.masterSeatPending`, { host: host() });
+  if (reason === 'seat_ready' && !isMaster) return t(`${base}.${p?.firstLink === false ? 'seatReadyAgain' : 'seatReadyFirst'}`);
+  if (reason === 'seat_pending' || reason === 'seat_ready') return t(`${base}.missing`);
   if (reason === 'broken' && isMaster) return t(`${base}.masterBroken`, { host: host() });
   return t(`${base}.${reason}`);
 }

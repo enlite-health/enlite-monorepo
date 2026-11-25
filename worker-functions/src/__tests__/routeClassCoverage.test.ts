@@ -214,6 +214,6 @@ describe('T313 — cobertura de classe sobre os routers reais', () => {
       sem.push(...unclassifiedRoutes(rotas).map((r) => `${arquivo}: ${r.method} ${r.path}`));
     }
     expect(sem).toEqual([]);
-    expect(total).toBe(456);
+    expect(total).toBe(457); // +1: POST /interview-hosts/:id/tactiq-seat (F5, tactiq-vinculo-resiliente)
   });
 });

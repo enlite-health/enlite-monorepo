@@ -20,6 +20,7 @@ function build() {
     consumeOAuthState: jest.fn().mockResolvedValue({ email: HOST, uid: 'uid-1', verifierEncrypted: 'venc' }),
     upsertLinked: jest.fn().mockResolvedValue(undefined),
     insertBrokenFromRejection: jest.fn().mockResolvedValue(true),
+    seatDeclared: jest.fn().mockResolvedValue(false),
     appendEvent: jest.fn(async (e: Record<string, unknown>) => void events.push(e)),
   };
   const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };

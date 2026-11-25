@@ -17,6 +17,7 @@ import { TactiqLinkRepository } from '../../src/modules/matching/infrastructure/
 import { AdmissionImportRepository } from '../../src/modules/matching/infrastructure/AdmissionImportRepository';
 import { FakeTactiqMcp, FakeTactiqOAuth } from '../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import { capturingLogger } from '../../src/modules/matching/infrastructure/doubles/admissionTestKit';
+import { declareTactiqSeat } from './helpers/tactiqSeatFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -120,6 +121,7 @@ describe('re-teste diário do vínculo do Tactiq — Postgres real (change tacti
     oauth.rotations.set(code, `${code}-novo`);
     mcp.verdicts.set(`at-${code}`, { kind: 'denied', action: 'request_seat', title: null });
     const svc = service();
+    await declareTactiqSeat(admin, host); // F5 (D16): sem linha prévia o início do vínculo exige a licença declarada
     const { authorizeUrl } = await svc.startLink({ uid: `uid-recheck-${RUN}`, email: host });
     await expect(svc.completeLink({ state: new URL(authorizeUrl).searchParams.get('state')!, code })).rejects.toBeInstanceOf(TactiqAccessDeniedError);
     expect(await linkRow(host)).toMatchObject({ status: 'broken' });

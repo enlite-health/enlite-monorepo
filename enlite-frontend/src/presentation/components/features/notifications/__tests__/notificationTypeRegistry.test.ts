@@ -167,6 +167,35 @@ describe('ADMISSION_TACTIQ_LINK_REQUIRED — F3 (seat_missing, audience, master 
   it('valor estranho de reason continua em "missing", mesmo com audience master', () => {
     expect(h().buildText(tq({ reason: 'seat_banana', audience: 'master' }), t)).toBe(`${base}missing:{}`);
   });
+  it('(F5) master seat_pending: com nome e sem nome (hostFallbackStart, nunca "undefined")', () => {
+    expect(h().buildText(tq({ reason: 'seat_pending', audience: 'master', hostName: 'Ana Souza' }), t)).toBe(`${base}masterSeatPending:{"host":"Ana Souza"}`);
+    const out = h().buildText(tq({ reason: 'seat_pending', audience: 'master' }), t);
+    expect(out).toBe(`${base}masterSeatPending:{"host":"admin.notifications.importBlocked.hostFallbackStart:{}"}`);
+    expect(out).not.toContain('undefined');
+  });
+  it('(F5) host seat_ready: firstLink=true → seatReadyFirst; firstLink=false → seatReadyAgain; audience/firstLink ausentes = host, 1º', () => {
+    expect(h().buildText(tq({ reason: 'seat_ready', audience: 'host', firstLink: true }), t)).toBe(`${base}seatReadyFirst:{}`);
+    expect(h().buildText(tq({ reason: 'seat_ready', audience: 'host', firstLink: false }), t)).toBe(`${base}seatReadyAgain:{}`);
+    expect(h().buildText(tq({ reason: 'seat_ready' }), t)).toBe(`${base}seatReadyFirst:{}`);
+  });
+  it('(F5) combinação fora do contrato (seat_ready ao master, seat_pending ao host) cai em "missing"', () => {
+    expect(h().buildText(tq({ reason: 'seat_ready', audience: 'master', firstLink: true }), t)).toBe(`${base}missing:{}`);
+    expect(h().buildText(tq({ reason: 'seat_pending', audience: 'host' }), t)).toBe(`${base}missing:{}`);
+    expect(h().detailLine?.(tq({ reason: 'seat_ready', audience: 'host', firstLink: true }), t)).toBe(`${base}seatReadyFirst:{}`);
+  });
+  it.each([['es', esJson], ['pt-BR', ptBRJson]] as const)('(F5) %s: textos reais de licença — nome do master, sem placeholder, Settings → MCP só no "again"', async (lng, json) => {
+    const i18n = i18next.createInstance();
+    await i18n.init({ lng, resources: { [lng]: { translation: json } }, interpolation: { escapeValue: false } });
+    const tr = i18n.t.bind(i18n) as unknown as (k: string, o?: Record<string, unknown>) => string;
+    const pending = h().buildText(tq({ reason: 'seat_pending', audience: 'master', hostName: 'Ana Souza' }), tr);
+    expect(pending).toContain('Ana Souza');
+    expect(pending).not.toContain('{{');
+    const first = h().buildText(tq({ reason: 'seat_ready', audience: 'host', firstLink: true }), tr);
+    const again = h().buildText(tq({ reason: 'seat_ready', audience: 'host', firstLink: false }), tr);
+    expect(first).not.toContain('Settings → MCP');
+    expect(again).toContain('Settings → MCP');
+    expect(first).toMatch(/@enlite\.health/);
+  });
   it('detailLine acompanha o texto', () => {
     const n = tq({ reason: 'seat_missing', audience: 'host', adminNotified: true });
     expect(h().detailLine?.(n, t)).toBe(`${base}seatAuto:{}`);

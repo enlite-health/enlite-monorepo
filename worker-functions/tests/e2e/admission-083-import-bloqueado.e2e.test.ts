@@ -14,6 +14,7 @@
 import { Pool } from 'pg';
 import { TENANT_E2E } from './helpers/permissionFamilyHarness';
 import { criarEscopoDeEnv } from './helpers/admissionHarnessKit';
+import { declareTactiqSeat } from './helpers/tactiqSeatFixture';
 import { FakeTactiqMcp, FakeTactiqOAuth } from '../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import type { FakeAdmissionSummaryGenerator } from '../../src/modules/matching/infrastructure/doubles/FakeAdmissionSummaryGenerator';
 import type { InMemoryTranscriptVault } from '../../src/modules/matching/infrastructure/doubles/InMemoryTranscriptVault';
@@ -81,6 +82,7 @@ describe('importação bloqueada por motivo humano — transita uma vez, lembra 
 
   /** O vínculo REAL: `startLink` + `completeLink` com o relógio do teste. */
   async function conectar(a: Appt): Promise<void> {
+    await declareTactiqSeat(admin, a.host); // F5 (D16): quem nunca vinculou precisa da licença declarada para começar
     await link.startLink({ uid: a.uid, email: a.host });
     const { state } = oauth.authorizeCalls[oauth.authorizeCalls.length - 1];
     await link.completeLink({ state, code: a.refresh });

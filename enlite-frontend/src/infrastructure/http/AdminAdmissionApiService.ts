@@ -145,6 +145,11 @@ export interface OwnTactiqLink {
    * Última tentativa de vínculo negada por falta de acesso (trilha, design D7/D9). OPCIONAL pelo mesmo motivo de `extension`
    * (deploy desencontrado): ausente = sem negativa. `reason` é um código interno (nunca exibir); `title` vem do Tactiq (só texto).
    */
+  /**
+   * F5 (D16): o servidor decide se o botão "Vincular" existe (sem linha e sem licença declarada = `false`). OPCIONAL pelo mesmo motivo
+   * de `extension`: ausente (back antigo) = botão como sempre. A tela NUNCA recalcula a regra a partir de `status`.
+   */
+  canStartLink?: boolean;
   accessDenial?: {
     reason: string;
     title: string | null;

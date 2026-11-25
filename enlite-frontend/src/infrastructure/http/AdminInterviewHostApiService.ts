@@ -24,4 +24,9 @@ export class AdminInterviewHostApiService {
   static update(id: string, patch: Partial<InterviewHostInput>): Promise<{ id: string }> {
     return AdminAdmissionApiService.requestJson<{ id: string }>('PATCH', `${BASE}/${encodeURIComponent(id)}`, patch);
   }
+
+  /** F5 (D16): declara/retira a licença de Tactiq da pessoa — mesma célula `interview_host:update`. */
+  static setTactiqSeat(id: string, assigned: boolean): Promise<unknown> {
+    return AdminAdmissionApiService.requestJson<unknown>('POST', `${BASE}/${encodeURIComponent(id)}/tactiq-seat`, { assigned });
+  }
 }

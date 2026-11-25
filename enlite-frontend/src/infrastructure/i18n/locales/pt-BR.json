@@ -6716,6 +6716,9 @@
         "masterSeat": "{{host}} não tem licença do Tactiq e as entrevistas não podem ser gravadas. Atribua um assento no Tactiq.",
         "masterSeatAuto": " Quando tiver, o vínculo se ativa sozinho.",
         "masterSeatWait": " {{host}} autorizou o Tactiq antes de ter o assento e o Tactiq não amplia essa autorização: quando o assento existir, a plataforma vai pedir uma única autorização nova.",
+        "seatReadyFirst": "Você já tem licença do Tactiq. Entre em Meu perfil e vincule a sua conta com o seu e-mail @enlite.health. Isso se faz uma única vez.",
+        "seatReadyAgain": "Você já tem licença do Tactiq. Como você autorizou o Tactiq antes de tê-la, o Tactiq pede uma única autorização nova: entre em Meu perfil e vincule a sua conta. Antes, no Tactiq, vá em Settings → MCP e remova a conexão anterior; senão o Tactiq repete a autorização que você já tinha.",
+        "masterSeatPending": "{{host}} é entrevistador(a) e ainda não tem a licença do Tactiq confirmada. Atribua um assento no Tactiq e marque «Licença atribuída» em Entrevistadores.",
         "masterBroken": "O vínculo do Tactiq de {{host}} foi revogado ou expirou no Tactiq. Só {{host}} pode autorizar de novo, em Meu perfil."
       },
       "tactiqExtension": {
@@ -6863,6 +6866,8 @@
       "seatAuto": "Falta a sua licença do Tactiq. Já avisamos o administrador. Quando ele atribuir, o seu vínculo se ativa sozinho: você não precisa fazer nada.",
       "seatWait": "Falta a sua licença do Tactiq. Já avisamos o administrador. Vamos te avisar quando estiver resolvido.",
       "seatAskAdmin": "Falta a sua licença do Tactiq. Peça a um administrador do Tactiq (Ana Joulie, Javier ou Marcel) que atribua uma a você; quando tiver, o seu vínculo se ativa sozinho.",
+      "seatNotDeclared": "Você ainda não tem licença do Tactiq. Já avisamos o administrador; quando ele atribuir, avisamos você para vincular a sua conta uma única vez.",
+      "signInHint": "Entre com o seu e-mail @enlite.health.",
       "accessGeneric": "O Tactiq informou que sua conta não tem acesso: «{{title}}». Verifique se, em app.tactiq.io, você está com seu e-mail @enlite.health, resolva com um administrador do Tactiq e depois volte a vincular aqui.",
       "accessGenericNoTitle": "O Tactiq informou que sua conta não tem acesso aos resumos e transcrições. Verifique se, em app.tactiq.io, você está com seu e-mail @enlite.health, consulte um administrador do Tactiq e depois volte a vincular aqui."
     },
@@ -6883,6 +6888,7 @@
         "encuadre": "Enquadre",
         "admission": "Admissão",
         "tactiq": "Tactiq",
+        "seat": "Licença do Tactiq",
         "actions": "Ações"
       },
       "userInactive": "Usuário inativo",
@@ -6893,6 +6899,8 @@
       "quit": "Remover",
       "tactiqLinked": "Vinculado",
       "tactiqUnlinked": "Sem vínculo",
+      "seatAssigned": "Licença atribuída",
+      "seatLabel": "Licença atribuída — {{name}}",
       "tactiqTip": "A pessoa vincula a conta dela em Meu perfil",
       "saveError": "Não conseguimos salvar a alteração.",
       "errors": {

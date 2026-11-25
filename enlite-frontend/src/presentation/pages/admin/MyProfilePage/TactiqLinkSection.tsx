@@ -17,6 +17,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { SealChip } from '@presentation/components/features/admin/PatientDetail/admission/AdmissionSeals';
 import type { SealTone } from '@presentation/components/features/admin/PatientDetail/admission/sealTones';
 import { TactiqExtensionRow } from './TactiqExtensionRow';
@@ -74,6 +75,7 @@ interface Props {
 
 export default function TactiqLinkSection({ redirect = (url) => window.location.assign(url) }: Props): JSX.Element {
   const { t, i18n } = useTranslation();
+  const startGate = useActionGate('own_tactiq_link', 'create');
   const tt = (key: string): string => t(`admin.tactiqLink.${key}`);
   const [params, setParams] = useSearchParams();
   // Lê o resultado da volta UMA vez e limpa a URL: um F5 não pode repetir "vinculado com sucesso".
@@ -166,17 +168,25 @@ export default function TactiqLinkSection({ redirect = (url) => window.location.
               )}
               {/* Sem a linha de pares (não vinculado) o botão sobe para a linha 3, ao lado do "Último reporte". */}
               <div className={`flex flex-col items-start gap-2 mt-5 ${state === 'linked' ? 'xl:row-start-4' : 'xl:row-start-3'}`}>
-                <ActionButton
-                  resource="own_tactiq_link"
-                  action="create"
-                  variant="primary"
-                  size="md"
-                  onClick={() => { void start(); }}
-                  disabled={starting}
-                  data-testid="tactiq-link-button"
-                >
-                  {starting ? tt('starting') : state === 'linked' ? tt('relink') : tt('link')}
-                </ActionButton>
+                {/* F5 (D16): o servidor decide (`canStartLink`); `false` = sem botão e com o porquê. Ausente = botão como sempre. */}
+                {link.canStartLink === false ? (
+                  <Text color="inherit" size="sm" className="text-gray-900" data-testid="tactiq-seat-not-declared">{tt('seatNotDeclared')}</Text>
+                ) : (
+                  <>
+                    {!startGate.denied && <Text color="inherit" size="sm" className="text-gray-900" data-testid="tactiq-signin-hint">{tt('signInHint')}</Text>}
+                    <ActionButton
+                      resource="own_tactiq_link"
+                      action="create"
+                      variant="primary"
+                      size="md"
+                      onClick={() => { void start(); }}
+                      disabled={starting}
+                      data-testid="tactiq-link-button"
+                    >
+                      {starting ? tt('starting') : state === 'linked' ? tt('relink') : tt('link')}
+                    </ActionButton>
+                  </>
+                )}
                 {startError && <Text color="inherit" size="sm" role="alert" className="text-red-800" data-testid="tactiq-start-error">{tt('startError')}</Text>}
               </div>
             </div>

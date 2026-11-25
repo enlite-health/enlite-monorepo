@@ -261,3 +261,26 @@ describe('negativa de acesso salva (accessDenial)', () => {
     expect(box.textContent).toContain(evil);
   });
 });
+
+describe('F5 (D16): canStartLink decide o botão (lido da API, nunca recalculado)', () => {
+  it.each(['missing', 'broken'])('canStartLink=false (status %s): sem botão, com o texto de licença pendente', async (status) => {
+    api.getOwnTactiqLink.mockResolvedValue({ ...view(status), canStartLink: false });
+    renderPage();
+    await screen.findByTestId('tactiq-state');
+    expect(screen.queryByTestId('tactiq-link-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('tactiq-signin-hint')).not.toBeInTheDocument();
+    expect(screen.getByTestId('tactiq-seat-not-declared')).toHaveTextContent(tEs('admin.tactiqLink.seatNotDeclared'));
+  });
+
+  it.each([['ausente', undefined], ['true', true]])('canStartLink %s + status missing: botão como hoje, com a instrução do e-mail acima', async (_n, v) => {
+    api.getOwnTactiqLink.mockResolvedValue({ ...view('missing'), ...(v === undefined ? {} : { canStartLink: v }) });
+    renderPage();
+    const btn = await screen.findByTestId('tactiq-link-button');
+    expect(btn).toHaveTextContent('Vincular Tactiq');
+    const hint = screen.getByTestId('tactiq-signin-hint');
+    expect(hint).toHaveTextContent('Entrá con tu correo @enlite.health.');
+    expect(hint.compareDocumentPosition(btn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId('tactiq-seat-not-declared')).not.toBeInTheDocument();
+  });
+});
+

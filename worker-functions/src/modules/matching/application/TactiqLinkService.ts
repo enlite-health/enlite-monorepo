@@ -15,6 +15,7 @@ import {
   isSeatCause,
   type LastDegrade,
 } from '../domain/tactiqRecheck';
+import { canStartLink, SEAT_DECLARED_KIND, SEAT_UNDECLARED_KIND } from '../domain/tactiqSeatGate';
 import { hashState, newOAuthState, newPkcePair } from '../infrastructure/tactiq/pkce';
 import {
   denyReason,
@@ -65,6 +66,15 @@ export class TactiqAccessDeniedError extends Error {
   }
 }
 
+/** Sem a licença declarada pelo Acesso Master e sem vínculo anterior, o vínculo não começa (F5, D16). A tela esconde o botão pela mesma regra. */
+export class TactiqSeatNotDeclaredError extends Error {
+  readonly code = 'TACTIQ_SEAT_NOT_DECLARED';
+  constructor() {
+    super('Tactiq seat not declared');
+    this.name = 'TactiqSeatNotDeclaredError';
+  }
+}
+
 export const STATE_TTL_MS = 10 * 60 * 1000;
 /** Operadora do roster sem vínculo vivo há MAIS de 48 h (estritamente maior) → alarme ao gestor. */
 export const MISSING_ALARM_HOURS = 48;
@@ -78,6 +88,8 @@ export interface OwnLinkView {
   extension: OwnExtensionView;
   /** Negativa de acesso pendente (a última tentativa de vínculo foi recusada por acesso); `null` = nenhuma. Derivado da trilha, nunca gravado. */
   accessDenial: OwnAccessDenial | null;
+  /** Pode começar o vínculo (F5, D16): dono da regra é `canStartLink` (domínio); a tela lê ISTO e nunca recalcula. */
+  canStartLink: boolean;
 }
 
 export interface OwnAccessDenial {
@@ -180,6 +192,11 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     return new Map(emails.map((e) => [e.toLowerCase(), persisted.get(e.toLowerCase()) ?? 'missing'] as const));
   }
 
+  /** Quais e-mails (minúsculos) têm a licença declarada — a listagem de Entrevistadores lê da trilha, nunca recalcula (F5, D16). */
+  seatsDeclaredFor(emails: string[]): Promise<Set<string>> {
+    return this.repo.seatDeclaredAmong(emails);
+  }
+
   // ── o PRÓPRIO vínculo ──────────────────────────────────────────────────────────────────────────────
   async getOwn(email: string): Promise<OwnLinkView> {
     const row = await this.repo.findByEmail(email);
@@ -188,7 +205,8 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
       ? { state: report.state, reportedAt: report.report_at ? report.report_at.toISOString() : null }
       : { state: 'sem_relatorio', reportedAt: null };
     const accessDenial = await this.accessDenialOf(email, row);
-    if (!row) return { status: 'missing', linkedAt: null, lastCheckAt: null, statusChangedAt: null, extension, accessDenial };
+    const startable = canStartLink({ hasRow: row !== null, seatDeclared: await this.repo.seatDeclared(email) });
+    if (!row) return { status: 'missing', linkedAt: null, lastCheckAt: null, statusChangedAt: null, extension, accessDenial, canStartLink: startable };
     return {
       status: row.status,
       linkedAt: row.linked_at ? row.linked_at.toISOString() : null,
@@ -196,6 +214,7 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
       statusChangedAt: row.status_changed_at.toISOString(),
       extension,
       accessDenial,
+      canStartLink: startable,
     };
   }
 
@@ -240,6 +259,9 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
   }
 
   async startLink(input: { uid: string; email: string }): Promise<{ authorizeUrl: string }> {
+    const seatDeclared = await this.repo.seatDeclared(input.email);
+    const hasRow = (await this.repo.findByEmail(input.email)) !== null;
+    if (!canStartLink({ hasRow, seatDeclared })) throw new TactiqSeatNotDeclaredError();
     const now = this.now();
     const state = newOAuthState();
     const { codeVerifier, codeChallenge } = newPkcePair();
@@ -305,8 +327,10 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     if (verdict.kind === 'denied') {
       const reason = denyReason({ kind: 'access_action', action: verdict.action });
       if (isSeatCause(reason)) {
+        const falseDeclaration = await this.repo.seatDeclared(consumed.email);
         await this.keepTokenOnSeatRejection(consumed, refreshToken, now, ref, reason);
-        await this.noticeMastersOfSeatAtLink(consumed, ref?.scope ?? null, now, reason);
+        if (falseDeclaration) await this.dropFalseSeatDeclaration(consumed.email, now);
+        await this.noticeMastersOfSeatAtLink(consumed, ref?.scope ?? null, now, reason, falseDeclaration);
       }
       return reject('access_denied', reason, verdict.title ? { title: verdict.title } : {});
     }
@@ -359,13 +383,139 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     scope: string | null,
     now: Date,
     seatReason: string,
+    falseDeclaration = false,
   ): Promise<void> {
     try {
       const lastDegrade: LastDegrade = { kind: 'tactiq_link.broken', reason: seatReason, source: 'link' };
-      const autoReactivates = this.seatAutoReactivates('broken', lastDegrade, scope);
+      // Marcação falsa (F5, D16): a pessoa cai no caminho do legado — o Tactiq congelou o que ela acabou de autorizar. Nunca "volta sozinho".
+      const autoReactivates = falseDeclaration ? false : this.seatAutoReactivates('broken', lastDegrade, scope);
       await withActorContext(this.db, (cli) =>
         this.noticeMastersOfSeat(cli, { email: consumed.email, hostUid: consumed.uid, autoReactivates, now, source: 'link' }),
       );
+    } catch (err) {
+      this.log.error({ reason: (err as { code?: string })?.code ?? 'unexpected' }, 'admission.tactiq_link.master_notice.failed');
+    }
+  }
+
+  /**
+   * Marcação falsa (F5, D16): o Acesso Master declarou a licença e o Tactiq recusou por assento no consentimento. A declaração cai
+   * (`seat_undeclared`, ator `system`) para o perfil e a listagem não mentirem; a pessoa segue pelo caminho do legado (tem linha).
+   */
+  private async dropFalseSeatDeclaration(email: string, now: Date): Promise<void> {
+    await this.repo.appendEvent({
+      email, kind: SEAT_UNDECLARED_KIND, outcome: 'undeclared', reason: 'seat_not_assigned', at: now, ref: { actorUid: 'system' },
+    });
+    this.log.warn({}, 'admission.tactiq_link.seat_declaration_dropped');
+  }
+
+  // ── licença antes do 1º vínculo (F5, D16) ──────────────────────────────────────────────────────────
+  /**
+   * O Acesso Master marca/desmarca "Licencia asignada" (rota `interview_host:update`). Grava `seat_declared|seat_undeclared` (`ref.actorUid`, sem
+   * e-mail) só quando MUDA a declaração vigente; dentro da transação do chamador. Ao marcar: sem linha → host `seat_ready firstLink=true` 1× por
+   * pessoa; com linha cujo escopo efetivo não tem `details` (legado congelado) → `seat_arrived` + host `firstLink=false` (D0.b).
+   */
+  async declareSeat(input: { email: string; assigned: boolean; actorUid: string }, cli: PoolClient): Promise<{ changed: boolean }> {
+    const now = this.now();
+    await this.repo.lockSeatTopic('seat_declaration', input.email, cli);
+    if ((await this.repo.seatDeclared(input.email, cli)) === input.assigned) return { changed: false };
+    await this.repo.appendEvent(
+      {
+        email: input.email,
+        kind: input.assigned ? SEAT_DECLARED_KIND : SEAT_UNDECLARED_KIND,
+        outcome: input.assigned ? 'declared' : 'undeclared',
+        at: now,
+        ref: { actorUid: input.actorUid },
+      },
+      cli,
+    );
+    if (!input.assigned) return { changed: true };
+
+    const hostUid = await this.repo.activeUserUidByEmail(input.email, cli);
+    if (!(await this.repo.findByEmail(input.email, cli))) {
+      await this.noticeSeatReadyFirst(cli, input.email, hostUid, now);
+      return { changed: true };
+    }
+    const hasDetails = effectiveScopeHasDetails({
+      refreshScope: null,
+      lastLinkScope: await this.repo.lastLinkScope(input.email, cli),
+      frozen: this.deps.consentScopeFrozen ?? CONSENT_SCOPE_FROZEN,
+    });
+    if (!hasDetails) await this.markSeatArrived(cli, { email: input.email, hostUid, now, source: 'declared' });
+    return { changed: true };
+  }
+
+  /** Host: "já tenés licencia, vinculá una sola vez" — 1× por PESSOA (trava + trilha). Sem usuário não há sino e NÃO carimba. */
+  private async noticeSeatReadyFirst(cli: PoolClient, email: string, hostUid: string | null, now: Date): Promise<void> {
+    if (!hostUid) {
+      this.log.warn({}, 'admission.tactiq_link.seat_ready.no_recipient');
+      return;
+    }
+    await this.repo.lockSeatTopic('seat_ready_first', email, cli);
+    if (await this.repo.oneTimeNoticeSent(email, 'seat_ready_first', cli)) return;
+    await this.publisher.publishAdmissionTactiqLinkRequired(cli, { recipientUid: hostUid, reason: 'seat_ready', audience: 'host', firstLink: true });
+    await this.repo.appendEvent({ email, kind: 'tactiq_link.notified', outcome: 'sent', reason: 'seat_ready_first', at: now }, cli);
+  }
+
+  /**
+   * O assento CHEGOU para quem já tem linha com o escopo congelado sem `details` (legado, D0.b) — 1× por episódio (`tactiq_link.seat_arrived`).
+   * Dois sinais, o que vier primeiro: a marcação "Licencia asignada" do Master (`declared`) ou o re-teste com `ready` sem `details` (`recheck`).
+   * Efeito: o host recebe `seat_ready firstLink=false` (a pessoa precisa de UMA autorização nova). Revogação automática NÃO existe (P-C4 não medida).
+   */
+  private async markSeatArrived(
+    cli: PoolClient,
+    input: { email: string; hostUid: string | null; now: Date; source: 'declared' | 'recheck' },
+  ): Promise<boolean> {
+    await this.repo.lockSeatTopic('seat_arrived', input.email, cli);
+    if (await this.repo.seatArrivedInEpisode(input.email, cli)) return false;
+    await this.repo.appendEvent(
+      { email: input.email, kind: 'tactiq_link.seat_arrived', outcome: 'seat_arrived', at: input.now, ref: { source: input.source } },
+      cli,
+    );
+    if (!input.hostUid) {
+      this.log.warn({}, 'admission.tactiq_link.seat_ready.no_recipient');
+      return true;
+    }
+    await this.publisher.publishAdmissionTactiqLinkRequired(cli, { recipientUid: input.hostUid, reason: 'seat_ready', audience: 'host', firstLink: false });
+    await this.repo.appendEvent({ email: input.email, kind: 'tactiq_link.notified', outcome: 'sent', reason: 'seat_ready_legacy', at: input.now }, cli);
+    return true;
+  }
+
+  /** Re-teste: `ready` sem `details` com o escopo congelado = o assento chegou mas a autorização não cresce. Nunca derruba o re-teste. */
+  private async noticeSeatArrivedFromRecheck(email: string): Promise<void> {
+    try {
+      await withActorContext(this.db, async (cli) =>
+        this.markSeatArrived(cli, { email, hostUid: await this.repo.activeUserUidByEmail(email, cli), now: this.now(), source: 'recheck' }),
+      );
+    } catch (err) {
+      this.log.error({ reason: (err as { code?: string })?.code ?? 'unexpected' }, 'admission.tactiq_link.seat_arrived.failed');
+    }
+  }
+
+  /**
+   * Roster sem linha e sem licença declarada: o Acesso Master é avisado 1× por PESSOA ("marque Licencia asignada"). Sem destinatário → `warn` e
+   * tenta amanhã (nada carimbado). Nunca derruba o job.
+   */
+  private async noticeMastersOfSeatPending(email: string): Promise<void> {
+    try {
+      await withActorContext(this.db, async (cli) => {
+        await this.repo.lockSeatTopic('seat_pending', email, cli);
+        if (await this.repo.seatDeclared(email, cli)) return;
+        if (await this.repo.oneTimeNoticeSent(email, 'seat_pending_master', cli)) return;
+        const hostUid = await this.repo.activeUserUidByEmail(email, cli);
+        const masters = (await this.repo.activeMasterUids(cli)).filter((uid) => uid !== hostUid);
+        if (masters.length === 0) {
+          this.log.warn({}, 'admission.tactiq_link.master_notice.no_recipient');
+          return;
+        }
+        const hostName = (await this.repo.hostDisplayName(email, cli)) ?? undefined;
+        for (const recipientUid of masters) {
+          await this.publisher.publishAdmissionTactiqLinkRequired(cli, { recipientUid, reason: 'seat_pending', audience: 'master', hostName });
+        }
+        await this.repo.appendEvent(
+          { email, kind: 'tactiq_link.notified', outcome: 'sent', reason: 'seat_pending_master', at: this.now(), ref: { recipients: masters.length } },
+          cli,
+        );
+      });
     } catch (err) {
       this.log.error({ reason: (err as { code?: string })?.code ?? 'unexpected' }, 'admission.tactiq_link.master_notice.failed');
     }
@@ -515,7 +665,10 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     summary.rosterHosts = roster.length;
     for (const host of roster) {
       const row = await this.repo.findByEmail(host.email);
-      if (!row) await this.ensureMissingEvent(host.email);
+      if (!row) {
+        await this.ensureMissingEvent(host.email);
+        await this.noticeMastersOfSeatPending(host.email);
+      }
       const state: TactiqLinkState = row ? row.status : 'missing';
       if (state === 'linked') continue;
 
@@ -629,6 +782,8 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
       });
       if (!hasDetails) {
         await this.repo.recordCheck(email, 'scope_without_details', now);
+        // `ready` sem `details` com o escopo congelado: o assento chegou, a autorização antiga não cresce (D0.b, F5).
+        if (this.deps.consentScopeFrozen ?? CONSENT_SCOPE_FROZEN) await this.noticeSeatArrivedFromRecheck(email);
         return 'kept' as const;
       }
       if (!(await this.repo.reactivate(link.id, now))) return 'kept' as const;

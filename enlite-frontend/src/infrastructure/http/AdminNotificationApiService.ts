@@ -24,7 +24,7 @@ export type NotificationTypeCode =
   | 'PEDIDO_IA_APLICAR';
 
 /** spec 049: SÓ o motivo (nunca e-mail nem token) — o TEXTO vive no cliente (ES/PT na i18n). */
-export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account' | 'seat_missing';
+export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account' | 'seat_missing' | 'seat_pending' | 'seat_ready';
 export interface AdmissionTactiqLinkPayload {
   reason: AdmissionTactiqLinkReason;
   /** F3 (D11): a quem o aviso se dirige. Ausente = host (o aviso de sempre). `broken` + `master` = token morto. */
@@ -35,6 +35,8 @@ export interface AdmissionTactiqLinkPayload {
   adminNotified?: boolean;
   /** O vínculo se reativa sozinho quando o assento chegar. Ausente = sim. */
   autoReactivates?: boolean;
+  /** F5 (D16): só em `seat_ready` (host). `true` = 1º vínculo da pessoa; `false` = legado que já autorizou antes do assento. Ausente = trate como 1º. */
+  firstLink?: boolean;
 }
 
 /** spec 050 F15: SÓ o estado novo da extensão (nunca e-mail nem id de perfil) — o TEXTO vive no cliente. */

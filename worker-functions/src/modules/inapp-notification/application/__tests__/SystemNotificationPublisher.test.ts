@@ -157,6 +157,35 @@ describe('buildAdmissionTactiqLinkPayload — contrato da falta de assento (tact
   });
 });
 
+describe('buildAdmissionTactiqLinkPayload — F5, licença antes do 1º vínculo (D11/D16)', () => {
+  it('seat_pending só ao master (hostName opcional) e seat_ready só ao host, com firstLink boolean', () => {
+    expect(buildAdmissionTactiqLinkPayload('seat_pending', { audience: 'master', hostName: 'Fulana Fake' })).toEqual({
+      reason: 'seat_pending', audience: 'master', hostName: 'Fulana Fake',
+    });
+    expect(buildAdmissionTactiqLinkPayload('seat_ready', { audience: 'host', firstLink: true })).toEqual({
+      reason: 'seat_ready', audience: 'host', firstLink: true,
+    });
+    expect(buildAdmissionTactiqLinkPayload('seat_ready', { audience: 'host', firstLink: false })).toEqual({
+      reason: 'seat_ready', audience: 'host', firstLink: false,
+    });
+  });
+
+  it.each([
+    ['seat_ready com master', 'seat_ready', { audience: 'master', firstLink: true }],
+    ['seat_ready sem audience', 'seat_ready', { firstLink: true }],
+    ['seat_ready sem firstLink', 'seat_ready', { audience: 'host' }],
+    ['seat_ready com hostName', 'seat_ready', { audience: 'host', firstLink: true, hostName: 'Fulana Fake' }],
+    ['seat_ready com adminNotified', 'seat_ready', { audience: 'host', firstLink: true, adminNotified: true }],
+    ['seat_pending com host', 'seat_pending', { audience: 'host' }],
+    ['seat_pending sem audience', 'seat_pending', {}],
+    ['seat_pending com firstLink', 'seat_pending', { audience: 'master', firstLink: true }],
+    ['firstLink em seat_missing', 'seat_missing', { audience: 'host', adminNotified: true, autoReactivates: true, firstLink: true }],
+    ['firstLink em broken', 'broken', { firstLink: true }],
+  ])('combinação proibida lança: %s', (_n, reason, extras) => {
+    expect(() => buildAdmissionTactiqLinkPayload(reason, extras)).toThrow(/admission_tactiq_link_payload/);
+  });
+});
+
 describe('SystemNotificationPublisher — aviso diário do itinerário (spec 069 F4)', () => {
   const item = { patientId: 'p1', serviceId: 's1', shifts: 2, firstDate: '2026-11-02' };
 
