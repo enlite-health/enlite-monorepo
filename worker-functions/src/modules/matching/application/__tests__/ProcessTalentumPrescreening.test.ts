@@ -1982,4 +1982,84 @@ describe('ProcessTalentumPrescreening', () => {
       info.mockRestore();
     });
   });
+
+  // ─── Mudança manual do Talentum = decisão humana (T-095-33, spec 095 §3.4) ───
+
+  describe('mudança manual do Talentum', () => {
+    let notifier: { notify: jest.Mock };
+    let manualUseCase: ProcessTalentumPrescreening;
+
+    /** Responde as leituras do pool: status gravado do espelho e a última linha da trilha do WJA. */
+    function mockReads(stored: string | null, lastChangedBy: string | 'sem-trilha') {
+      const orig = mockPool.query.getMockImplementation()!;
+      mockPool.query.mockImplementation((sql: string, params?: unknown[]) => {
+        if (sql.includes('FROM talentum_prescreenings WHERE')) return Promise.resolve({ rows: stored ? [{ status: stored }] : [] });
+        if (sql.includes('worker_job_application_stage_history')) {
+          return Promise.resolve({ rows: lastChangedBy === 'sem-trilha' ? [] : [{ changed_by: lastChangedBy }] });
+        }
+        return orig(sql, params);
+      });
+    }
+    const stamped = () => mockPoolClient.query.mock.calls.filter((c: any[]) => /set_config\('app.current_uid'/.test(c[0]));
+    const wjaUpserts = () => mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mock.calls.length;
+
+    beforeEach(() => {
+      notifier = { notify: jest.fn().mockResolvedValue(undefined) };
+      manualUseCase = new ProcessTalentumPrescreening(mockPrescreeningRepo, mockWorkerLookup, mockJobPostingLookup, mockPool, mockPubsub, notifier);
+    });
+
+    const manualPayload = () => {
+      const p = buildPayload({ statusLabel: 'QUALIFIED' });
+      (p.data.response as any).source = 'MANUAL';
+      return p;
+    };
+
+    it('manual: a transação do funil carimba o ator talentum:manual (vira changed_by na trilha)', async () => {
+      mockReads(null, 'sem-trilha');
+      await manualUseCase.execute(manualPayload());
+      expect(stamped()).toHaveLength(1);
+      expect(stamped()[0][1]).toEqual(['talentum:manual']);
+      expect(wjaUpserts()).toBe(1);
+    });
+
+    it('automático: nenhum ator carimbado (changed_by segue vazio)', async () => {
+      mockReads('COMPLETED', 'sem-trilha');
+      await manualUseCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+      expect(stamped()).toHaveLength(0);
+      expect(wjaUpserts()).toBe(1);
+    });
+
+    it('sem marcador: ANALYZED com veredito ≠ gravado (QUALIFIED → NOT_QUALIFIED) é tratado como manual', async () => {
+      mockReads('QUALIFIED', 'sem-trilha');
+      await manualUseCase.execute(buildPayload({ statusLabel: 'NOT_QUALIFIED' }));
+      expect(stamped()[0][1]).toEqual(['talentum:manual']);
+    });
+
+    it('manual com a última linha de uid NOSSO: só o espelho muda (sem WJA, sem encuadre) + aviso CONFLITO_HUMANO', async () => {
+      mockReads('COMPLETED', 'staff:uid-1');
+      await manualUseCase.execute(manualPayload());
+      expect(mockPrescreeningRepo.upsertPrescreening).toHaveBeenCalledTimes(1); // o espelho
+      expect(wjaUpserts()).toBe(0);
+      expect(mockPool.query.mock.calls.some((c: any[]) => String(c[0]).includes('INSERT INTO encuadres'))).toBe(false);
+      expect(notifier.notify).toHaveBeenCalledWith(mockPoolClient, { workerId: 'w-1', jobPostingId: 'jp-1', talentumPrescreeningId: 'tp-1' });
+      const tx = mockPoolClient.query.mock.calls.map((c: any[]) => c[0]);
+      expect(tx.indexOf('COMMIT')).toBeGreaterThan(-1);
+    });
+
+    it('evento AUTOMÁTICO tardio (COMPLETED) depois de decisão talentum:manual: só o espelho, WJA intacto', async () => {
+      mockReads('QUALIFIED', 'talentum:manual');
+      await manualUseCase.execute(buildPayload({ status: 'COMPLETED' }));
+      expect(wjaUpserts()).toBe(0);
+      expect(notifier.notify).not.toHaveBeenCalled();
+    });
+
+    it('evento AUTOMÁTICO (veredito igual ao gravado) com a última linha talentum:manual: só o espelho', async () => {
+      mockReads('QUALIFIED', 'talentum:manual');
+      await manualUseCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+      expect(mockPrescreeningRepo.upsertPrescreening).toHaveBeenCalledTimes(1);
+      expect(wjaUpserts()).toBe(0);
+      expect(notifier.notify).not.toHaveBeenCalled();
+      expect(mockPool.query.mock.calls.some((c: any[]) => String(c[0]).includes('INSERT INTO encuadres'))).toBe(false);
+    });
+  });
 });

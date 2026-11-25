@@ -10,7 +10,11 @@ import { resolveLiveCanonicalWorkerIds } from '@shared/database/resolveLiveCanon
 import { reportError, logger } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { maskEmailForLog } from '@shared/utils/emailMask';
-import { deriveFunnelStage, toPersistedFunnelStage, applyNotQualifiedTransition, revertAutoRejectionOnPositiveVerdict, insertTalentumWorker } from './talentumFunnel';
+import {
+  deriveFunnelStage, toPersistedFunnelStage, applyNotQualifiedTransition, revertAutoRejectionOnPositiveVerdict, insertTalentumWorker,
+  detectManualChange, evaluateFunnelGuard, TALENTUM_MANUAL_ACTOR_ID,
+} from './talentumFunnel';
+import { stampActorOnClient } from '@shared/database/actorContext';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
 import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
 import { formatCaseNumberTitle } from '@shared/utils/caseNumberFormat';
@@ -77,6 +81,21 @@ export interface IJobPostingLookup {
   findByTitleILike(name: string): Promise<{ id: string } | null>;
 }
 
+/**
+ * Aviso `CONFLITO_HUMANO` (spec 095 §3.4/§13.6): mudança manual do Talentum contra movimento humano nosso na mesma
+ * candidatura. O sino é do T-095-42; este port deixa o ponto de ligação na MESMA transação (`client`). Só ids, sem PII.
+ */
+export interface ITalentumConflictNotifier {
+  notify(client: PoolClient, conflict: { workerId: string; jobPostingId: string; talentumPrescreeningId: string }): Promise<void>;
+}
+
+/** Enquanto o sino (T-095-42) não existe: deixa rastro estruturado, sem PII (só ids). */
+const logOnlyConflictNotifier: ITalentumConflictNotifier = {
+  async notify(_client, conflict) {
+    logger.warn({ msg: 'talentum_conflito_humano', ...conflict });
+  },
+};
+
 export class ProcessTalentumPrescreening {
   private readonly questionsWriter: PrescreeningQuestionsWriter;
 
@@ -86,6 +105,7 @@ export class ProcessTalentumPrescreening {
     private readonly jobPostingLookup: IJobPostingLookup,
     private readonly pool: Pool,
     private readonly pubsub: PubSubClient,
+    private readonly conflictNotifier: ITalentumConflictNotifier = logOnlyConflictNotifier,
   ) {
     this.questionsWriter = new PrescreeningQuestionsWriter(prescreeningRepo);
   }
@@ -105,6 +125,9 @@ export class ProcessTalentumPrescreening {
       return this.buildResult(payload.data.prescreening.id, payload.data.prescreening.id, workerId, jobPostingId);
     }
 
+    // Mudança manual do Talentum = decisão humana (spec 095 §3.4). Lê o status JÁ gravado ANTES do upsert do espelho.
+    const manual = detectManualChange(payload, await this.readStoredStatus(payload));
+
     const prescreening = await this.persistPrescreening(payload, workerId, job, environment, emailAmbiguous);
 
     // Spec 084 (F4/R6/F17): projeto de vaga DADA DE BAJA que ainda recebe candidato — a resposta fica GUARDADA (nada se
@@ -119,10 +142,19 @@ export class ProcessTalentumPrescreening {
       return this.buildResult(prescreening.id, prescreening.talentumPrescreeningId, prescreening.workerId, prescreening.jobPostingId);
     }
 
-    await this.syncFunnelAndEncuadre(prescreening, payload);
+    await this.syncFunnelAndEncuadre(prescreening, payload, manual);
     await this.questionsWriter.persist(prescreening.id, payload);
 
     return this.buildResult(prescreening.id, prescreening.talentumPrescreeningId, prescreening.workerId, prescreening.jobPostingId);
+  }
+
+  /** `talentum_prescreenings.status` gravado antes deste evento (null se o card é novo). */
+  private async readStoredStatus(payload: TalentumPrescreeningResponseParsed): Promise<string | null> {
+    const r = await this.pool.query(
+      `SELECT status FROM talentum_prescreenings WHERE talentum_prescreening_id = $1 AND talentum_profile_id = $2`,
+      [payload.data.prescreening.id, payload.data.profile.id],
+    );
+    return (r.rows[0]?.status as string | undefined) ?? null;
   }
 
   // ── Worker resolution ────────────────────────────────────────────
@@ -470,6 +502,7 @@ export class ProcessTalentumPrescreening {
   private async syncFunnelAndEncuadre(
     prescreening: { id: string; workerId: string | null; jobPostingId: string | null; talentumPrescreeningId: string },
     payload: TalentumPrescreeningResponseParsed,
+    manual: boolean,
   ): Promise<void> {
     if (!prescreening.workerId || !prescreening.jobPostingId) {
       // O alarme (linha em talentum_webhook_divergences + reportError) já saiu em persistPrescreening.
@@ -477,6 +510,18 @@ export class ProcessTalentumPrescreening {
         `${TAG} syncFunnel SKIPPED — sem worker/vaga: workerId=${prescreening.workerId}, ` +
         `jobPostingId=${prescreening.jobPostingId}, prescreeningId=${prescreening.id}`,
       );
+      return;
+    }
+
+    // A última movimentação da candidatura decide se WJA/encuadre podem mudar (decisão 6; "manual não é revertido").
+    const guard = await evaluateFunnelGuard(this.pool, prescreening.workerId, prescreening.jobPostingId, manual);
+    if (guard === 'HUMAN_CONFLICT') {
+      await this.notifyHumanConflict(prescreening.workerId, prescreening.jobPostingId, prescreening.talentumPrescreeningId);
+      console.log(`${TAG} syncFunnel SKIPPED — mudança manual do Talentum × movimento humano nosso: só o espelho muda | prescreeningId=${prescreening.id}`);
+      return;
+    }
+    if (guard === 'AFTER_MANUAL') {
+      console.log(`${TAG} syncFunnel SKIPPED — evento automático depois de decisão manual (talentum:manual): só o espelho muda | prescreeningId=${prescreening.id}`);
       return;
     }
 
@@ -492,6 +537,7 @@ export class ProcessTalentumPrescreening {
         funnelStage,
         payload.data.response.score ?? 0,
         prescreening.id,
+        manual,
       );
     } else {
       console.log(`${TAG} syncFunnel: skipped WJA upsert (ANALYZED without statusLabel)`);
@@ -515,6 +561,7 @@ export class ProcessTalentumPrescreening {
     funnelStage: string,
     matchScore: number,
     prescreeningId?: string,
+    manual = false,
   ): Promise<void> {
     // F3 (mig 191): NOT_QUALIFIED não existe mais no enum — converter pra REJECTED antes do upsert.
     const effectiveFunnelStage = toPersistedFunnelStage(funnelStage);
@@ -524,6 +571,8 @@ export class ProcessTalentumPrescreening {
 
     try {
       await client.query('BEGIN');
+      // Mudança manual: o ator vira `changed_by` na trilha (gatilho lê `app.current_uid`, LOCAL a esta transação).
+      if (manual) await stampActorOnClient(client, { source: 'sync_import', id: TALENTUM_MANUAL_ACTOR_ID });
 
       const { previousStage } = await this.prescreeningRepo.upsertWorkerJobApplicationFromTalentum(
         { workerId, jobPostingId, applicationFunnelStage: effectiveFunnelStage, matchScore },
@@ -550,6 +599,21 @@ export class ProcessTalentumPrescreening {
     }
 
     await this.publishQualifiedEvent(qualifiedEventId);
+  }
+
+  /** Aviso `CONFLITO_HUMANO` numa transação própria curta: o espelho já foi gravado; WJA/encuadre não mudam. */
+  private async notifyHumanConflict(workerId: string, jobPostingId: string, talentumPrescreeningId: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await this.conflictNotifier.notify(client, { workerId, jobPostingId, talentumPrescreeningId });
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   private async handleQualifiedTransition(

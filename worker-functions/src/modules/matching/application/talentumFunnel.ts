@@ -91,11 +91,84 @@ export async function applyNotQualifiedTransition(
 /** Vereditos positivos do Talentum que o card espelha (os dois têm etapa própria no funil). */
 const POSITIVE_VERDICT_STAGES: readonly string[] = ['QUALIFIED', 'IN_DOUBT'];
 
-/** Ator automático da trilha: vazio/NULL (webhook) ou `system:<nome>` (script). uid humano = nunca automático. */
-const isAutomaticActor = (changedBy: string | null | undefined): boolean => {
+/**
+ * Ator que a trilha grava quando o Talentum avisa uma mudança MANUAL (decisão humana da recrutadora, no painel do
+ * Talentum; spec 095 §3.4). Vira `changed_by` via `app.current_uid`. NÃO é automático, por desenho.
+ */
+export const TALENTUM_MANUAL_ACTOR_ID = 'talentum:manual';
+
+/** Ator automático da trilha: vazio/NULL (webhook) ou `system:<nome>` (script). uid humano e `talentum:manual` = nunca automático. */
+export const isAutomaticActor = (changedBy: string | null | undefined): boolean => {
   const by = changedBy ?? '';
   return by === '' || by.startsWith('system:');
 };
+
+/** Movimento humano NOSSO (staff/Luz/prestador...): nem automático, nem o ator `talentum:manual`. */
+export const isOurHumanActor = (changedBy: string | null | undefined): boolean =>
+  !isAutomaticActor(changedBy) && changedBy !== TALENTUM_MANUAL_ACTOR_ID;
+
+/** Vereditos do `ANALYZED` que o espelho grava no lugar de 'ANALYZED' (PENDING não é veredito). */
+const VERDICT_LABELS: readonly string[] = ['QUALIFIED', 'NOT_QUALIFIED', 'IN_DOUBT'];
+
+/**
+ * Mudança MANUAL no Talentum (spec 095 §3.4). O contrato do Ioni NÃO está confirmado; aceita as formas do desenho:
+ *  1. marcador explícito `data.response.source === 'MANUAL'` (o subtype próprio entra aqui quando o Ioni o nomear);
+ *  2. sem marcador: `ANALYZED` com `statusLabel` ≠ veredito JÁ gravado no espelho (a análise automática emite um
+ *     veredito só por resposta, então um segundo, diferente, é reclassificação humana). Risco aceito em §14.
+ * `storedStatus` = `talentum_prescreenings.status` ANTES deste evento (null se o card é novo).
+ */
+export function detectManualChange(
+  payload: { subtype: string; data: { response: { statusLabel?: string; source?: string } } },
+  storedStatus: string | null | undefined,
+): boolean {
+  if (payload.data.response.source === 'MANUAL') return true;
+  const label = payload.data.response.statusLabel;
+  return (
+    payload.subtype === 'ANALYZED' &&
+    !!label && VERDICT_LABELS.includes(label) &&
+    !!storedStatus && VERDICT_LABELS.includes(storedStatus) &&
+    label !== storedStatus
+  );
+}
+
+/**
+ * Última linha da trilha de etapa do WJA (`changed_by` de quem mexeu por último). `exists:false` = sem WJA/sem trilha.
+ * Só lê; o `changed_by` é o uid/ator, nunca dado pessoal.
+ */
+export async function lastTrailActor(
+  client: Queryable, workerId: string, jobPostingId: string,
+): Promise<{ exists: boolean; changedBy: string | null }> {
+  const r = await client.query(
+    `SELECT h.changed_by
+       FROM worker_job_application_stage_history h
+       JOIN worker_job_applications a ON a.id = h.application_id
+      WHERE a.worker_id = $1 AND a.job_posting_id = $2 AND h.field_name = 'application_funnel_stage'
+      ORDER BY h.created_at DESC, h.id DESC
+      LIMIT 1`,
+    [workerId, jobPostingId],
+  );
+  const row = r.rows[0];
+  return row ? { exists: true, changedBy: (row.changed_by as string | null) ?? null } : { exists: false, changedBy: null };
+}
+
+/**
+ * O que a última movimentação da candidatura permite fazer com este evento (decisão 6 e "não reverter manual"):
+ *  - 'HUMAN_CONFLICT': evento MANUAL do Talentum, mas a última linha é de uid humano NOSSO → só o espelho muda e o
+ *    chamador avisa `CONFLITO_HUMANO` (o movimento nosso vence; a coordenação resolve pelo card);
+ *  - 'AFTER_MANUAL': evento AUTOMÁTICO e a última linha é `talentum:manual` → só o espelho muda: WJA e encuadre ficam
+ *    (uma decisão manual nunca é desfeita por evento automático);
+ *  - null: segue o fluxo normal.
+ */
+export type FunnelGuard = 'HUMAN_CONFLICT' | 'AFTER_MANUAL' | null;
+
+export async function evaluateFunnelGuard(
+  client: Queryable, workerId: string, jobPostingId: string, manual: boolean,
+): Promise<FunnelGuard> {
+  const last = await lastTrailActor(client, workerId, jobPostingId);
+  if (!last.exists) return null;
+  if (manual) return isOurHumanActor(last.changedBy) ? 'HUMAN_CONFLICT' : null;
+  return last.changedBy === TALENTUM_MANUAL_ACTOR_ID ? 'AFTER_MANUAL' : null;
+}
 
 /**
  * Caminho inverso de `applyNotQualifiedTransition`: o Talentum é a fonte da verdade do card, então um veredito

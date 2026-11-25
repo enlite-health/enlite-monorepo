@@ -211,6 +211,11 @@ describe('aceitos: o schema deixa passar e o caso de uso chama o processador', (
     processed(r);
     expect(r.processor.execute.mock.calls[0][0].data.response.state).toEqual([]);
   });
+  it('response.source (marcador de mudança manual, T-095-33) é aceito e chega ao caso de uso', async () => {
+    const r = await run(responsePayload({ subtype: 'ANALYZED', response: { statusLabel: 'QUALIFIED', source: 'MANUAL' } }));
+    processed(r);
+    expect(r.processor.execute.mock.calls[0][0].data.response.source).toBe('MANUAL');
+  });
   it('[36] answer vazia em registerQuestion → processa', async () => {
     const r = await run(responsePayload({ profile: { registerQuestions: [{ questionId: 'q1', question: 'Test?', answer: '', responseType: 'TEXT' }] } }));
     processed(r);

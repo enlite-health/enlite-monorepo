@@ -43,6 +43,8 @@ const TalentumResponseDataSchema = z.object({
   state:       z.array(TalentumQuestionItemSchema).default([]),
   score:       z.number().optional(),                                          // só presente em ANALYZED
   statusLabel: z.enum(['QUALIFIED', 'NOT_QUALIFIED', 'PENDING', 'IN_DOUBT']).optional(),   // só presente em ANALYZED
+  // Marcador de mudança manual no Talentum (spec 095 §3.4). Contrato a confirmar pelo Ioni: aceita o campo; só 'MANUAL' tem efeito.
+  source:      z.string().min(1).optional(),
 }).strict();
 
 // ─────────────────────────────────────────────────────────────────
