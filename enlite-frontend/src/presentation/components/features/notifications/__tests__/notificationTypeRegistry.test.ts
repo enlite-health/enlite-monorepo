@@ -364,7 +364,8 @@ describe('TALENTUM_WEBHOOK_ALARM (spec 095, T-095-43)', () => {
 
   it.each([
     [{ alarme: 'inbox_falha', quantidade: 3, desde: '2026-11-25T10:00:00.000Z' }, 'es', 'Webhook de Talentum: 3 eventos con error'],
-    [{ alarme: 'silencio', quantidade: 1, desde: '2026-11-25T10:00:00.000Z' }, 'pt-BR', 'Webhook do Talentum: 1 sem eventos em 6 h'],
+    [{ alarme: 'silencio', quantidade: 1, desde: '2026-11-25T10:00:00.000Z' }, 'pt-BR', 'Webhook do Talentum: sem eventos em 6 h'],
+    [{ alarme: 'silencio', quantidade: 1, desde: '2026-11-25T10:00:00.000Z' }, 'es', 'Webhook de Talentum: sin eventos en 6 h'],
     [{ alarme: 'CONFLITO_HUMANO', quantidade: 2, desde: '2026-11-25T10:00:00.000Z' }, 'pt-BR', 'Webhook do Talentum: 2 mudança manual no Talentum em conflito com um movimento da equipe'],
   ] as const)('payload %j em %s -> "%s"', async (payload, lng, esperado) => {
     expect(h().buildText(aviso(payload), await realT(lng))).toBe(esperado);

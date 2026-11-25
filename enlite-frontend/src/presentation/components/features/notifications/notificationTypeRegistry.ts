@@ -203,6 +203,11 @@ function talentumWebhookParts(n: AdminNotification, t: Translate): { quantidade:
   };
 }
 
+/** `silencio` é ausência de evento: não tem quantidade, o texto não a mostra. */
+function isTalentumSilencio(n: AdminNotification): boolean {
+  return (n.payload as Partial<TalentumWebhookAlarmPayload> | null)?.alarme === 'silencio';
+}
+
 const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   CONVERSATION_MENTIONED: {
     buildText: (n, t) => t('admin.notifications.mentioned', { actor: actorOrUid(n), patient: patientOrFallback(n, t) }),
@@ -261,7 +266,7 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   PEDIDO_IA_GRAVE: pedidoIaHandler('pedidoIaGrave'),
   PEDIDO_IA_APLICAR: pedidoIaAplicarHandler,
   TALENTUM_WEBHOOK_ALARM: {
-    buildText: (n, t) => t('admin.notifications.talentumWebhookText', talentumWebhookParts(n, t)),
+    buildText: (n, t) => (isTalentumSilencio(n) ? t('admin.notifications.talentumWebhookTextSilencio') : t('admin.notifications.talentumWebhookText', talentumWebhookParts(n, t))),
     getDeepLink: () => null, // sem paciente e sem tela própria do alarme
     actorLabel: (_n, t) => t('admin.notifications.talentumWebhookActor'),
     contextLine: (_n, t) => t('admin.notifications.talentumWebhookContext'),

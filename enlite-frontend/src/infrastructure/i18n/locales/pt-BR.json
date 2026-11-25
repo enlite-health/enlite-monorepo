@@ -1941,7 +1941,6 @@
         "OVERQUALIFIED": "Sobrequalificado",
         "DEPENDENCY_MISMATCH": "Nível de dependência",
         "TALENTUM_NOT_QUALIFIED": "Talentum: Não qualificado",
-        "TALENTUM_EXPIRED": "Talentum: Expirado",
         "OTHER": "Outro motivo"
       },
       "moveReasonOptions": {
@@ -6771,6 +6770,7 @@
       "pedidoIaActor": "Sol",
       "pedidoIaContext": "Pedidos do Sol",
       "talentumWebhookText": "Webhook do Talentum: {{quantidade}} {{alarme}}",
+      "talentumWebhookTextSilencio": "Webhook do Talentum: sem eventos em 6 h",
       "talentumWebhookActor": "Enlite",
       "talentumWebhookContext": "Webhook do Talentum",
       "talentumWebhookAlarm": {

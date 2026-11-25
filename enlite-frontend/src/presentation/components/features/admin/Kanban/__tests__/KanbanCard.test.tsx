@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { KanbanCard } from '../KanbanCard';
+import esJson from '@infrastructure/i18n/locales/es.json';
+import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 
 // ── i18n mock — always returns key so we can assert exact i18n paths ─────────
 vi.mock('react-i18next', () => ({
@@ -182,6 +184,13 @@ describe('KanbanCard — rejection reason badges', () => {
     render(<KanbanCard {...defaultProps} rejectionReasonCategory="TALENTUM_NOT_QUALIFIED" />);
     const badge = screen.getByTestId('rejection-badge');
     expect(badge).toHaveTextContent('admin.kanban.rejectionLabels.TALENTUM_NOT_QUALIFIED');
+  });
+
+  it('TALENTUM_EXPIRED (motivo gravado pelo sistema) resolve a etiqueta "Talentum expirado" nos dois idiomas', () => {
+    render(<KanbanCard {...defaultProps} rejectionReasonCategory="TALENTUM_EXPIRED" />);
+    expect(screen.getByTestId('rejection-badge')).toHaveTextContent('admin.kanban.rejectionLabels.TALENTUM_EXPIRED');
+    expect(esJson.admin.kanban.rejectionLabels.TALENTUM_EXPIRED).toBe('Talentum expirado');
+    expect(ptBRJson.admin.kanban.rejectionLabels.TALENTUM_EXPIRED).toBe('Talentum expirado');
   });
 
   it('uses i18n key pattern for any rejection category', () => {
