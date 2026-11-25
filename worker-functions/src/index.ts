@@ -173,6 +173,7 @@ import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRout
 import { createClaimController } from './bootstrap/createClaimController';
 import { createPhoneVerificationController } from './bootstrap/createPhoneVerificationController';
 import { createClaimRoutes, createWorkerInitOtpRateLimit } from '@modules/auth/interfaces/routes/claimRoutes';
+import { createPhoneVerificationRoutes } from '@modules/auth/interfaces/routes/phoneVerificationRoutes';
 import { AccountLinkController } from '@modules/account-link/AccountLinkController';
 import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes';
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
@@ -499,13 +500,8 @@ app.put('/api/workers/step', routeClass('client-policy'), authMiddleware.require
 app.get('/api/workers/me', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
   workerController.getProgress(req, res);
 });
-// Celular verificado (emenda 077 §2.4): o servidor decide a finalidade; `confirm` é a única rota que troca um telefone já gravado.
-app.post('/api/workers/me/phone-verification/start', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
-  phoneVerificationController.start(req, res);
-});
-app.post('/api/workers/me/phone-verification/confirm', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
-  phoneVerificationController.confirm(req, res);
-});
+// Celular verificado (emenda 077 §2.4): start/confirm com limite de OTP por IP e por conta (plano B do canal não limita no banco).
+app.use('/api', createPhoneVerificationRoutes(phoneVerificationController, authMiddleware));
 app.get('/api/workers/me/jobs', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'read'), (req: Request, res: Response) => {
   workerJobsByRadiusController.listMine(req, res);
 });
