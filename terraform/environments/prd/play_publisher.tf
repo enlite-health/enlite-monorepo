@@ -41,15 +41,19 @@ import {
   id = "projects/enlite-prd/serviceAccounts/play-publisher@enlite-prd.iam.gserviceaccount.com roles/iam.serviceAccountTokenCreator user:gabriel.g.stein@gmail.com"
 }
 
-# App Firebase Android do pacote publicado no Play, com as impressões do certificado de upload. O recurso só existe no
-# google-beta (o google 5.45.2 não tem `google_firebase_android_app`, medido no schema em 25/11).
+# App Firebase Android do pacote publicado no Play, com as impressões do certificado de upload e a SHA-256 da chave de
+# APP SIGNING gerada pela Play (a que assina o APK instalado; sem ela Play Integrity/App Check recusam o app). O recurso
+# só existe no google-beta (o google 5.45.2 não tem `google_firebase_android_app`, medido no schema em 25/11).
 resource "google_firebase_android_app" "enlite_mobile" {
-  provider      = google-beta
-  project       = var.project_id
-  display_name  = "Enlite (Play)"
-  package_name  = "health.enlite.mobile"
-  sha1_hashes   = ["3fc99837d56abbd9a06df7c572528abe00d467e0"]
-  sha256_hashes = ["70792a7d1f2978fcfc9e3c66bdae59a609b538a1833257837e0607e8cc3ab8c9"]
+  provider     = google-beta
+  project      = var.project_id
+  display_name = "Enlite (Play)"
+  package_name = "health.enlite.mobile"
+  sha1_hashes  = ["3fc99837d56abbd9a06df7c572528abe00d467e0"]
+  sha256_hashes = [
+    "70792a7d1f2978fcfc9e3c66bdae59a609b538a1833257837e0607e8cc3ab8c9", # upload
+    "44c42688de774298c435ce2beb13e22bbb2a3155ac5990cd6006e0f6c212f094", # app signing (Play)
+  ]
 
   # Trava (Gabriel, 25/11): o pacote é permanente na Play e o app do Firebase não pode sumir
   # por um destroy. ABANDON só tira do state; prevent_destroy recusa o plan que tente destruir.
@@ -64,6 +68,21 @@ import {
   provider = google-beta
   to       = google_firebase_android_app.enlite_mobile
   id       = "projects/enlite-prd/androidApps/1:121472682203:android:a46079387629f63e3124fe"
+}
+
+# App Check do health.enlite.mobile com o provedor Play Integrity, mesmo TTL do health.enlite.app (3600s, lido em 25/11).
+# Registrado à mão pela API do App Check (PATCH playIntegrityConfig). Enforcement por serviço NÃO é gerido aqui.
+resource "google_firebase_app_check_play_integrity_config" "enlite_mobile" {
+  provider  = google-beta
+  project   = var.project_id
+  app_id    = google_firebase_android_app.enlite_mobile.app_id
+  token_ttl = "3600s"
+}
+
+import {
+  provider = google-beta
+  to       = google_firebase_app_check_play_integrity_config.enlite_mobile
+  id       = "projects/enlite-prd/apps/1:121472682203:android:a46079387629f63e3124fe/playIntegrityConfig"
 }
 
 # Chave de upload do Play (keystore + senhas + alias). Como os demais secrets: o TF guarda só a ESTRUTURA; a versão (o
