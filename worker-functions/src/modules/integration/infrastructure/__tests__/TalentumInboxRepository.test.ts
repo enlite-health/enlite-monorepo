@@ -87,15 +87,34 @@ describe('TalentumInboxRepository', () => {
     const at = new Date('2026-11-25T10:00:00Z');
     const client = {
       query: jest.fn().mockResolvedValue({
-        rows: [{ id: 'i1', received_at: at, action: 'PRESCREENING_RESPONSE', subtype: 'INITIATED', environment: 'test', state: 'RECEIVED', attempts: 0, payload_enc: 'ENC(x)' }],
+        rows: [{ id: 'i1', received_at: at, action: 'PRESCREENING_RESPONSE', subtype: 'INITIATED', talentum_prescreening_id: 'tp-1', talentum_profile_id: 'prof-1', environment: 'test', state: 'RECEIVED', attempts: 0, payload_enc: 'ENC(x)' }],
       }),
     };
     const rows = await new TalentumInboxRepository(makeKms() as never).pendingForKey(client, 'tp-1', 'prof-1');
     const [sql, values] = client.query.mock.calls[0];
     expect(sql).toContain(`state = 'RECEIVED'`);
     expect(sql).toContain('ORDER BY received_at');
-    expect(values).toEqual(['tp-1', 'prof-1']);
-    expect(rows[0]).toMatchObject({ id: 'i1', receivedAt: at, payloadEnc: 'ENC(x)', state: 'RECEIVED' });
+    expect(values).toEqual(['tp-1', 'prof-1', []]);
+    expect(rows[0]).toMatchObject({ id: 'i1', receivedAt: at, payloadEnc: 'ENC(x)', state: 'RECEIVED', talentumPrescreeningId: 'tp-1', talentumProfileId: 'prof-1' });
+  });
+
+  it('pendingForKey com alsoIds: a linha pedida entra fora de RECEIVED, mas nunca PROCESSED', async () => {
+    const client = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+    await new TalentumInboxRepository(makeKms() as never).pendingForKey(client, 'tp-1', 'prof-1', ['i9']);
+    const [sql, values] = client.query.mock.calls[0];
+    expect(sql).toContain(`id = ANY($3::uuid[]) AND state <> 'PROCESSED'`);
+    expect(values).toEqual(['tp-1', 'prof-1', ['i9']]);
+  });
+
+  it('findById: devolve a linha mapeada (com a chave) ou null', async () => {
+    const at = new Date('2026-11-25T10:00:00Z');
+    const client = { query: jest.fn() };
+    client.query.mockResolvedValueOnce({ rows: [{ id: 'i1', received_at: at, action: 'PRESCREENING', subtype: 'CREATED', talentum_prescreening_id: 'tp-1', talentum_profile_id: null, environment: 'production', state: 'FAILED', attempts: 2, payload_enc: null }] });
+    client.query.mockResolvedValueOnce({ rows: [] });
+    const repo = new TalentumInboxRepository(makeKms() as never);
+    expect(await repo.findById(client, 'i1')).toMatchObject({ id: 'i1', state: 'FAILED', attempts: 2, talentumPrescreeningId: 'tp-1', talentumProfileId: null });
+    expect(client.query.mock.calls[0][1]).toEqual(['i1']);
+    expect(await repo.findById(client, 'nao-existe')).toBeNull();
   });
 
   it('decryptPayload devolve o objeto original', async () => {

@@ -22,10 +22,30 @@ interface InboxDbRow {
   received_at: Date;
   action: string;
   subtype: string | null;
+  talentum_prescreening_id: string | null;
+  talentum_profile_id: string | null;
   environment: 'production' | 'test';
   state: TalentumInboxState;
   attempts: number;
   payload_enc: string | null;
+}
+
+const ROW_COLUMNS = `id, received_at, action, subtype, talentum_prescreening_id, talentum_profile_id,
+       environment, state, attempts, payload_enc`;
+
+function mapRow(row: InboxDbRow): TalentumInboxRow {
+  return {
+    id: row.id,
+    receivedAt: row.received_at,
+    action: row.action,
+    subtype: row.subtype,
+    talentumPrescreeningId: row.talentum_prescreening_id,
+    talentumProfileId: row.talentum_profile_id,
+    environment: row.environment,
+    state: row.state,
+    attempts: row.attempts,
+    payloadEnc: row.payload_enc,
+  };
 }
 
 export class TalentumInboxRepository implements ITalentumInboxRepository {
@@ -58,26 +78,24 @@ export class TalentumInboxRepository implements ITalentumInboxRepository {
     await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`talentum-inbox|${prescreeningId ?? ''}|${profileId ?? ''}`]);
   }
 
-  async pendingForKey(client: InboxQueryable, prescreeningId: string | null, profileId: string | null): Promise<TalentumInboxRow[]> {
+  async findById(client: InboxQueryable, id: string): Promise<TalentumInboxRow | null> {
+    const r = await client.query(`SELECT ${ROW_COLUMNS} FROM talentum_webhook_inbox WHERE id = $1`, [id]);
+    return r.rows[0] ? mapRow(r.rows[0] as InboxDbRow) : null;
+  }
+
+  async pendingForKey(
+    client: InboxQueryable, prescreeningId: string | null, profileId: string | null, alsoIds: string[] = [],
+  ): Promise<TalentumInboxRow[]> {
     const r = await client.query(
-      `SELECT id, received_at, action, subtype, environment, state, attempts, payload_enc
+      `SELECT ${ROW_COLUMNS}
          FROM talentum_webhook_inbox
-        WHERE state = 'RECEIVED'
+        WHERE (state = 'RECEIVED' OR (id = ANY($3::uuid[]) AND state <> 'PROCESSED'))
           AND talentum_prescreening_id IS NOT DISTINCT FROM $1
           AND talentum_profile_id IS NOT DISTINCT FROM $2
         ORDER BY received_at, id`,
-      [prescreeningId, profileId],
+      [prescreeningId, profileId, alsoIds],
     );
-    return (r.rows as InboxDbRow[]).map((row) => ({
-      id: row.id,
-      receivedAt: row.received_at,
-      action: row.action,
-      subtype: row.subtype,
-      environment: row.environment,
-      state: row.state,
-      attempts: row.attempts,
-      payloadEnc: row.payload_enc,
-    }));
+    return (r.rows as InboxDbRow[]).map(mapRow);
   }
 
   async decryptPayload(row: Pick<TalentumInboxRow, 'payloadEnc'>): Promise<unknown> {

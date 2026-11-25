@@ -39,6 +39,9 @@ export interface TalentumInboxRow {
   receivedAt: Date;
   action: string;
   subtype: string | null;
+  /** Chave de ordenação/lock (colunas `talentum_prescreening_id`/`talentum_profile_id`); nulas em ação desconhecida. */
+  talentumPrescreeningId: string | null;
+  talentumProfileId: string | null;
   environment: 'production' | 'test';
   state: TalentumInboxState;
   attempts: number;
@@ -50,8 +53,16 @@ export interface ITalentumInboxRepository {
   insertReceived(params: InsertReceivedParams): Promise<InsertReceivedResult>;
   /** `pg_advisory_xact_lock` da chave (prescreening, profile): vale até o fim da transação de `client`. */
   lockKey(client: InboxQueryable, prescreeningId: string | null, profileId: string | null): Promise<void>;
-  /** Linhas `RECEIVED` da chave, da mais antiga para a mais nova (`received_at`). */
-  pendingForKey(client: InboxQueryable, prescreeningId: string | null, profileId: string | null): Promise<TalentumInboxRow[]>;
+  /** Uma linha pelo id (qualquer estado), ou `null` se não existe. */
+  findById(client: InboxQueryable, id: string): Promise<TalentumInboxRow | null>;
+  /**
+   * Linhas `RECEIVED` da chave, da mais antiga para a mais nova (`received_at`). `alsoIds`: linhas pedidas
+   * explicitamente que entram mesmo fora de `RECEIVED` (reentrega de `FAILED`, redrive de `UNSUPPORTED`/`REJECTED_SCHEMA`),
+   * exceto `PROCESSED`.
+   */
+  pendingForKey(
+    client: InboxQueryable, prescreeningId: string | null, profileId: string | null, alsoIds?: string[],
+  ): Promise<TalentumInboxRow[]>;
   decryptPayload(row: Pick<TalentumInboxRow, 'payloadEnc'>): Promise<unknown>;
   markProcessed(client: InboxQueryable, id: string): Promise<void>;
   /** `errorCode` sem PII (code/constraint do pg). */
