@@ -23,7 +23,7 @@ import {
 } from './helpers/permissionFamilyHarness';
 import { FakeTactiqMcp, FakeTactiqOAuth } from '../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import { capturingLogger } from '../../src/modules/matching/infrastructure/doubles/admissionTestKit';
-import { TactiqTransientError, TactiqUnauthorizedError } from '../../src/modules/matching/application/ports/TactiqPorts';
+import { TactiqTransientError, TactiqUnauthorizedError, type TactiqTokenSet } from '../../src/modules/matching/application/ports/TactiqPorts';
 import type { TactiqLinkService } from '../../src/modules/matching/application/TactiqLinkService';
 import { pkceChallenge } from '../../src/modules/matching/infrastructure/tactiq/pkce';
 import { insertInterviewHost, deleteInterviewHosts } from './helpers/interviewHostFixture';
@@ -40,6 +40,20 @@ const b64 = (s: string): string => Buffer.from(s, 'utf8').toString('base64');
 const unb64 = (s: string): string => Buffer.from(s, 'base64').toString('utf8');
 const HOUR = 3_600_000;
 
+/** OAuth com rotação programada POR TOKEN: só a renovação daquele refresh devolve o novo, então a ordem do diário não importa. */
+class RotatingOAuth extends FakeTactiqOAuth {
+  private readonly rotations = new Map<string, string>();
+  rotateFor(token: string, novo: string): void {
+    this.rotations.set(token, novo);
+  }
+  async refresh(token: string): Promise<TactiqTokenSet> {
+    const base = await super.refresh(token);
+    const rotated = this.rotations.get(token);
+    if (rotated) this.rotations.delete(token); // uso único por token, como o dublê global
+    return { ...base, ...(rotated ? { refreshToken: rotated } : {}) };
+  }
+}
+
 const U = {
   linker: `tq049-linker-${RUN}`, // own_tactiq_link: read + create
   reader: `tq049-reader-${RUN}`, // own_tactiq_link: read
@@ -51,7 +65,7 @@ const emailOf = (uid: string): string => `${uid}@e2e.local`;
 describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049, F4)', () => {
   let admin: Pool;
   let app: AppDeFamilia;
-  let oauth: FakeTactiqOAuth;
+  let oauth: RotatingOAuth;
   let mcp: FakeTactiqMcp;
   let service: TactiqLinkService;
   let logs: ReturnType<typeof capturingLogger>;
@@ -139,7 +153,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     await grupoComCelulas(admin, { nome: GRUPOS.linker, uid: U.linker, celulas: [['own_tactiq_link', 'read'], ['own_tactiq_link', 'create']] });
     await grupoComCelulas(admin, { nome: GRUPOS.reader, uid: U.reader, celulas: [['own_tactiq_link', 'read']] });
 
-    oauth = new FakeTactiqOAuth();
+    oauth = new RotatingOAuth();
     mcp = new FakeTactiqMcp();
     logs = capturingLogger();
 
@@ -384,8 +398,8 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     const hostsDoBloco: string[] = [];
     let seqBloco = 0;
     // NÃO usa `newHost`: ele avança `seq`, e os e-mails `opN` dos casos seguintes (A4-7 e vizinhos) mudam de ordem alfabética.
-    // O `listLinkedWithToken` ordena por e-mail e o `rotateTo` do dublê é de uso único: o A4-7 só passa se o host dele vier
-    // ANTES dos vínculos `linked` que os casos A4-6 deixam. Os hosts deste bloco têm prefixo próprio e não mexem em `seq`.
+    // A ordem dos e-mails deixou de importar: o A4-7 programa a rotação pelo token do PRÓPRIO host (`oauth.rotateFor`),
+    // então outro `linked` percorrido antes pelo `listLinkedWithToken` não a consome. Os hosts deste bloco têm prefixo próprio.
     const novoHost = async (opts: { linkedToken?: string }) => {
       seqBloco += 1;
       const email = `acc${seqBloco}.${RUN}@example.test`;
@@ -401,8 +415,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       }
       return { id: host.id, email };
     };
-    // Vínculo `linked` deixado por um caso daria ao `runDailyCheck` dos testes seguintes um host a mais, e o dublê
-    // `oauth.rotateTo` (uso único) seria gasto nele: os casos deste bloco não deixam linha viva atrás de si.
+    // Os casos deste bloco não deixam vínculo vivo atrás de si (o `runDailyCheck` seguinte não vê host a mais).
     afterEach(async () => {
       mcp.verdict = { kind: 'ready' }; mcp.pingError = null; oauth.exchangeScope = undefined; setEnv('TACTIQ_LINK_RETURN_URL', undefined);
       await admin.query(`DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)`, [hostsDoBloco.splice(0)]);
@@ -569,7 +582,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       const old = `rt-old-${RUN}`;
       const novo = `rt-novo-${RUN}`;
       const h = await newHost({ link: { status: 'linked', token: old } });
-      oauth.rotateTo(novo);
+      oauth.rotateFor(old, novo);
       const pings = mcp.pingTokens.length;
       await service.runDailyCheck();
       const row = await linkRow(h.email);
