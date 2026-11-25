@@ -9,7 +9,7 @@ import type { IWorkerRepository } from '../ports/IWorkerRepository';
  * Reaproveita a lista de sintéticos (SSOT: WorkerPhoneMergeTypes). `talentum_` é sintético mas NÃO
  * é reclamável (de propósito: ver syntheticPrefixesParity.test.ts), por isso sai daqui.
  */
-const IMPORT_PREFIXES = SYNTHETIC_AUTH_UID_PREFIXES.filter((p) => p !== 'talentum_');
+export const IMPORT_PREFIXES: readonly string[] = SYNTHETIC_AUTH_UID_PREFIXES.filter((p) => p !== 'talentum_');
 
 export function isImportedWorker(authUid: string | null | undefined): boolean {
   if (!authUid) return false;

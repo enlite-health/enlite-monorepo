@@ -2,13 +2,15 @@
  * Pure functions for auth-related worker queries/updates.
  * Delegated from WorkerRepository to keep that file under 400 lines.
  */
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { Worker } from '../domain/Worker';
 import { Result } from '@shared/utils/Result';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId } from '@shared/database/resolveCanonicalWorkerId';
 import { isValidIsoBirthDate } from '@shared/utils/isValidIsoBirthDate';
+import { withActorContext } from '@shared/database/actorContext';
+import { IMPORT_PREFIXES } from '../application/isClaimableWorker';
 
 // ─── findByAuthUid ────────────────────────────────────────────────────────────
 
@@ -237,11 +239,23 @@ export async function setPhoneIfNull(pool: Pool, workerId: string, phone: string
 
 // ─── updateImportedWorkerData ─────────────────────────────────────────────────
 
+/** Código estável devolvido quando a prova do celular não entrou junto da ligação da conta (nada foi gravado). */
+export const CLAIM_ADOPT_PROOF_FAILED = 'CLAIM_PROOF_NOT_WRITTEN';
+
+/** O gancho `afterUpdate` falhou: a transação inteira (inclusive o `auth_uid`) desfaz. Carrega só o código do Postgres, nunca a mensagem. */
+export class AfterUpdateFailed extends Error {
+  constructor(public readonly pgCode?: string) {
+    super('AFTER_UPDATE_FAILED');
+  }
+}
+
 export async function updateImportedWorkerData(
   pool: Pool,
   encryptionService: KMSEncryptionService,
   workerId: string,
   data: { authUid: string; email: string; consentAt?: Date },
+  /** Roda na MESMA transação do UPDATE, depois dele: o que falhar aqui desfaz a ligação da conta (ex.: gravar a prova do celular, D797). */
+  afterUpdate?: (tx: PoolClient) => Promise<void>,
 ): Promise<Result<Worker>> {
   try {
     const setClauses: string[] = ['auth_uid = $1', 'email = $2', 'updated_at = NOW()'];
@@ -257,11 +271,17 @@ export async function updateImportedWorkerData(
 
     params.push(workerId);
     const whereIdx = params.length;
+    params.push(IMPORT_PREFIXES);
+    const prefixesIdx = params.length;
 
+    // A ligação é condicional NO PRÓPRIO UPDATE (D797 adendo 2): só pega a ficha se o `auth_uid` ainda for o sintético de
+    // importação (a mesma lista do isClaimableWorker). Dois logins em corrida: o segundo re-avalia o WHERE sobre a linha já
+    // gravada pelo primeiro e afeta 0 linhas — nada de ler-e-depois-escrever.
     const query = `
       UPDATE workers
       SET ${setClauses.join(', ')}
       WHERE id = $${whereIdx}
+        AND EXISTS (SELECT 1 FROM unnest($${prefixesIdx}::text[]) AS p(prefix) WHERE starts_with(workers.auth_uid, p.prefix))
       RETURNING id, auth_uid as "authUid", email, phone,
                 whatsapp_phone_encrypted as "whatsappPhoneEnc",
                 lgpd_consent_at as "lgpdConsentAt",
@@ -269,10 +289,25 @@ export async function updateImportedWorkerData(
                 created_at as "createdAt", updated_at as "updatedAt"
     `;
 
-    const result = await pool.query(query, params);
+    const result = afterUpdate
+      ? await withActorContext(pool, async (tx) => {
+          const updated = await tx.query(query, params);
+          if (updated.rows.length === 1) {
+            try {
+              await afterUpdate(tx);
+            } catch (err: unknown) {
+              // O texto do Postgres ecoa a linha (PII): só o código do erro sobe (D797).
+              throw new AfterUpdateFailed((err as { code?: string }).code);
+            }
+          }
+          return updated;
+        })
+      : await pool.query(query, params);
 
+    // 0 linhas: a ficha não é (mais) importada — outro login a pegou entre a leitura do caso de uso e este UPDATE. Nada foi
+    // gravado: nem aceite (está no mesmo SET), nem prova (o gancho só roda com 1 linha).
     if (result.rows.length === 0) {
-      return Result.fail<Worker>('Worker not found');
+      return Result.fail<Worker>('NOT_IMPORTABLE');
     }
 
     const row = result.rows[0];
@@ -281,6 +316,7 @@ export async function updateImportedWorkerData(
 
     return Result.ok<Worker>(row);
   } catch (error: any) {
+    if (error instanceof AfterUpdateFailed) return Result.fail<Worker>(CLAIM_ADOPT_PROOF_FAILED);
     return Result.fail<Worker>(`Failed to update imported worker: ${error.message}`);
   }
 }

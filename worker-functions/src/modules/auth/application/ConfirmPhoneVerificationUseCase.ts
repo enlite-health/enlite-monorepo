@@ -47,6 +47,9 @@ const PHONE_UNIQUE_INDEXES = new Set(['idx_workers_phone_unique', 'uq_workers_ph
  *                          É a ÚNICA rota que troca um telefone já gravado: a posse do NOVO foi provada (o `init` segue PHONE_LOCKED).
  *   ficha importada tem  → `claim`: o `ConfirmClaimUseCase` une (casca absorve a importada) e a prova entra NA MESMA transação.
  *   conta real tem       → PHONE_IN_USE (nada gravado, desafio não é consumido).
+ * Conta SEM ficha própria (D797/T-13: o app não cria ficha): só o ramo `claim` vale. O claim LIGA a conta à ficha importada (grava o
+ * `auth_uid` do token nela, com as guardas de sempre) e a prova do celular e o aceite entram NA FICHA RECLAMADA. Sem ficha e sem
+ * ficha para reclamar → WORKER_NOT_FOUND; ficha que já tem login → NOT_IMPORTABLE.
  * A verificação ANTIGA morre sozinha (é derivada): a troca não limpa as colunas.
  */
 export class ConfirmPhoneVerificationUseCase {
@@ -68,12 +71,11 @@ export class ConfirmPhoneVerificationUseCase {
     const ownResult = await this.workers.findByAuthUid(input.authUid);
     if (ownResult.isFailure) return { ok: false, code: 'INTERNAL' };
     const own = ownResult.getValue();
-    if (!own) return { ok: false, code: 'WORKER_NOT_FOUND' };
-    const log = logger.child({ source: 'ConfirmPhoneVerificationUseCase:execute', workerIdHash: resourceIdHash(own.id) });
+    const log = logger.child({ source: 'ConfirmPhoneVerificationUseCase:execute', workerIdHash: own ? resourceIdHash(own.id) : 'sem_ficha' });
 
     let phone = input.phone;
     if (phone === undefined) {
-      const resolved = await this.resolveClaimPhone(input, own.id);
+      const resolved = await this.resolveClaimPhone(input, own?.id ?? null);
       if (!resolved.ok) return resolved;
       phone = resolved.phone;
       if (!validPhone(phone)) return { ok: false, code: 'INVALID_PHONE' };
@@ -83,7 +85,17 @@ export class ConfirmPhoneVerificationUseCase {
     const holderResult = await this.workers.findByPhoneCandidates(generatePhoneCandidates(phone));
     if (holderResult.isFailure) return { ok: false, code: 'INTERNAL' };
     const holder = holderResult.getValue();
-    const other = holder !== null && holder.id !== own.id ? holder : null;
+    const other = holder !== null && holder.id !== own?.id ? holder : null;
+
+    if (!own) {
+      // Sem ficha própria só o claim existe: precisa de uma ficha importada reclamável com este número.
+      if (!other) return { ok: false, code: 'WORKER_NOT_FOUND' };
+      const claimable = await isClaimableWorker(this.workers, other);
+      if (claimable.isFailure) return { ok: false, code: 'INTERNAL' };
+      // Mesmo código do claim (ConfirmClaimUseCase) para ficha que já tem login: recusa ANTES do OTP, o desafio não é consumido.
+      if (!claimable.getValue()) return { ok: false, code: 'NOT_IMPORTABLE' };
+      return this.confirmClaim(input, null, other.id, consentAt, log);
+    }
 
     if (other) {
       const claimable = await isClaimableWorker(this.workers, other);
@@ -141,7 +153,7 @@ export class ConfirmPhoneVerificationUseCase {
   }
 
   /** Sem `phone` do cliente (D797): número do desafio de claim; plano B, o telefone gravado na ficha do e-mail do token (outra que a do token). */
-  private async resolveClaimPhone(input: ConfirmPhoneVerificationInput, ownId: string): Promise<{ ok: true; phone: string } | { ok: false; code: string }> {
+  private async resolveClaimPhone(input: ConfirmPhoneVerificationInput, ownId: string | null): Promise<{ ok: true; phone: string } | { ok: false; code: string }> {
     const fromChallenge = await this.verification.claimChallengePhone(input.challengeId);
     if (fromChallenge) return { ok: true, phone: fromChallenge };
     // Desafio próprio que não é de claim (ex.: phone_verify): o número tem de vir do cliente.
@@ -155,7 +167,7 @@ export class ConfirmPhoneVerificationUseCase {
 
   private async confirmClaim(
     input: ConfirmPhoneVerificationInput,
-    ownId: string,
+    ownId: string | null,
     candidateId: string,
     consentAt: Date | undefined,
     log: Log,
@@ -163,8 +175,12 @@ export class ConfirmPhoneVerificationUseCase {
     const proof = await this.verification.methodFor(input.challengeId);
     const result = await this.claim.execute(
       { verificationSid: input.challengeId, otp: input.code, authUid: input.authUid, email: input.email, candidateWorkerId: candidateId, consentAt },
-      // A prova entra na sobrevivente (a conta do token) DENTRO da transação da união: falhou aqui, a união inteira desfaz.
-      { afterAbsorb: (tx) => this.verification.markPhoneVerified(tx, { workerId: ownId, ...proof }) },
+      {
+        // A prova entra na sobrevivente (a conta do token) DENTRO da transação da união: falhou aqui, a união inteira desfaz.
+        afterAbsorb: (tx) => this.verification.markPhoneVerified(tx, { workerId: ownId ?? candidateId, ...proof }),
+        // Sem ficha própria (D797): a ficha reclamada É a conta; a prova entra nela na transação do `auth_uid`.
+        afterAdopt: (tx) => this.verification.markPhoneVerified(tx, { workerId: candidateId, ...proof }),
+      },
     );
     if (result.isFailure) {
       const code = result.error!;
@@ -176,7 +192,7 @@ export class ConfirmPhoneVerificationUseCase {
       log.warn({ msg: 'phone_verification_confirm', code: code.startsWith('TWILIO_ERROR') ? 'OTP_CHECK_FAILED' : code });
       return { ok: false, code: code.startsWith('TWILIO_ERROR') ? 'OTP_CHECK_FAILED' : code };
     }
-    return this.verified(ownId, 'VERIFIED', log);
+    return this.verified(ownId ?? candidateId, 'VERIFIED', log);
   }
 
   private async verified(workerId: string, status: 'VERIFIED', log: Log): Promise<ConfirmPhoneVerificationOutcome> {

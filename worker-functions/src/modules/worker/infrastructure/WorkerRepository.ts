@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { IWorkerRepository } from '../ports/IWorkerRepository';
 import { Worker, WorkerStatus, CreateWorkerDTO, SavePersonalInfoDTO } from '../domain/Worker';
 import type { WorkerStatusDeclaration } from '../domain/WorkerStatusFlow';
@@ -403,8 +403,9 @@ export class WorkerRepository implements IWorkerRepository {
   async updateImportedWorkerData(
     workerId: string,
     data: { authUid: string; email: string; consentAt?: Date },
+    afterUpdate?: (tx: PoolClient) => Promise<void>,
   ): Promise<Result<Worker>> {
-    return _updateImportedWorkerData(this.pool, this.encryptionService, workerId, data);
+    return _updateImportedWorkerData(this.pool, this.encryptionService, workerId, data, afterUpdate);
   }
 
   /**

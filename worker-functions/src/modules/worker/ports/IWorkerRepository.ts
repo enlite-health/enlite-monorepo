@@ -1,5 +1,6 @@
 import { Worker, WorkerStatus, CreateWorkerDTO, UpdateWorkerStepDTO, SavePersonalInfoDTO } from '../domain/Worker';
 import type { WorkerStatusDeclaration } from '../domain/WorkerStatusFlow';
+import type { PoolClient } from 'pg';
 import { Result } from '@shared/utils/Result';
 
 export interface IWorkerRepository {
@@ -21,7 +22,12 @@ export interface IWorkerRepository {
    * NÃO captura erro do banco: o `23505` de `idx_workers_phone_unique` sobe para o caso de uso decidir.
    */
   setPhoneIfNull(workerId: string, phone: string): Promise<Worker | null>;
-  updateImportedWorkerData(workerId: string, data: { authUid: string; email: string; consentAt?: Date }): Promise<Result<Worker>>;
+  updateImportedWorkerData(
+    workerId: string,
+    data: { authUid: string; email: string; consentAt?: Date },
+    /** Roda na mesma transação do UPDATE (falhou = a ligação da conta desfaz). Com ele a escrita passa por `withActorContext`. */
+    afterUpdate?: (tx: PoolClient) => Promise<void>,
+  ): Promise<Result<Worker>>;
   updateStatus(workerId: string, status: WorkerStatus, declaration: WorkerStatusDeclaration): Promise<void>;
   /** Retorna o novo status se houve mudança, ou null se inalterado / DISABLED. */
   recalculateStatus(workerId: string, declaration: WorkerStatusDeclaration): Promise<WorkerStatus | null>;

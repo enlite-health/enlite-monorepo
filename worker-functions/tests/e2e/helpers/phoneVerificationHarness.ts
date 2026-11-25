@@ -21,6 +21,10 @@ export interface PhoneVerificationHarness {
     start(body: Record<string, unknown>): Promise<{ status: number; json: any }>;
     confirm(body: Record<string, unknown>): Promise<{ status: number; json: any }>;
   };
+  /** Chama a rota com um token que NÃO tem ficha (D797: o app não cria ficha); uid e e-mail vêm do chamador. */
+  asToken(uid: string, email: string): {
+    confirm(body: Record<string, unknown>): Promise<{ status: number; json: any }>;
+  };
   /** Abre um desafio direto no port (sem passar pela rota), para cenários em que o `start` recusaria. */
   openChallenge(workerId: string, purpose: 'phone_verify' | 'claim', phoneE164: string): Promise<{ challengeId: string; code: string }>;
   setTokenEmail(email: string | null): void;
@@ -81,9 +85,19 @@ export async function startPhoneVerificationHarness(
     return { status: res.status, json: await res.json().catch(() => null) };
   }
 
+  async function postToken(path: string, uid: string, email: string, body: Record<string, unknown>) {
+    const res = await fetch(url + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-test-uid': uid, 'x-test-email': email },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, json: await res.json().catch(() => null) };
+  }
+
   return {
     pool,
     sent,
+    asToken: (uid, email) => ({ confirm: (b) => postToken('/confirm', uid, email, b) }),
     lastCode: () => sent[sent.length - 1]?.code ?? '',
     as: (workerId) => ({ start: (b) => post('/start', workerId, b), confirm: (b) => post('/confirm', workerId, b) }),
     async openChallenge(workerId, purpose, phoneE164) {

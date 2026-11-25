@@ -60,7 +60,14 @@ export class ConfirmClaimUseCase {
    * `afterAbsorb` (só no ramo da casca): roda na transação da absorção, depois do consentimento. É por onde o
    * `confirm` do celular verificado grava a prova na ficha sobrevivente, na MESMA transação da união.
    */
-  async execute(input: ConfirmClaimInput, hooks: { afterAbsorb?: (tx: PoolClient) => Promise<void> } = {}): Promise<Result<Worker>> {
+  /**
+   * `afterAdopt` (só no ramo SEM ficha própria, D797/T-13): a conta do token passa a ser a ficha importada (`auth_uid` gravado nela);
+   * o gancho roda na transação desse UPDATE, para a prova do celular entrar NA FICHA RECLAMADA junto da ligação.
+   */
+  async execute(
+    input: ConfirmClaimInput,
+    hooks: { afterAbsorb?: (tx: PoolClient) => Promise<void>; afterAdopt?: (tx: PoolClient) => Promise<void> } = {},
+  ): Promise<Result<Worker>> {
     const startedAt = Date.now();
 
     const log = logger.child({
@@ -158,10 +165,10 @@ export class ConfirmClaimUseCase {
     }
 
     // 4. Transferência transacional
-    const updateResult = await this.workerRepository.updateImportedWorkerData(
-      input.candidateWorkerId,
-      { authUid: input.authUid, email: input.email, consentAt },
-    );
+    const adoptArgs = [input.candidateWorkerId, { authUid: input.authUid, email: input.email, consentAt }] as const;
+    const updateResult = hooks.afterAdopt
+      ? await this.workerRepository.updateImportedWorkerData(...adoptArgs, hooks.afterAdopt)
+      : await this.workerRepository.updateImportedWorkerData(...adoptArgs);
 
     if (updateResult.isFailure) {
       log.error({
