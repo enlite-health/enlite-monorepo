@@ -90,20 +90,27 @@ describe('ConfirmClaimUseCase', () => {
       expect(result.getValue().authUid).toBe(NEW_AUTH_UID);
     });
 
-    it('chama updateImportedWorkerData com authUid, email e consentAt', async () => {
+    it('SEM aceite explícito o OTP não presume consentimento: updateImportedWorkerData sem consentAt', async () => {
       const repo = makeRepo();
-      const twilio = makeTwilio();
-      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(makeTwilio() as any));
 
       await useCase.execute(makeInput());
 
+      const data = repo.updateImportedWorkerData.mock.calls[0][1];
+      expect(data).toMatchObject({ authUid: NEW_AUTH_UID, email: NEW_EMAIL });
+      expect(data.consentAt).toBeUndefined();
+    });
+
+    it('COM aceite explícito (consentAt no pedido) repassa a mesma hora a updateImportedWorkerData', async () => {
+      const repo = makeRepo();
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(makeTwilio() as any));
+      const at = new Date('2026-11-24T10:00:00Z');
+
+      await useCase.execute({ ...makeInput(), consentAt: at });
+
       expect(repo.updateImportedWorkerData).toHaveBeenCalledWith(
         CANDIDATE_ID,
-        expect.objectContaining({
-          authUid: NEW_AUTH_UID,
-          email: NEW_EMAIL,
-          consentAt: expect.any(Date),
-        }),
+        expect.objectContaining({ authUid: NEW_AUTH_UID, email: NEW_EMAIL, consentAt: at }),
       );
     });
 

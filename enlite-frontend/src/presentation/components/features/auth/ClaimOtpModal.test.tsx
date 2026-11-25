@@ -10,8 +10,11 @@ const mockClearError = vi.fn();
 let mockIsLoading = false;
 let mockErrorCode: string | null = null;
 
+const mockHookArgs: unknown[][] = [];
+
 vi.mock('@presentation/hooks/useClaimConfirm', () => ({
-  useClaimConfirm: () => ({
+  useClaimConfirm: (...args: unknown[]) => ({
+    ...(mockHookArgs.push(args), {}),
     isLoading: mockIsLoading,
     errorCode: mockErrorCode,
     confirm: mockConfirm,
@@ -79,6 +82,15 @@ describe('ClaimOtpModal', () => {
     vi.clearAllMocks();
     mockIsLoading = false;
     mockErrorCode = null;
+  });
+
+  it('repassa lgpdOptIn ao hook do confirm (caixa marcada no cadastro); sem a prop, vai undefined', () => {
+    mockHookArgs.length = 0;
+    render(<ClaimOtpModal {...defaultProps} lgpdOptIn />);
+    expect(mockHookArgs[mockHookArgs.length - 1]?.[4]).toBe(true);
+    mockHookArgs.length = 0;
+    render(<ClaimOtpModal {...defaultProps} />);
+    expect(mockHookArgs[mockHookArgs.length - 1]?.[4]).toBeUndefined();
   });
 
   it('nao renderiza quando open=false', () => {

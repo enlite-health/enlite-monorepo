@@ -17,6 +17,8 @@ export interface ClaimOtpModalProps {
   candidateWorkerId: string;
   authUid: string;
   email: string;
+  /** A caixa do aceite foi marcada no cadastro: vai junto ao confirm (o OTP não presume aceite). */
+  lgpdOptIn?: boolean;
   onConfirmed: (worker: WorkerProgressResponse) => void;
   onClose: () => void;
 }
@@ -47,6 +49,7 @@ export function ClaimOtpModal({
   candidateWorkerId,
   authUid,
   email,
+  lgpdOptIn,
   onConfirmed,
   onClose,
 }: ClaimOtpModalProps): JSX.Element | null {
@@ -58,6 +61,7 @@ export function ClaimOtpModal({
     candidateWorkerId,
     authUid,
     email,
+    lgpdOptIn,
   );
 
   if (!open) return null;

@@ -122,7 +122,7 @@ export class ClaimController {
         return;
       }
       const { authUid, email } = identidade;
-      const { verificationSid, otp, candidateWorkerId } = req.body as Record<string, unknown>;
+      const { verificationSid, otp, candidateWorkerId, lgpdOptIn } = req.body as Record<string, unknown>;
 
       if (!verificationSid || typeof verificationSid !== 'string') {
         res.status(400).json({ success: false, error: 'Missing required field: verificationSid' });
@@ -146,6 +146,8 @@ export class ClaimController {
         authUid,
         email,
         candidateWorkerId,
+        // O OTP prova a posse do telefone, NÃO o aceite: só grava o trio se a caixa foi marcada (web: `lgpdOptIn`, como no init).
+        consentAt: lgpdOptIn === true ? new Date() : undefined,
       });
 
       if (result.isFailure) {

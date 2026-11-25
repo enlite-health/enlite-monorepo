@@ -28,6 +28,7 @@ export function useClaimConfirm(
   candidateWorkerId: string,
   authUid: string,
   email: string,
+  lgpdOptIn?: boolean,
 ): UseClaimConfirmReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [errorCode, setErrorCode] = useState<ClaimErrorCode | null>(null);
@@ -45,6 +46,7 @@ export function useClaimConfirm(
         authUid,
         email,
         candidateWorkerId,
+        ...(lgpdOptIn === true ? { lgpdOptIn: true } : {}),
       };
 
       try {
@@ -63,7 +65,7 @@ export function useClaimConfirm(
         setIsLoading(false);
       }
     },
-    [verificationSid, candidateWorkerId, authUid, email],
+    [verificationSid, candidateWorkerId, authUid, email, lgpdOptIn],
   );
 
   return { isLoading, errorCode, confirm, clearError };

@@ -14,6 +14,8 @@ export interface WorkerInitOutcomePanelProps {
   outcome: Exclude<WorkerInitOutcome, { kind: 'ok' }>;
   authUid: string;
   email: string;
+  /** A caixa do aceite foi marcada (só o cadastro); repassada ao confirm do claim. */
+  lgpdOptIn?: boolean;
   /** O código do claim foi confirmado: a ficha é do login. */
   onResolved: (worker: WorkerProgressResponse) => void;
   /** Chamar o init de novo (e-mail verificado, ou passou a espera do 429). */
@@ -26,7 +28,7 @@ export interface WorkerInitOutcomePanelProps {
  * A resposta do init que não é `ok`, tratada num lugar só (DP-20): o mesmo `ClaimOtpModal` do
  * cadastro, "Revisá tu correo" e a espera do 429. Usado pelo 1º login, pelo cadastro e pelo perfil.
  */
-export function WorkerInitOutcomePanel({ outcome, authUid, email, onResolved, onRetry, onCancel }: WorkerInitOutcomePanelProps): JSX.Element {
+export function WorkerInitOutcomePanel({ outcome, authUid, email, lgpdOptIn, onResolved, onRetry, onCancel }: WorkerInitOutcomePanelProps): JSX.Element {
   if (outcome.kind === 'claim_pending') {
     return (
       <ClaimOtpModal
@@ -36,6 +38,7 @@ export function WorkerInitOutcomePanel({ outcome, authUid, email, onResolved, on
         candidateWorkerId={outcome.candidateWorkerId}
         authUid={authUid}
         email={email}
+        lgpdOptIn={lgpdOptIn}
         onConfirmed={onResolved}
         onClose={onCancel}
       />

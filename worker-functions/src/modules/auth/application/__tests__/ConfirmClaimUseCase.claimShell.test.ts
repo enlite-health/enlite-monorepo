@@ -38,7 +38,8 @@ describe('ConfirmClaimUseCase — conta que já tem ficha (D764)', () => {
     const result = await new ConfirmClaimUseCase(r as any, new TwilioVerifyOtpAdapter(twilio() as any), absorber).execute(input);
 
     expect(result.isSuccess).toBe(true);
-    expect(absorber.absorbImportedIntoExisting).toHaveBeenCalledWith({ existingId: OWN_ID, importedId: CANDIDATE_ID, authUid: UID, consentAt: expect.any(Date) });
+    expect(absorber.absorbImportedIntoExisting).toHaveBeenCalledWith({ existingId: OWN_ID, importedId: CANDIDATE_ID, authUid: UID, consentAt: undefined });
+    expect(absorber.absorbImportedIntoExisting.mock.calls[0][0].consentAt).toBeUndefined(); // OTP não presume aceite
     expect(r.updateImportedWorkerData).not.toHaveBeenCalled();
     expect(r.updateAuthUid).not.toHaveBeenCalled(); // consentimento vai na transação da absorção, não por fora
   });

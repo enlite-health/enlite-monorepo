@@ -37,11 +37,11 @@ describe('claim confirm com ficha própria (D764)', () => {
   const audits = async (survivor: string, absorbed: string) =>
     (await pool.query('SELECT source, executed_by FROM worker_merge_audit WHERE survivor_id = $1 AND absorbed_id = $2', [survivor, absorbed])).rows;
 
-  async function confirm(n: string, candidate: string, candidatePhone: string) {
+  async function confirm(n: string, candidate: string, candidatePhone: string, extra: Record<string, unknown> = {}) {
     const res = await fetch(url + '/api/auth/claim/confirm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-test-uid': uid(n), 'x-test-email': email(n), 'x-test-to': `+${candidatePhone}` },
-      body: JSON.stringify({ verificationSid: 'VE_STUB', otp: '123456', candidateWorkerId: candidate }),
+      body: JSON.stringify({ verificationSid: 'VE_STUB', otp: '123456', candidateWorkerId: candidate, ...extra }),
     });
     return { status: res.status, text: await res.text() };
   }
@@ -97,7 +97,17 @@ describe('claim confirm com ficha própria (D764)', () => {
     expect(await row(x)).toMatchObject({ auth_uid: uid('a'), phone: phone(1), merged_into_id: null });
     expect(await audits(x, imp)).toEqual([{ source: 'claim_shell', executed_by: uid('a') }]);
     const consent = (await pool.query('SELECT lgpd_consent_at, terms_accepted_at, privacy_accepted_at FROM workers WHERE id = $1', [x])).rows[0];
-    expect(consent.lgpd_consent_at).not.toBeNull(); // consentimento do OTP gravado em X, na transação da absorção
+    // O OTP prova a posse do telefone, não o aceite: sem a caixa marcada (lgpdOptIn) o trio continua NULL.
+    expect(consent).toEqual({ lgpd_consent_at: null, terms_accepted_at: null, privacy_accepted_at: null });
+  });
+
+  it('T-D764 (a) com lgpdOptIn:true (a web marcou a caixa) o aceite é gravado em X, na transação da absorção', async () => {
+    const x = await propria('aopt');
+    const imp = await importada('aopt', phone(9));
+    const r = await confirm('aopt', imp, phone(9), { lgpdOptIn: true });
+    expect(r.status).toBe(200);
+    const consent = (await pool.query('SELECT lgpd_consent_at, terms_accepted_at, privacy_accepted_at FROM workers WHERE id = $1', [x])).rows[0];
+    expect(consent.lgpd_consent_at).not.toBeNull();
     expect(consent.terms_accepted_at).not.toBeNull();
     expect(consent.privacy_accepted_at).not.toBeNull();
   });

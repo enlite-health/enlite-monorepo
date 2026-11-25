@@ -14,6 +14,11 @@ export interface ConfirmClaimInput {
   authUid: string;
   email: string;
   candidateWorkerId: string;
+  /**
+   * Aceite EXPLÍCITO da política (a caixa foi marcada). Sem ele o OTP NÃO presume consentimento: o trio
+   * `lgpd_consent_at`/`terms_accepted_at`/`privacy_accepted_at` fica como está (NULL continua NULL).
+   */
+  consentAt?: Date;
 }
 
 export type ConfirmClaimError =
@@ -120,7 +125,7 @@ export class ConfirmClaimUseCase {
     }
 
     // 3b. D764: o authUid do token já tem OUTRA ficha? (findByAuthUid segue a corrente de merges.)
-    const consentAt = new Date();
+    const consentAt = input.consentAt;
     const ownResult = await this.workerRepository.findByAuthUid(input.authUid);
     if (ownResult.isFailure) {
       return Result.fail<Worker>(ownResult.error!);
@@ -142,7 +147,7 @@ export class ConfirmClaimUseCase {
         log.warn({ msg: 'claim_absorb_refused', error: absorbed.error });
         return Result.fail<Worker>(absorbed.error!);
       }
-      // O consentimento do OTP já foi gravado em X dentro da transação da absorção; aqui só relê o resultado.
+      // Com aceite explícito, ele já foi gravado em X dentro da transação da absorção; aqui só relê o resultado.
       const reread = await this.workerRepository.findByAuthUid(input.authUid);
       if (reread.isFailure || reread.getValue() === null) {
         log.error({ msg: 'claim_absorbed_reread_failed' });

@@ -366,6 +366,7 @@ export function RegisterPage() {
           outcome={pendingInit.outcome}
           authUid={pendingInit.user.id}
           email={pendingInit.user.email}
+          lgpdOptIn={lgpdOptIn}
           onResolved={() => navigateAfterInit()}
           onRetry={() => { setPendingInit(null); void handleSuccess(pendingInit.user); }}
           onCancel={() => setPendingInit(null)}
