@@ -84,7 +84,11 @@ jobs:
           curl -sf -X POST http://localhost:54443/storage/v1/b -H 'Content-Type: application/json' \
             -d '{"name":"enlite-patient-photos-ci"}' >/dev/null
 
-          docker compose $BASE up -d api
+          # `docker-compose.accountlink.yml`: o vínculo de contas sobe LIGADO, como em prd (backend-prd.yml: ACCOUNT_LINK_ENABLED=true)
+          # e como no job `backend-e2e`. Desligado, `account-link/lookup` responde 404 e o `PhoneConflictModal` nunca abre — os
+          # specs `phone-verification` (A2) e `account-link-real` mediriam o fallback de toast, não o fluxo de prd. O override só
+          # mexe nas envs do serviço `api` (flag, segredo do token de finalize e o MESMO bypass de OTP do docker-compose.test.yml).
+          docker compose $BASE -f docker-compose.accountlink.yml up -d api
           docker compose $BASE -f docker-compose.firebase.yml up -d --no-deps firebase-emulator
 
           espera "api" http://localhost:8080/health || {

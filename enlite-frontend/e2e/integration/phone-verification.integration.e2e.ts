@@ -6,6 +6,8 @@
  * interceptado por `loginNewWorker`); o código do WhatsApp é o do bypass declarado da stack de teste
  * (`E2E_OTP_BYPASS` / `E2E_OTP_CODE=123456`, docker-compose.test.yml) — nenhum canal real é tocado.
  *
+ * A ficha nasce com `phoneVerified: false` (o helper grava a prova por padrão desde a migration 594).
+ *
  *   F  (feliz)  ficha com telefone SEM verificar → "Verificar" → modal → código → o selo vira
  *               "Verificado" SÓ depois de reler `GET /api/workers/me` (a leitura que o app faz;
  *               o `GET /api/workers/me/progress` do cartão não existe: o progresso é esta rota).
@@ -49,7 +51,7 @@ test.describe('@integration Celular verificado na web (emenda 077 §6, AC-16)', 
   }
 
   test('T-F3c-148 F: "Verificar" → modal → código → selo "Verificado" só depois de reler o perfil', async ({ page }) => {
-    await abrirInformacionGeneral(page, insertEligibilityWorker());
+    await abrirInformacionGeneral(page, insertEligibilityWorker({ phoneVerified: false }));
 
     const badge = page.getByTestId('phone-badge');
     await expect(badge).toHaveAttribute('data-state', 'unverified', { timeout: 20_000 });
@@ -79,7 +81,7 @@ test.describe('@integration Celular verificado na web (emenda 077 §6, AC-16)', 
   });
 
   test('T-F3c-148 A1: código errado mostra o erro no modal e o selo não muda', async ({ page }) => {
-    await abrirInformacionGeneral(page, insertEligibilityWorker());
+    await abrirInformacionGeneral(page, insertEligibilityWorker({ phoneVerified: false }));
     const badge = page.getByTestId('phone-badge');
     await expect(badge).toHaveAttribute('data-state', 'unverified', { timeout: 20_000 });
 
