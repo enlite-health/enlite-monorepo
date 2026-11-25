@@ -16,6 +16,7 @@ import * as path from 'path';
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, waitForBackend } from './helpers';
 import { envelope } from '../fixtures/talentumPayload';
+import { postTalentumAndDrain } from './helpers/talentumWebhook';
 import type { AnalyzedBlock } from './wja-full-flow-types';
 import {
   CASE_NUMBER, PHONE_A, PHONE_B, PHONE_C,
@@ -127,15 +128,16 @@ describe('WJA Full Flow Part 2 — RECHAZAR + Invariantes @integration', () => {
       // Worker C ainda não tem WJA — primeiro precisa de um INITIATED pra criar a linha.
       // O fluxo Talentum real envia INITIATED → IN_PROGRESS → COMPLETED → ANALYZED.
       // Pulamos pra INITIATED + ANALYZED direto pra brevidade.
-      const initRes = await api.post('/api/webhooks/talentum/prescreening', envelope({
+      const initRes = await postTalentumAndDrain(api, envelope({
         subtype: 'INITIATED',
         prescreening: { id: 'wff-psc-c-init', name: `CASO ${CASE_NUMBER} WFF E2E` },
         profile: { id: PROF_C, email: EMAIL_C, phoneNumber: PHONE_C },
       }));
-      expect(initRes.status).toBe(200);
+      expect(initRes.ack.status).toBe(200);
+      expect(initRes.drain).toMatchObject({ processed: 1, failed: 0 });
 
-      const res = await api.post(
-        '/api/webhooks/talentum/prescreening',
+      const res = await postTalentumAndDrain(
+        api,
         envelope({
           subtype: 'ANALYZED',
           prescreening: { id: PSC_C, name: `CASO ${CASE_NUMBER} WFF E2E` },
@@ -148,7 +150,8 @@ describe('WJA Full Flow Part 2 — RECHAZAR + Invariantes @integration', () => {
           } as AnalyzedBlock,
         }),
       );
-      expect(res.status).toBe(200);
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ processed: 1, failed: 0 });
 
       // NOT_QUALIFIED nunca persiste — auto-rejeitado para REJECTED na mesma transação
       const { rows } = await pool.query(

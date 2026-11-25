@@ -14,6 +14,7 @@
 
 import { Pool } from 'pg';
 import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
+import { postTalentumAndDrain } from './helpers/talentumWebhook';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -259,7 +260,8 @@ describe('Vacancy Audit Log — Onda B', () => {
     beforeAll(async () => {
       // In E2E, USE_MOCK_AUTH=true bypasses Google token verification.
       // Talentum PRESCREENING.CREATED payload format from talentumPrescreeningSchema.ts
-      const res = await api.post('/api/webhooks/talentum/prescreening', {
+      // Ack assíncrono (spec 095): POST + drain (a vaga nasce no processador); o id da vaga sai do BANCO, não do corpo.
+      const res = await postTalentumAndDrain(api, {
         action: 'PRESCREENING',
         subtype: 'CREATED',
         data: {
@@ -267,12 +269,14 @@ describe('Vacancy Audit Log — Onda B', () => {
           name: `CASO 88805-${Math.floor(Math.random() * 9000 + 1000)}`,
         },
       });
-      // 200 = handled (created, linked, or skipped)
-      expect(res.status).toBe(200);
-      createdJobPostingId = (res.data as Record<string, unknown>).jobPostingId as string | undefined;
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ selected: 1, processed: 1, failed: 0 });
+      createdJobPostingId = (
+        await pool.query<{ id: string }>(`SELECT id FROM job_postings WHERE talentum_project_id = $1`, [talentumProjectId])
+      ).rows[0]?.id;
     });
 
-    it('returns jobPostingId in the response', () => {
+    it('the processor created the job posting (id read from the database)', () => {
       expect(createdJobPostingId).toBeTruthy();
       if (createdJobPostingId) createdVacancyIds.push(createdJobPostingId);
     });

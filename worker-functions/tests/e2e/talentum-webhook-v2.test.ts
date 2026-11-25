@@ -28,12 +28,17 @@
 
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
+import { postTalentumAndDrain, readTalentumMirror } from './helpers/talentumWebhook';
+import { computeBodyHash } from '../../src/modules/integration/domain/TalentumInbox';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
   'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
-const ENDPOINT = '/api/webhooks-test/talentum/prescreening';
+import { TALENTUM_WEBHOOK_TEST as ENDPOINT } from './helpers/talentumWebhook';
+
+// Ack assíncrono (spec 095 §3.2): o webhook só guarda na inbox e responde `200 { received: true }`; quem cria a vaga/o espelho é o
+// processador. Cada POST abaixo é seguido do drain da inbox (`postTalentumAndDrain`) e a asserção lê o BANCO, nunca o corpo do ack.
 
 // ─────────────────────────────────────────────────────────────────
 // Payload factories
@@ -131,6 +136,9 @@ describe('Talentum Webhook v2 — envelope { action, subtype, data }', () => {
 
   afterAll(async () => {
     // Cleanup reverso respeitando FKs
+    await pool.query(
+      `DELETE FROM talentum_webhook_inbox WHERE talentum_prescreening_id LIKE 'tw2-%' OR talentum_prescreening_id = 'will-not-be-created'`,
+    );
 
     // domain_events criados pelo fluxo QUALIFIED
     await pool.query(
@@ -207,16 +215,16 @@ describe('Talentum Webhook v2 — envelope { action, subtype, data }', () => {
     it('1. vaga nova → 200, job_posting criado com title CASO N, status SEARCHING', async () => {
       const payload = makeCreatedPayload(PROJECT_ID_NEW, 'Novo Projeto Talentum V2');
 
-      const res = await api.post(ENDPOINT, payload);
+      const res = await postTalentumAndDrain(api, payload, ENDPOINT);
 
-      expect(res.status).toBe(200);
-      expect(res.data.received).toBe(true);
-      expect(res.data.event).toBe('PRESCREENING.CREATED');
-      expect(res.data.created).toBe(true);
-      expect(res.data.skipped).toBe(false);
-      expect(res.data.jobPostingId).toBeTruthy();
+      expect(res.ack.status).toBe(200);
+      expect(res.ack.data).toEqual({ received: true });
+      expect(res.drain).toMatchObject({ selected: 1, processed: 1, failed: 0 });
 
-      createdJobPostingId = res.data.jobPostingId as string;
+      createdJobPostingId = (
+        await pool.query<{ id: string }>('SELECT id FROM job_postings WHERE talentum_project_id = $1', [PROJECT_ID_NEW])
+      ).rows[0]?.id;
+      expect(createdJobPostingId).toBeTruthy();
 
       // Verificar no banco
       const { rows } = await pool.query<{
@@ -251,12 +259,12 @@ describe('Talentum Webhook v2 — envelope { action, subtype, data }', () => {
       const countBefore = Number(before[0].cnt);
 
       const payload = makeCreatedPayload(PROJECT_ID_EXIST, 'Vaga Duplicada');
-      const res = await api.post(ENDPOINT, payload);
+      const res = await postTalentumAndDrain(api, payload, ENDPOINT);
 
-      expect(res.status).toBe(200);
-      expect(res.data.skipped).toBe(true);
-      expect(res.data.created).toBe(false);
-      expect(res.data.reason).toBe('already_exists');
+      // skipped/created/reason saíram do corpo: o caso `already_exists` é do unit CreateJobPostingFromTalentumUseCase.test.ts
+      // ('deve retornar skipped=true sem fazer INSERT quando ja existe'); aqui vale o efeito no banco (contagem abaixo).
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ selected: 1, processed: 1, failed: 0 });
 
       // Banco inalterado
       const { rows: after } = await pool.query<{ cnt: string }>(
@@ -267,7 +275,7 @@ describe('Talentum Webhook v2 — envelope { action, subtype, data }', () => {
     });
 
     // ── Cenário 3 — Payload inválido (subtype errado) ─────────────
-    it('3. payload inválido — action=PRESCREENING + subtype=ANALYZED (discriminated union inválida) → 400', async () => {
+    it('3. payload inválido — action=PRESCREENING + subtype=ANALYZED → 200 no ack, linha UNSUPPORTED depois do drain, nenhuma vaga criada', async () => {
       const payload = {
         action: 'PRESCREENING',
         subtype: 'ANALYZED', // inválido: PRESCREENING só aceita CREATED
@@ -277,10 +285,16 @@ describe('Talentum Webhook v2 — envelope { action, subtype, data }', () => {
         },
       };
 
-      const res = await api.post(ENDPOINT, payload);
+      // Coberto também por unit: ProcessTalentumInboxUseCase.validacao.test.ts '[6] combinação inválida (PRESCREENING + ANALYZED) → UNSUPPORTED'.
+      const res = await postTalentumAndDrain(api, payload, ENDPOINT);
 
-      expect(res.status).toBe(400);
-      expect(res.data.error).toBe('Invalid payload');
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ selected: 1, processed: 0, failed: 0 });
+      const inbox = await pool.query<{ state: string }>(
+        `SELECT state FROM talentum_webhook_inbox WHERE talentum_prescreening_id = 'will-not-be-created'`);
+      expect(inbox.rows.map((r) => r.state)).toEqual(['UNSUPPORTED']);
+      const jobs = await pool.query(`SELECT 1 FROM job_postings WHERE talentum_project_id = 'will-not-be-created'`);
+      expect(jobs.rows).toHaveLength(0);
     });
   });
 
@@ -298,12 +312,12 @@ describe('Talentum Webhook v2 — envelope { action, subtype, data }', () => {
         'INITIATED',
       );
 
-      const res = await api.post(ENDPOINT, payload);
+      const res = await postTalentumAndDrain(api, payload, ENDPOINT);
 
-      expect(res.status).toBe(200);
-      // O endpoint webhooks-test roda com dryRun=false (test environment, não dryRun)
-      // Result deve conter talentumPrescreeningId
-      expect(res.data.talentumPrescreeningId).toBe(PRESCREENING_ID_INITIATED);
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ selected: 1, processed: 1, failed: 0 });
+      // O ack não devolve mais o id: o espelho gravado pelo processador, lido do banco, tem a chave externa
+      expect((await readTalentumMirror(pool, PRESCREENING_ID_INITIATED))?.talentumPrescreeningId).toBe(PRESCREENING_ID_INITIATED);
 
       // Verificar prescreening no banco
       const { rows: pscRows } = await pool.query<{
@@ -349,8 +363,9 @@ describe('Talentum Webhook v2 — envelope { action, subtype, data }', () => {
         // telefone compartilhado com o cenário 4 amarrava a prescreening ao worker de outra pessoa.
         '+5491155550001',
       );
-      const initRes = await api.post(ENDPOINT, initiatedPayload);
-      expect(initRes.status).toBe(200);
+      const initRes = await postTalentumAndDrain(api, initiatedPayload, ENDPOINT);
+      expect(initRes.ack.status).toBe(200);
+      expect(initRes.drain).toMatchObject({ processed: 1, failed: 0 });
 
       // Buscar o job_posting criado no cenário 1 para montar o titulo que o UseCase vai fazer ILIKE
       // O prescreening.name precisa dar match com o titulo do job_posting
@@ -394,9 +409,10 @@ describe('Talentum Webhook v2 — envelope { action, subtype, data }', () => {
         },
       };
 
-      const res = await api.post(ENDPOINT, analyzedPayload);
-      expect(res.status).toBe(200);
-      expect(res.data.talentumPrescreeningId).toBe(PRESCREENING_ID_ANALYZED);
+      const res = await postTalentumAndDrain(api, analyzedPayload, ENDPOINT);
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ processed: 1, failed: 0 });
+      expect((await readTalentumMirror(pool, PRESCREENING_ID_ANALYZED))?.talentumPrescreeningId).toBe(PRESCREENING_ID_ANALYZED);
 
       // Worker deve existir
       const { rows: workerRows } = await pool.query<{ id: string }>(
@@ -443,8 +459,9 @@ describe('Talentum Webhook v2 — envelope { action, subtype, data }', () => {
         EMAIL_IDEM,
         'INITIATED',
       );
-      const initRes = await api.post(ENDPOINT, initiatedPayload);
-      expect(initRes.status).toBe(200);
+      const initRes = await postTalentumAndDrain(api, initiatedPayload, ENDPOINT);
+      expect(initRes.ack.status).toBe(200);
+      expect(initRes.drain).toMatchObject({ processed: 1, failed: 0 });
 
       const analyzedPayload = {
         action: 'PRESCREENING_RESPONSE',
@@ -473,11 +490,13 @@ describe('Talentum Webhook v2 — envelope { action, subtype, data }', () => {
       };
 
       // Enviar 2x
-      const res1 = await api.post(ENDPOINT, analyzedPayload);
-      const res2 = await api.post(ENDPOINT, analyzedPayload);
+      const res1 = await postTalentumAndDrain(api, analyzedPayload, ENDPOINT);
+      const res2 = await postTalentumAndDrain(api, analyzedPayload, ENDPOINT);
 
-      expect(res1.status).toBe(200);
-      expect(res2.status).toBe(200);
+      expect(res1.ack.status).toBe(200);
+      expect(res2.ack.status).toBe(200);
+      expect(res1.drain).toMatchObject({ failed: 0 });
+      expect(res2.drain).toMatchObject({ failed: 0 });
 
       // talentum_prescreenings: apenas 1 registro
       const { rows: pscRows } = await pool.query<{ cnt: string }>(
@@ -513,26 +532,31 @@ describe('Talentum Webhook v2 — envelope { action, subtype, data }', () => {
     });
 
     // ── Cenário 8 — Sem subtype ───────────────────────────────────
-    it('8. sem subtype → 400', async () => {
-      const res = await api.post(ENDPOINT, {
+    it('8. sem subtype → 200 no ack, linha UNSUPPORTED depois do drain', async () => {
+      // O ack só exige action e ids; subtype ausente vira UNSUPPORTED no processador (unit validacao [5] 'PRESCREENING sem subtype → UNSUPPORTED').
+      const res = await postTalentumAndDrain(api, {
         action: 'PRESCREENING',
-        data: { _id: 'x', name: 'y' },
-      });
+        data: { _id: 'tw2-no-subtype', name: 'y' },
+      }, ENDPOINT);
 
-      expect(res.status).toBe(400);
-      expect(res.data.error).toBe('Invalid payload');
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ selected: 1, processed: 0, failed: 0 });
+      const inbox = await pool.query<{ state: string }>(
+        `SELECT state FROM talentum_webhook_inbox WHERE talentum_prescreening_id = 'tw2-no-subtype'`);
+      expect(inbox.rows.map((r) => r.state)).toEqual(['UNSUPPORTED']);
     });
 
     // ── Cenário extra — action desconhecida ───────────────────────
-    it('action desconhecida (fora da discriminated union) → 400', async () => {
-      const res = await api.post(ENDPOINT, {
-        action: 'UNKNOWN_ACTION',
-        subtype: 'CREATED',
-        data: {},
-      });
+    it('action desconhecida (fora da discriminated union) → 200 no ack e o corpo fica guardado na inbox (nunca se perde)', async () => {
+      // Sem chave (ids), não há o que drenar por chave; a linha é achada pelo body_hash. O UNSUPPORTED_ACTION do processador
+      // está no unit validacao ('[4] sem action → UNSUPPORTED' / unsupportedReason).
+      const body = { action: 'UNKNOWN_ACTION', subtype: 'CREATED', data: {} };
+      const res = await postTalentumAndDrain(api, body, ENDPOINT);
 
-      expect(res.status).toBe(400);
-      expect(res.data.error).toBe('Invalid payload');
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toBeNull();
+      const inbox = await pool.query<{ state: string }>(`SELECT state FROM talentum_webhook_inbox WHERE body_hash = $1`, [computeBodyHash(body)]);
+      expect(inbox.rows.map((r) => r.state)).toEqual(['RECEIVED']);
     });
 
     // ── Cenário extra — body vazio ────────────────────────────────

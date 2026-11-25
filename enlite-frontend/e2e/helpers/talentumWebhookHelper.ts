@@ -8,7 +8,8 @@
  * Usa `APIRequestContext` do Playwright (não fetch do browser) para evitar
  * problemas de CORS e Authorization. O backend roda com USE_MOCK_AUTH=true,
  * portanto o endpoint /api/webhooks/talentum/prescreening não requer header
- * de autenticação.
+ * de autenticação. Desde a spec 095 o webhook só guarda na inbox (ack): `sendTalentumWebhook`
+ * drena a inbox em seguida (`drainTalentumInbox`, redrive interno com `X-Internal-Secret`).
  *
  * P26a v2 (26/09, cadeia-paciente-vacante-itinerario Fase 2): `loginAsKanbanAdmin` e
  * `installKanbanInterceptors` passaram a DELEGAR para `installAuthInterceptors`/`tokenFor`
@@ -231,9 +232,47 @@ function buildPayload(opts: TalentumWebhookOpts): Record<string, unknown> {
   };
 }
 
+/** Segredo das rotas internas (`/api/internal/*`): o `INTERNAL_TOKEN_SECRET` do compose de teste. Lido DENTRO da função (nunca no import). */
+const internalSecret = (): string => process.env.INTERNAL_TOKEN_SECRET ?? 'test-secret-for-e2e-only';
+
+const sqlLiteral = (v: string): string => `'${v.replace(/'/g, "''")}'`;
+
 /**
- * Envia um webhook Talentum ao backend real via `request.post()`.
- * Retorna o status HTTP da resposta.
+ * Drena a inbox do webhook (spec 095 §3.2): o webhook só guarda o corpo e responde `200 { received: true }`; quem grava o espelho,
+ * o worker, a candidatura e o encuadre é o processador. Sem este passo, o estado que o teste lê logo depois do POST ainda não existe.
+ * Chama `POST /api/internal/talentum/inbox/redrive` pela chave do evento (`talentumPrescreeningId` + `talentumProfileId`).
+ * Só contagens; lança se o redrive não for 200, ou se a linha não foi processada.
+ */
+export async function drainTalentumInbox(
+  request: APIRequestContext,
+  key: { prescreeningId: string; profileId: string },
+): Promise<{ selected: number; processed: number; failed: number }> {
+  const res = await request.post(`${BACKEND_URL}/api/internal/talentum/inbox/redrive`, {
+    data: { talentumPrescreeningId: key.prescreeningId, talentumProfileId: key.profileId },
+    headers: { 'Content-Type': 'application/json', 'X-Internal-Secret': internalSecret() },
+  });
+  if (res.status() !== 200) throw new Error(`redrive da inbox do Talentum respondeu ${res.status()} (esperado 200)`);
+  const counts = (await res.json()) as { selected: number; processed: number; failed: number };
+  if (counts.selected < 1 || counts.failed > 0) {
+    throw new Error(`redrive da inbox do Talentum não processou o evento: selected=${counts.selected} processed=${counts.processed} failed=${counts.failed}`);
+  }
+  return counts;
+}
+
+/**
+ * Esquece da inbox as linhas desta chave: a inbox deduplica corpo idêntico, e o teste que reenvia o MESMO evento (ou roda de novo no
+ * mesmo banco) precisa de uma linha nova a drenar — antes do ack assíncrono o caso de uso rodava de novo a cada POST.
+ */
+function forgetInboxKey(key: { prescreeningId: string; profileId: string }): void {
+  runSQL(
+    `DELETE FROM talentum_webhook_inbox WHERE talentum_prescreening_id = ${sqlLiteral(key.prescreeningId)} ` +
+      `AND talentum_profile_id = ${sqlLiteral(key.profileId)}`,
+  );
+}
+
+/**
+ * Envia um webhook Talentum ao backend real via `request.post()` e DRENA a inbox (ack assíncrono, spec 095): ao voltar, o estado
+ * do evento já está no banco, como antes. Retorna o status HTTP do ack.
  *
  * @param request - APIRequestContext do Playwright (fixture `request` ou `page.request`)
  * @param opts    - Dados do evento Talentum
@@ -243,6 +282,8 @@ export async function sendTalentumWebhook(
   opts: TalentumWebhookOpts,
 ): Promise<number> {
   const payload = buildPayload(opts);
+  const key = { prescreeningId: opts.prescreeningId, profileId: opts.profileId };
+  forgetInboxKey(key);
   const response = await request.post(
     `${BACKEND_URL}/api/webhooks/talentum/prescreening`,
     {
@@ -250,5 +291,6 @@ export async function sendTalentumWebhook(
       headers: { 'Content-Type': 'application/json' },
     },
   );
+  if (response.status() === 200) await drainTalentumInbox(request, key);
   return response.status();
 }

@@ -22,6 +22,7 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { envelope, type ResponseBlock } from '../fixtures/talentumPayload';
+import { postTalentumDrainAndRead, TALENTUM_WEBHOOK } from './helpers/talentumWebhook';
 
 type AnalyzedResponseBlock = ResponseBlock & {
   score: number;
@@ -31,7 +32,7 @@ type AnalyzedResponseBlock = ResponseBlock & {
 const DATABASE_URL =
   process.env.DATABASE_URL ||
   'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
-const ENDPOINT = '/api/webhooks/talentum/prescreening';
+const ENDPOINT = TALENTUM_WEBHOOK;
 
 // External IDs para prescreenings (bug cases A/B/C + happy paths 1-5)
 const PSC = {
@@ -63,6 +64,9 @@ const ALL_JOBS    = Object.values(JOB);
 describe('Talentum funnel — transições bug #4 + happy paths', () => {
   let api: ReturnType<typeof createApiClient>;
   let pool: Pool;
+
+  /** POST + drain da inbox; `data` é o espelho lido do banco (o ack é só `{ received: true }`, spec 095). */
+  const post = (payload: unknown) => postTalentumDrainAndRead(api, pool, payload, ENDPOINT);
 
   const wid: Record<string, string> = {};
   const jid: Record<string, string> = {};
@@ -140,13 +144,13 @@ describe('Talentum funnel — transições bug #4 + happy paths', () => {
   // ── Bug #4 regressions ───────────────────────────────────────────
 
   it('[A] caso 342 (SEARCHING_REPLACEMENT): ANALYZED+QUALIFIED promove INITIATED → QUALIFIED', async () => {
-    await api.post(ENDPOINT, envelope({
+    await post(envelope({
       subtype: 'INITIATED',
       prescreening: { id: PSC.A, name: JOB.A },
       profile: { id: PROF.A, email: EMAIL.A, phoneNumber: '+5491133420001', cuil: '20-33420001-1' },
     }));
 
-    const res = await api.post(ENDPOINT, envelope({
+    const res = await post(envelope({
       subtype: 'ANALYZED',
       prescreening: { id: PSC.A, name: JOB.A },
       profile: { id: PROF.A, email: EMAIL.A, phoneNumber: '+5491133420001', cuil: '20-33420001-1' },
@@ -166,13 +170,13 @@ describe('Talentum funnel — transições bug #4 + happy paths', () => {
   });
 
   it('[B] caso 713 (CLOSED): ANALYZED+QUALIFIED promove INITIATED → QUALIFIED', async () => {
-    await api.post(ENDPOINT, envelope({
+    await post(envelope({
       subtype: 'INITIATED',
       prescreening: { id: PSC.B, name: JOB.B },
       profile: { id: PROF.B, email: EMAIL.B, phoneNumber: '+5491171300001', cuil: '20-71300001-1' },
     }));
 
-    const res = await api.post(ENDPOINT, envelope({
+    const res = await post(envelope({
       subtype: 'ANALYZED',
       prescreening: { id: PSC.B, name: JOB.B },
       profile: { id: PROF.B, email: EMAIL.B, phoneNumber: '+5491171300001', cuil: '20-71300001-1' },
@@ -189,13 +193,13 @@ describe('Talentum funnel — transições bug #4 + happy paths', () => {
   });
 
   it('[C] profile_id drift: ANALYZED com profile_id diferente NÃO deve deixar WJA presa em INITIATED', async () => {
-    await api.post(ENDPOINT, envelope({
+    await post(envelope({
       subtype: 'INITIATED',
       prescreening: { id: PSC.C, name: JOB.C },
       profile: { id: PROF.C_INIT, email: EMAIL.C, phoneNumber: '+5491199900001', cuil: '20-99900001-1' },
     }));
 
-    const res = await api.post(ENDPOINT, envelope({
+    const res = await post(envelope({
       subtype: 'ANALYZED',
       prescreening: { id: PSC.C, name: JOB.C },
       profile: { id: PROF.C_ANALYZED, email: EMAIL.C, phoneNumber: '+5491199900001', cuil: '20-99900001-1' },
@@ -215,7 +219,7 @@ describe('Talentum funnel — transições bug #4 + happy paths', () => {
   // ── Happy paths ──────────────────────────────────────────────────
 
   it('[#1 happy] INITIATED (Talentum subtype) → WJA criada com stage=PRE_SCREENING (migration 230)', async () => {
-    const res = await api.post(ENDPOINT, envelope({
+    const res = await post(envelope({
       subtype: 'INITIATED',  // Talentum ainda envia este subtype — Zod NÃO alterado
       prescreening: { id: PSC.HP1, name: JOB.HP1 },
       profile: { id: PROF.HP1, email: EMAIL.HP1, phoneNumber: '+5491140000001', cuil: '20-40000001-1' },
@@ -234,11 +238,11 @@ describe('Talentum funnel — transições bug #4 + happy paths', () => {
   });
 
   it('[#2 happy] INITIATED → IN_PROGRESS: WJA avança para IN_PROGRESS', async () => {
-    await api.post(ENDPOINT, envelope({
+    await post(envelope({
       subtype: 'INITIATED', prescreening: { id: PSC.HP2, name: JOB.HP2 },
       profile: { id: PROF.HP2, email: EMAIL.HP2, phoneNumber: '+5491141000001', cuil: '20-41000001-1' },
     }));
-    await api.post(ENDPOINT, envelope({
+    await post(envelope({
       subtype: 'IN_PROGRESS', prescreening: { id: PSC.HP2, name: JOB.HP2 },
       profile: { id: PROF.HP2, email: EMAIL.HP2, phoneNumber: '+5491141000001', cuil: '20-41000001-1' },
     }));
@@ -252,11 +256,11 @@ describe('Talentum funnel — transições bug #4 + happy paths', () => {
   });
 
   it('[#3 happy] IN_PROGRESS → COMPLETED: WJA avança para COMPLETED', async () => {
-    await api.post(ENDPOINT, envelope({
+    await post(envelope({
       subtype: 'IN_PROGRESS', prescreening: { id: PSC.HP3, name: JOB.HP3 },
       profile: { id: PROF.HP3, email: EMAIL.HP3, phoneNumber: '+5491142000001', cuil: '20-42000001-1' },
     }));
-    await api.post(ENDPOINT, envelope({
+    await post(envelope({
       subtype: 'COMPLETED', prescreening: { id: PSC.HP3, name: JOB.HP3 },
       profile: { id: PROF.HP3, email: EMAIL.HP3, phoneNumber: '+5491142000001', cuil: '20-42000001-1' },
     }));
@@ -272,11 +276,11 @@ describe('Talentum funnel — transições bug #4 + happy paths', () => {
   it('[#4 happy] COMPLETED → ANALYZED+NOT_QUALIFIED: WJA finaliza em REJECTED (pós-migration 191)', async () => {
     // F3 (mig 191): NOT_QUALIFIED do Talentum → auto-rejeição → WJA gravada como REJECTED.
     // O comportamento correto é REJECTED, não NOT_QUALIFIED (enum removido do CHECK).
-    await api.post(ENDPOINT, envelope({
+    await post(envelope({
       subtype: 'COMPLETED', prescreening: { id: PSC.HP4, name: JOB.HP4 },
       profile: { id: PROF.HP4, email: EMAIL.HP4, phoneNumber: '+5491143000001', cuil: '20-43000001-1' },
     }));
-    await api.post(ENDPOINT, envelope({
+    await post(envelope({
       subtype: 'ANALYZED', prescreening: { id: PSC.HP4, name: JOB.HP4 },
       profile: { id: PROF.HP4, email: EMAIL.HP4, phoneNumber: '+5491143000001', cuil: '20-43000001-1' },
       response: { id: 'hp4-analyzed', state: [], score: 35, statusLabel: 'NOT_QUALIFIED' } as AnalyzedResponseBlock,
@@ -292,11 +296,11 @@ describe('Talentum funnel — transições bug #4 + happy paths', () => {
   });
 
   it('[#5 happy] COMPLETED → ANALYZED+IN_DOUBT: WJA finaliza em IN_DOUBT', async () => {
-    await api.post(ENDPOINT, envelope({
+    await post(envelope({
       subtype: 'COMPLETED', prescreening: { id: PSC.HP5, name: JOB.HP5 },
       profile: { id: PROF.HP5, email: EMAIL.HP5, phoneNumber: '+5491144000001', cuil: '20-44000001-1' },
     }));
-    await api.post(ENDPOINT, envelope({
+    await post(envelope({
       subtype: 'ANALYZED', prescreening: { id: PSC.HP5, name: JOB.HP5 },
       profile: { id: PROF.HP5, email: EMAIL.HP5, phoneNumber: '+5491144000001', cuil: '20-44000001-1' },
       response: { id: 'hp5-analyzed', state: [], score: 60, statusLabel: 'IN_DOUBT' } as AnalyzedResponseBlock,

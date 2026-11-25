@@ -12,11 +12,12 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { envelope, type ResponseBlock } from '../fixtures/talentumPayload';
+import { postTalentumAndDrain, TALENTUM_WEBHOOK } from './helpers/talentumWebhook';
 
 type Analyzed = ResponseBlock & { score: number; statusLabel: 'NOT_QUALIFIED' | 'IN_DOUBT' };
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
-const ENDPOINT = '/api/webhooks/talentum/prescreening';
+const ENDPOINT = TALENTUM_WEBHOOK;
 const KEYS = ['QRT', 'SEL', 'CTL'] as const;
 type Key = (typeof KEYS)[number];
 const START: Record<Key, string> = { QRT: 'QUICK_RESPONSE_TEAM', SEL: 'SELECTED', CTL: 'QUALIFIED' };
@@ -33,12 +34,12 @@ describe('Talentum — NOT_QUALIFIED não rebaixa etapa humana acima de QUALIFIE
   const jid = {} as Record<Key, string>;
 
   const send = (k: Key, label: Analyzed['statusLabel']) =>
-    api.post(ENDPOINT, envelope({
+    postTalentumAndDrain(api, envelope({
       subtype: 'ANALYZED',
       prescreening: { id: PSC(k), name: TITLE[k] },
       profile: { id: PROF(k), email: EMAIL(k), phoneNumber: PHONE[k], cuil: `20-8${PHONE[k].slice(-7)}-2` },
       response: { id: `nqhum-resp-${k}-${label}`, state: [], score: 30, statusLabel: label } as Analyzed,
-    }));
+    }), ENDPOINT);
   const sendNq = (k: Key) => send(k, 'NOT_QUALIFIED');
   const stage = async (k: Key) => (await pool.query(
     `SELECT application_funnel_stage AS s FROM worker_job_applications WHERE worker_id=$1 AND job_posting_id=$2`, [wid[k], jid[k]])).rows[0]?.s;
@@ -62,7 +63,7 @@ describe('Talentum — NOT_QUALIFIED não rebaixa etapa humana acima de QUALIFIE
   /** Estado da operação ANTES do veredito: WJA na etapa humana + encuadre com resultado de quem já conduziu o caso. */
   async function seed(k: Key) {
     // O webhook cria WJA + encuadre (o worker INCOMPLETE_REGISTER não entra por INSERT direto); depois a operação move.
-    expect((await send(k, 'IN_DOUBT')).status).toBe(200);
+    expect((await send(k, 'IN_DOUBT')).drain?.processed).toBe(1);
     await pool.query(
       `UPDATE worker_job_applications SET application_funnel_stage=$3, updated_at=NOW() WHERE worker_id=$1 AND job_posting_id=$2`, [wid[k], jid[k], START[k]]);
     await pool.query(
@@ -95,7 +96,9 @@ describe('Talentum — NOT_QUALIFIED não rebaixa etapa humana acima de QUALIFIE
     async (k, expected) => {
       await seed(k);
 
-      expect((await sendNq(k)).status).toBe(200);
+      const res = await sendNq(k);
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ processed: 1, failed: 0 });
 
       expect(await stage(k)).toBe(expected);
       expect(await encuadre(k)).toEqual({ resultado: 'SELECCIONADO', cat: null });
@@ -111,7 +114,9 @@ describe('Talentum — NOT_QUALIFIED não rebaixa etapa humana acima de QUALIFIE
   it('controle: WJA em QUALIFIED + NOT_QUALIFIED continua rebaixando para REJECTED, encuadre RECHAZADO e evento auto_not_qualified', async () => {
     await seed('CTL');
 
-    expect((await sendNq('CTL')).status).toBe(200);
+    const res = await sendNq('CTL');
+    expect(res.ack.status).toBe(200);
+    expect(res.drain).toMatchObject({ processed: 1, failed: 0 });
 
     expect(await stage('CTL')).toBe('REJECTED');
     expect(await encuadre('CTL')).toEqual({ resultado: 'RECHAZADO', cat: 'TALENTUM_NOT_QUALIFIED' });

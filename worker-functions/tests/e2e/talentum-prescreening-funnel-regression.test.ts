@@ -14,6 +14,7 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { envelope, type ResponseBlock } from '../fixtures/talentumPayload';
+import { postTalentumDrainAndRead, TALENTUM_WEBHOOK } from './helpers/talentumWebhook';
 
 type AnalyzedResponseBlock = ResponseBlock & {
   score: number;
@@ -28,7 +29,7 @@ const DATABASE_URL =
   process.env.DATABASE_URL ||
   'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 
-const ENDPOINT = '/api/webhooks/talentum/prescreening';
+const ENDPOINT = TALENTUM_WEBHOOK;
 
 const PSC_EXT_ID_D  = 'funnel-reg-d-psc-001';
 const PSC_EXT_ID_E  = 'funnel-reg-e-psc-001';
@@ -52,6 +53,9 @@ const EMAIL_F7 = 'funnel.reg.f7@test.local';
 describe('BUG #4 — regressões out-of-order', () => {
   let api: ReturnType<typeof createApiClient>;
   let pool: Pool;
+
+  /** POST + drain da inbox; `data` é o espelho lido do banco (o ack é só `{ received: true }`, spec 095). */
+  const post = (payload: unknown) => postTalentumDrainAndRead(api, pool, payload, ENDPOINT);
 
   let workerIdD: string;
   let jobPostingIdD: string;
@@ -212,7 +216,7 @@ describe('BUG #4 — regressões out-of-order', () => {
   // ─────────────────────────────────────────────────────────────────
 
   it('[BUG #4 / TESTE D] out-of-order: INITIATED tardio NÃO deve regredir WJA de QUALIFIED para INITIATED', async () => {
-    const res1 = await api.post(ENDPOINT, envelope({
+    const res1 = await post(envelope({
       subtype: 'ANALYZED',
       prescreening: { id: PSC_EXT_ID_D, name: JOB_TITLE_D },
       profile: { id: PROFILE_ID_D, email: EMAIL_D, phoneNumber: '+5491188880001', cuil: '20-88880001-1' },
@@ -231,7 +235,7 @@ describe('BUG #4 — regressões out-of-order', () => {
     expect(r1[0].application_funnel_stage).toBe('QUALIFIED');
 
     // INITIATED chega fora de ordem (atrasado)
-    const res2 = await api.post(ENDPOINT, envelope({
+    const res2 = await post(envelope({
       subtype: 'INITIATED',
       prescreening: { id: PSC_EXT_ID_D, name: JOB_TITLE_D },
       profile: { id: PROFILE_ID_D, email: EMAIL_D, phoneNumber: '+5491188880001', cuil: '20-88880001-1' },
@@ -258,7 +262,7 @@ describe('BUG #4 — regressões out-of-order', () => {
   // ─────────────────────────────────────────────────────────────────
 
   it('[BUG #4 / TESTE E] out-of-order: IN_PROGRESS tardio NÃO deve regredir WJA de COMPLETED para IN_PROGRESS', async () => {
-    const res1 = await api.post(ENDPOINT, envelope({
+    const res1 = await post(envelope({
       subtype: 'COMPLETED',
       prescreening: { id: PSC_EXT_ID_E, name: JOB_TITLE_E },
       profile: { id: PROFILE_ID_E, email: EMAIL_E, phoneNumber: '+5491177770001', cuil: '20-77770001-1' },
@@ -276,7 +280,7 @@ describe('BUG #4 — regressões out-of-order', () => {
     expect(r1[0].application_funnel_stage).toBe('COMPLETED');
 
     // IN_PROGRESS chega fora de ordem (atrasado)
-    const res2 = await api.post(ENDPOINT, envelope({
+    const res2 = await post(envelope({
       subtype: 'IN_PROGRESS',
       prescreening: { id: PSC_EXT_ID_E, name: JOB_TITLE_E },
       profile: { id: PROFILE_ID_E, email: EMAIL_E, phoneNumber: '+5491177770001', cuil: '20-77770001-1' },
@@ -304,7 +308,7 @@ describe('BUG #4 — regressões out-of-order', () => {
 
   it('[BUG #4 / TESTE #6] QUALIFIED + IN_PROGRESS tardio NÃO deve regredir WJA para IN_PROGRESS', async () => {
     // Step 1: ANALYZED+QUALIFIED estabelece WJA em QUALIFIED
-    const res1 = await api.post(ENDPOINT, envelope({
+    const res1 = await post(envelope({
       subtype: 'ANALYZED',
       prescreening: { id: PSC_EXT_ID_F6, name: JOB_TITLE_F6 },
       profile: { id: PROFILE_ID_F6, email: EMAIL_F6, phoneNumber: '+5491155550001', cuil: '20-55550001-1' },
@@ -321,7 +325,7 @@ describe('BUG #4 — regressões out-of-order', () => {
     expect(r1[0].application_funnel_stage).toBe('QUALIFIED');
 
     // Step 2: IN_PROGRESS chega fora de ordem (retransimissão atrasada)
-    const res2 = await api.post(ENDPOINT, envelope({
+    const res2 = await post(envelope({
       subtype: 'IN_PROGRESS',
       prescreening: { id: PSC_EXT_ID_F6, name: JOB_TITLE_F6 },
       profile: { id: PROFILE_ID_F6, email: EMAIL_F6, phoneNumber: '+5491155550001', cuil: '20-55550001-1' },
@@ -349,7 +353,7 @@ describe('BUG #4 — regressões out-of-order', () => {
   it('[BUG #4 / TESTE #7] REJECTED (NOT_QUALIFIED pós-191) + COMPLETED tardio NÃO deve regredir WJA para COMPLETED', async () => {
     // F3 (mig 191): NOT_QUALIFIED do Talentum → auto-rejeição → WJA gravada como REJECTED.
     // Step 1: ANALYZED+NOT_QUALIFIED estabelece WJA em REJECTED (comportamento pós-migration 191).
-    const res1 = await api.post(ENDPOINT, envelope({
+    const res1 = await post(envelope({
       subtype: 'ANALYZED',
       prescreening: { id: PSC_EXT_ID_F7, name: JOB_TITLE_F7 },
       profile: { id: PROFILE_ID_F7, email: EMAIL_F7, phoneNumber: '+5491144440001', cuil: '20-44440001-1' },
@@ -367,7 +371,7 @@ describe('BUG #4 — regressões out-of-order', () => {
     expect(r1[0].application_funnel_stage).toBe('REJECTED');
 
     // Step 2: COMPLETED chega fora de ordem (retransmissão atrasada)
-    const res2 = await api.post(ENDPOINT, envelope({
+    const res2 = await post(envelope({
       subtype: 'COMPLETED',
       prescreening: { id: PSC_EXT_ID_F7, name: JOB_TITLE_F7 },
       profile: { id: PROFILE_ID_F7, email: EMAIL_F7, phoneNumber: '+5491144440001', cuil: '20-44440001-1' },

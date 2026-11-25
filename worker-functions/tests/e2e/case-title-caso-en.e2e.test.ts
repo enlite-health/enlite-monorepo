@@ -25,6 +25,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
 import { envelope } from '../fixtures/talentumPayload';
+import { postTalentumDrainAndRead } from './helpers/talentumWebhook';
 import { parseCaseTitleReference } from '../../src/shared/utils/parseCaseTitleReference';
 
 const DATABASE_URL =
@@ -157,8 +158,9 @@ describe('CASO EN em todo lugar — título de vacante, parser e pré-triagem (s
       const realTitle = rows[0].title; // "CASO EN94042-{m}"
       expect(realTitle).toContain('EN94042');
 
-      const webhookRes = await api.post(
-        '/api/webhooks/talentum/prescreening',
+      const webhookRes = await postTalentumDrainAndRead(
+        api,
+        pool,
         envelope({
           prescreening: { id: 'e2e-028-psc-caso-en', name: `${realTitle}, AT, para pacientes con Depresión (F32) - Zona Norte` },
         }),
