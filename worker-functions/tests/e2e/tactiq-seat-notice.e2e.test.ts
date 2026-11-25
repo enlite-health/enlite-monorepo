@@ -167,10 +167,13 @@ describe('falta de assento avisa o Acesso Master — Postgres real (change tacti
     expect(await copiesAbout(MASTERS.vivoA, h.name)).toEqual([expected]);
     expect(await copiesAbout(MASTERS.vivoB, h.name)).toEqual([expected]);
     expect(await sino(h.uid)).toEqual([{ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: true }]);
-    expect(await notified(h.email)).toEqual([
+    // mesmo `at` (relógio congelado do serviço) → ordem do par indefinida; compara sem ordem
+    const notificados = await notified(h.email);
+    expect(notificados).toHaveLength(2);
+    expect(notificados).toEqual(expect.arrayContaining([
       { outcome: 'sent', reason: 'seat_missing_master' },
       { outcome: 'sent', reason: 'seat_missing' },
-    ]);
+    ]));
   });
 
   it('(b) membro com `removed_at` NÃO recebe a cópia (filiação viva é o critério)', async () => {
@@ -229,10 +232,13 @@ describe('falta de assento avisa o Acesso Master — Postgres real (change tacti
 
     expect(await sino(h.uid)).toEqual([{ reason: 'seat_missing', audience: 'host', adminNotified: false, autoReactivates: true }]);
     expect(await copiesAbout(MASTERS.vivoA, h.name)).toEqual([]);
-    expect(await notified(h.email)).toEqual([
+    // mesmo `at` → ordem do par indefinida; compara sem ordem
+    const notificados = await notified(h.email);
+    expect(notificados).toHaveLength(2);
+    expect(notificados).toEqual(expect.arrayContaining([
       { outcome: 'no_recipient', reason: 'seat_missing_master' },
       { outcome: 'sent', reason: 'seat_missing' },
-    ]);
+    ]));
     const out = logs.output();
     expect(out).toContain('admission.tactiq_link.master_notice.no_recipient');
     expect(out).not.toContain(h.email);

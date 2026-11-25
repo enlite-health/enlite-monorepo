@@ -165,8 +165,7 @@ describe('vínculo resiliente do Tactiq pela borda HTTP — Postgres real, engin
     await admin.query(`DELETE FROM tactiq_oauth_states WHERE host_email = ANY($1)`, [emails]);
     await admin.query(`DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)`, [emails]);
     await deleteInterviewHosts(admin, emails);
-    await admin.query(`DELETE FROM users WHERE firebase_uid = ANY($1)`, [uids]);
-    await limpar();
+    await limpar(); // limparIamFixtures apaga user_groups antes de users (DELETE cru do MASTER bate no anti-lockout)
     await removerCelulasCriadas(admin, celulasCriadas);
     await admin.end();
     for (const [k, v] of Object.entries(envAnterior)) {

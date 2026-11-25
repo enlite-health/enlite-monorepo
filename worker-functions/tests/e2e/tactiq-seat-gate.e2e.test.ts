@@ -178,8 +178,7 @@ describe('licença antes do 1º vínculo — Postgres real, HTTP real, engine LI
     await admin.query(`DELETE FROM tactiq_oauth_states WHERE host_email = ANY($1)`, [emails]);
     await admin.query(`DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)`, [emails]);
     await deleteInterviewHosts(admin, emails);
-    await admin.query(`DELETE FROM users WHERE firebase_uid = ANY($1)`, [uids]);
-    await limpar();
+    await limpar(); // apaga user_groups antes de users; DELETE cru do MASTER bate no anti-lockout
     await admin.end();
     for (const [k, v] of Object.entries(envAnterior)) {
       if (v === undefined) delete process.env[k];
@@ -254,10 +253,13 @@ describe('licença antes do 1º vínculo — Postgres real, HTTP real, engine LI
       expect(cb.status).toBe(502);
       expect(cb.body).toMatchObject({ code: 'TACTIQ_ACCESS_DENIED' });
 
-      expect(await seatEvents(h.email, SEAT_KINDS)).toEqual([
+      // mesmo `at` (relógio do serviço) → a ordem do par é indefinida; compara sem ordem
+      const evs257 = await seatEvents(h.email, SEAT_KINDS);
+      expect(evs257).toHaveLength(2);
+      expect(evs257).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: 'tactiq_link.seat_declared' }),
         expect.objectContaining({ kind: 'tactiq_link.seat_undeclared', outcome: 'undeclared', ref: { actorUid: 'system' } }),
-      ]);
+      ]));
       expect((await sino(MASTER)).filter((p) => p.hostName === h.name)).toEqual([
         { reason: 'seat_missing', audience: 'master', hostName: h.name, autoReactivates: false },
       ]);
@@ -282,10 +284,13 @@ describe('licença antes do 1º vínculo — Postgres real, HTTP real, engine LI
       expect((await http('POST', '/api/admin/me/tactiq-link', h.uid)).status).toBe(200); // sem nenhuma declaração
 
       expect((await marcar(h.id, true)).status).toBe(200);
-      expect(await seatEvents(h.email, SEAT_KINDS)).toEqual([
+      // mesmo `at` → ordem indefinida; compara sem ordem
+      const evs285 = await seatEvents(h.email, SEAT_KINDS);
+      expect(evs285).toHaveLength(2);
+      expect(evs285).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: 'tactiq_link.seat_declared' }),
         expect.objectContaining({ kind: 'tactiq_link.seat_arrived', ref: { source: 'declared' } }),
-      ]);
+      ]));
       expect(await sino(h.uid)).toEqual([{ reason: 'seat_ready', audience: 'host', firstLink: false }]);
 
       // desmarcar e marcar de novo no mesmo episódio: o sinal não se repete

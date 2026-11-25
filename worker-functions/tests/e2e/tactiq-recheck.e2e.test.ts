@@ -128,6 +128,7 @@ describe('re-teste diário do vínculo do Tactiq — Postgres real (change tacti
     expect(unb64((await linkRow(host))!.secret!)).toBe(code);
 
     mcp.verdicts.delete(`at-${code}`); // a conta ganhou o assento
+    clock = at(H + MIN); // `reactivated` DEPOIS do `broken` do completeLink: sem empate de `at` em latestLinkAttempt
     const summary = await svc.runDailyCheck();
 
     expect(summary.reactivated).toBeGreaterThanOrEqual(1);
