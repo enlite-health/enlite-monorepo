@@ -7,6 +7,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Label } from '@presentation/components/atoms/Label';
 import { Button } from '@presentation/components/atoms/Button';
+import { LgpdConsentCheckbox } from './LgpdConsentCheckbox';
 
 // ── Props ──────────────────────────────────────────────────────────────────
 
@@ -17,7 +18,10 @@ export interface ClaimOtpModalProps {
   candidateWorkerId: string;
   authUid: string;
   email: string;
-  /** A caixa do aceite foi marcada no cadastro: vai junto ao confirm (o OTP não presume aceite). */
+  /**
+   * A caixa do aceite já foi marcada no cadastro: vai junto ao confirm (o OTP não presume aceite).
+   * Sem isto (login com Google), o próprio modal exibe a caixa e exige o aceite antes de confirmar.
+   */
   lgpdOptIn?: boolean;
   onConfirmed: (worker: WorkerProgressResponse) => void;
   onClose: () => void;
@@ -55,13 +59,16 @@ export function ClaimOtpModal({
 }: ClaimOtpModalProps): JSX.Element | null {
   const { t } = useTranslation();
   const [otp, setOtp] = useState('');
+  const needsConsent = lgpdOptIn !== true;
+  const [accepted, setAccepted] = useState(false);
+  const consentGiven = !needsConsent || accepted;
 
   const { isLoading, errorCode, confirm, clearError } = useClaimConfirm(
     verificationSid,
     candidateWorkerId,
     authUid,
     email,
-    lgpdOptIn,
+    consentGiven ? true : undefined,
   );
 
   if (!open) return null;
@@ -74,7 +81,7 @@ export function ClaimOtpModal({
 
   const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
-    if (otp.length < 6 || isLoading) return;
+    if (otp.length < 6 || isLoading || !consentGiven) return;
 
     const worker = await confirm(otp);
     if (worker) {
@@ -149,6 +156,10 @@ export function ClaimOtpModal({
               )}
             </div>
 
+            {needsConsent && (
+              <LgpdConsentCheckbox checked={accepted} onChange={setAccepted} />
+            )}
+
             {/* Actions */}
             <div className="flex flex-col gap-3">
               <Button
@@ -157,7 +168,7 @@ export function ClaimOtpModal({
                 size="lg"
                 fullWidth
                 isLoading={isLoading}
-                disabled={otp.length < 6 || isLoading}
+                disabled={otp.length < 6 || isLoading || !consentGiven}
               >
                 {t('claim.otpModal.confirmButton')}
               </Button>
