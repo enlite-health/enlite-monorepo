@@ -86,6 +86,11 @@ test.describe('@integration init pendente no 1º login (DP-20)', () => {
     await expect(campoCodigo).toBeFocused();
     await page.keyboard.type(OTP);
     await expect(campoCodigo).toHaveValue(OTP);
+    // Sem o aceite LGPD/Ley 25.326 o "Confirmar" fica desabilitado (ClaimOtpModal): a pessoa clica no rótulo da caixa.
+    const aceite = modal.getByRole('checkbox');
+    await expect(aceite).not.toBeChecked();
+    await modal.getByText('Acepto los Términos y la Política de Privacidad').click();
+    await expect(aceite).toBeChecked();
     await modal.getByRole('button', { name: 'Confirmar' }).click();
 
     await expect(page).toHaveURL((url) => url.pathname === '/', { timeout: 30_000 });

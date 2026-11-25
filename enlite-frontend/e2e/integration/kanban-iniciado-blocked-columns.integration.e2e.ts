@@ -68,6 +68,7 @@ import {
   MOCK_TOKEN,
   BACKEND_URL,
 } from '../helpers/talentumWebhookHelper';
+import { markPhoneVerified } from '../helpers/eligibility-worker-helper';
 
 // ── DB helpers ─────────────────────────────────────────────────────────────────
 
@@ -435,6 +436,8 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
       },
     );
     expect(generalInfoRes.status(), 'general-info deve salvar').toBe(200);
+    // A pessoa prova a posse do celular (no app, o código do `confirm`; aqui pela fixture única): ficha completa exige (migration 594).
+    markPhoneVerified(workerBlocked_Id);
 
     const serviceAreaRes = await page.request.put(
       `${BACKEND_URL}/api/workers/me/service-area`,
