@@ -30,7 +30,8 @@ function str(body: unknown, key: string): string | null {
  * enviado é ignorado. Log: só `code` e status; nada de telefone, código ou nome (AC-8).
  *
  * POST /api/workers/me/phone-verification/start   — corpo { phone }
- * POST /api/workers/me/phone-verification/confirm — corpo { phone, challengeId, code, consentAcceptedAt? }
+ * POST /api/workers/me/phone-verification/confirm — corpo { phone?, challengeId, code, consentAcceptedAt? }
+ *   `phone` só pode faltar quando o desafio é de claim (D797); no `phone_verify` o use case devolve INVALID_PHONE.
  *   `consentAcceptedAt` (ISO-8601): hora em que a caixa do aceite foi marcada; ver `resolveConsentAcceptedAt` para a janela.
  */
 export class PhoneVerificationController {
@@ -72,8 +73,9 @@ export class PhoneVerificationController {
       const phone = str(req.body, 'phone');
       const challengeId = str(req.body, 'challengeId');
       const code = str(req.body, 'code');
-      if (!phone || !challengeId || !code) {
-        res.status(400).json({ success: false, error: 'Missing required fields: phone, challengeId, code' });
+      // `phone` é opcional (D797): o caso do claim no cadastro só conhece o celular mascarado. Quem decide se pode faltar é o use case.
+      if (!challengeId || !code) {
+        res.status(400).json({ success: false, error: 'Missing required fields: challengeId, code' });
         return;
       }
       const rawConsentAt = (req.body as Record<string, unknown> | undefined)?.consentAcceptedAt;
@@ -81,7 +83,7 @@ export class PhoneVerificationController {
         res.status(400).json({ success: false, error: 'INVALID_CONSENT_AT', code: 'INVALID_CONSENT_AT' });
         return;
       }
-      const outcome = await this.confirmUseCase.execute({ ...identidade, phone, challengeId, code, consentAcceptedAt: rawConsentAt });
+      const outcome = await this.confirmUseCase.execute({ ...identidade, ...(phone ? { phone } : {}), challengeId, code, consentAcceptedAt: rawConsentAt });
       if (!outcome.ok) {
         const status = STATUS_BY_CODE[outcome.code] ?? 500;
         if (status === 500) {

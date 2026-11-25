@@ -160,7 +160,9 @@ export class WorkerControllerV2 {
             candidateWorkerId: output.candidateWorkerId,
             phoneMasked: output.phoneMasked,
             verificationSid: output.verificationSid,
-            ...(output.code ? { code: output.code } : {}),
+            // D797: o app confirma por `phone/confirm` com este id (o mesmo do `verificationSid`; nunca o telefone inteiro).
+            challengeId: output.verificationSid,
+            code: 'CLAIM_PENDING',
           },
         });
         return;

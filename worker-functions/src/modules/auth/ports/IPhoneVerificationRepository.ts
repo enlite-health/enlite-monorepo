@@ -35,6 +35,11 @@ export interface IPhoneVerificationRepository {
   /** O `challengeId` existe como desafio próprio (`otp_challenges`)? Decide o método gravado (plano B não tem linha). */
   methodFor(challengeId: string): Promise<{ method: PhoneVerificationMethod; challengeId: string | null }>;
   /**
+   * Telefone (E.164) gravado NO desafio de finalidade `claim` (`otp_challenges.phone_e164`), ou `null` se o id não é de um desafio
+   * próprio de claim (plano B: o id é um `VE...` sem linha). D797: com ele o `confirm` dispensa o número vindo do cliente.
+   */
+  claimChallengePhone(challengeId: string): Promise<string | null>;
+  /**
    * A prova que o vínculo de contas acabou de estabelecer para a ficha ABSORVIDA (lida ANTES do merge, que reparenta os
    * desafios): o número normalizado dela e o desafio de finalidade `link` consumido. Sem desafio próprio (plano B), sem id.
    */

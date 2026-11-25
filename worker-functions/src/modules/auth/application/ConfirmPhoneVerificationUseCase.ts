@@ -14,7 +14,12 @@ import { resolveConsentAcceptedAt } from './consentAcceptedAt';
 export interface ConfirmPhoneVerificationInput {
   authUid: string;
   email: string;
-  phone: string;
+  /**
+   * Ausente só vale quando o desafio é de claim (D797, caso T-13: o app só conhece o celular MASCARADO). O servidor lê o número do
+   * próprio desafio (`otp_challenges.phone_e164`) ou, no plano B (sem linha), do telefone gravado na ficha do e-mail do token; a
+   * amarra DP-21 segue conferindo contra o número GRAVADO na ficha. Para `phone_verify` o número do cliente continua obrigatório.
+   */
+  phone?: string;
   challengeId: string;
   code: string;
   /** Hora ISO em que a caixa do aceite foi marcada no app. Ausente = sem aceite explícito: nada de consentimento é gravado. */
@@ -26,6 +31,11 @@ export type ConfirmPhoneVerificationOutcome =
   | { ok: false; code: string; handoffUrl?: string };
 
 type Log = Pick<ReturnType<typeof logger.child>, 'info' | 'warn' | 'error'>;
+
+const validPhone = (phone: string): boolean => {
+  const n = normalizePhoneAR(phone);
+  return n.length >= 10 && n.length <= 15;
+};
 
 const PG_UNIQUE_VIOLATION = '23505';
 const PHONE_UNIQUE_INDEXES = new Set(['idx_workers_phone_unique', 'uq_workers_phone_verified_now', 'uq_workers_phone_verified_otp_challenge']);
@@ -50,8 +60,7 @@ export class ConfirmPhoneVerificationUseCase {
   ) {}
 
   async execute(input: ConfirmPhoneVerificationInput): Promise<ConfirmPhoneVerificationOutcome> {
-    const normalized = normalizePhoneAR(input.phone);
-    if (normalized.length < 10 || normalized.length > 15) return { ok: false, code: 'INVALID_PHONE' };
+    if (input.phone !== undefined && !validPhone(input.phone)) return { ok: false, code: 'INVALID_PHONE' };
     // Antes de qualquer efeito (OTP consumido, telefone gravado): hora de aceite fora da janela recusa o pedido inteiro.
     const consentAt = input.consentAcceptedAt === undefined ? undefined : resolveConsentAcceptedAt(input.consentAcceptedAt);
     if (consentAt === null) return { ok: false, code: 'INVALID_CONSENT_AT' };
@@ -62,7 +71,16 @@ export class ConfirmPhoneVerificationUseCase {
     if (!own) return { ok: false, code: 'WORKER_NOT_FOUND' };
     const log = logger.child({ source: 'ConfirmPhoneVerificationUseCase:execute', workerIdHash: resourceIdHash(own.id) });
 
-    const holderResult = await this.workers.findByPhoneCandidates(generatePhoneCandidates(input.phone));
+    let phone = input.phone;
+    if (phone === undefined) {
+      const resolved = await this.resolveClaimPhone(input, own.id);
+      if (!resolved.ok) return resolved;
+      phone = resolved.phone;
+      if (!validPhone(phone)) return { ok: false, code: 'INVALID_PHONE' };
+    }
+    const normalized = normalizePhoneAR(phone);
+
+    const holderResult = await this.workers.findByPhoneCandidates(generatePhoneCandidates(phone));
     if (holderResult.isFailure) return { ok: false, code: 'INTERNAL' };
     const holder = holderResult.getValue();
     const other = holder !== null && holder.id !== own.id ? holder : null;
@@ -120,6 +138,19 @@ export class ConfirmPhoneVerificationUseCase {
       return { ok: false, code: 'PHONE_VERIFICATION_NOT_WRITTEN' };
     }
     return this.verified(own.id, 'VERIFIED', log);
+  }
+
+  /** Sem `phone` do cliente (D797): número do desafio de claim; plano B, o telefone gravado na ficha do e-mail do token (outra que a do token). */
+  private async resolveClaimPhone(input: ConfirmPhoneVerificationInput, ownId: string): Promise<{ ok: true; phone: string } | { ok: false; code: string }> {
+    const fromChallenge = await this.verification.claimChallengePhone(input.challengeId);
+    if (fromChallenge) return { ok: true, phone: fromChallenge };
+    // Desafio próprio que não é de claim (ex.: phone_verify): o número tem de vir do cliente.
+    if (await this.verification.methodFor(input.challengeId).then((m) => m.challengeId !== null)) return { ok: false, code: 'INVALID_PHONE' };
+    const ficha = await this.workers.findByEmail(input.email);
+    if (ficha.isFailure) return { ok: false, code: 'INTERNAL' };
+    const candidate = ficha.getValue();
+    if (!candidate || candidate.id === ownId || !candidate.phone) return { ok: false, code: 'CANDIDATE_NOT_FOUND' };
+    return { ok: true, phone: candidate.phone };
   }
 
   private async confirmClaim(

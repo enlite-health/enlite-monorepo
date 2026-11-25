@@ -53,6 +53,15 @@ export class PgPhoneVerificationRepository implements IPhoneVerificationReposito
       : { method: 'otp_verify_whatsapp', challengeId: null };
   }
 
+  async claimChallengePhone(challengeId: string): Promise<string | null> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(challengeId)) return null;
+    const { rows } = await this.pool.query<{ phone_e164: string }>(
+      `SELECT phone_e164 FROM otp_challenges WHERE id = $1 AND purpose = 'claim'`,
+      [challengeId],
+    );
+    return rows[0]?.phone_e164 ?? null;
+  }
+
   async linkProof(absorbedId: string): Promise<{ phoneNormalized: string; method: PhoneVerificationMethod; challengeId: string | null } | null> {
     const phone = await this.pool.query<{ phone_normalized: string | null }>(`SELECT phone_normalized FROM workers WHERE id = $1`, [absorbedId]);
     const phoneNormalized = phone.rows[0]?.phone_normalized;
