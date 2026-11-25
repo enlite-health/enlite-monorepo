@@ -129,6 +129,100 @@ describe('ADMISSION_TACTIQ_LINK_REQUIRED (spec 049, A7-7)', () => {
   });
 });
 
+// F3 (tactiq-vinculo-resiliente, D11/D14): assento e token morto; a chave sai de audience/adminNotified/autoReactivates.
+describe('ADMISSION_TACTIQ_LINK_REQUIRED — F3 (seat_missing, audience, master broken)', () => {
+  const h = () => getNotificationTypeHandler('ADMISSION_TACTIQ_LINK_REQUIRED');
+  const tq = (payload: Record<string, unknown>) =>
+    notif({ typeCode: 'ADMISSION_TACTIQ_LINK_REQUIRED', actorUid: 'system:admission', actorDisplayName: null, patientId: null, patientDisplayName: null, messageId: null, payload: payload as never });
+  const base = 'admin.notifications.tactiq.';
+
+  it('host auto: avisado e reativa sozinho → seatAuto', () => {
+    expect(h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: true }), t)).toBe(`${base}seatAuto:{}`);
+  });
+  it('host wait: avisado e NÃO reativa sozinho → seatWait', () => {
+    expect(h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: false }), t)).toBe(`${base}seatWait:{}`);
+  });
+  it('host sem master (ninguém avisado) → seatAskAdmin; adminNotified ausente também (não afirma que avisou)', () => {
+    expect(h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: false, autoReactivates: true }), t)).toBe(`${base}seatAskAdmin:{}`);
+    expect(h().buildText(tq({ reason: 'seat_missing' }), t)).toBe(`${base}seatAskAdmin:{}`);
+  });
+  it('master auto com nome: masterSeat + masterSeatAuto, com o nome', () => {
+    const out = h().buildText(tq({ reason: 'seat_missing', audience: 'master', hostName: 'Ana Souza', autoReactivates: true }), t);
+    expect(out).toBe(`${base}masterSeat:{"host":"Ana Souza"}${base}masterSeatAuto:{"host":"Ana Souza"}`);
+  });
+  it('master ¬auto: masterSeat + masterSeatWait', () => {
+    const out = h().buildText(tq({ reason: 'seat_missing', audience: 'master', hostName: 'Ana Souza', autoReactivates: false }), t);
+    expect(out).toBe(`${base}masterSeat:{"host":"Ana Souza"}${base}masterSeatWait:{"host":"Ana Souza"}`);
+  });
+  it('master sem nome: usa o hostFallbackStart (nunca "undefined")', () => {
+    const out = h().buildText(tq({ reason: 'seat_missing', audience: 'master' }), t);
+    expect(out).toContain('admin.notifications.importBlocked.hostFallbackStart:{}');
+    expect(out).not.toContain('undefined');
+  });
+  it('master broken (token morto) sem nome → masterBroken; broken do host segue "broken"', () => {
+    expect(h().buildText(tq({ reason: 'broken', audience: 'master' }), t)).toBe(`${base}masterBroken:{"host":"admin.notifications.importBlocked.hostFallbackStart:{}"}`);
+    expect(h().buildText(tq({ reason: 'broken', audience: 'host' }), t)).toBe(`${base}broken:{}`);
+    expect(h().buildText(tq({ reason: 'broken' }), t)).toBe(`${base}broken:{}`);
+  });
+  it('valor estranho de reason continua em "missing", mesmo com audience master', () => {
+    expect(h().buildText(tq({ reason: 'seat_banana', audience: 'master' }), t)).toBe(`${base}missing:{}`);
+  });
+  it('(F5) master seat_pending: com nome e sem nome (hostFallbackStart, nunca "undefined")', () => {
+    expect(h().buildText(tq({ reason: 'seat_pending', audience: 'master', hostName: 'Ana Souza' }), t)).toBe(`${base}masterSeatPending:{"host":"Ana Souza"}`);
+    const out = h().buildText(tq({ reason: 'seat_pending', audience: 'master' }), t);
+    expect(out).toBe(`${base}masterSeatPending:{"host":"admin.notifications.importBlocked.hostFallbackStart:{}"}`);
+    expect(out).not.toContain('undefined');
+  });
+  it('(F5) host seat_ready: firstLink=true → seatReadyFirst; firstLink=false → seatReadyAgain; audience/firstLink ausentes = host, 1º', () => {
+    expect(h().buildText(tq({ reason: 'seat_ready', audience: 'host', firstLink: true }), t)).toBe(`${base}seatReadyFirst:{}`);
+    expect(h().buildText(tq({ reason: 'seat_ready', audience: 'host', firstLink: false }), t)).toBe(`${base}seatReadyAgain:{}`);
+    expect(h().buildText(tq({ reason: 'seat_ready' }), t)).toBe(`${base}seatReadyFirst:{}`);
+  });
+  it('(F5) combinação fora do contrato (seat_ready ao master, seat_pending ao host) cai em "missing"', () => {
+    expect(h().buildText(tq({ reason: 'seat_ready', audience: 'master', firstLink: true }), t)).toBe(`${base}missing:{}`);
+    expect(h().buildText(tq({ reason: 'seat_pending', audience: 'host' }), t)).toBe(`${base}missing:{}`);
+    expect(h().detailLine?.(tq({ reason: 'seat_ready', audience: 'host', firstLink: true }), t)).toBe(`${base}seatReadyFirst:{}`);
+  });
+  it.each([['es', esJson], ['pt-BR', ptBRJson]] as const)('(F5) %s: textos reais de licença — nome do master, sem placeholder, Settings → MCP só no "again"', async (lng, json) => {
+    const i18n = i18next.createInstance();
+    await i18n.init({ lng, resources: { [lng]: { translation: json } }, interpolation: { escapeValue: false } });
+    const tr = i18n.t.bind(i18n) as unknown as (k: string, o?: Record<string, unknown>) => string;
+    const pending = h().buildText(tq({ reason: 'seat_pending', audience: 'master', hostName: 'Ana Souza' }), tr);
+    expect(pending).toContain('Ana Souza');
+    expect(pending).not.toContain('{{');
+    const first = h().buildText(tq({ reason: 'seat_ready', audience: 'host', firstLink: true }), tr);
+    const again = h().buildText(tq({ reason: 'seat_ready', audience: 'host', firstLink: false }), tr);
+    expect(first).not.toContain('Settings → MCP');
+    expect(again).toContain('Settings → MCP');
+    expect(first).toMatch(/@enlite\.health/);
+  });
+  it('detailLine acompanha o texto', () => {
+    const n = tq({ reason: 'seat_missing', audience: 'host', adminNotified: true });
+    expect(h().detailLine?.(n, t)).toBe(`${base}seatAuto:{}`);
+  });
+
+  it.each([['es', esJson], ['pt-BR', ptBRJson]] as const)('%s: textos reais — host sem "vincular"; master leva o nome (ou o fallback)', async (lng, json) => {
+    const i18n = i18next.createInstance();
+    await i18n.init({ lng, resources: { [lng]: { translation: json } }, interpolation: { escapeValue: false } });
+    const tr = i18n.t.bind(i18n) as unknown as (k: string, o?: Record<string, unknown>) => string;
+    const host = [
+      h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: true }), tr),
+      h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: false }), tr),
+      h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: false }), tr),
+    ];
+    for (const text of host) {
+      expect(text.length).toBeGreaterThan(20);
+      expect(text.toLowerCase()).not.toMatch(/vincular|vinculá|vincule/);
+    }
+    const master = h().buildText(tq({ reason: 'seat_missing', audience: 'master', hostName: 'Ana Souza', autoReactivates: true }), tr);
+    expect(master).toContain('Ana Souza');
+    expect(master).not.toContain('{{');
+    const fallback = h().buildText(tq({ reason: 'broken', audience: 'master' }), tr);
+    expect(fallback).not.toContain('{{');
+    expect(fallback).toMatch(lng === 'es' ? /La persona responsable/ : /A pessoa responsável/);
+  });
+});
+
 // Spec 050 (F15, R-3): o aviso da transição do relatório do Chrome — o servidor manda só `{state}`; o TEXTO vive aqui.
 describe('ADMISSION_TACTIQ_EXTENSION_CHANGED (spec 050, F15)', () => {
   const ext = (state: string | null) =>
@@ -327,6 +421,26 @@ describe('ADMISSION_IMPORT_BLOCKED (spec 083, F4)', () => {
   it('enquadre usa "entrevista de enquadre"; wrong_account tem o motivo PRÓPRIO', async () => {
     const body = handler().detailLine?.(aviso({ ...HOST, kind: 'enquadre', reason: 'wrong_account' }), await realT('pt-BR')) ?? '';
     expect(body).toContain('sua entrevista de enquadre de 4 de nov. às 14:00, porque a conta do Tactiq conectada não é a sua.');
+  });
+
+  it.each([
+    ['pt-BR', 'Esta entrevista não foi gravada no Tactiq', 'A sua reunião de admissão de 4 de nov. às 14:00 não foi gravada no Tactiq, então não há transcrição nem resumo.'],
+    ['es', 'Esta entrevista no quedó grabada en Tactiq', 'Tu reunión de admisión del 4 de nov. a las 14:00 no quedó grabada en Tactiq, así que no hay transcripción ni resumen.'],
+  ] as const)('not_recorded (expired, host) usa título e corpo PRÓPRIOS, sem prazo nem motivo de vínculo (%s)', async (lng, titulo, inicio) => {
+    const t2 = await realT(lng);
+    const n = aviso({ ...HOST, stage: 'expired', reason: 'not_recorded' });
+    const body = handler().detailLine?.(n, t2) ?? '';
+    expect(handler().buildText(n, t2).startsWith(`${titulo}. `)).toBe(true);
+    expect(body.startsWith(inicio)).toBe(true);
+    expect(body).not.toMatch(/\{\{|admin\.notifications/);
+    expect(body).not.toContain('Vincular');
+  });
+
+  it('not_recorded fora de expired/host NÃO usa o texto de reunião sem gravação (cai no texto do estágio)', async () => {
+    const t2 = await realT('pt-BR');
+    for (const p of [{ ...HOST, reason: 'not_recorded' }, { ...HOST, stage: 'expired', reason: 'not_recorded', audience: 'supervisor' }]) {
+      expect(handler().detailLine?.(aviso(p), t2) ?? '').not.toContain('não foi gravada no Tactiq');
+    }
   });
 
   it.each([['pt-BR', 'a pessoa responsável'], ['es', 'la persona responsable']] as const)('supervisor: mostra o nome de quem fez a reunião; sem nome usa o fallback (%s)', async (lng, fallback) => {

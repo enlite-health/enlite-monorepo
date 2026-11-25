@@ -131,8 +131,7 @@ function payloadOf(
 ): PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | null {
   if (isSystemPtType(code)) return ptPayloadOf(raw);
   if (code === 'ADMISSION_TACTIQ_LINK_REQUIRED') {
-    const reason = raw?.reason;
-    return reason === 'missing' || reason === 'broken' || reason === 'wrong_account' ? { reason } : null;
+    return tactiqLinkPayloadOf(raw);
   }
   if (code === 'ITINERARY_UNCOVERED_SHIFTS') return itineraryPayloadOf(raw);
   if (code === 'PEDIDO_IA_APLICAR') return pedidoAplicarPayloadOf(raw);
@@ -142,6 +141,33 @@ function payloadOf(
     return state === 'installed' || state === 'missing' || state === 'disabled' ? { state } : null;
   }
   return null;
+}
+
+/**
+ * Aviso do vínculo do Tactiq (D11): reconstrói chave a chave, nunca repassa o `raw`. `audience` só vale `master` em `seat_missing`/`broken`/`seat_pending`
+ * (senão cai para o responsável); `hostName` só na cópia `master`; `adminNotified` só em `seat_missing` ao `host`; `autoReactivates` só em
+ * `seat_missing`; `firstLink` só em `seat_ready` (host). `seat_missing` sem `audience` válida é estranho = sem payload (o front cai no texto `missing`).
+ */
+function tactiqLinkPayloadOf(raw: Record<string, unknown> | null): AdmissionTactiqLinkPayload | null {
+  const reason = raw?.reason;
+  const known = ['missing', 'broken', 'wrong_account', 'seat_missing', 'seat_pending', 'seat_ready'] as const;
+  if (!known.includes(reason as (typeof known)[number])) return null;
+  const { audience: rawAudience, hostName, adminNotified, autoReactivates, firstLink } = raw as Record<string, unknown>;
+  const masterAllowed = reason === 'seat_missing' || reason === 'broken' || reason === 'seat_pending';
+  const audience = rawAudience === 'host' || (rawAudience === 'master' && masterAllowed) ? rawAudience : undefined;
+  if (reason === 'seat_missing' && !audience) return null;
+  // F5 (D11): `seat_pending` só existe para o Master; `seat_ready` só para o host e com `firstLink` boolean — fora disso é estranho = sem payload.
+  if (reason === 'seat_pending' && audience !== 'master') return null;
+  if (reason === 'seat_ready' && (audience !== 'host' || typeof firstLink !== 'boolean')) return null;
+  const out: AdmissionTactiqLinkPayload = { reason: reason as AdmissionTactiqLinkPayload['reason'] };
+  if (audience) out.audience = audience;
+  if (audience === 'master' && typeof hostName === 'string' && hostName !== '') out.hostName = hostName;
+  if (reason === 'seat_missing') {
+    if (audience === 'host' && typeof adminNotified === 'boolean') out.adminNotified = adminNotified;
+    if (typeof autoReactivates === 'boolean') out.autoReactivates = autoReactivates;
+  }
+  if (reason === 'seat_ready' && typeof firstLink === 'boolean') out.firstLink = firstLink;
+  return out;
 }
 
 /** Spec 083 D-7: lê chave a chave (enums conferidos); linha malformada = sem payload; `hostName` só se for string não vazia. */

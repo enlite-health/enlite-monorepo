@@ -83,12 +83,12 @@ export interface ImportDestination<S extends ImportSubject = ImportSubject> {
   summaryInput?(subject: S): Promise<Pick<AdmissionSummaryInput, 'convocados'>>;
 }
 
-/** O aviso no sino da importação que só uma pessoa resolve (spec 083, D-5). `reason` é sempre humano (`no_link`/`wrong_account`). */
+/** O aviso no sino da importação que só uma pessoa resolve (spec 083, D-5). `reason` é humano (`no_link`/`wrong_account`) ou `not_recorded` (reunião não gravada: só `stage=expired`, sem ação humana). */
 export interface ImportBlockNotice {
   stage: 'blocked' | 'reminder' | 'expired';
   /** Leva também a cópia `will_be_lost` à gestão (último lembrete, ou aviso inicial quando nenhum lembrete cabe). */
   warnManagement: boolean;
-  reason: 'no_link' | 'wrong_account';
+  reason: 'no_link' | 'wrong_account' | 'not_recorded';
   hostEmail: string;
   /** Início da reunião (`slot_start`). */
   meetingAt: Date;

@@ -5,11 +5,11 @@ export const IMPORT_MIN_DELAY_MS = 10 * 60 * 1000;
 /** 72 h sem transcrição -> `expired` + alarme (spec §4.3). */
 export const IMPORT_EXPIRE_AFTER_MS = 72 * 60 * 60 * 1000;
 /**
- * Depois deste tempo do fim real, a conta vinculada que NÃO enxerga reunião nenhuma com o código é tratada como conta errada
- * (spec §3.0.1, passo 5). ⚙️ (minha, a confirmar): a spec não fixa a espera; 3 h cobre o atraso normal de sincronia do Tactiq.
- * Limite conhecido: "extensão desligada" e "conta errada" são indistinguíveis só pelo MCP (ver §11).
+ * Depois deste tempo do fim real, a conta vinculada que NÃO enxerga reunião nenhuma com o código tem a reunião tratada como "não gravada"
+ * (design D10): expira com `not_recorded` e avisa o host; o vínculo NÃO é tocado ("extensão desligada" e "conta errada" são
+ * indistinguíveis só pelo MCP, então a importação não rebaixa mais o vínculo). ⚙️ 3 h cobre o atraso normal de sincronia do Tactiq.
  */
-export const WRONG_ACCOUNT_AFTER_MS = 3 * 60 * 60 * 1000;
+export const NOT_RECORDED_AFTER_MS = 3 * 60 * 60 * 1000;
 /** P3: `createdAt` em [início − 15 min, início + 60 min]. */
 export const MATCH_WINDOW_BEFORE_MS = 15 * 60 * 1000;
 export const MATCH_WINDOW_AFTER_MS = 60 * 60 * 1000;

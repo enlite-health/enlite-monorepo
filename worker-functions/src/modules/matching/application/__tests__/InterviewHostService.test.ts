@@ -28,7 +28,11 @@ function build(opts: { eligible?: boolean; existing?: InterviewHostRecord | null
     insert: jest.fn(async () => 'new-id'),
     update: jest.fn(async () => undefined),
   };
-  const tactiq = { statesFor: jest.fn(async () => new Map([['flor@enlite.health', 'linked' as const]])) };
+  const tactiq = {
+    statesFor: jest.fn(async () => new Map([['flor@enlite.health', 'linked' as const]])),
+    seatsDeclaredFor: jest.fn(async () => new Set(['flor@enlite.health'])),
+    declareSeat: jest.fn(async () => ({ changed: true })),
+  };
   const service = new InterviewHostService({ db: {} as never, repo: repo as never, tactiq });
   return { service, repo, tactiq };
 }
@@ -103,6 +107,31 @@ describe('InterviewHostService', () => {
       expect(tactiq.statesFor).toHaveBeenCalledWith(['flor@enlite.health', 'anajoulie@enlite.health']);
       expect(items.map((i) => i.tactiq)).toEqual(['linked', 'missing']);
       expect(items[1].userMissing).toBe(true);
+    });
+
+    it('F5: `tactiqSeatDeclared` vem da trilha (por e-mail em minúsculas), nunca calculado aqui', async () => {
+      const { service, repo, tactiq } = build();
+      repo.listAdmin.mockResolvedValue([
+        { id: 'h1', email: 'flor@enlite.health', userMissing: false },
+        { id: 'h2', email: 'Anajoulie@enlite.health', userMissing: false },
+      ]);
+      const items = await service.list();
+      expect(tactiq.seatsDeclaredFor).toHaveBeenCalledWith(['flor@enlite.health', 'Anajoulie@enlite.health']);
+      expect(items.map((i) => i.tactiqSeatDeclared)).toEqual([true, false]);
+    });
+  });
+
+  describe('setTactiqSeat (F5, D16)', () => {
+    it('entrega o e-mail da linha, o valor e o ator ao serviço do vínculo', async () => {
+      const { service, tactiq } = build();
+      await service.setTactiqSeat('h1', true, 'master-1');
+      expect(tactiq.declareSeat).toHaveBeenCalledWith({ email: USER.email, assigned: true, actorUid: 'master-1' }, expect.anything());
+    });
+
+    it('linha inexistente → InterviewHostNotFoundError e nada é declarado', async () => {
+      const { service, tactiq } = build({ byId: null });
+      await expect(service.setTactiqSeat('nope', true, 'master-1')).rejects.toBeInstanceOf(InterviewHostNotFoundError);
+      expect(tactiq.declareSeat).not.toHaveBeenCalled();
     });
   });
 });

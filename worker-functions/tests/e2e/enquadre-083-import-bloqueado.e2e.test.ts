@@ -10,6 +10,7 @@
 import { Pool } from 'pg';
 import { TENANT_E2E } from './helpers/permissionFamilyHarness';
 import { criarEscopoDeEnv } from './helpers/admissionHarnessKit';
+import { declareTactiqSeat } from './helpers/tactiqSeatFixture';
 import { FakeTactiqMcp, FakeTactiqOAuth } from '../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import type { FakeAdmissionSummaryGenerator } from '../../src/modules/matching/infrastructure/doubles/FakeAdmissionSummaryGenerator';
 import type { InMemoryTranscriptVault } from '../../src/modules/matching/infrastructure/doubles/InMemoryTranscriptVault';
@@ -70,10 +71,11 @@ describe('importação do enquadre bloqueada por motivo humano — transita uma 
 
   /** O vínculo REAL: `startLink` + `completeLink` com o relógio do teste. */
   async function conectar(e: Ev): Promise<void> {
+    await declareTactiqSeat(admin, e.host); // F5 (D16): quem nunca vinculou precisa da licença declarada para começar
     await link.startLink({ uid: e.uid, email: e.host });
     const { state } = oauth.authorizeCalls[oauth.authorizeCalls.length - 1];
     await link.completeLink({ state, code: e.refresh });
-    // o vínculo precisa ser ANTERIOR ao fim da reunião: reunião terminada antes do 1º vínculo só expira (não vira wrong_account)
+    // o vínculo precisa ser ANTERIOR ao fim da reunião: reunião terminada antes do 1º vínculo só expira (sem aviso `not_recorded`)
     await admin.query(`UPDATE tactiq_links SET created_at = $2 WHERE lower(host_email) = lower($1)`, [e.host, new Date(e.start.getTime() - 24 * HOUR)]);
   }
 
@@ -239,7 +241,7 @@ describe('importação do enquadre bloqueada por motivo humano — transita uma 
     expect(logLines('enquadre.import_blocked', e.id)).toHaveLength(1);
   });
 
-  it('reabrir e bloquear de NOVO (`wrong_account`): `blocked_reason` passa de `no_link` a `wrong_account` (o CHECK da 521 aceita), 2 transições e o contador recomeça', async () => {
+  it('bloqueio `wrong_account` LEGADO (D8, semeado por SQL: nada mais o produz): `blocked_reason` passa de `no_link` a `wrong_account` (o CHECK da 521 aceita) e o contador recomeça nele', async () => {
     const e = await evento();
     await service.runOnce(clock);
     const b1 = await bloqueadoEm(e.id);
@@ -248,12 +250,13 @@ describe('importação do enquadre bloqueada por motivo humano — transita uma 
 
     clock = em(b1, 25 * HOUR);
     await conectar(e);
-    ver(e, []); // a conta conectada não enxerga a reunião
+    ver(e, []);
     clock = em(b1, 26 * HOUR);
-    expect((await service.runOnce(clock)).wrongAccount).toBe(1);
+    await admin.query(`UPDATE enquadre_events SET import_status = 'blocked', blocked_reason = 'wrong_account' WHERE id = $1`, [e.id]);
+    await admin.query(`INSERT INTO enquadre_event_trail (event_id, kind, outcome, reason, at) VALUES ($1, 'import_blocked', 'blocked', 'wrong_account', $2)`, [e.id, clock]);
 
     expect((await trilha(e.id)).map((t) => [t.kind, t.reason])).toEqual([
-      ['import_blocked', 'no_link'], ['import_reminder', 'no_link'], ['import_reopened', 'link_changed'], ['import_blocked', 'wrong_account'],
+      ['import_blocked', 'no_link'], ['import_reminder', 'no_link'], ['import_blocked', 'wrong_account'],
     ]);
     expect(await row(e.id)).toEqual({ import_status: 'blocked', blocked_reason: 'wrong_account' });
     const b2 = await bloqueadoEm(e.id);

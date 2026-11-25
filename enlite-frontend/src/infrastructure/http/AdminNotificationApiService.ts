@@ -24,9 +24,19 @@ export type NotificationTypeCode =
   | 'PEDIDO_IA_APLICAR';
 
 /** spec 049: SÓ o motivo (nunca e-mail nem token) — o TEXTO vive no cliente (ES/PT na i18n). */
-export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account';
+export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account' | 'seat_missing' | 'seat_pending' | 'seat_ready';
 export interface AdmissionTactiqLinkPayload {
   reason: AdmissionTactiqLinkReason;
+  /** F3 (D11): a quem o aviso se dirige. Ausente = host (o aviso de sempre). `broken` + `master` = token morto. */
+  audience?: 'host' | 'master';
+  /** Só na cópia ao Master; ausente = o texto usa o `hostFallback`. */
+  hostName?: string;
+  /** Host: o Acesso Master já foi avisado. Ausente = não afirmar que avisamos. */
+  adminNotified?: boolean;
+  /** O vínculo se reativa sozinho quando o assento chegar. Ausente = sim. */
+  autoReactivates?: boolean;
+  /** F5 (D16): só em `seat_ready` (host). `true` = 1º vínculo da pessoa; `false` = legado que já autorizou antes do assento. Ausente = trate como 1º. */
+  firstLink?: boolean;
 }
 
 /** spec 050 F15: SÓ o estado novo da extensão (nunca e-mail nem id de perfil) — o TEXTO vive no cliente. */
@@ -41,7 +51,7 @@ export interface AdmissionTactiqExtensionPayload {
  */
 export type ImportBlockedStage = 'blocked' | 'reminder' | 'expired' | 'will_be_lost';
 export type ImportBlockedKind = 'admission' | 'enquadre';
-export type ImportBlockedReason = 'no_link' | 'wrong_account';
+export type ImportBlockedReason = 'no_link' | 'wrong_account' | 'not_recorded';
 export type ImportBlockedAudience = 'host' | 'supervisor';
 export interface ImportBlockedPayload {
   stage: ImportBlockedStage;

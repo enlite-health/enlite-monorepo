@@ -12,6 +12,7 @@ import {
   NotificationRepository,
   type AdmissionTactiqLinkPayload,
   type AdmissionTactiqLinkReason,
+  type AdmissionTactiqLinkAudience,
   type AdmissionTactiqExtensionPayload,
   type AdmissionTactiqExtensionState,
   type PtContactsPendingPayload,
@@ -66,14 +67,58 @@ export function buildItineraryUncoveredShiftsPayload(input: {
   };
 }
 
-const ADMISSION_TACTIQ_REASONS: readonly AdmissionTactiqLinkReason[] = ['missing', 'broken', 'wrong_account'];
+const ADMISSION_TACTIQ_REASONS: readonly AdmissionTactiqLinkReason[] = ['missing', 'broken', 'wrong_account', 'seat_missing', 'seat_pending', 'seat_ready'];
+const ADMISSION_TACTIQ_AUDIENCES: readonly AdmissionTactiqLinkAudience[] = ['host', 'master'];
+/** Motivos que a cópia ao Acesso Master pode carregar (D11): o resto só existe para o próprio responsável. */
+const MASTER_REASONS: readonly AdmissionTactiqLinkReason[] = ['seat_missing', 'broken', 'seat_pending'];
 
-/** Payload fechado de 1 chave. Motivo fora do conjunto é erro de programação (lança) — nada livre entra. */
-export function buildAdmissionTactiqLinkPayload(reason: string): AdmissionTactiqLinkPayload {
+export interface AdmissionTactiqLinkExtras {
+  audience?: string;
+  hostName?: string | null;
+  adminNotified?: boolean;
+  autoReactivates?: boolean;
+  firstLink?: boolean;
+}
+
+/**
+ * Payload fechado do aviso do vínculo (D11). Motivo fora do conjunto é erro de programação (lança); sem `extras` o payload é só
+ * `{ reason }` (o contrato antigo). Combinações proibidas lançam: `master` só com `seat_missing`/`broken`; `hostName` só em `master`;
+ * `adminNotified` só em `seat_missing` ao `host`; `autoReactivates` só em `seat_missing`; `seat_missing` exige `audience` e os booleanos.
+ * F5: `seat_pending` só `master`; `seat_ready` só `host` e exige `firstLink` boolean (que só existe em `seat_ready`).
+ */
+export function buildAdmissionTactiqLinkPayload(reason: string, extras: AdmissionTactiqLinkExtras = {}): AdmissionTactiqLinkPayload {
   if (!(ADMISSION_TACTIQ_REASONS as readonly string[]).includes(reason)) {
     throw new Error('admission_tactiq_link_payload: motivo fora do conjunto fechado');
   }
-  return { reason: reason as AdmissionTactiqLinkReason };
+  const r = reason as AdmissionTactiqLinkReason;
+  const { audience, hostName, adminNotified, autoReactivates, firstLink } = extras;
+  const fail = (why: string): never => {
+    throw new Error(`admission_tactiq_link_payload: ${why}`);
+  };
+  if (audience !== undefined && !(ADMISSION_TACTIQ_AUDIENCES as readonly string[]).includes(audience)) fail('audience fora do conjunto fechado');
+  if (audience === 'master' && !MASTER_REASONS.includes(r)) fail('cópia do Acesso Master só com seat_missing, broken ou seat_pending');
+  if (r === 'seat_pending' && audience !== 'master') fail('seat_pending só vai ao Acesso Master');
+  if (r === 'seat_ready' && audience !== 'host') fail('seat_ready só vai ao host');
+  if (firstLink !== undefined && (r !== 'seat_ready' || typeof firstLink !== 'boolean')) fail('firstLink só em seat_ready');
+  if (r === 'seat_ready' && typeof firstLink !== 'boolean') fail('seat_ready exige firstLink');
+  const hasName = hostName !== undefined && hostName !== null && hostName !== '';
+  if (hasName && audience !== 'master') fail('hostName só na cópia do Acesso Master');
+  if (adminNotified !== undefined && (r !== 'seat_missing' || audience !== 'host' || typeof adminNotified !== 'boolean')) {
+    fail('adminNotified só em seat_missing ao host');
+  }
+  if (autoReactivates !== undefined && (r !== 'seat_missing' || typeof autoReactivates !== 'boolean')) fail('autoReactivates só em seat_missing');
+  if (r === 'seat_missing') {
+    if (audience === undefined) fail('seat_missing exige audience');
+    if (typeof autoReactivates !== 'boolean') fail('seat_missing exige autoReactivates');
+    if (audience === 'host' && typeof adminNotified !== 'boolean') fail('seat_missing ao host exige adminNotified');
+  }
+  const out: AdmissionTactiqLinkPayload = { reason: r };
+  if (audience !== undefined) out.audience = audience as AdmissionTactiqLinkAudience;
+  if (hasName) out.hostName = String(hostName);
+  if (adminNotified !== undefined) out.adminNotified = adminNotified;
+  if (autoReactivates !== undefined) out.autoReactivates = autoReactivates;
+  if (firstLink !== undefined) out.firstLink = firstLink;
+  return out;
 }
 
 const ADMISSION_EXTENSION_STATES: readonly AdmissionTactiqExtensionState[] = ['installed', 'missing', 'disabled'];
@@ -103,6 +148,9 @@ export function buildAdmissionImportBlockedPayload(input: {
   }
   if ((input.stage === 'will_be_lost') !== (input.audience === 'supervisor')) {
     throw new Error('admission_import_blocked_payload: combinação stage/audience inválida');
+  }
+  if (input.reason === 'not_recorded' && (input.stage !== 'expired' || input.audience !== 'host')) {
+    throw new Error('admission_import_blocked_payload: combinação stage/audience inválida (not_recorded só expired ao host)');
   }
   const base = {
     stage: input.stage, kind: input.kind, reason: input.reason, audience: input.audience, meetingAt: input.meetingAt, deadlineAt: input.deadlineAt,
@@ -154,9 +202,10 @@ export class SystemNotificationPublisher {
    */
   async publishAdmissionTactiqLinkRequired(
     client: PoolClient,
-    input: { recipientUid: string | null; reason: string },
+    input: { recipientUid: string | null; reason: string } & AdmissionTactiqLinkExtras,
   ): Promise<string | null> {
-    const payload = buildAdmissionTactiqLinkPayload(input.reason);
+    const { recipientUid: _recipient, reason, ...extras } = input;
+    const payload = buildAdmissionTactiqLinkPayload(reason, extras);
     if (!input.recipientUid) return null;
     const eventId = await this.repository.insertEvent(
       {

@@ -12,7 +12,8 @@ import {
  * Dublê do OAuth do Tactiq (NODE_ENV=test ou ADMISSION_EXTERNALS=fake). Determinístico e programável:
  *  - `exchangeCode`: o código `rt-<x>` devolve o refresh token `rt-<x>` (o teste escolhe o token dublado);
  *  - `exchangeScope`: `scope` devolvido pela troca do código (ausente = "não apurado", como o Tactiq real pode devolver);
- *  - `refresh`: `invalidate(token)` faz o token seguinte falhar com `invalid_grant`; `rotateTo` devolve um refresh novo.
+ *  - `refresh`: `invalidate(token)` faz o token seguinte falhar com `invalid_grant`; `rotateTo` devolve um refresh novo;
+ *    `refreshScope` é o `scope` que a renovação devolve (ausente = "não apurado", F22).
  */
 export class FakeTactiqOAuth implements TactiqOAuthPort {
   readonly authorizeCalls: Array<{ state: string; codeChallenge: string }> = [];
@@ -22,6 +23,8 @@ export class FakeTactiqOAuth implements TactiqOAuthPort {
   private nextRotation: string | null = null;
   /** `scope` que a PRÓXIMA e as seguintes trocas de código devolvem; `undefined` = a resposta vem sem `scope`. */
   exchangeScope: string | undefined = undefined;
+  /** `scope` que as renovações devolvem; `undefined` = a resposta do refresh vem sem `scope` (F22 não medida). */
+  refreshScope: string | undefined = undefined;
 
   async buildAuthorizeUrl(input: { state: string; codeChallenge: string }): Promise<string> {
     this.authorizeCalls.push(input);
@@ -43,7 +46,11 @@ export class FakeTactiqOAuth implements TactiqOAuthPort {
     if (this.invalid.has(refreshToken)) throw new TactiqInvalidGrantError();
     const rotated = this.nextRotation;
     this.nextRotation = null;
-    return { accessToken: `at-${refreshToken}`, ...(rotated ? { refreshToken: rotated } : {}) };
+    return {
+      accessToken: `at-${refreshToken}`,
+      ...(rotated ? { refreshToken: rotated } : {}),
+      ...(this.refreshScope !== undefined ? { scope: this.refreshScope } : {}),
+    };
   }
 
   invalidate(refreshToken: string): void {

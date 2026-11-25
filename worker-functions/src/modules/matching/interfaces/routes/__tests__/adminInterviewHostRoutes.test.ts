@@ -1,5 +1,5 @@
 /**
- * Lista dourada das rotas da tela Entrevistadores (spec 055): 4 rotas, 2 células, família `admin.users`. Varre o router de verdade
+ * Lista dourada das rotas da tela Entrevistadores (spec 055 + F5 da tactiq-vinculo-resiliente): 5 rotas, 2 células, família `admin.users`. Varre o router de verdade
  * (o `scanExpressRouter` do catálogo) e afirma que TODA rota declara, e declara a célula do MAPA — não a que o código escolheu.
  */
 import express from 'express';
@@ -21,10 +21,12 @@ const ESPERADO: Record<string, string> = {
   'GET /interview-hosts/candidates': 'interview_host:update',
   'POST /interview-hosts': 'interview_host:update',
   'PATCH /interview-hosts/:id': 'interview_host:update',
+  // F5 (D16): "Licencia asignada" — a MESMA célula de escrita, nenhuma célula nova.
+  'POST /interview-hosts/:id/tactiq-seat': 'interview_host:update',
 };
 
 const responde = (nome: string) => (_req: express.Request, res: express.Response) => res.json({ m: nome });
-const controllerDuble = Object.fromEntries(['list', 'candidates', 'create', 'patch'].map((m) => [m, responde(m)]));
+const controllerDuble = Object.fromEntries(['list', 'candidates', 'create', 'patch', 'tactiqSeat'].map((m) => [m, responde(m)]));
 
 const build = (): express.Router => createAdminInterviewHostRoutes(authDouble(), permissionsDouble(), controllerDuble as never);
 
