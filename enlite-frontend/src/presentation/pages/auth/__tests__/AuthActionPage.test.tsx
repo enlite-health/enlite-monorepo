@@ -174,10 +174,10 @@ describe('AuthActionPage', () => {
     });
 
     fireEvent.change(screen.getByTestId('password-new-password'), {
-      target: { value: 'password123' },
+      target: { value: 'Password123!' },
     });
     fireEvent.change(screen.getByTestId('password-confirm-password'), {
-      target: { value: 'differentpass' },
+      target: { value: 'Different123!' },
     });
 
     const form = screen.getByTestId('password-new-password').closest('form')!;
@@ -219,6 +219,52 @@ describe('AuthActionPage', () => {
     expect(mockConfirmPasswordReset).not.toHaveBeenCalled();
   });
 
+  it('exibe o requisito de senha quando tem 8 caracteres mas falta classe (reset/convite), sem chamar confirmPasswordReset', async () => {
+    setParams({ mode: 'resetPassword', oobCode: 'valid-code' });
+    mockVerifyPasswordResetCode.mockResolvedValueOnce('staff@enlite.health');
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('password-new-password')).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByTestId('password-new-password'), { target: { value: 'abcdefg1' } });
+    fireEvent.change(screen.getByTestId('password-confirm-password'), { target: { value: 'abcdefg1' } });
+    fireEvent.submit(screen.getByTestId('password-new-password').closest('form')!);
+
+    await waitFor(() => {
+      expect(screen.getByText('auth.errors.passwordRequirements')).toBeTruthy();
+    });
+    expect(mockConfirmPasswordReset).not.toHaveBeenCalled();
+  });
+
+  // ─── 5b. Servidor recusa a senha (política do Identity Platform) ───────────
+
+  it('mostra o requisito de senha (não o erro genérico) quando o servidor recusa a senha', async () => {
+    const { FirebaseError } = await import('firebase/app');
+    setParams({ mode: 'resetPassword', oobCode: 'valid-code' });
+    mockVerifyPasswordResetCode.mockResolvedValueOnce('staff@enlite.health');
+    mockConfirmPasswordReset.mockRejectedValueOnce(
+      new FirebaseError('auth/password-does-not-meet-requirements', 'Password does not meet requirements'),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('password-new-password')).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByTestId('password-new-password'), { target: { value: 'Newpassword123!' } });
+    fireEvent.change(screen.getByTestId('password-confirm-password'), { target: { value: 'Newpassword123!' } });
+    fireEvent.submit(screen.getByTestId('password-new-password').closest('form')!);
+
+    await waitFor(() => {
+      expect(screen.getByText('auth.errors.passwordRequirements')).toBeTruthy();
+    });
+    expect(screen.queryByText('auth.action.genericError')).toBeNull();
+  });
+
   // ─── 6. Submit OK + role=admin → navigate('/admin/dashboard') ──────────────────────
 
   it('navega para /admin/dashboard quando role=admin apos submit bem-sucedido', async () => {
@@ -240,10 +286,10 @@ describe('AuthActionPage', () => {
     });
 
     fireEvent.change(screen.getByTestId('password-new-password'), {
-      target: { value: 'newpassword123' },
+      target: { value: 'Newpassword123!' },
     });
     fireEvent.change(screen.getByTestId('password-confirm-password'), {
-      target: { value: 'newpassword123' },
+      target: { value: 'Newpassword123!' },
     });
 
     const form = screen.getByTestId('password-new-password').closest('form')!;
@@ -275,10 +321,10 @@ describe('AuthActionPage', () => {
     });
 
     fireEvent.change(screen.getByTestId('password-new-password'), {
-      target: { value: 'newpassword123' },
+      target: { value: 'Newpassword123!' },
     });
     fireEvent.change(screen.getByTestId('password-confirm-password'), {
-      target: { value: 'newpassword123' },
+      target: { value: 'Newpassword123!' },
     });
 
     const form = screen.getByTestId('password-new-password').closest('form')!;
@@ -310,10 +356,10 @@ describe('AuthActionPage', () => {
     });
 
     fireEvent.change(screen.getByTestId('password-new-password'), {
-      target: { value: 'newpassword123' },
+      target: { value: 'Newpassword123!' },
     });
     fireEvent.change(screen.getByTestId('password-confirm-password'), {
-      target: { value: 'newpassword123' },
+      target: { value: 'Newpassword123!' },
     });
 
     const form = screen.getByTestId('password-new-password').closest('form')!;
@@ -337,8 +383,8 @@ describe('AuthActionPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('password-new-password')).toBeTruthy();
     });
-    fireEvent.change(screen.getByTestId('password-new-password'), { target: { value: 'newpassword123' } });
-    fireEvent.change(screen.getByTestId('password-confirm-password'), { target: { value: 'newpassword123' } });
+    fireEvent.change(screen.getByTestId('password-new-password'), { target: { value: 'Newpassword123!' } });
+    fireEvent.change(screen.getByTestId('password-confirm-password'), { target: { value: 'Newpassword123!' } });
     fireEvent.submit(screen.getByTestId('password-new-password').closest('form')!);
   }
 
@@ -361,7 +407,7 @@ describe('AuthActionPage', () => {
   it('exibe erro inline e mantem form visivel quando confirmPasswordReset falha', async () => {
     setParams({ mode: 'resetPassword', oobCode: 'valid-code' });
     mockVerifyPasswordResetCode.mockResolvedValueOnce('staff@enlite.health');
-    mockConfirmPasswordReset.mockRejectedValueOnce(new Error('auth/weak-password'));
+    mockConfirmPasswordReset.mockRejectedValueOnce(new Error('boom'));
 
     renderPage();
 
@@ -370,10 +416,10 @@ describe('AuthActionPage', () => {
     });
 
     fireEvent.change(screen.getByTestId('password-new-password'), {
-      target: { value: 'newpassword123' },
+      target: { value: 'Newpassword123!' },
     });
     fireEvent.change(screen.getByTestId('password-confirm-password'), {
-      target: { value: 'newpassword123' },
+      target: { value: 'Newpassword123!' },
     });
 
     const form = screen.getByTestId('password-new-password').closest('form')!;

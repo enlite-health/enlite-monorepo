@@ -138,8 +138,8 @@ function fillFormWithWorkerFound(overrides: {
   confirmPassword?: string;
 } = {}) {
   const email = overrides.email ?? 'worker@example.com';
-  const password = overrides.password ?? 'password123';
-  const confirmPassword = overrides.confirmPassword ?? 'password123';
+  const password = overrides.password ?? 'Password123!';
+  const confirmPassword = overrides.confirmPassword ?? 'Password123!';
 
   fireEvent.change(screen.getByTestId('input-email'), { target: { value: email } });
   fireEvent.change(screen.getByTestId('input-password'), { target: { value: password } });

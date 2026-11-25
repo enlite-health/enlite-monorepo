@@ -257,8 +257,8 @@ test.describe('RegisterPage — Email Lookup Visual', () => {
     await expect(page.locator('input#whatsapp')).toBeDisabled({ timeout: 5_000 });
 
     // Preenche os demais campos obrigatórios
-    await page.locator('input#password').fill('password123');
-    await page.locator('input#confirmPassword').fill('password123');
+    await page.locator('input#password').fill('Password123!');
+    await page.locator('input#confirmPassword').fill('Password123!');
 
     // Marca o checkbox LGPD
     // O checkbox LGPD é custom (sr-only + div overlay) — clicamos na label que envolve o input
@@ -332,8 +332,8 @@ test.describe('RegisterPage — Email Lookup Visual', () => {
     await expect(page.locator('input#whatsapp')).toHaveValue('xxxxxxxxxx978');
 
     // Preenche os demais campos
-    await page.locator('input#password').fill('password123');
-    await page.locator('input#confirmPassword').fill('password123');
+    await page.locator('input#password').fill('Password123!');
+    await page.locator('input#confirmPassword').fill('Password123!');
     // O checkbox LGPD é custom (sr-only + div overlay) — clicamos na label que envolve o input
     await page.locator('label[for="lgpdOptIn"]').click();
 

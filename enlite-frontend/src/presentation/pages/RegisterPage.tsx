@@ -17,10 +17,11 @@ import { GoogleLoginButton } from '@presentation/components/features/auth/Google
 import { WorkerInitOutcomePanel } from '@presentation/components/features/auth/WorkerInitOutcomePanel';
 import { runWorkerInit, type WorkerInitOutcome } from '@presentation/utils/workerInitOutcome';
 import { getAuthErrorMessage } from '@presentation/utils/authErrorMapper';
+import { passwordSchema } from '@presentation/utils/passwordSchema';
 
 const registerSchema = z.object({
   email: z.string().min(1, 'login.emailRequired').email('register.invalidEmail'),
-  password: z.string().min(6, 'register.passwordTooShort'),
+  password: passwordSchema,
   confirmPassword: z.string().min(1, 'login.passwordRequired'),
   whatsapp: z.string().optional(),
   lgpdOptIn: z.boolean().refine((v) => v === true, 'register.lgpdRequired'),

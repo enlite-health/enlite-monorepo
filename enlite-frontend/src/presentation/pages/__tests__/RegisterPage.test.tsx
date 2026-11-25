@@ -121,8 +121,8 @@ function fillForm(overrides: {
   lgpd?: boolean;
 } = {}) {
   const email = overrides.email ?? 'test@example.com';
-  const password = overrides.password ?? 'password123';
-  const confirmPassword = overrides.confirmPassword ?? 'password123';
+  const password = overrides.password ?? 'Password123!';
+  const confirmPassword = overrides.confirmPassword ?? 'Password123!';
 
   fireEvent.change(screen.getByTestId('input-email'), { target: { value: email } });
   fireEvent.change(screen.getByTestId('input-password'), { target: { value: password } });
@@ -210,8 +210,8 @@ describe('RegisterPage', () => {
     it('mostra tanto banner generico quanto erro no checkbox quando ha multiplos erros', async () => {
       render(<RegisterPage />);
       // Email vazio + LGPD desmarcado
-      fireEvent.change(screen.getByTestId('input-password'), { target: { value: 'password123' } });
-      fireEvent.change(screen.getByTestId('input-confirmPassword'), { target: { value: 'password123' } });
+      fireEvent.change(screen.getByTestId('input-password'), { target: { value: 'Password123!' } });
+      fireEvent.change(screen.getByTestId('input-confirmPassword'), { target: { value: 'Password123!' } });
       submitForm();
 
       await waitFor(() => {
@@ -427,10 +427,36 @@ describe('RegisterPage', () => {
   // ─── Erros de validação (não-LGPD) ────────────────────────────────────────
 
   describe('erros de validacao do formulario', () => {
+    // T-F3c-39 (D770): senha 8 + maiúscula + minúscula + número + especial.
+    it.each([
+      ['T-F3c-39: 7 caracteres (Abcde1!) recusa por tamanho', 'Abcde1!', 'auth.action.passwordMin'],
+      ['T-F3c-39: sem maiúscula (abcdef1!) recusa pelos requisitos', 'abcdef1!', 'auth.errors.passwordRequirements'],
+      ['T-F3c-39: sem especial (Abcdefg1) recusa pelos requisitos', 'Abcdefg1', 'auth.errors.passwordRequirements'],
+    ])('%s', async (_nome, senha, chave) => {
+      render(<RegisterPage />);
+      fillForm({ password: senha, confirmPassword: senha });
+      submitForm();
+
+      await waitFor(() => {
+        expect(document.querySelector('.bg-red-50')?.textContent).toBe(chave);
+      });
+      expect(mockInitWorker).not.toHaveBeenCalled();
+    });
+
+    it('T-F3c-39: completa (Abcdef1!) aceita e segue para o cadastro', async () => {
+      mockInitWorker.mockResolvedValue({ id: 'w1' });
+      render(<RegisterPage />);
+      fillForm({ password: 'Abcdef1!', confirmPassword: 'Abcdef1!' });
+      submitForm();
+
+      await waitFor(() => expect(mockInitWorker).toHaveBeenCalled());
+      expect(document.querySelector('.bg-red-50')).toBeNull();
+    });
+
     it('mostra erro de email obrigatorio quando email vazio', async () => {
       render(<RegisterPage />);
-      fireEvent.change(screen.getByTestId('input-password'), { target: { value: 'password123' } });
-      fireEvent.change(screen.getByTestId('input-confirmPassword'), { target: { value: 'password123' } });
+      fireEvent.change(screen.getByTestId('input-password'), { target: { value: 'Password123!' } });
+      fireEvent.change(screen.getByTestId('input-confirmPassword'), { target: { value: 'Password123!' } });
       fireEvent.click(screen.getByTestId('checkbox-input-lgpdOptIn'));
       submitForm();
 
@@ -441,7 +467,7 @@ describe('RegisterPage', () => {
       });
     });
 
-    it('mostra erro de senha curta quando senha tem menos de 6 caracteres', async () => {
+    it('mostra erro de senha curta quando senha tem menos de 8 caracteres', async () => {
       render(<RegisterPage />);
       fireEvent.change(screen.getByTestId('input-email'), { target: { value: 'test@test.com' } });
       fireEvent.change(screen.getByTestId('input-password'), { target: { value: '123' } });
@@ -452,7 +478,7 @@ describe('RegisterPage', () => {
       await waitFor(() => {
         const banner = document.querySelector('.bg-red-50');
         expect(banner).toBeTruthy();
-        expect(banner!.textContent).toBe('register.passwordTooShort');
+        expect(banner!.textContent).toBe('auth.action.passwordMin');
       });
     });
   });
