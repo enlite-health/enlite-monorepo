@@ -29,7 +29,9 @@ function str(body: unknown, key: string): string | null {
  * Celular verificado (emenda 077 §2.4). Identidade SÓ do token (`requireAuth`). A finalidade NUNCA vem do corpo: um `purpose`
  * enviado é ignorado. Log: só `code` e status; nada de telefone, código ou nome (AC-8).
  *
- * POST /api/workers/me/phone-verification/start   — corpo { phone }
+ * POST /api/workers/me/phone-verification/start   — corpo { phone } ou { challengeId }
+ *   Sem `phone`, com `challengeId` de claim (D797 adendo 3): reenvio do código de claim para o número gravado no desafio (ou na ficha,
+ *   plano B); o id alheio, inexistente ou que não é de claim → 400 CANDIDATE_NOT_FOUND. Com `phone`, um `challengeId` junto é ignorado.
  * POST /api/workers/me/phone-verification/confirm — corpo { phone?, challengeId, code, consentAcceptedAt? }
  *   `phone` só pode faltar quando o desafio é de claim (D797); no `phone_verify` o use case devolve INVALID_PHONE.
  *   `consentAcceptedAt` (ISO-8601): hora em que a caixa do aceite foi marcada; ver `resolveConsentAcceptedAt` para a janela.
@@ -46,11 +48,12 @@ export class PhoneVerificationController {
       const identidade = identidadeDoToken(req, res);
       if (!identidade) return;
       const phone = str(req.body, 'phone');
-      if (!phone) {
-        res.status(400).json({ success: false, error: 'Missing required field: phone' });
+      const challengeId = str(req.body, 'challengeId');
+      if (!phone && !challengeId) {
+        res.status(400).json({ success: false, error: 'Missing required field: phone or challengeId' });
         return;
       }
-      const result = await this.startUseCase.execute({ ...identidade, phone });
+      const result = await this.startUseCase.execute(phone ? { ...identidade, phone } : { ...identidade, challengeId: challengeId! });
       if (result.isFailure) {
         const code = result.error!;
         const status = STATUS_BY_CODE[code] ?? 500;

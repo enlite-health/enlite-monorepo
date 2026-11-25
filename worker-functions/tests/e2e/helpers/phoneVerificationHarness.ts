@@ -23,6 +23,7 @@ export interface PhoneVerificationHarness {
   };
   /** Chama a rota com um token que NÃO tem ficha (D797: o app não cria ficha); uid e e-mail vêm do chamador. */
   asToken(uid: string, email: string): {
+    start(body: Record<string, unknown>): Promise<{ status: number; json: any }>;
     confirm(body: Record<string, unknown>): Promise<{ status: number; json: any }>;
   };
   /** Abre um desafio direto no port (sem passar pela rota), para cenários em que o `start` recusaria. */
@@ -32,7 +33,8 @@ export interface PhoneVerificationHarness {
 }
 
 export async function startPhoneVerificationHarness(
-  opts: { onClaimConflictLog?: (line: unknown) => void } = {},
+  /** `realLimits`: usa os limites de emissão de produção (DEFAULT_OTP_SEND_LIMITS) em vez de "sem limite". */
+  opts: { onClaimConflictLog?: (line: unknown) => void; realLimits?: boolean } = {},
 ): Promise<PhoneVerificationHarness> {
   process.env.USE_MOCK_AUTH = 'true';
   process.env.GCP_PROJECT_ID = 'enlite-e2e';
@@ -53,7 +55,7 @@ export async function startPhoneVerificationHarness(
   const sender = { send: async ({ toE164, code }: { toE164: string; code: string }) => { sent.push({ toE164, code }); return { twilioSid: 'SM_FAKE', suppressed: false }; } };
   const semLimite = { ...DEFAULT_OTP_SEND_LIMITS, perPhoneInWindow: 1e6, perWorkerInWindow: 1e6, perPhonePerDay: 1e6, perWorkerPerDay: 1e6 };
   const appPool = DatabaseConnection.getInstance().getPool();
-  const otp = new PgOtpChallengeService(appPool, sender, () => PEPPER, undefined, semLimite);
+  const otp = new PgOtpChallengeService(appPool, sender, () => PEPPER, undefined, opts.realLimits ? DEFAULT_OTP_SEND_LIMITS : semLimite);
   const workers = new WorkerRepository();
   const verification = new PgPhoneVerificationRepository(appPool);
   const claim = new ConfirmClaimUseCase(workers, otp, new ClaimShellAbsorber(appPool));
@@ -97,7 +99,7 @@ export async function startPhoneVerificationHarness(
   return {
     pool,
     sent,
-    asToken: (uid, email) => ({ confirm: (b) => postToken('/confirm', uid, email, b) }),
+    asToken: (uid, email) => ({ start: (b) => postToken('/start', uid, email, b), confirm: (b) => postToken('/confirm', uid, email, b) }),
     lastCode: () => sent[sent.length - 1]?.code ?? '',
     as: (workerId) => ({ start: (b) => post('/start', workerId, b), confirm: (b) => post('/confirm', workerId, b) }),
     async openChallenge(workerId, purpose, phoneE164) {
