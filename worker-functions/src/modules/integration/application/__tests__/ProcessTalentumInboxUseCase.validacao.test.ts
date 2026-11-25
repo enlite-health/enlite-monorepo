@@ -216,6 +216,14 @@ describe('aceitos: o schema deixa passar e o caso de uso chama o processador', (
     processed(r);
     expect(r.processor.execute.mock.calls[0][0].data.response.source).toBe('MANUAL');
   });
+  it('expiração (T-095-34): subtype EXPIRED e statusLabel EXPIRED são aceitos e chegam ao caso de uso', async () => {
+    const r1 = await run(responsePayload({ subtype: 'EXPIRED' }));
+    processed(r1);
+    expect(r1.processor.execute.mock.calls[0][0].subtype).toBe('EXPIRED');
+    const r2 = await run(responsePayload({ subtype: 'ANALYZED', response: { statusLabel: 'EXPIRED' } }));
+    processed(r2);
+    expect(r2.processor.execute.mock.calls[0][0].data.response.statusLabel).toBe('EXPIRED');
+  });
   it('[36] answer vazia em registerQuestion → processa', async () => {
     const r = await run(responsePayload({ profile: { registerQuestions: [{ questionId: 'q1', question: 'Test?', answer: '', responseType: 'TEXT' }] } }));
     processed(r);

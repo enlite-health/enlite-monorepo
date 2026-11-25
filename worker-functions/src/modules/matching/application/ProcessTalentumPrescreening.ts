@@ -11,8 +11,8 @@ import { reportError, logger } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { maskEmailForLog } from '@shared/utils/emailMask';
 import {
-  deriveFunnelStage, toPersistedFunnelStage, applyNotQualifiedTransition, revertAutoRejectionOnPositiveVerdict, insertTalentumWorker,
-  detectManualChange, evaluateFunnelGuard, TALENTUM_MANUAL_ACTOR_ID,
+  deriveFunnelStage, toPersistedFunnelStage, applyNotQualifiedTransition, applyExpiredTransition, revertAutoRejectionOnPositiveVerdict, insertTalentumWorker,
+  detectManualChange, evaluateFunnelGuard, TALENTUM_MANUAL_ACTOR_ID, TALENTUM_EXPIRED_REASON,
 } from './talentumFunnel';
 import { stampActorOnClient } from '@shared/database/actorContext';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
@@ -513,19 +513,21 @@ export class ProcessTalentumPrescreening {
       return;
     }
 
-    // A última movimentação da candidatura decide se WJA/encuadre podem mudar (decisão 6; "manual não é revertido").
-    const guard = await evaluateFunnelGuard(this.pool, prescreening.workerId, prescreening.jobPostingId, manual);
+    const funnelStage = this.deriveFunnelStage(payload);
+
+    // A última movimentação da candidatura decide se WJA/encuadre podem mudar (decisão 6; "manual não é revertido";
+    // expiração não desfaz movimento humano nosso).
+    const guard = await evaluateFunnelGuard(this.pool, prescreening.workerId, prescreening.jobPostingId, manual, funnelStage);
     if (guard === 'HUMAN_CONFLICT') {
       await this.notifyHumanConflict(prescreening.workerId, prescreening.jobPostingId, prescreening.talentumPrescreeningId);
       console.log(`${TAG} syncFunnel SKIPPED — mudança manual do Talentum × movimento humano nosso: só o espelho muda | prescreeningId=${prescreening.id}`);
       return;
     }
-    if (guard === 'AFTER_MANUAL') {
-      console.log(`${TAG} syncFunnel SKIPPED — evento automático depois de decisão manual (talentum:manual): só o espelho muda | prescreeningId=${prescreening.id}`);
+    if (guard === 'AFTER_MANUAL' || guard === 'HUMAN_LAST') {
+      console.log(`${TAG} syncFunnel SKIPPED — evento automático depois de movimentação humana (${guard}): só o espelho muda | prescreeningId=${prescreening.id}`);
       return;
     }
 
-    const funnelStage = this.deriveFunnelStage(payload);
     console.log(`${TAG} syncFunnel | subtype=${payload.subtype} | statusLabel=${payload.data.response.statusLabel ?? 'none'} → funnelStage=${funnelStage} | score=${payload.data.response.score ?? 0}`);
 
     await this.ensureEncuadre(prescreening.workerId, prescreening.jobPostingId, payload);
@@ -573,6 +575,9 @@ export class ProcessTalentumPrescreening {
       await client.query('BEGIN');
       // Mudança manual: o ator vira `changed_by` na trilha (gatilho lê `app.current_uid`, LOCAL a esta transação).
       if (manual) await stampActorOnClient(client, { source: 'sync_import', id: TALENTUM_MANUAL_ACTOR_ID });
+      // Expiração: o gatilho da trilha (migration 478) lê o `reason_category` de `app.move_reason`, LOCAL a esta transação
+      // (mesmo molde de `moveApplicationStage`). A transição NQ não carimba motivo; a expiração sim (TALENTUM_EXPIRED).
+      if (funnelStage === 'EXPIRED') await client.query(`SELECT set_config('app.move_reason', $1, true)`, [TALENTUM_EXPIRED_REASON]);
 
       const { previousStage } = await this.prescreeningRepo.upsertWorkerJobApplicationFromTalentum(
         { workerId, jobPostingId, applicationFunnelStage: effectiveFunnelStage, matchScore },
@@ -589,6 +594,9 @@ export class ProcessTalentumPrescreening {
       // Passa o funnelStage ORIGINAL (NOT_QUALIFIED) para handleNotQualifiedTransition identificar a transição,
       // mas o upsert já gravou REJECTED — handleNotQualifiedTransition só cuida do encuadre + domain events agora.
       await this.handleNotQualifiedTransition(client, workerId, jobPostingId, funnelStage, previousStage, prescreeningId);
+      if (await applyExpiredTransition(client, workerId, jobPostingId, funnelStage, previousStage, prescreeningId)) {
+        console.log(`${TAG} EXPIRED auto-reject complete → WJA stage=REJECTED | worker=${workerId} | job=${jobPostingId}`);
+      }
 
       await client.query('COMMIT');
     } catch (err) {

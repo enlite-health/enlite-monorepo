@@ -42,7 +42,9 @@ export function funnelStageFromStoredStatus(status: string, label?: string | nul
 
 /** F3 (mig 191): NOT_QUALIFIED não existe no enum de `application_funnel_stage` — vira REJECTED antes do upsert. */
 export function toPersistedFunnelStage(funnelStage: string): string {
-  return funnelStage === 'NOT_QUALIFIED' ? 'REJECTED' : funnelStage;
+  // EXPIRED (D626, spec 095 §3.4) também não existe no enum de `application_funnel_stage`: a candidata que o Talentum
+  // expirou vai para REJECTED, com motivo TALENTUM_EXPIRED (`applyExpiredTransition`).
+  return funnelStage === 'NOT_QUALIFIED' || funnelStage === 'EXPIRED' ? 'REJECTED' : funnelStage;
 }
 
 /**
@@ -84,6 +86,50 @@ export async function applyNotQualifiedTransition(
   await client.query(
     `INSERT INTO domain_events (event, payload, status, processed_at) VALUES ('funnel_stage.rejected', $1::jsonb, 'processed', NOW())`,
     [JSON.stringify({ workerId, jobPostingId, prescreeningId: prescreeningId ?? null, source: 'auto_not_qualified' })],
+  );
+  return true;
+}
+
+/** Motivo da trilha (`app.move_reason`, lido pelo gatilho da migration 478) e do encuadre para a expiração. */
+export const TALENTUM_EXPIRED_REASON = 'TALENTUM_EXPIRED';
+
+/**
+ * Transição EXPIRED do webhook (D626): o Talentum expirou a candidata sem veredito. Molde de `applyNotQualifiedTransition`
+ * (mesma guarda de etapa, mesmos eventos AUDIT-ONLY que nascem `processed`: sem consumidor, portanto sem mensagem ao
+ * prestador), com `rejection_reason_category = 'TALENTUM_EXPIRED'` e `source: 'auto_expired'`.
+ * `funnelStage` é o ORIGINAL (EXPIRED); `previousStage` = etapa do WJA antes do upsert (já REJECTED → não repete).
+ * Só etapa ≤ QUALIFIED (ordem da `funnel_stage_precedence`, a mesma do upsert): SELECTED/QRT ficam com a operação.
+ * A guarda de "última movimentação humana" roda ANTES do upsert (`evaluateFunnelGuard`): depois dele a última linha da
+ * trilha já seria a do próprio upsert. O `reason_category` da trilha NÃO sai daqui: o gatilho o lê de
+ * `app.move_reason` no momento do upsert (P4), que o chamador carimba antes dele com `TALENTUM_EXPIRED_REASON`.
+ */
+export async function applyExpiredTransition(
+  client: Queryable, workerId: string, jobPostingId: string, funnelStage: string, previousStage: string | null,
+  prescreeningId?: string,
+): Promise<boolean> {
+  if (funnelStage !== 'EXPIRED' || previousStage === 'REJECTED') return false;
+  if (previousStage !== null) {
+    const above = await client.query(
+      `SELECT funnel_stage_precedence($1) > funnel_stage_precedence('QUALIFIED') AS above`, [previousStage],
+    );
+    if (above.rows[0]?.above === true) return false;
+  }
+
+  await client.query(
+    `UPDATE encuadres
+     SET resultado = 'RECHAZADO', rejection_reason_category = '${TALENTUM_EXPIRED_REASON}', updated_at = NOW()
+     WHERE worker_id = $1 AND job_posting_id = $2 AND resultado IS NULL`,
+    [workerId, jobPostingId],
+  );
+  await client.query(
+    `UPDATE worker_job_applications
+     SET application_funnel_stage = 'REJECTED', updated_at = NOW()
+     WHERE worker_id = $1 AND job_posting_id = $2`,
+    [workerId, jobPostingId],
+  );
+  await client.query(
+    `INSERT INTO domain_events (event, payload, status, processed_at) VALUES ('funnel_stage.rejected', $1::jsonb, 'processed', NOW())`,
+    [JSON.stringify({ workerId, jobPostingId, prescreeningId: prescreeningId ?? null, source: 'auto_expired' })],
   );
   return true;
 }
@@ -157,17 +203,20 @@ export async function lastTrailActor(
  *    chamador avisa `CONFLITO_HUMANO` (o movimento nosso vence; a coordenação resolve pelo card);
  *  - 'AFTER_MANUAL': evento AUTOMÁTICO e a última linha é `talentum:manual` → só o espelho muda: WJA e encuadre ficam
  *    (uma decisão manual nunca é desfeita por evento automático);
+ *  - 'HUMAN_LAST': EXPIRAÇÃO (evento automático) e a última linha é de movimento humano nosso → só o espelho muda: o
+ *    Talentum expirar a candidata não desfaz o que a coordenação fez (D626: "última movimentação não humana");
  *  - null: segue o fluxo normal.
  */
-export type FunnelGuard = 'HUMAN_CONFLICT' | 'AFTER_MANUAL' | null;
+export type FunnelGuard = 'HUMAN_CONFLICT' | 'AFTER_MANUAL' | 'HUMAN_LAST' | null;
 
 export async function evaluateFunnelGuard(
-  client: Queryable, workerId: string, jobPostingId: string, manual: boolean,
+  client: Queryable, workerId: string, jobPostingId: string, manual: boolean, funnelStage?: string,
 ): Promise<FunnelGuard> {
   const last = await lastTrailActor(client, workerId, jobPostingId);
   if (!last.exists) return null;
   if (manual) return isOurHumanActor(last.changedBy) ? 'HUMAN_CONFLICT' : null;
-  return last.changedBy === TALENTUM_MANUAL_ACTOR_ID ? 'AFTER_MANUAL' : null;
+  if (last.changedBy === TALENTUM_MANUAL_ACTOR_ID) return 'AFTER_MANUAL';
+  return funnelStage === 'EXPIRED' && isOurHumanActor(last.changedBy) ? 'HUMAN_LAST' : null;
 }
 
 /**
@@ -180,9 +229,10 @@ export async function evaluateFunnelGuard(
  *  1. a ÚLTIMA linha da trilha `worker_job_application_stage_history` é um REJECTED com `changed_by` vazio ou `system:<nome>` (script) — o gatilho
  *     (mig 478) grava `app.current_uid`; o webhook roda fora de `withActorContext`, então NULL/''; "Mover a…" humano
  *     grava o uid de quem moveu, e qualquer movimento humano posterior vira a última linha (a rejeição humana NUNCA é revertida);
- *  2. existe o evento `funnel_stage.rejected` com `source = 'auto_not_qualified'` (gravado por `applyNotQualifiedTransition`).
- * Sem as duas, não toca em nada. O encuadre só perde o resultado se ainda for o RECHAZADO/TALENTUM_NOT_QUALIFIED que a
- * rejeição automática pôs. Evento de auditoria nasce `processed` (sem consumidor: nenhuma mensagem ao prestador).
+ *  2. existe o evento `funnel_stage.rejected` com `source = 'auto_not_qualified'` (gravado por `applyNotQualifiedTransition`)
+ *     ou `'auto_expired'` (gravado por `applyExpiredTransition`; decisão 8: expirado que depois recebe veredito positivo volta sozinho).
+ * Sem as duas, não toca em nada. O encuadre só perde o resultado se ainda for o RECHAZADO/TALENTUM_NOT_QUALIFIED ou
+ * RECHAZADO/TALENTUM_EXPIRED que a rejeição automática pôs. Evento de auditoria nasce `processed` (sem consumidor: nenhuma mensagem ao prestador).
  * Chamar DEPOIS do upsert do WJA, com a `previousStage` que ele devolveu, na mesma transação.
  */
 export async function revertAutoRejectionOnPositiveVerdict(
@@ -207,7 +257,7 @@ export async function revertAutoRejectionOnPositiveVerdict(
     `SELECT 1 FROM domain_events
       WHERE event = 'funnel_stage.rejected'
         AND payload->>'workerId' = $1 AND payload->>'jobPostingId' = $2
-        AND payload->>'source' = 'auto_not_qualified'
+        AND payload->>'source' IN ('auto_not_qualified', 'auto_expired')
       LIMIT 1`,
     [workerId, jobPostingId],
   );
@@ -223,7 +273,7 @@ export async function revertAutoRejectionOnPositiveVerdict(
     `UPDATE encuadres
         SET resultado = NULL, rejection_reason_category = NULL, updated_at = NOW()
       WHERE worker_id = $1 AND job_posting_id = $2
-        AND resultado = 'RECHAZADO' AND rejection_reason_category = 'TALENTUM_NOT_QUALIFIED'`,
+        AND resultado = 'RECHAZADO' AND rejection_reason_category IN ('TALENTUM_NOT_QUALIFIED', '${TALENTUM_EXPIRED_REASON}')`,
     [workerId, jobPostingId],
   );
   await client.query(

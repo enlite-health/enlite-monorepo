@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
 /** Subtypes que o processador entende (fonte única: o schema e o `UNSUPPORTED` do processador leem esta lista). */
-export const PRESCREENING_RESPONSE_SUBTYPES = ['INITIATED', 'IN_PROGRESS', 'COMPLETED', 'ANALYZED'] as const;
+// 'EXPIRED' (D626): o webhook de expiração ainda não existe e o formato é a confirmar pelo Ioni; aceita `subtype: 'EXPIRED'`
+// e `statusLabel: 'EXPIRED'` (spec 095 §3.4), as duas formas do desenho, e nenhuma terceira.
+export const PRESCREENING_RESPONSE_SUBTYPES = ['INITIATED', 'IN_PROGRESS', 'COMPLETED', 'ANALYZED', 'EXPIRED'] as const;
 
 /** Subtype do evento de criação de vaga (`action: PRESCREENING`). */
 export const PRESCREENING_CREATED_SUBTYPE = 'CREATED' as const;
@@ -42,7 +44,7 @@ const TalentumResponseDataSchema = z.object({
   id:          z.string().min(1).trim(),
   state:       z.array(TalentumQuestionItemSchema).default([]),
   score:       z.number().optional(),                                          // só presente em ANALYZED
-  statusLabel: z.enum(['QUALIFIED', 'NOT_QUALIFIED', 'PENDING', 'IN_DOUBT']).optional(),   // só presente em ANALYZED
+  statusLabel: z.enum(['QUALIFIED', 'NOT_QUALIFIED', 'PENDING', 'IN_DOUBT', 'EXPIRED']).optional(),   // só presente em ANALYZED
   // Marcador de mudança manual no Talentum (spec 095 §3.4). Contrato a confirmar pelo Ioni: aceita o campo; só 'MANUAL' tem efeito.
   source:      z.string().min(1).optional(),
 }).strict();
