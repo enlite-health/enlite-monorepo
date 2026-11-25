@@ -11,6 +11,7 @@ import { formatDateFromISO, parseDateToISO } from '@presentation/hooks/useMask';
 import { useAutoSave } from '@presentation/hooks/useAutoSave';
 import { useToast } from '@presentation/hooks/useToast';
 import { GeneralInfoFormFields } from './GeneralInfoFormFields';
+import { PhoneVerificationModal } from '@presentation/components/features/auth/PhoneVerificationModal';
 import { PhoneConflictModal } from '@presentation/components/shared/PhoneConflictModal/PhoneConflictModal';
 import { WorkerApiService, AccountLinkLookupResponse } from '@infrastructure/http/WorkerApiService';
 
@@ -24,10 +25,15 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   // Spec 025 (opção A, 21/09): veredito FRESCO do backend, recalculado a cada
   // hydrateFromServer — ver comentário no store.
   const birthDateInvalid = useWorkerRegistrationStore((state) => state.birthDateInvalid);
+  // Celular verificado (emenda 077 §6): selo lido do servidor, nunca calculado aqui.
+  const phoneVerification = useWorkerRegistrationStore((state) => state.phoneVerification) ?? null;
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(data.generalInfo.profilePhoto || null);
   const showToast = useToast();
 
-  // Vínculo self-service por colisão de telefone (409 PHONE_NOT_AVAILABLE).
+  // Modal do código do celular: `verify` = número atual, `change` = número novo / primeiro número.
+  const [phoneModal, setPhoneModal] = useState<'verify' | 'change' | null>(null);
+
+  // Vínculo self-service por colisão de telefone (`PHONE_IN_USE` do start da verificação).
   // Enquanto a modal está aberta, TODO toast do autosave é suprimido — no caso
   // Edith os toasts de sucesso dos outros campos abafavam o erro do telefone.
   const [phoneConflict, setPhoneConflict] = useState<{ phoneEntered: string; lookupData: AccountLinkLookupResponse } | null>(null);
@@ -63,12 +69,6 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   });
 
   const { getValues } = form;
-  // Assina o dirty-tracking do react-hook-form LENDO `dirtyFields` no render.
-  // `formState` é um Proxy que só computa `dirtyFields` quando a propriedade é
-  // acessada durante o render — sem esta leitura, `dirtyFields` fica sempre
-  // vazio e o gate de `phone` no autosave nunca dispararia. Como o useAutoSave
-  // invoca sempre o closure mais recente, este snapshot está sempre atualizado.
-  const { dirtyFields } = form.formState;
 
   // O formulário é populado pelos `defaultValues` acima, que leem do store
   // (Zustand). A WorkerProfilePage já fez `getProgress()` + `hydrateFromServer()`
@@ -83,20 +83,16 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
 
   // Monta o payload do autosave.
   //
-  // `phone` é CONDICIONAL e só entra quando o campo foi realmente editado
-  // (`dirty`). Motivo: no backend, o `phone` é o ÚNICO campo gravado com
-  // `COALESCE($n, phone)` — omiti-lo significa "mantém o número atual" e PULA a
-  // verificação de unicidade (`resolvePhoneToPersist`). Enviar o telefone a cada
-  // autosave de quem nem tocou no campo disparava `409 PHONE_NOT_AVAILABLE`
-  // (round-trip do próprio número em formato diferente do gravado + duplicatas
-  // reais de telefone em prod faziam a unicidade bater contra outro registro).
+  // `phone` NÃO entra mais (emenda do celular verificado, §6, AC-16): o telefone só
+  // muda pela rota de verificação, com código mandado ao número novo. O servidor
+  // também recusa a troca sem código (`PHONE_CHANGE_REQUIRES_VERIFICATION`).
   //
   // Todos os OUTROS campos continuam sempre presentes de propósito: no backend
   // eles são overwrite direto (não COALESCE), então omitir qualquer um gravaria
   // NULL por cima — o data-loss de "campo some" que essa tela já sofreu. O store
   // é a fonte única e já está hidratado, então reenviar os valores atuais é
   // idempotente e seguro.
-  const buildSavePayload = (formData: GeneralInfoFormData, includePhone: boolean) => ({
+  const buildSavePayload = (formData: GeneralInfoFormData) => ({
     firstName: formData.fullName?.split(' ')[0] || formData.fullName || '',
     lastName: formData.lastName || '',
     sex: formData.sex as 'male' | 'female',
@@ -104,7 +100,6 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
     birthDate: formData.birthDate ? parseDateToISO(formData.birthDate) : undefined,
     documentType: 'CUIL_CUIT',
     documentNumber: formData.cpf || '',
-    ...(includePhone ? { phone: formData.phone || '' } : {}),
     profilePhotoUrl: formData.profilePhoto || undefined,
     languages: formData.languages || [],
     profession: formData.profession as 'AT' | 'CAREGIVER' | 'NURSE' | 'KINESIOLOGIST' | 'PSYCHOLOGIST',
@@ -132,12 +127,11 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
     return error instanceof Error ? error.message : t('workerRegistration.generalInfo.saveError');
   };
 
-  // 409 no telefone → tenta abrir o fluxo de vínculo self-service via LOOKUP
-  // (contrato v2: SEM SMS — o OTP só dispara no clique em "vincular"). Lookup
-  // só sucede quando a dona é conta REAL e ACCOUNT_LINK_ENABLED está ligada;
-  // 404 (flag OFF), USE_CLAIM ou erro → fallback pro comportamento atual (toast).
-  const tryOpenPhoneConflict = async (): Promise<boolean> => {
-    const phoneEntered = getValues().phone || '';
+  // `PHONE_IN_USE` no start da verificação → tenta abrir o vínculo self-service via
+  // LOOKUP (SEM código: o OTP só dispara no clique em "vincular"). Lookup só sucede
+  // quando a dona é conta REAL e ACCOUNT_LINK_ENABLED está ligada; 404 (flag OFF),
+  // USE_CLAIM ou erro → fallback: toast "número não pode ser usado".
+  const tryOpenPhoneConflict = async (phoneEntered: string): Promise<boolean> => {
     if (!phoneEntered) return false;
     try {
       const lookupData = await WorkerApiService.lookupAccountLink(phoneEntered);
@@ -148,12 +142,34 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
     }
   };
 
+  const handlePhoneInUse = (phoneEntered: string): void => {
+    setPhoneModal(null);
+    void tryOpenPhoneConflict(phoneEntered).then((opened) => {
+      if (!opened) {
+        showToast(
+          t('workerRegistration.generalInfo.phoneNotAvailable', 'El teléfono ingresado no puede ser utilizado.'),
+          'error',
+          'profile-save',
+        );
+      }
+    });
+  };
+
+  // Código confirmado: o selo só muda DEPOIS de reler o cadastro no servidor.
+  const handlePhoneVerified = (): void => {
+    setPhoneModal(null);
+    void WorkerApiService.getProgress()
+      .then((progress) => {
+        hydrateFromServer(progress);
+        form.setValue('phone', progress.phone ?? '');
+      })
+      .catch(() => { /* leitura best-effort: sem ela o selo não muda (falha fechada) */ });
+  };
+
   const triggerSave = useAutoSave(
     async () => {
       const values = getValues();
-      // Só envia `phone` quando o campo foi editado de fato. Ver buildSavePayload.
-      const phoneDirty = Boolean(dirtyFields.phone);
-      const saved = await saveGeneralInfo(buildSavePayload(values, phoneDirty));
+      const saved = await saveGeneralInfo(buildSavePayload(values));
 
       // O 200 desta rota tem DOIS ramos (contrato: `WorkerGeneralInfoOk200`).
       // O degradado — `{ message, missingFields: null }` — significa "gravei,
@@ -173,22 +189,8 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
         // persistiu seguia na tela (e no localStorage), e a prestadora via o
         // número dela enquanto o sistema recusava a postulação por falta dele.
         hydrateFromServer(saved, { authoritative: true });
-        // Rebaselina o dirty com o que o SERVIDOR gravou, não com o que mandamos.
-        // `keepValues: true` NÃO altera valor nenhum — só move o baseline de
-        // "sujo". Se o backend NÃO persistiu o telefone, o baseline fica vazio,
-        // o campo continua sujo e o próximo autosave o reenvia. Era o laço que
-        // travou 129 cadastros.
+        // Rebaselina o dirty com o que o SERVIDOR gravou (mantém os valores na tela).
         form.reset({ ...values, phone: saved.phone ?? '' }, { keepValues: true });
-
-        // ⚠️ `reset` LIMPA o dirty-tracking, qualquer que seja o baseline que se
-        // passe — descobrir isso custou um teste que reprovou o próprio
-        // conserto. Então, se mandamos um telefone e o servidor NÃO o devolveu,
-        // ele não foi persistido: remarcamos o campo como sujo à mão, para o
-        // próximo autosave reenviá-lo. Sem isto o número nunca mais é mandado,
-        // que é exatamente o laço que travou 129 cadastros.
-        if (values.phone && !saved.phone) {
-          form.setValue('phone', values.phone, { shouldDirty: true });
-        }
       }
       // Escrita NÃO confirmada: não mexe no store nem no baseline. O que está na
       // tela continua sendo o que a pessoa digitou, e segue "sujo" para ser
@@ -208,16 +210,6 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
     500,
     (error) => {
       if (phoneConflictOpenRef.current) return; // modal aberta → sem toasts
-      if (error instanceof ApiError && error.code === 'PHONE_NOT_AVAILABLE') {
-        // Caminho novo: oferecer o vínculo. Só cai no toast se o start falhar
-        // (flag OFF/404, dono importado, erro de rede).
-        void tryOpenPhoneConflict().then((opened) => {
-          if (!opened && !phoneConflictOpenRef.current) {
-            showToast(resolveSaveErrorMessage(error), 'error', 'profile-save');
-          }
-        });
-        return;
-      }
       showToast(resolveSaveErrorMessage(error), 'error', 'profile-save');
     },
   );
@@ -272,8 +264,22 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
           triggerSave={triggerSave}
           profilePhotoElement={profilePhotoElement}
           birthDateInvalid={birthDateInvalid}
+          phoneVerification={phoneVerification}
+          onVerifyPhone={() => setPhoneModal('verify')}
+          onChangePhone={() => setPhoneModal('change')}
         />
       </form>
+
+      {phoneModal && (
+        <PhoneVerificationModal
+          open
+          mode={phoneModal}
+          currentPhone={getValues().phone || ''}
+          onVerified={handlePhoneVerified}
+          onPhoneInUse={handlePhoneInUse}
+          onClose={() => setPhoneModal(null)}
+        />
+      )}
 
       {phoneConflict && (
         <PhoneConflictModal
