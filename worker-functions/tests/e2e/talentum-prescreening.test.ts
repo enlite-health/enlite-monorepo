@@ -1525,28 +1525,55 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
       expect(pscRow[0].status).toBe('ANALYZED');
     });
 
-    it('regressão de status: ANALYZED → COMPLETED não deve ser permitida (se houver regra)', async () => {
-      // POST 1 — COMPLETED
+    // T1 (spec 095 §3.1): a trava de ordem segura a regressão; antes deste cartão o upsert sobrescrevia (COMPLETED).
+    it('status não regride: ANALYZED → COMPLETED mantém o veredito (T1)', async () => {
       const pscExtId = 'http-psc-regression-001';
       const res1 = await api.post(ENDPOINT, envelope({ subtype: 'COMPLETED', prescreening: { id: pscExtId } }));
       expect(res1.status).toBe(200);
 
-      // POST 2 — ANALYZED
-      const res2 = await api.post(ENDPOINT, envelope({ subtype: 'ANALYZED', prescreening: { id: pscExtId } }));
+      const res2 = await api.post(ENDPOINT, envelope({
+        subtype: 'ANALYZED',
+        prescreening: { id: pscExtId },
+        response: { id: 'http-resp-regression-001', state: [], score: 80, statusLabel: 'QUALIFIED' } as any,
+      }));
       expect(res2.status).toBe(200);
+      const { rows: afterAnalyzed } = await pool.query(
+        `SELECT status FROM talentum_prescreenings WHERE id = $1`,
+        [res2.data.prescreeningId],
+      );
+      expect(afterAnalyzed[0].status).toBe('QUALIFIED');
 
-      // POST 3 — Tentativa de voltar para COMPLETED (atualmente o sistema permite)
-      // Este teste documenta o comportamento atual. Se houver regra de negócio futura,
-      // o teste deve ser atualizado para validar a rejeição.
+      // POST 3: evento atrasado (COMPLETED, precedência 2 < 4) não regride o status
       const res3 = await api.post(ENDPOINT, envelope({ subtype: 'COMPLETED', prescreening: { id: pscExtId } }));
       expect(res3.status).toBe(200);
 
-      // Verifica que o status foi atualizado (comportamento atual de upsert)
       const { rows: pscRow } = await pool.query(
         `SELECT status FROM talentum_prescreenings WHERE id = $1`,
         [res3.data.prescreeningId],
       );
-      expect(pscRow[0].status).toBe('COMPLETED');
+      expect(pscRow[0].status).toBe('QUALIFIED');
+    });
+
+    // T2: empate de precedência grava o novo (veredito → veredito é reclassificação).
+    it('status não regride, mas empate grava o novo: NOT_QUALIFIED → QUALIFIED (T2)', async () => {
+      const pscExtId = 'http-psc-regression-tie-001';
+      const res1 = await api.post(ENDPOINT, envelope({
+        subtype: 'ANALYZED',
+        prescreening: { id: pscExtId },
+        response: { id: 'http-resp-tie-001', state: [], score: 30, statusLabel: 'NOT_QUALIFIED' } as any,
+      }));
+      expect(res1.status).toBe(200);
+      const { rows: r1 } = await pool.query(`SELECT status FROM talentum_prescreenings WHERE id = $1`, [res1.data.prescreeningId]);
+      expect(r1[0].status).toBe('NOT_QUALIFIED');
+
+      const res2 = await api.post(ENDPOINT, envelope({
+        subtype: 'ANALYZED',
+        prescreening: { id: pscExtId },
+        response: { id: 'http-resp-tie-001', state: [], score: 80, statusLabel: 'QUALIFIED' } as any,
+      }));
+      expect(res2.status).toBe(200);
+      const { rows: r2 } = await pool.query(`SELECT status FROM talentum_prescreenings WHERE id = $1`, [res2.data.prescreeningId]);
+      expect(r2[0].status).toBe('QUALIFIED');
     });
 
     it('query analytics: filtro por status ANALYZED retorna apenas prescreenings analisados', async () => {
