@@ -1,59 +1,40 @@
 import { Request, Response } from 'express';
-import { Pool } from 'pg';
-import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { TalentumPrescreeningPayloadSchema } from '../validators/talentumPrescreeningSchema';
 import { PartnerContext } from '../../../domain/WebhookPartner';
-import { VacancyCreatedHandler } from '../handlers/VacancyCreatedHandler';
+import { ITalentumInboxRepository } from '../../../domain/TalentumInbox';
+import { ITalentumInboxPublisher } from '../../../domain/ITalentumInboxPublisher';
+import { TalentumInboxRepository } from '../../../infrastructure/TalentumInboxRepository';
+import { TalentumInboxPublisher } from '../../../infrastructure/TalentumInboxPublisher';
 import { PrescreeningResponseHandler } from '../handlers/PrescreeningResponseHandler';
 import { TalentumWebhookContext } from '../handlers/TalentumWebhookHandler';
 
-const TAG = '[TalentumWebhook]';
+/** Primeiro valor de um header (pode vir repetido), cortado em 255 caracteres. */
+function headerValue(v: string | string[] | undefined): string | null {
+  const first = Array.isArray(v) ? v[0] : v;
+  return first ? first.split(',')[0].trim().slice(0, 255) || null : null;
+}
 
+/**
+ * Webhook do Talentum (`/api/webhooks` e `/api/webhooks-test`): só ACK (spec 095 §3.2). Guarda na inbox,
+ * publica o id e responde 200; o processamento (Zod completo + caso de uso) é do processador.
+ * Nenhum log carrega o corpo (PII): o ack loga só ids, enums e booleanos.
+ */
 export class TalentumWebhookController {
-  private readonly pool: Pool;
-  private readonly vacancyHandler: VacancyCreatedHandler;
-  private readonly prescreeningHandler: PrescreeningResponseHandler;
+  private readonly ackHandler: PrescreeningResponseHandler;
 
-  constructor() {
-    this.pool = DatabaseConnection.getInstance().getPool();
-    this.vacancyHandler = new VacancyCreatedHandler(this.pool);
-    this.prescreeningHandler = new PrescreeningResponseHandler(this.pool);
+  constructor(
+    inbox: ITalentumInboxRepository = new TalentumInboxRepository(),
+    publisher: ITalentumInboxPublisher = new TalentumInboxPublisher(),
+  ) {
+    this.ackHandler = new PrescreeningResponseHandler(inbox, publisher);
   }
 
   async handlePrescreening(req: Request, res: Response): Promise<void> {
-    const action = req.body?.action ?? 'unknown';
-    const subtype = req.body?.subtype ?? 'unknown';
-    console.log(`${TAG} ── INCOMING ── action=${action} | subtype=${subtype}`);
-
-    // ── Validate ────────────────────────────────────────────────────
-    const parsed = TalentumPrescreeningPayloadSchema.safeParse(req.body);
-    if (!parsed.success) {
-      console.warn(`${TAG} VALIDATION FAILED |`, JSON.stringify(parsed.error.flatten().fieldErrors));
-      res.status(400).json({ error: 'Invalid payload', details: parsed.error.flatten() });
-      return;
-    }
-
-    // ── Build context ───────────────────────────────────────────────
     const partnerContext = (req as any).partnerContext as PartnerContext | undefined;
     const ctx: TalentumWebhookContext = {
       environment: partnerContext?.isTest ? 'test' : 'production',
       partnerId: partnerContext?.partnerId ?? null,
+      ingressHost: headerValue(req.headers?.['x-forwarded-host']) ?? headerValue(req.headers?.host),
     };
-
-    // ── Dispatch ────────────────────────────────────────────────────
-    const payload = parsed.data;
-
-    switch (payload.action) {
-      case 'PRESCREENING':
-        return this.vacancyHandler.handle(payload, ctx, res);
-
-      case 'PRESCREENING_RESPONSE':
-        return this.prescreeningHandler.handle(payload, ctx, res);
-
-      // istanbul ignore next — unreachable after Zod discriminated union validation
-      default:
-        console.warn(`${TAG} unknown action: ${action}`);
-        res.status(400).json({ error: `Unknown action: ${action}` });
-    }
+    return this.ackHandler.handle(req.body, ctx, res);
   }
 }
