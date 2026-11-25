@@ -1,5 +1,5 @@
 import type { Pool } from 'pg';
-import type { ActiveWorkerDevice } from '../domain/WorkerDevice';
+import type { ActiveWorkerDevice, WorkerDeviceStatusView } from '../domain/WorkerDevice';
 import type {
   RegisteredDevice,
   RegisterDeviceRecord,
@@ -75,6 +75,41 @@ export class PgWorkerDeviceRepository implements WorkerDeviceRepository {
       [workerId, installationId],
     );
     return (rowCount ?? 0) > 0;
+  }
+
+  async findStatus(workerId: string): Promise<WorkerDeviceStatusView> {
+    // Uma consulta: o EXISTS do ativo + a última linha revogada por operador. O nome vem de `users.display_name` por
+    // subconsulta (molde: `TherapeuticProjectRepository`, created_by_name); `revoked_by` (uid) não sai desta função.
+    const { rows } = await this.pool.query<{
+      has_active: boolean;
+      revoked_at: Date | null;
+      wiped_at: Date | null;
+      requested_by_name: string | null;
+    }>(
+      `SELECT EXISTS (SELECT 1 FROM worker_devices WHERE worker_id = $1 AND status = 'ativo') AS has_active,
+              r.revoked_at,
+              r.wiped_at,
+              (SELECT u.display_name FROM users u WHERE u.firebase_uid = r.revoked_by) AS requested_by_name
+         FROM (SELECT 1) AS um
+         LEFT JOIN LATERAL (
+           SELECT revoked_at, wiped_at, revoked_by FROM worker_devices
+            WHERE worker_id = $1 AND revoked_reason = 'operador'
+            ORDER BY revoked_at DESC, id DESC
+            LIMIT 1
+         ) AS r ON TRUE`,
+      [workerId],
+    );
+    const row = rows[0];
+    return {
+      hasActiveDevice: row?.has_active === true,
+      lastOperatorRevocation: row?.revoked_at
+        ? {
+            revokedAt: row.revoked_at.toISOString(),
+            wipedAt: row.wiped_at ? row.wiped_at.toISOString() : null,
+            requestedByName: row.requested_by_name ?? null,
+          }
+        : null,
+    };
   }
 
   async findAuthUid(workerId: string): Promise<string | null> {

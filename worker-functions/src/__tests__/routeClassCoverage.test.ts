@@ -213,6 +213,6 @@ describe('T313 — cobertura de classe sobre os routers reais', () => {
       sem.push(...unclassifiedRoutes(rotas).map((r) => `${arquivo}: ${r.method} ${r.path}`));
     }
     expect(sem).toEqual([]);
-    expect(total).toBe(453);
+    expect(total).toBe(454);
   });
 });

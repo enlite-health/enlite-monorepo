@@ -1,4 +1,4 @@
-import type { ActiveWorkerDevice } from '../domain/WorkerDevice';
+import type { ActiveWorkerDevice, WorkerDeviceStatusView } from '../domain/WorkerDevice';
 
 export interface RegisterDeviceRecord {
   workerId: string;
@@ -34,6 +34,8 @@ export interface WorkerDeviceRepository {
   revokeActive(workerId: string, operatorUid: string): Promise<RevokedDeviceView | null>;
   /** Grava `wiped_at` uma só vez. `false` = aparelho desconhecido ou já confirmado. */
   confirmWipe(workerId: string, installationId: string): Promise<boolean>;
+  /** Painel: há aparelho ativo? e a última revogação por operador (quando, `wiped_at`, NOME de quem pediu — nunca o uid). */
+  findStatus(workerId: string): Promise<WorkerDeviceStatusView>;
   /** `workers.auth_uid` (uid do Firebase) da cuidadora; `null` = ficha inexistente. */
   findAuthUid(workerId: string): Promise<string | null>;
 }

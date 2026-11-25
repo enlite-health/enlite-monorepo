@@ -5,6 +5,7 @@ import { logger } from '@shared/logging';
 import { principalUid } from '../middleware/PermissionMiddleware';
 import { ConfirmWipe as ConfirmWipeUseCase } from '../../application/ConfirmWipe';
 import { GetDevice as GetDeviceUseCase } from '../../application/GetDevice';
+import { GetDeviceStatus as GetDeviceStatusUseCase } from '../../application/GetDeviceStatus';
 import { RegisterDevice as RegisterDeviceUseCase } from '../../application/RegisterDevice';
 import { RevokeDevice as RevokeDeviceUseCase } from '../../application/RevokeDevice';
 import { PgWorkerDeviceRepository } from '../../infrastructure/PgWorkerDeviceRepository';
@@ -32,12 +33,13 @@ const STATUS: Record<string, number> = {
 export interface WorkerDeviceHandlers {
   register: RegisterDeviceUseCase;
   get: GetDeviceUseCase;
+  status: GetDeviceStatusUseCase;
   revoke: RevokeDeviceUseCase;
   confirmWipe: ConfirmWipeUseCase;
 }
 
 /**
- * Handlers HTTP dos 4 casos de uso. Nunca devolve o token FCM. Log só com o NOME do código de erro (corpo, chave pública,
+ * Handlers HTTP dos 5 casos de uso. Nunca devolve o token FCM. Log só com o NOME do código de erro (corpo, chave pública,
  * id da instalação e token são dado pessoal e não entram em log).
  */
 export class WorkerDeviceController {
@@ -50,6 +52,7 @@ export class WorkerDeviceController {
     return new WorkerDeviceController({
       register: new RegisterDeviceUseCase(devices, cipher),
       get: new GetDeviceUseCase(devices),
+      status: new GetDeviceStatusUseCase(devices),
       revoke: new RevokeDeviceUseCase(devices, new FirebaseSessionRevoker(), new FcmPushSender(), cipher),
       confirmWipe: new ConfirmWipeUseCase(devices),
     });
@@ -72,6 +75,13 @@ export class WorkerDeviceController {
   async get(req: Request, res: Response): Promise<void> {
     const result = await this.uc.get.execute({ workerId: String(req.params.workerId ?? '') });
     if (result.isFailure) return this.fail(res, result.error as string, 'get');
+    res.json({ success: true, data: result.getValue() });
+  }
+
+  /** Painel: `{ hasActiveDevice, lastOperatorRevocation }`. Sem uid de operador, sem id de instalação, sem chave. */
+  async status(req: Request, res: Response): Promise<void> {
+    const result = await this.uc.status.execute({ workerId: String(req.params.workerId ?? '') });
+    if (result.isFailure) return this.fail(res, result.error as string, 'status');
     res.json({ success: true, data: result.getValue() });
   }
 

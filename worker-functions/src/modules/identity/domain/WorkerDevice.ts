@@ -12,6 +12,23 @@ export interface ActiveWorkerDevice {
   publicKey: string;
 }
 
+/**
+ * O que o painel mostra do aparelho (GET status, "Celular perdido"). Lido do banco, nunca derivado no cliente:
+ * `wipedAt` NULL = o servidor não ouviu o aparelho confirmar (NÃO é "não apagou"). Quem pediu sai só como NOME
+ * (`users.display_name`, resolvido no servidor): o `firebase_uid` do operador nunca sai da API.
+ */
+export interface OperatorRevocationView {
+  revokedAt: string;
+  wipedAt: string | null;
+  requestedByName: string | null;
+}
+
+export interface WorkerDeviceStatusView {
+  hasActiveDevice: boolean;
+  /** Última revogação por OPERADOR (`revoked_reason = 'operador'`); a substituição por login em outro celular não entra. */
+  lastOperatorRevocation: OperatorRevocationView | null;
+}
+
 /** Ordem enviada no push de dados. Única ordem do contrato: apagar tudo, sem tela. */
 export const WIPE_ORDER = 'wipe' as const;
 export type DeviceOrder = typeof WIPE_ORDER;

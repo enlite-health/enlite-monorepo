@@ -40,6 +40,7 @@ function repoStub(over: Partial<WorkerDeviceRepository> = {}): WorkerDeviceRepos
     findActive: jest.fn(),
     revokeActive: jest.fn().mockResolvedValue({ deviceId: 'dev-1', fcmTokenEnc: 'enc:tok' }),
     confirmWipe: jest.fn(),
+    findStatus: jest.fn(),
     findAuthUid: jest.fn().mockResolvedValue('firebase-uid-1'),
     ...over,
   };

@@ -65,6 +65,59 @@ describe('PgWorkerDeviceRepository (Postgres real)', () => {
     expect(await repo.confirmWipe(workerId, crypto.randomUUID())).toBe(false);
   });
 
+  describe('findStatus (painel "Celular perdido", D795) — lido do banco, nome de quem pediu, nunca o uid', () => {
+    let w: string;
+    let opUid: string;
+    beforeAll(async () => {
+      const uid = `repo-dev-st-${crypto.randomUUID()}`;
+      w = (await pool.query<{ id: string }>(`INSERT INTO workers (auth_uid, email) VALUES ($1, $2) RETURNING id`, [uid, `${uid}@enlite.test`])).rows[0].id;
+      opUid = `repo-op-${crypto.randomUUID()}`;
+      await pool.query(
+        `INSERT INTO users (firebase_uid, email, display_name, role, account_type) VALUES ($1, $2, 'Operadora Teste', 'admin', 'staff')`,
+        [opUid, `${opUid}@enlite.test`],
+      );
+    });
+    afterAll(async () => {
+      await pool.query(`DELETE FROM workers WHERE id = $1`, [w]);
+      await pool.query(`DELETE FROM users WHERE firebase_uid = $1`, [opUid]);
+    });
+
+    it('sem aparelho e sem revogação → { false, null }', async () => {
+      expect(await repo.findStatus(w)).toEqual({ hasActiveDevice: false, lastOperatorRevocation: null });
+    });
+
+    it('substituição (login em outro celular) NÃO conta como revogação de operador', async () => {
+      await repo.registerReplacingActive({ workerId: w, installationId: crypto.randomUUID(), publicKey: 'pk', fcmTokenEnc: null });
+      await repo.registerReplacingActive({ workerId: w, installationId: crypto.randomUUID(), publicKey: 'pk', fcmTokenEnc: null });
+      expect(await repo.findStatus(w)).toEqual({ hasActiveDevice: true, lastOperatorRevocation: null });
+    });
+
+    it('revogado por operador sem wipedAt → pedido com o NOME de quem pediu, wipedAt null', async () => {
+      await repo.revokeActive(w, opUid);
+      const st = await repo.findStatus(w);
+      expect(st.hasActiveDevice).toBe(false);
+      expect(st.lastOperatorRevocation).toMatchObject({ wipedAt: null, requestedByName: 'Operadora Teste' });
+      expect(Number.isNaN(Date.parse(st.lastOperatorRevocation!.revokedAt))).toBe(false);
+      expect(JSON.stringify(st)).not.toContain(opUid);
+    });
+
+    it('o app confirma o apagamento → wipedAt preenchido', async () => {
+      const { rows } = await pool.query<{ installation_id: string }>(
+        `SELECT installation_id FROM worker_devices WHERE worker_id = $1 AND revoked_reason = 'operador'`, [w],
+      );
+      await repo.confirmWipe(w, rows[0].installation_id);
+      const st = await repo.findStatus(w);
+      expect(st.lastOperatorRevocation?.wipedAt).not.toBeNull();
+    });
+
+    it('operador sem linha em users → requestedByName null (nunca cai no uid)', async () => {
+      await repo.registerReplacingActive({ workerId: w, installationId: crypto.randomUUID(), publicKey: 'pk', fcmTokenEnc: null });
+      await repo.revokeActive(w, 'uid-sem-users');
+      const st = await repo.findStatus(w);
+      expect(st.lastOperatorRevocation).toMatchObject({ wipedAt: null, requestedByName: null }); // a MAIS RECENTE, ainda sem wiped
+    });
+  });
+
   describe('replacedPrevious (aviso "celular novo", D795) — vem do UPDATE da transação', () => {
     let otherWorker: string;
     beforeAll(async () => {
