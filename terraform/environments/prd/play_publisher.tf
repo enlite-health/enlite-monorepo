@@ -50,6 +50,14 @@ resource "google_firebase_android_app" "enlite_mobile" {
   package_name  = "health.enlite.mobile"
   sha1_hashes   = ["3fc99837d56abbd9a06df7c572528abe00d467e0"]
   sha256_hashes = ["70792a7d1f2978fcfc9e3c66bdae59a609b538a1833257837e0607e8cc3ab8c9"]
+
+  # Trava (Gabriel, 25/11): o pacote é permanente na Play e o app do Firebase não pode sumir
+  # por um destroy. ABANDON só tira do state; prevent_destroy recusa o plan que tente destruir.
+  deletion_policy = "ABANDON"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 import {
