@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { mergeGeneralInfo, mergeServiceAddress } from './workerRegistrationHydration';
-import { WorkerProgressResponse } from '@infrastructure/http/WorkerApiService';
+import { WorkerProgressResponse, PhoneVerificationView } from '@infrastructure/http/WorkerApiService';
 import { isStep1Complete, isStep2Complete } from '@presentation/utils/workerProgressValidation';
 
 export type WorkerRegistrationStep = 
@@ -103,6 +103,12 @@ interface WorkerRegistrationState {
    * `hydrateFromServer`, nunca um estado que sobrevive no localStorage.
    */
   birthDateInvalid: boolean;
+
+  /**
+   * Celular verificado (emenda 077 §2.3): estado devolvido pelo servidor na última
+   * hidratação. `null` = "não apurei" (nunca vale verificado). NUNCA persistido.
+   */
+  phoneVerification: PhoneVerificationView | null;
 
   // Readonly fields (for pre-filled data)
   readonlyFields: Set<string>;
@@ -209,6 +215,7 @@ export const useWorkerRegistrationStore = create<WorkerRegistrationState>()(
       mode: 'self' as RegistrationMode,
       data: initialData,
       birthDateInvalid: false,
+      phoneVerification: null,
       readonlyFields: new Set(),
       completedSteps: new Set(),
 
@@ -242,6 +249,9 @@ export const useWorkerRegistrationStore = create<WorkerRegistrationState>()(
           currentStepIndex: stepIndex,
           completedSteps,
           birthDateInvalid: serverData.birthDateStatus === 'invalid',
+          // Resposta de escrita pode vir sem o campo: ausente mantém o que se sabia.
+          phoneVerification:
+            serverData.phoneVerification !== undefined ? serverData.phoneVerification : state.phoneVerification,
           data: {
             ...state.data,
             generalInfo: mergeGeneralInfo(serverData, state.data.generalInfo, options),
@@ -361,6 +371,7 @@ export const useWorkerRegistrationStore = create<WorkerRegistrationState>()(
           mode: 'self',
           data: initialData,
           birthDateInvalid: false,
+          phoneVerification: null,
           readonlyFields: new Set(),
           completedSteps: new Set(),
         });

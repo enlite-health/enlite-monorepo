@@ -1,3 +1,4 @@
+import { TwilioVerifyOtpAdapter } from '../../infrastructure/TwilioVerifyOtpAdapter';
 import { ConfirmClaimUseCase } from '../ConfirmClaimUseCase';
 import { Result } from '@shared/utils/Result';
 import { Worker } from '@modules/worker/domain/Worker';
@@ -81,7 +82,7 @@ describe('ConfirmClaimUseCase', () => {
     it('retorna o worker atualizado após confirmar OTP', async () => {
       const repo = makeRepo();
       const twilio = makeTwilio();
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeInput());
 
@@ -89,27 +90,34 @@ describe('ConfirmClaimUseCase', () => {
       expect(result.getValue().authUid).toBe(NEW_AUTH_UID);
     });
 
-    it('chama updateImportedWorkerData com authUid, email e consentAt', async () => {
+    it('SEM aceite explícito o OTP não presume consentimento: updateImportedWorkerData sem consentAt', async () => {
       const repo = makeRepo();
-      const twilio = makeTwilio();
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(makeTwilio() as any));
 
       await useCase.execute(makeInput());
 
+      const data = repo.updateImportedWorkerData.mock.calls[0][1];
+      expect(data).toMatchObject({ authUid: NEW_AUTH_UID, email: NEW_EMAIL });
+      expect(data.consentAt).toBeUndefined();
+    });
+
+    it('COM aceite explícito (consentAt no pedido) repassa a mesma hora a updateImportedWorkerData', async () => {
+      const repo = makeRepo();
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(makeTwilio() as any));
+      const at = new Date('2026-11-24T10:00:00Z');
+
+      await useCase.execute({ ...makeInput(), consentAt: at });
+
       expect(repo.updateImportedWorkerData).toHaveBeenCalledWith(
         CANDIDATE_ID,
-        expect.objectContaining({
-          authUid: NEW_AUTH_UID,
-          email: NEW_EMAIL,
-          consentAt: expect.any(Date),
-        }),
+        expect.objectContaining({ authUid: NEW_AUTH_UID, email: NEW_EMAIL, consentAt: at }),
       );
     });
 
     it('chama checkVerification com verificationSid e otp corretos', async () => {
       const repo = makeRepo();
       const twilio = makeTwilio();
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       await useCase.execute(makeInput({ otp: '654321' }));
 
@@ -122,7 +130,7 @@ describe('ConfirmClaimUseCase', () => {
 
       const repo = makeRepo();
       const twilio = makeTwilio();
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       await useCase.execute(makeInput());
 
@@ -140,7 +148,7 @@ describe('ConfirmClaimUseCase', () => {
       const twilio = makeTwilio({
         checkVerification: jest.fn().mockResolvedValue({ valid: true, status: 'approved', to: '+5491177778888' }),
       });
-      const result = await new ConfirmClaimUseCase(repo as any, twilio as any).execute(makeInput());
+      const result = await new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any)).execute(makeInput());
 
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('INVALID_OTP');
@@ -150,7 +158,7 @@ describe('ConfirmClaimUseCase', () => {
     it('aprovado sem `to` (desconhecido) → INVALID_OTP (fail-closed)', async () => {
       const repo = makeRepo();
       const twilio = makeTwilio({ checkVerification: jest.fn().mockResolvedValue({ valid: true, status: 'approved' }) });
-      const result = await new ConfirmClaimUseCase(repo as any, twilio as any).execute(makeInput());
+      const result = await new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any)).execute(makeInput());
 
       expect(result.error).toBe('INVALID_OTP');
       expect(repo.updateImportedWorkerData).not.toHaveBeenCalled();
@@ -158,7 +166,7 @@ describe('ConfirmClaimUseCase', () => {
 
     it('ficha sem telefone → INVALID_OTP (não há número a provar)', async () => {
       const repo = makeRepo({ findById: jest.fn().mockResolvedValue(Result.ok({ ...importedWorker, phone: undefined })) });
-      const result = await new ConfirmClaimUseCase(repo as any, makeTwilio() as any).execute(makeInput());
+      const result = await new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(makeTwilio() as any)).execute(makeInput());
 
       expect(result.error).toBe('INVALID_OTP');
       expect(repo.updateImportedWorkerData).not.toHaveBeenCalled();
@@ -170,7 +178,7 @@ describe('ConfirmClaimUseCase', () => {
       ['nacional de 10 dígitos', '1155261243'],
     ])('legítimo: ficha gravada como %s e `to` do Twilio em E.164 → transfere', async (_c, phoneNaFicha) => {
       const repo = makeRepo({ findById: jest.fn().mockResolvedValue(Result.ok({ ...importedWorker, phone: phoneNaFicha })) });
-      const result = await new ConfirmClaimUseCase(repo as any, makeTwilio() as any).execute(makeInput());
+      const result = await new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(makeTwilio() as any)).execute(makeInput());
 
       expect(result.isSuccess).toBe(true);
       expect(repo.updateImportedWorkerData).toHaveBeenCalledTimes(1);
@@ -183,7 +191,7 @@ describe('ConfirmClaimUseCase', () => {
       const twilio = makeTwilio({
         checkVerification: jest.fn().mockResolvedValue({ valid: false, status: 'pending' }),
       });
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeInput());
 
@@ -197,7 +205,7 @@ describe('ConfirmClaimUseCase', () => {
       const twilio = makeTwilio({
         checkVerification: jest.fn().mockResolvedValue({ valid: false, status: 'expired' }),
       });
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeInput());
 
@@ -210,7 +218,7 @@ describe('ConfirmClaimUseCase', () => {
       const twilio = makeTwilio({
         checkVerification: jest.fn().mockResolvedValue({ valid: false, status: 'canceled' }),
       });
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeInput());
 
@@ -226,7 +234,7 @@ describe('ConfirmClaimUseCase', () => {
       const twilio = makeTwilio({
         checkVerification: jest.fn().mockResolvedValue({ valid: false, status: 'pending' }),
       });
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       await useCase.execute(makeInput());
 
@@ -243,7 +251,7 @@ describe('ConfirmClaimUseCase', () => {
       const twilio = makeTwilio({
         checkVerification: jest.fn().mockResolvedValue({ valid: false, status: 'expired' }),
       });
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       await useCase.execute(makeInput());
 
@@ -263,7 +271,7 @@ describe('ConfirmClaimUseCase', () => {
         findById: jest.fn().mockResolvedValue(Result.ok(alreadyClaimedWorker)),
       });
       const twilio = makeTwilio();
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeInput());
 
@@ -277,7 +285,7 @@ describe('ConfirmClaimUseCase', () => {
         hasAbsorbedRealLogin: jest.fn().mockResolvedValue(Result.ok(true)),
       });
       const twilio = makeTwilio();
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeInput());
 
@@ -290,7 +298,7 @@ describe('ConfirmClaimUseCase', () => {
     it('controle positivo: ficha sintética comum (nada absorvido) é reclamada', async () => {
       const repo = makeRepo();
       const twilio = makeTwilio();
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeInput());
 
@@ -311,7 +319,7 @@ describe('ConfirmClaimUseCase', () => {
         findById: jest.fn().mockResolvedValue(Result.ok(alreadyClaimedWorker)),
       });
       const twilio = makeTwilio();
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       await useCase.execute(makeInput());
 
@@ -325,7 +333,7 @@ describe('ConfirmClaimUseCase', () => {
         findById: jest.fn().mockResolvedValue(Result.ok(null)),
       });
       const twilio = makeTwilio();
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeInput());
 
@@ -340,7 +348,7 @@ describe('ConfirmClaimUseCase', () => {
       const twilio = makeTwilio({
         checkVerification: jest.fn().mockRejectedValue(new Error('Service unavailable')),
       });
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeInput());
 
@@ -353,7 +361,7 @@ describe('ConfirmClaimUseCase', () => {
         findById: jest.fn().mockResolvedValue(Result.fail('DB timeout')),
       });
       const twilio = makeTwilio();
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeInput());
 
@@ -368,7 +376,7 @@ describe('ConfirmClaimUseCase', () => {
         ),
       });
       const twilio = makeTwilio();
-      const useCase = new ConfirmClaimUseCase(repo as any, twilio as any);
+      const useCase = new ConfirmClaimUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
       const result = await useCase.execute(makeInput());
 

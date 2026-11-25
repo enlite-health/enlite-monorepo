@@ -45,8 +45,8 @@ describe('useWorkerProfileProgress', () => {
       const worker = makeWorker({ missingFields: [] });
       const { result } = renderHook(() => useWorkerProfileProgress(worker));
       const section = result.current.progress.sections[0];
-      expect(section.completedCount).toBe(3);
-      expect(section.totalCount).toBe(3);
+      expect(section.completedCount).toBe(4);
+      expect(section.totalCount).toBe(4);
       expect(section.percentage).toBe(100);
       expect(result.current.isComplete).toBe(true);
       expect(result.current.progress.overallPercentage).toBe(100);

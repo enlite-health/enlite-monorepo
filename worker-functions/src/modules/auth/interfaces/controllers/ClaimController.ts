@@ -10,7 +10,7 @@ type TokenUser = { uid?: string; email?: string };
  * H3 (D650): identidade SÓ do token (`requireAuth` popula `req.user`). Devolve a identidade
  * ou já responde 401 (sem token) / 403 (body com authUid de outra identidade) e devolve null.
  */
-function identidadeDoToken(req: Request, res: Response): { authUid: string; email: string } | null {
+export function identidadeDoToken(req: Request, res: Response): { authUid: string; email: string } | null {
   const user = (req as Request & { user?: TokenUser }).user;
   if (!user?.uid) {
     res.status(401).json({ success: false, error: 'Authentication required' });
@@ -79,6 +79,13 @@ export class ClaimController {
           return;
         }
 
+        if (error === 'RATE_LIMITED' || error === 'OTP_CHANNEL_UNAVAILABLE') {
+          const status = error === 'RATE_LIMITED' ? 429 : 503;
+          res.status(status).json({ success: false, error, code: error });
+          log.info({ msg: 'claim_request_completed', responseStatus: status, durationMs: Date.now() - startedAt });
+          return;
+        }
+
         log.warn({ msg: 'start_claim_error', error });
         res.status(500).json({ success: false, error: 'Internal server error' });
         log.info({ msg: 'claim_request_completed', responseStatus: 500, durationMs: Date.now() - startedAt });
@@ -115,7 +122,7 @@ export class ClaimController {
         return;
       }
       const { authUid, email } = identidade;
-      const { verificationSid, otp, candidateWorkerId } = req.body as Record<string, unknown>;
+      const { verificationSid, otp, candidateWorkerId, lgpdOptIn } = req.body as Record<string, unknown>;
 
       if (!verificationSid || typeof verificationSid !== 'string') {
         res.status(400).json({ success: false, error: 'Missing required field: verificationSid' });
@@ -139,6 +146,8 @@ export class ClaimController {
         authUid,
         email,
         candidateWorkerId,
+        // O OTP prova a posse do telefone, NÃO o aceite: só grava o trio se a caixa foi marcada (web: `lgpdOptIn`, como no init).
+        consentAt: lgpdOptIn === true ? new Date() : undefined,
       });
 
       if (result.isFailure) {
@@ -147,6 +156,7 @@ export class ClaimController {
         const clientErrors = new Set([
           'INVALID_OTP',
           'EXPIRED_OTP',
+          'OTP_ALREADY_USED',
           'CANDIDATE_NOT_FOUND',
           'NOT_IMPORTABLE',
         ]);

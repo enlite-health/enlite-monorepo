@@ -20,6 +20,8 @@ export interface ConfirmClaimInput {
   authUid: string;
   email: string;
   candidateWorkerId: string;
+  /** A caixa do aceite foi marcada (cadastro web). O OTP prova o telefone, não o aceite: sem isto o servidor não grava consentimento. */
+  lgpdOptIn?: boolean;
 }
 
 export type ClaimErrorCode =

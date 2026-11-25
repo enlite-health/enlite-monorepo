@@ -1,3 +1,4 @@
+import { TwilioVerifyOtpAdapter } from '../../infrastructure/TwilioVerifyOtpAdapter';
 import { ConfirmClaimUseCase } from '../ConfirmClaimUseCase';
 import { Result } from '@shared/utils/Result';
 import { Worker } from '@modules/worker/domain/Worker';
@@ -34,10 +35,11 @@ describe('ConfirmClaimUseCase — conta que já tem ficha (D764)', () => {
   it('T-D764 (a) ficha própria (casca): absorve a importada nela, sem SET auth_uid na importada', async () => {
     const r = repo({ findByAuthUid: jest.fn().mockResolvedValue(Result.ok(own)) });
     const absorber = { absorbImportedIntoExisting: jest.fn().mockResolvedValue(Result.ok(undefined)) };
-    const result = await new ConfirmClaimUseCase(r as any, twilio() as any, absorber).execute(input);
+    const result = await new ConfirmClaimUseCase(r as any, new TwilioVerifyOtpAdapter(twilio() as any), absorber).execute(input);
 
     expect(result.isSuccess).toBe(true);
-    expect(absorber.absorbImportedIntoExisting).toHaveBeenCalledWith({ existingId: OWN_ID, importedId: CANDIDATE_ID, authUid: UID, consentAt: expect.any(Date) });
+    expect(absorber.absorbImportedIntoExisting).toHaveBeenCalledWith({ existingId: OWN_ID, importedId: CANDIDATE_ID, authUid: UID, consentAt: undefined });
+    expect(absorber.absorbImportedIntoExisting.mock.calls[0][0].consentAt).toBeUndefined(); // OTP não presume aceite
     expect(r.updateImportedWorkerData).not.toHaveBeenCalled();
     expect(r.updateAuthUid).not.toHaveBeenCalled(); // consentimento vai na transação da absorção, não por fora
   });
@@ -45,7 +47,7 @@ describe('ConfirmClaimUseCase — conta que já tem ficha (D764)', () => {
   it('T-D764 (b) ficha própria não é casca: CLAIM_CONFLICT, nada de updateImportedWorkerData', async () => {
     const r = repo({ findByAuthUid: jest.fn().mockResolvedValue(Result.ok(own)) });
     const absorber = { absorbImportedIntoExisting: jest.fn().mockResolvedValue(Result.fail('CLAIM_CONFLICT')) };
-    const result = await new ConfirmClaimUseCase(r as any, twilio() as any, absorber).execute(input);
+    const result = await new ConfirmClaimUseCase(r as any, new TwilioVerifyOtpAdapter(twilio() as any), absorber).execute(input);
 
     expect(result.isFailure).toBe(true);
     expect(result.error).toBe('CLAIM_CONFLICT');
@@ -56,7 +58,7 @@ describe('ConfirmClaimUseCase — conta que já tem ficha (D764)', () => {
   it('T-D764 (c) uid sem ficha: comportamento de hoje (updateImportedWorkerData), absorvedor intocado', async () => {
     const r = repo();
     const absorber = { absorbImportedIntoExisting: jest.fn() };
-    const result = await new ConfirmClaimUseCase(r as any, twilio() as any, absorber).execute(input);
+    const result = await new ConfirmClaimUseCase(r as any, new TwilioVerifyOtpAdapter(twilio() as any), absorber).execute(input);
 
     expect(result.isSuccess).toBe(true);
     expect(r.updateImportedWorkerData).toHaveBeenCalledWith(CANDIDATE_ID, expect.objectContaining({ authUid: UID }));
@@ -65,7 +67,7 @@ describe('ConfirmClaimUseCase — conta que já tem ficha (D764)', () => {
 
   it('T-D764 (d) uid com ficha e sem absorvedor configurado: CLAIM_CONFLICT (nunca erro de banco)', async () => {
     const r = repo({ findByAuthUid: jest.fn().mockResolvedValue(Result.ok(own)) });
-    const result = await new ConfirmClaimUseCase(r as any, twilio() as any).execute(input);
+    const result = await new ConfirmClaimUseCase(r as any, new TwilioVerifyOtpAdapter(twilio() as any)).execute(input);
 
     expect(result.isFailure).toBe(true);
     expect(result.error).toBe('CLAIM_CONFLICT');

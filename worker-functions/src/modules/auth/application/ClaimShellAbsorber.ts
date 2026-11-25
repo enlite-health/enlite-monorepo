@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { Result } from '@shared/utils/Result';
 import { logger } from '@shared/logging';
 import { resourceIdHash } from '@shared/audit/resourceAccessLog';
@@ -17,8 +17,10 @@ export interface IClaimShellAbsorber {
     existingId: string;
     importedId: string;
     authUid: string;
-    /** Instante do consentimento do OTP: gravado em X DENTRO da mesma transação da absorção. */
-    consentAt: Date;
+    /** Instante do aceite EXPLÍCITO: gravado em X DENTRO da mesma transação da absorção. Ausente = nada de consentimento é gravado. */
+    consentAt?: Date;
+    /** Roda DENTRO da transação da absorção, depois do consentimento: o que falhar aqui desfaz a união (ex.: gravar a verificação do celular). */
+    afterAbsorb?: (client: PoolClient) => Promise<void>;
   }): Promise<Result<void>>;
 }
 
@@ -49,7 +51,9 @@ export class ClaimShellAbsorber implements IClaimShellAbsorber {
     existingId: string;
     importedId: string;
     authUid: string;
-    consentAt: Date;
+    /** Só com aceite explícito; ausente = o trio de consentimento não é tocado. */
+    consentAt?: Date;
+    afterAbsorb?: (client: PoolClient) => Promise<void>;
   }): Promise<Result<void>> {
     const log = logger.child({
       source: 'ClaimShellAbsorber',
@@ -84,17 +88,21 @@ export class ClaimShellAbsorber implements IClaimShellAbsorber {
           client,
           flow: 'CLAIM_SHELL_ABSORB',
         });
-        // Consentimento do OTP na ficha sobrevivente, na MESMA transação: só os campos de consentimento
+        // Aceite EXPLÍCITO na ficha sobrevivente, na MESMA transação: só os campos de consentimento
         // (COALESCE: não sobrescreve o que já há) e NUNCA auth_uid. Falha aqui = rollback do merge inteiro.
-        const consent = await client.query(
-          `UPDATE workers
-              SET lgpd_consent_at = COALESCE(lgpd_consent_at, $2),
-                  terms_accepted_at = COALESCE(terms_accepted_at, $2),
-                  privacy_accepted_at = COALESCE(privacy_accepted_at, $2)
-            WHERE id = $1`,
-          [args.existingId, args.consentAt],
-        );
-        if (consent.rowCount !== 1) throw new Error('CLAIM_CONSENT_NOT_WRITTEN');
+        // Sem `consentAt` o OTP não presume aceite: nada é gravado.
+        if (args.consentAt) {
+          const consent = await client.query(
+            `UPDATE workers
+                SET lgpd_consent_at = COALESCE(lgpd_consent_at, $2),
+                    terms_accepted_at = COALESCE(terms_accepted_at, $2),
+                    privacy_accepted_at = COALESCE(privacy_accepted_at, $2)
+              WHERE id = $1`,
+            [args.existingId, args.consentAt],
+          );
+          if (consent.rowCount !== 1) throw new Error('CLAIM_CONSENT_NOT_WRITTEN');
+        }
+        if (args.afterAbsorb) await args.afterAbsorb(client);
       });
       const recalculated = await this.recalc(args.existingId);
       if (!recalculated) log.warn({ msg: 'claim_shell_status_recalc_failed' });

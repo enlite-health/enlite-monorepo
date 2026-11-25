@@ -198,7 +198,12 @@ registry.registerPath({
       description: 'Telefone pertence a outra conta (PHONE_NOT_AVAILABLE).',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
-    400: { description: 'Dados inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    400: {
+      description:
+        'Dados inválidos. Com `code: PHONE_CHANGE_REQUIRES_VERIFICATION`: o telefone só muda ' +
+        'pela verificação (phone/start + phone/confirm), nunca por este PUT.',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },

@@ -32,7 +32,8 @@ const NON_FIELD_TOKENS = new Set(['worker_not_found']);
 
 /**
  * Acha a migration mais recente (maior prefixo numérico) que redefine a função,
- * porque é ela que está viva no banco.
+ * porque é ela que está viva no banco. `fn_worker_missing_fields_of` conta: é o corpo que o
+ * invólucro `fn_worker_missing_fields` executa, e a emenda do celular verificado (594) o redefine.
  */
 function latestMigrationDefining(fnName: string): { file: string; sql: string } {
   const candidates = readdirSync(MIGRATIONS_DIR)
@@ -43,7 +44,7 @@ function latestMigrationDefining(fnName: string): { file: string; sql: string } 
 
   for (const { f } of candidates) {
     const sql = readFileSync(join(MIGRATIONS_DIR, f), 'utf8');
-    if (new RegExp(`CREATE\\s+OR\\s+REPLACE\\s+FUNCTION[^;]*?${fnName}\\s*\\(`, 'i').test(sql)) {
+    if (new RegExp(`CREATE\\s+OR\\s+REPLACE\\s+FUNCTION[^;]*?${fnName}(?:_of)?\\s*\\(`, 'i').test(sql)) {
       return { file: f, sql };
     }
   }

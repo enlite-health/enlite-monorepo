@@ -8,7 +8,7 @@ import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNo
 import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
 import { isEnliteTestEmail } from '@shared/utils/testAccountEmail';
 import { isClaimableWorker, isImportedWorker } from './isClaimableWorker';
-import { ITwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
+import { OTP_CHANNEL_UNAVAILABLE, OTP_RATE_LIMITED, type OtpChallengePort } from '@modules/auth/ports/OtpChallengePort';
 
 /**
  * `emailVerified` vem do token verificado (nunca do corpo): sem ele, o e-mail é só o que
@@ -23,11 +23,20 @@ export interface InitWorkerInput extends CreateWorkerDTO {
 /** Ficha com este e-mail é de outro login e o token não prova posse do e-mail (DP-20). */
 export const EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED';
 
+/** O aceite veio (`lgpdOptIn`) mas a ficha existente não o recebeu: nunca devolve `ok` sem gravar (PR-2/G-6). */
+export const CONSENT_NOT_RECORDED = 'CONSENT_NOT_RECORDED';
+
 export class InitWorkerUseCase {
   constructor(
     private workerRepository: IWorkerRepository,
-    private twilioVerify?: ITwilioVerifyService,
+    private otp?: OtpChallengePort,
   ) {}
+
+  /** Aceite da política na ficha existente (COALESCE: o 1º aceite vale). Falha alta: nunca `ok` sem gravar. */
+  async recordConsent(workerId: string, at: Date = new Date()): Promise<Result<void>> {
+    const saved = await this.workerRepository.recordConsentIfMissing(workerId, at);
+    return saved ? Result.ok<void>(undefined) : Result.fail<void>(CONSENT_NOT_RECORDED);
+  }
 
   async execute(data: InitWorkerInput): Promise<Result<InitWorkerOutput>> {
     const consentAt = data.lgpdOptIn ? new Date() : undefined;
@@ -40,6 +49,11 @@ export class InitWorkerUseCase {
 
     if (existingWorkerResult.getValue() !== null) {
       const found = existingWorkerResult.getValue()!;
+      // Init pelo app: a ficha já existe, então o aceite entra no MESMO dono do cadastro web (trio em `workers`).
+      if (consentAt) {
+        const recorded = await this.recordConsent(found.id, consentAt);
+        if (recorded.isFailure) return Result.fail<InitWorkerOutput>(recorded.error!);
+      }
       // FR-88/C-43: com telefone no payload, a ficha achada por auth_uid passa pelo ramo do telefone.
       if (data.phone) return this.applyPhone(found, data.phone, data.email);
       return Result.ok<InitWorkerOutput>({ status: 'ok', worker: found });
@@ -212,9 +226,9 @@ export class InitWorkerUseCase {
       phoneE164: maskPhoneForLog(phoneE164),
     });
 
-    if (!this.twilioVerify) {
+    if (!this.otp) {
       // Fallback em ambientes sem Twilio configurado (testes de integração E2E
-      // que não passam twilioVerify): retorna claim_pending com sid sintético.
+      // que não passam o port de OTP): retorna claim_pending com sid sintético.
       return Result.ok<InitWorkerOutput>({
         status: 'claim_pending',
         candidateWorkerId: ficha.id,
@@ -224,10 +238,11 @@ export class InitWorkerUseCase {
     }
 
     try {
-      const { verificationSid } = await this.twilioVerify.startVerification(phoneE164, {
+      const { challengeId: verificationSid } = await this.otp.start({
         workerId: ficha.id,
-        fichaIsTest: ficha.isTest === true,
-        tokenEmail,
+        purpose: 'claim',
+        phoneE164,
+        ctx: { workerId: ficha.id, fichaIsTest: ficha.isTest === true, tokenEmail },
       });
       return Result.ok<InitWorkerOutput>({
         status: 'claim_pending',
@@ -237,6 +252,7 @@ export class InitWorkerUseCase {
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      if (msg === OTP_RATE_LIMITED || msg === OTP_CHANNEL_UNAVAILABLE) return Result.fail<InitWorkerOutput>(msg);
       return Result.fail<InitWorkerOutput>(`TWILIO_ERROR:${msg}`);
     }
   }

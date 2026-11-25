@@ -103,28 +103,33 @@ test.describe('@integration Vitrine × portão — a tela não pode liberar quem
   });
 
   // ── A outra metade da causa (R1): o telefone que não persistia ─────────────
-  test('telefone digitado no perfil PERSISTE — não volta a sumir no reload', async ({ page }) => {
-    // O laço das 129: o campo era mandado só quando "sujo", o backend fazia
-    // COALESCE, o cliente gravava no store o que ELE mandou, e o store
-    // (localStorage) preferia o local ao vazio do servidor. O número ficava na
-    // tela para sempre e nunca chegava ao banco.
+  test('telefone informado pela VERIFICAÇÃO PERSISTE — não volta a sumir no reload', async ({ page }) => {
+    // O laço das 129: o número ficava na tela e nunca chegava ao banco. Desde a emenda do celular
+    // verificado (077 §6, AC-16) o perfil não tem mais campo digitável: o número entra pelo modal
+    // (phone/start + phone/confirm), e a prova continua sendo sobreviver ao reload, que relê do servidor.
     const w = insertEligibilityWorker({ phone: false });
     await entrar(page, w);
 
     await page.goto('/worker/profile?tab=general');
-    const campo = page.locator('#phone input').first();
-    await campo.waitFor({ state: 'visible', timeout: 30_000 });
+    await page.getByTestId('phone-change-button').waitFor({ state: 'visible', timeout: 30_000 });
+    await page.getByTestId('phone-change-button').click();
 
+    const campo = page.getByRole('dialog').locator('input[type="tel"]');
+    await campo.waitFor({ state: 'visible', timeout: 15_000 });
     const numero = `11${String(Date.now()).slice(-8)}`;
     await campo.click();
     await campo.type(numero, { delay: 30 });          // digitação real, não fill()
-    await page.locator('#fullName').click();          // blur dispara o autosave
-    await page.waitForTimeout(2000);
+    await page.getByTestId('phone-verification-send').click();
 
-    // A prova NÃO é o campo continuar preenchido — era exatamente isso que o
-    // defeito fazia. A prova é sobreviver ao reload, que relê do servidor.
+    await page.getByTestId('phone-verification-code').waitFor({ state: 'visible', timeout: 20_000 });
+    await page.getByTestId('phone-verification-code').click();
+    await page.keyboard.type('123456', { delay: 30 }); // E2E_OTP_CODE do docker-compose.test.yml
+    await page.getByTestId('phone-verification-confirm').click();
+    await expect(page.getByTestId('phone-verification-code')).toHaveCount(0, { timeout: 20_000 });
+
+    // A prova NÃO é a tela continuar mostrando o número: é sobreviver ao reload (relê do servidor).
     await page.reload();
-    await campo.waitFor({ state: 'visible', timeout: 30_000 });
-    await expect(campo).toHaveValue(new RegExp(numero.slice(-6)));
+    await expect(page.getByTestId('phone-readonly')).toHaveValue(new RegExp(numero.slice(-6)), { timeout: 30_000 });
+    await expect(page.getByTestId('phone-badge')).toHaveAttribute('data-state', 'verified');
   });
 });

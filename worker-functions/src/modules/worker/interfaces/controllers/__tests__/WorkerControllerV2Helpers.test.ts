@@ -165,6 +165,18 @@ describe('sendPersonalInfoFailure', () => {
     expect(JSON.stringify(body)).not.toMatch(/outra conta|another account|idx_workers_phone_unique/i);
   });
 
+  it('PHONE_CHANGE_REQUIRES_VERIFICATION vira 400 COM code (morre se o code sumir)', () => {
+    const r = res();
+    sendPersonalInfoFailure(r as never, WORKER_ERROR_CODES.PHONE_CHANGE_REQUIRES_VERIFICATION);
+
+    expect(r.status).toHaveBeenCalledWith(400);
+    expect(r.json.mock.calls[0][0]).toEqual({
+      success: false,
+      code: 'PHONE_CHANGE_REQUIRES_VERIFICATION',
+      error: 'PHONE_CHANGE_REQUIRES_VERIFICATION',
+    });
+  });
+
   it('qualquer outro erro cai no 400 genérico', () => {
     const r = res();
     sendPersonalInfoFailure(r as never, 'Failed to update personal info: boom');

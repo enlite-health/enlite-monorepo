@@ -54,9 +54,9 @@ vi.mock('@presentation/components/features/auth/GoogleLoginButton', () => ({
 }));
 
 vi.mock('@presentation/components/features/auth/ClaimOtpModal', () => ({
-  ClaimOtpModal: ({ open, onConfirmed, onClose }: any) =>
+  ClaimOtpModal: ({ open, onConfirmed, onClose, lgpdOptIn }: any) =>
     open ? (
-      <div data-testid="claim-otp-modal">
+      <div data-testid="claim-otp-modal" data-lgpd-opt-in={String(lgpdOptIn)}>
         <button data-testid="modal-confirmed" onClick={() => onConfirmed({ id: 'w1' })}>confirm</button>
         <button data-testid="modal-close" onClick={onClose}>close</button>
       </div>
@@ -366,6 +366,20 @@ describe('RegisterPage', () => {
       await waitFor(() => {
         expect(screen.getByTestId('claim-otp-modal')).toBeTruthy();
       });
+    });
+
+    it('a caixa do aceite marcada no cadastro chega ao modal do claim (o OTP não presume aceite)', async () => {
+      mockInitWorker.mockResolvedValue({
+        status: 'claim_pending',
+        candidateWorkerId: 'cand-001',
+        phoneMasked: '+54 11 **** 5678',
+        verificationSid: 'VS_abc',
+      });
+      render(<RegisterPage />);
+      fillForm();
+      submitForm();
+
+      await waitFor(() => expect(screen.getByTestId('claim-otp-modal').getAttribute('data-lgpd-opt-in')).toBe('true'));
     });
 
     it('navega para / quando OTP confirmado no modal', async () => {

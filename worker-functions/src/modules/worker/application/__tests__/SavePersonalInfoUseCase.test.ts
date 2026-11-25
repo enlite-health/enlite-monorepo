@@ -249,8 +249,8 @@ describe('SavePersonalInfoUseCase', () => {
     });
 
     it('falha com PHONE_NOT_AVAILABLE quando o número pertence a OUTRO worker', async () => {
+      // ficha SEM telefone (primeiro registro): a colisão ainda vale.
       const repo = makeRepository({
-        findById: jest.fn().mockResolvedValue(Result.ok({ ...mockWorker, phone: '1100000000' })),
         findByPhoneCandidates: jest
           .fn()
           .mockResolvedValue(Result.ok({ ...mockWorker, id: 'outro-worker-999' })),
@@ -265,8 +265,8 @@ describe('SavePersonalInfoUseCase', () => {
     });
 
     it('NÃO bloqueia quando o número "de outro" é na verdade o próprio worker', async () => {
+      // ficha SEM telefone (primeiro registro): a colisão ainda vale.
       const repo = makeRepository({
-        findById: jest.fn().mockResolvedValue(Result.ok({ ...mockWorker, phone: '1100000000' })),
         findByPhoneCandidates: jest
           .fn()
           .mockResolvedValue(Result.ok({ ...mockWorker, id: 'worker-123' })),

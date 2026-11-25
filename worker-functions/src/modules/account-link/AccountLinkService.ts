@@ -16,8 +16,13 @@ import { logger } from '@shared/logging';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId } from '@shared/database/resolveCanonicalWorkerId';
-import { TwilioVerifyService, otpCheckIsForPhone, type ITwilioVerifyService } from '../auth/infrastructure/TwilioVerifyService';
+import { OTP_RATE_LIMITED, type OtpChallengePort } from '../auth/ports/OtpChallengePort';
+import type { ITwilioVerifyService } from '../auth/infrastructure/TwilioVerifyService';
+import { TwilioVerifyOtpAdapter } from '../auth/infrastructure/TwilioVerifyOtpAdapter';
+import { createOtpChallengePort } from '../../bootstrap/createOtpChallengePort';
 import { IsTestOtpGuardedVerify } from '../auth/application/IsTestOtpGuard';
+import { PgPhoneVerificationRepository } from '../worker/infrastructure/PgPhoneVerificationRepository';
+import type { IPhoneVerificationRepository } from '../auth/ports/IPhoneVerificationRepository';
 import { ExecuteAdminMergeUseCase } from '../../application/dedup/ExecuteAdminMergeUseCase';
 import { buildFieldComparisons } from '../../application/dedup/dedupFieldComparison';
 import { SYNTHETIC_AUTH_UID_PREFIXES } from '../../infrastructure/services/WorkerPhoneMergeTypes';
@@ -48,21 +53,28 @@ interface WorkerLite {
 
 export class AccountLinkService {
   private readonly encryption: KMSEncryptionService;
-  private readonly twilio: ITwilioVerifyService;
+  private readonly otp: OtpChallengePort;
   private readonly adminMerge: ExecuteAdminMergeUseCase;
+  private readonly verification: IPhoneVerificationRepository;
 
   constructor(
     private readonly pool: Pool,
     deps?: {
       encryption?: KMSEncryptionService;
+      otp?: OtpChallengePort;
+      /** Semente de teste do plano B: um Twilio Verify (dublê) embrulhado no adapter + guarda de ficha de teste. */
       twilio?: ITwilioVerifyService;
       adminMerge?: ExecuteAdminMergeUseCase;
+      verification?: IPhoneVerificationRepository;
     },
   ) {
     this.encryption = deps?.encryption ?? new KMSEncryptionService();
-    // Ponto único de envio do código: a guarda de OTP de teste decora a porta (FR-95/DP-23).
-    this.twilio = new IsTestOtpGuardedVerify(deps?.twilio ?? new TwilioVerifyService());
+    // Ponto único de envio do código: o port (a guarda de OTP de teste vive no adapter, FR-95/DP-23).
+    this.otp =
+      deps?.otp ??
+      (deps?.twilio ? new TwilioVerifyOtpAdapter(new IsTestOtpGuardedVerify(deps.twilio)) : createOtpChallengePort());
     this.adminMerge = deps?.adminMerge ?? new ExecuteAdminMergeUseCase(pool);
+    this.verification = deps?.verification ?? new PgPhoneVerificationRepository(pool);
   }
 
   // ── lookup — SEM SMS, SÓ mascarados ─────────────────────────────────────
@@ -95,7 +107,19 @@ export class AccountLinkService {
     // pro digitado no request.
     const phoneForOtp = owner.phone!;
     const phoneE164 = phoneForOtp.startsWith('+') ? phoneForOtp : `+${normalizePhoneAR(phoneForOtp) ?? phoneForOtp}`;
-    const { verificationSid } = await this.twilio.startVerification(phoneE164, { workerId: owner.id, fichaIsTest: owner.is_test === true, tokenEmail });
+    let challengeId: string;
+    try {
+      ({ challengeId } = await this.otp.start({
+        workerId: owner.id,
+        purpose: 'link',
+        phoneE164,
+        ctx: { workerId: owner.id, fichaIsTest: owner.is_test === true, tokenEmail },
+      }));
+    } catch (err) {
+      if (err instanceof Error && err.message === OTP_RATE_LIMITED) throw new AccountLinkError('RATE_LIMITED');
+      throw err;
+    }
+    const verificationSid = challengeId; // o fio do vínculo segue chamando de verificationSid; carrega o id do desafio
 
     await recordAccountLinkEvent(this.pool, {
       event: 'started', workerId: me.id, otherWorkerId: owner.id,
@@ -119,20 +143,19 @@ export class AccountLinkService {
     const me = await this.resolveLoggedWorker(authUid);
     const owner = await this.resolvePhoneOwner(phoneEntered, me.id);
 
-    const check = await this.twilio.checkVerification(verificationSid, otp, {
+    // DP-21: o código tem de ter ido ao telefone GRAVADO na conta que vai ser absorvida (lido do banco aqui; o `phoneEntered`
+    // é do cliente): o port confere o telefone do desafio contra este.
+    const ownerPhone = owner.phone ?? '';
+    const check = await this.otp.check({
+      challengeId: verificationSid,
       workerId: owner.id,
-      tokenEmail,
+      phoneOnRecord: ownerPhone.startsWith('+') ? ownerPhone : `+${normalizePhoneAR(ownerPhone) ?? ownerPhone}`,
+      code: otp,
       // `owner` acabou de ser lido do banco por resolvePhoneOwner (inclui is_test) nesta mesma requisição.
-      fichaIsTest: async () => owner.is_test === true,
+      ctx: { workerId: owner.id, tokenEmail, fichaIsTest: async () => owner.is_test === true },
     });
-    if (!check.valid) {
-      throw new AccountLinkError(check.status === 'expired' ? 'EXPIRED_OTP' : 'INVALID_OTP');
-    }
-    // DP-21: o código tem de ter ido ao telefone GRAVADO na conta que vai ser absorvida — um
-    // código do telefone A não une a conta dona do telefone B (o `phoneEntered` é do cliente).
-    if (!otpCheckIsForPhone(check, owner.phone)) {
-      log().warn({ msg: 'account_link_otp_phone_mismatch', hasTo: Boolean(check.to) });
-      throw new AccountLinkError('INVALID_OTP');
+    if (!check.ok) {
+      throw new AccountLinkError(check.code === 'EXPIRED_OTP' ? 'EXPIRED_OTP' : 'INVALID_OTP');
     }
 
     await recordAccountLinkEvent(this.pool, {
@@ -195,6 +218,8 @@ export class AccountLinkService {
     authUid: string,
     fieldChoices: Record<string, string> | undefined,
   ): Promise<AccountLinkConfirmResult> {
+    // O `confirm` já provou a posse do telefone da conta ABSORVIDA: lê a prova ANTES do merge (que reparenta os desafios).
+    const proof = await this.verification.linkProof(absorbedId);
     const result = await this.adminMerge.execute({
       survivorId,
       absorbedIds: [absorbedId],
@@ -206,6 +231,7 @@ export class AccountLinkService {
       },
     });
     const auditId = result.audit_ids[0] ?? null;
+    await this.verifySurvivor(survivorId, proof);
 
     const recovered = auditId != null ? await this.fetchRecovered(auditId) : {};
     const statusRes = await this.pool.query<{ status: string }>(
@@ -233,6 +259,25 @@ export class AccountLinkService {
     }
 
     return { status: 'merged', recovered, workerStatus };
+  }
+
+  /**
+   * A sobrevivente ficou com o telefone da conta absorvida (o merge o move) mas sem a prova que acompanha o número: grava a
+   * prova que o `confirm` acabou de estabelecer. Se o merge já levou a prova junto (absorvida verificada) ou a sobrevivente
+   * ficou com outro número, não faz nada. Falha aqui NÃO desfaz o merge: a ficha fica `unverified` (falha fechada).
+   */
+  private async verifySurvivor(
+    survivorId: string,
+    proof: Awaited<ReturnType<IPhoneVerificationRepository['linkProof']>>,
+  ): Promise<void> {
+    if (!proof) return;
+    try {
+      const state = await this.verification.readState(survivorId);
+      if (!state || state.state !== 'unverified' || !state.phone || normalizePhoneAR(state.phone) !== proof.phoneNormalized) return;
+      await this.verification.markPhoneVerified(this.pool, { workerId: survivorId, challengeId: proof.challengeId, method: proof.method });
+    } catch (err: unknown) {
+      log().warn({ msg: 'link_phone_verification_not_written', code: (err as { code?: string }).code ?? null });
+    }
   }
 
   /** Marca de teste da ficha absorvida (a linha continua existindo, com `merged_into_id`). Sem linha = não é teste. */
