@@ -1946,4 +1946,40 @@ describe('ProcessTalentumPrescreening', () => {
       expect(result.workerId).toBe('w-sobrevivente');
     });
   });
+
+  describe('trava de ordem do status (spec 095 §3.1): log quando o upsert segura a regressão', () => {
+    const mockStoredStatus = (stored: string) =>
+      mockPrescreeningRepo.upsertPrescreening.mockResolvedValueOnce({
+        prescreening: { id: 'ps-1', talentumPrescreeningId: 'tp-1', workerId: 'w-1', jobPostingId: 'jp-1', status: stored },
+        created: false,
+      });
+
+    it('status gravado ≠ effectiveStatus → loga talentum_status_regression_blocked só com ids e os dois enums', async () => {
+      const info = jest.spyOn(logger, 'info').mockImplementation(() => undefined as any);
+      mockStoredStatus('QUALIFIED');
+
+      await useCase.execute(buildPayload({ status: 'COMPLETED', prescreeningId: 'tp-1', profileId: 'prof-1' }));
+
+      const calls = info.mock.calls.filter((c) => c[1] === 'talentum_status_regression_blocked');
+      expect(calls).toHaveLength(1);
+      expect(calls[0][0]).toEqual({
+        talentumPrescreeningId: 'tp-1',
+        talentumProfileId: 'prof-1',
+        kept: 'QUALIFIED',
+        incoming: 'COMPLETED',
+      });
+      expect(Object.keys(calls[0][0] as object).sort()).toEqual(['incoming', 'kept', 'talentumPrescreeningId', 'talentumProfileId']);
+      info.mockRestore();
+    });
+
+    it('status gravado = effectiveStatus → não loga', async () => {
+      const info = jest.spyOn(logger, 'info').mockImplementation(() => undefined as any);
+      mockStoredStatus('COMPLETED');
+
+      await useCase.execute(buildPayload({ status: 'COMPLETED' }));
+
+      expect(info.mock.calls.filter((c) => c[1] === 'talentum_status_regression_blocked')).toHaveLength(0);
+      info.mockRestore();
+    });
+  });
 });

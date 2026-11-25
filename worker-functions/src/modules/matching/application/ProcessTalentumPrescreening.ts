@@ -7,7 +7,7 @@ import { PubSubClient } from '@shared/events/PubSubClient';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId, MAX_MERGE_DEPTH } from '@shared/database/resolveCanonicalWorkerId';
 import { resolveLiveCanonicalWorkerIds } from '@shared/database/resolveLiveCanonicalWorkerIds';
-import { reportError } from '@shared/logging';
+import { reportError, logger } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { maskEmailForLog } from '@shared/utils/emailMask';
 import { deriveFunnelStage, toPersistedFunnelStage, applyNotQualifiedTransition, revertAutoRejectionOnPositiveVerdict, insertTalentumWorker } from './talentumFunnel';
@@ -365,6 +365,17 @@ export class ProcessTalentumPrescreening {
         environment,
       }, client);
       prescreening = upserted.prescreening;
+
+      // Trava de ordem (spec 095 §3.1): `prescreening.status` é o status FINAL gravado. Se difere do enviado,
+      // o upsert segurou a regressão. Só ids e os dois enums, sem PII.
+      if (prescreening.status != null && prescreening.status !== effectiveStatus) {
+        logger.info({
+          talentumPrescreeningId: payload.data.prescreening.id,
+          talentumProfileId:      payload.data.profile.id,
+          kept:                   prescreening.status,
+          incoming:               effectiveStatus,
+        }, 'talentum_status_regression_blocked');
+      }
 
       divergences.push(...this.collectDivergences(workerId, job, upserted.previousJobPostingId ?? null, emailAmbiguous));
       for (const d of divergences) {
