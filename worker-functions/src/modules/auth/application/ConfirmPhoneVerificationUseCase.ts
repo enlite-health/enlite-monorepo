@@ -9,6 +9,7 @@ import type { IPhoneVerificationRepository, SqlRunner } from '../ports/IPhoneVer
 import type { ConfirmClaimUseCase } from './ConfirmClaimUseCase';
 import { CLAIM_CONFLICT } from './ClaimShellAbsorber';
 import { buildHandoffUrl, newConflictRef } from './phoneVerificationHandoff';
+import { resolveConsentAcceptedAt } from './consentAcceptedAt';
 
 export interface ConfirmPhoneVerificationInput {
   authUid: string;
@@ -16,6 +17,8 @@ export interface ConfirmPhoneVerificationInput {
   phone: string;
   challengeId: string;
   code: string;
+  /** Hora ISO em que a caixa do aceite foi marcada no app. Ausente = sem aceite explícito: nada de consentimento é gravado. */
+  consentAcceptedAt?: string;
 }
 
 export type ConfirmPhoneVerificationOutcome =
@@ -49,6 +52,9 @@ export class ConfirmPhoneVerificationUseCase {
   async execute(input: ConfirmPhoneVerificationInput): Promise<ConfirmPhoneVerificationOutcome> {
     const normalized = normalizePhoneAR(input.phone);
     if (normalized.length < 10 || normalized.length > 15) return { ok: false, code: 'INVALID_PHONE' };
+    // Antes de qualquer efeito (OTP consumido, telefone gravado): hora de aceite fora da janela recusa o pedido inteiro.
+    const consentAt = input.consentAcceptedAt === undefined ? undefined : resolveConsentAcceptedAt(input.consentAcceptedAt);
+    if (consentAt === null) return { ok: false, code: 'INVALID_CONSENT_AT' };
 
     const ownResult = await this.workers.findByAuthUid(input.authUid);
     if (ownResult.isFailure) return { ok: false, code: 'INTERNAL' };
@@ -68,7 +74,18 @@ export class ConfirmPhoneVerificationUseCase {
         log.info({ msg: 'phone_verification_confirm', code: 'PHONE_IN_USE' });
         return { ok: false, code: 'PHONE_IN_USE' };
       }
-      return this.confirmClaim(input, own.id, other.id, log);
+      return this.confirmClaim(input, own.id, other.id, consentAt, log);
+    }
+
+    // Aceite explícito entra ANTES do OTP: falha alta sem consumir o desafio, e é idempotente (COALESCE: o 1º aceite vale).
+    if (consentAt) {
+      let saved = false;
+      try {
+        saved = await this.workers.recordConsentIfMissing(own.id, consentAt);
+      } catch (err: unknown) {
+        log.error({ ...safeErrorFields(err), msg: 'phone_verification_confirm_failed', code: 'CONSENT_NOT_RECORDED' });
+      }
+      if (!saved) return { ok: false, code: 'CONSENT_NOT_RECORDED' };
     }
 
     let checked: Awaited<ReturnType<OtpChallengePort['check']>>;
@@ -109,11 +126,12 @@ export class ConfirmPhoneVerificationUseCase {
     input: ConfirmPhoneVerificationInput,
     ownId: string,
     candidateId: string,
+    consentAt: Date | undefined,
     log: Log,
   ): Promise<ConfirmPhoneVerificationOutcome> {
     const proof = await this.verification.methodFor(input.challengeId);
     const result = await this.claim.execute(
-      { verificationSid: input.challengeId, otp: input.code, authUid: input.authUid, email: input.email, candidateWorkerId: candidateId },
+      { verificationSid: input.challengeId, otp: input.code, authUid: input.authUid, email: input.email, candidateWorkerId: candidateId, consentAt },
       // A prova entra na sobrevivente (a conta do token) DENTRO da transação da união: falhou aqui, a união inteira desfaz.
       { afterAbsorb: (tx) => this.verification.markPhoneVerified(tx, { workerId: ownId, ...proof }) },
     );

@@ -7,6 +7,7 @@ import { identidadeDoToken } from './ClaimController';
 
 const STATUS_BY_CODE: Record<string, number> = {
   INVALID_PHONE: 400,
+  INVALID_CONSENT_AT: 400,
   INVALID_OTP: 400,
   EXPIRED_OTP: 400,
   OTP_ALREADY_USED: 400,
@@ -29,7 +30,8 @@ function str(body: unknown, key: string): string | null {
  * enviado é ignorado. Log: só `code` e status; nada de telefone, código ou nome (AC-8).
  *
  * POST /api/workers/me/phone-verification/start   — corpo { phone }
- * POST /api/workers/me/phone-verification/confirm — corpo { phone, challengeId, code }
+ * POST /api/workers/me/phone-verification/confirm — corpo { phone, challengeId, code, consentAcceptedAt? }
+ *   `consentAcceptedAt` (ISO-8601): hora em que a caixa do aceite foi marcada; ver `resolveConsentAcceptedAt` para a janela.
  */
 export class PhoneVerificationController {
   constructor(
@@ -74,7 +76,12 @@ export class PhoneVerificationController {
         res.status(400).json({ success: false, error: 'Missing required fields: phone, challengeId, code' });
         return;
       }
-      const outcome = await this.confirmUseCase.execute({ ...identidade, phone, challengeId, code });
+      const rawConsentAt = (req.body as Record<string, unknown> | undefined)?.consentAcceptedAt;
+      if (rawConsentAt !== undefined && typeof rawConsentAt !== 'string') {
+        res.status(400).json({ success: false, error: 'INVALID_CONSENT_AT', code: 'INVALID_CONSENT_AT' });
+        return;
+      }
+      const outcome = await this.confirmUseCase.execute({ ...identidade, phone, challengeId, code, consentAcceptedAt: rawConsentAt });
       if (!outcome.ok) {
         const status = STATUS_BY_CODE[outcome.code] ?? 500;
         if (status === 500) {
