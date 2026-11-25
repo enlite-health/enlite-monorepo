@@ -71,6 +71,39 @@ export interface WorkerProgressResponse {
    *          `isCompletenessKnown`).
    */
   missingFields?: string[] | null;
+  /**
+   * Celular verificado (emenda 077 §2.3): estado lido do derivado do banco.
+   * `null` / ausente = "não apurei" — NUNCA vale "verificado".
+   */
+  phoneVerification?: PhoneVerificationView | null;
+}
+
+export type PhoneVerificationState = 'no_phone' | 'unverified' | 'verified';
+
+/** Visão do celular devolvida por GET /api/workers/me (nunca o número inteiro). */
+export interface PhoneVerificationView {
+  state: PhoneVerificationState;
+  phoneMasked: string | null;
+  verifiedAt: string | null;
+}
+
+/** POST /api/workers/me/phone-verification/start */
+export type StartPhoneVerificationResponse =
+  | { status: 'ALREADY_VERIFIED'; phoneMasked: string }
+  | {
+      status: 'SENT';
+      code?: 'CLAIM_PENDING';
+      challengeId: string;
+      phoneMasked: string;
+      resendAfterSec: number;
+      expiresInSec: number;
+    };
+
+/** POST /api/workers/me/phone-verification/confirm */
+export interface ConfirmPhoneVerificationResponse {
+  status: 'VERIFIED';
+  phoneMasked: string;
+  verifiedAt: string;
 }
 
 /** Shape returned by GET /api/workers/me/availability */
@@ -255,7 +288,27 @@ class WorkerApiServiceClass {
    * "falta o telefone". Quem responde o que existe é o servidor.
    */
   async saveGeneralInfo(data: Record<string, any>): Promise<WorkerProgressResponse> {
-    return this.request<WorkerProgressResponse>('PUT', '/api/workers/me/general-info', data);
+    // O telefone NÃO viaja por aqui (emenda do celular verificado, §6, AC-16): só
+    // muda pela rota de verificação, com código. O servidor recusa a troca sem ele.
+    const { phone: _phone, ...semTelefone } = data;
+    return this.request<WorkerProgressResponse>('PUT', '/api/workers/me/general-info', semTelefone);
+  }
+
+  /**
+   * POST /api/workers/me/phone-verification/start — manda o código por WhatsApp
+   * ao número informado. Quem decide a finalidade é o servidor.
+   */
+  async startPhoneVerification(phone: string): Promise<StartPhoneVerificationResponse> {
+    return this.request<StartPhoneVerificationResponse>('POST', '/api/workers/me/phone-verification/start', { phone });
+  }
+
+  /** POST /api/workers/me/phone-verification/confirm — confere o código e grava a prova. */
+  async confirmPhoneVerification(payload: {
+    phone: string;
+    challengeId: string;
+    code: string;
+  }): Promise<ConfirmPhoneVerificationResponse> {
+    return this.request<ConfirmPhoneVerificationResponse>('POST', '/api/workers/me/phone-verification/confirm', payload);
   }
 
   /**
