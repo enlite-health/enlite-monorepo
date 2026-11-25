@@ -188,7 +188,6 @@
     "loginButtonNav": "Iniciar sesión",
     "passwordMismatch": "Las contraseñas no coinciden",
     "invalidEmail": "Por favor, ingrese un correo electrónico válido",
-    "passwordTooShort": "La contraseña debe tener al menos 6 caracteres",
     "registeringAs": "Registrándose como",
     "whatsapp": "WhatsApp",
     "whatsappPlaceholder": "+54 (11) 9999-9999",
@@ -204,7 +203,7 @@
   "claim": {
     "otpModal": {
       "title": "Detectamos tu ficha preexistente",
-      "subtitle": "Enviamos un código por SMS al número {{phoneMasked}}. Ingresá los 6 dígitos para confirmar y recuperar tu registro.",
+      "subtitle": "Enviamos un código por WhatsApp al número {{phoneMasked}}. Ingresá los 6 dígitos para confirmar y recuperar tu registro.",
       "inputLabel": "Código de verificación",
       "confirmButton": "Confirmar",
       "cancelButton": "Cancelar",
@@ -228,6 +227,41 @@
     },
     "checkPage": {
       "loading": "Cargando…"
+    }
+  },
+  "phoneVerification": {
+    "badge": {
+      "noPhone": "Sin número",
+      "unverified": "Sin verificar",
+      "verified": "Verificado"
+    },
+    "stepLabel": "Tu celular",
+    "pendingLabel": "Verificá tu celular",
+    "verifyButton": "Verificar",
+    "changeButton": "Cambiar número",
+    "addButton": "Agregar número",
+    "readonlyHint": "Para cambiar tu número te enviamos un código por WhatsApp al número nuevo.",
+    "modal": {
+      "titleVerify": "Verificá tu celular",
+      "titleChange": "Cambiá tu número",
+      "phoneLabel": "Número de WhatsApp",
+      "phoneHint": "Te enviamos un código de 6 dígitos por WhatsApp a este número.",
+      "sendButton": "Enviar código",
+      "codeSubtitle": "Enviamos un código de 6 dígitos por WhatsApp al {{phoneMasked}}.",
+      "codeLabel": "Código de verificación",
+      "confirmButton": "Confirmar",
+      "cancelButton": "Cancelar",
+      "resendButton": "Reenviar código",
+      "errorInvalidPhone": "El número no es válido. Revisalo e intentá de nuevo.",
+      "errorInvalidOtp": "El código es incorrecto. Revisalo e intentá de nuevo.",
+      "errorExpired": "El código venció. Pedí uno nuevo.",
+      "errorUsed": "Ese código ya se usó. Pedí uno nuevo.",
+      "errorRateLimited": "Demasiados intentos. Esperá un rato y probá de nuevo.",
+      "errorChannel": "No pudimos enviar el código por WhatsApp ahora. Probá de nuevo en unos minutos.",
+      "errorGeneric": "No pudimos completar la verificación. Probá de nuevo.",
+      "conflictTitle": "Necesitamos ayuda del equipo",
+      "conflictBody": "No pudimos unir este número con tu ficha de forma automática. Nuestro equipo lo resuelve con vos, sin perder tus datos.",
+      "teamButton": "Hablar con el equipo"
     }
   },
   "accountLink": {
@@ -336,7 +370,8 @@
       "invalidLoginCredentials": "Correo electrónico o contraseña incorrectos",
       "tooManyRequests": "Demasiados intentos. Intente nuevamente más tarde",
       "emailAlreadyInUse": "Este correo electrónico ya está en uso",
-      "weakPassword": "La contraseña debe tener al menos 6 caracteres",
+      "weakPassword": "La contraseña debe tener al menos 8 caracteres e incluir mayúscula, minúscula, número y carácter especial",
+      "passwordRequirements": "La contraseña debe incluir mayúscula, minúscula, número y un carácter especial de esta lista: ^ $ * . [ ] { } ( ) ? \" ! @ # % & / \\ , > < ' : ; | _ ~ `",
       "operationNotAllowed": "Operación no permitida",
       "popupClosedByUser": "Inicio de sesión cancelado - ventana cerrada",
       "popupBlocked": "Ventana emergente bloqueada por el navegador",
@@ -1771,6 +1806,7 @@
         "profession": "Profesión",
         "worker_documents": "Documentos",
         "phone": "Teléfono",
+        "phone_unverified": "Celular verificado",
         "worker_availability": "Disponibilidad",
         "worker_service_areas": "Área de atención",
         "worker_not_found": "Worker no encontrado",
@@ -2070,6 +2106,26 @@
         "removeTag": "Quitar etiqueta",
         "assignError": "Error al asignar etiqueta",
         "removeError": "Error al quitar etiqueta"
+      },
+      "lostDevice": {
+        "title": "Celular perdido",
+        "hint": "Ordena al teléfono del prestador borrar los datos de la app y cierra sus sesiones. No desactiva la cuenta.",
+        "button": "Celular perdido",
+        "confirmTitle": "¿Confirmás que el celular se perdió?",
+        "confirmBody": "El teléfono de este prestador va a recibir la orden de borrar todos los datos de la app, sin aviso en pantalla, apenas se conecte a internet. Sus sesiones se cierran ahora. La cuenta NO se desactiva: para eso usá la acción de desactivar.",
+        "confirmYes": "Sí, borrar el teléfono",
+        "confirmBusy": "Enviando…",
+        "cancel": "Cancelar",
+        "requested": "Pedido enviado el {{date}} por {{name}}.",
+        "pending": "El servidor todavía no escuchó al teléfono desde el pedido. Eso no significa que no se haya borrado.",
+        "wiped": "La app informó que borró los datos el {{date}}.",
+        "wipedSource": "Este aviso lo envía la propia app.",
+        "unknownRequester": "alguien sin nombre registrado",
+        "pushSent": "Aviso enviado al teléfono.",
+        "pushNotSent": "No se pudo avisar al teléfono; se borrará cuando se conecte.",
+        "errorNoDevice": "Este prestador no tiene un teléfono activo.",
+        "errorRevoke": "No se pudo registrar el pedido. Probá de nuevo.",
+        "errorLoad": "No se pudo cargar el estado del teléfono."
       },
       "testAccount": {
         "label": "Cuenta de prueba",
@@ -5458,7 +5514,8 @@
             "move_to_alta": "A alta",
             "move_to_discharged": "A baja",
             "release_paid_rehearsal": "Liberar ensayo pago",
-            "retry_summary": "Reintentar resumen"
+            "retry_summary": "Reintentar resumen",
+            "revoke": "Revocar"
           },
           "category": {
             "Trabalhadores": "Trabajadores",
@@ -5475,6 +5532,7 @@
           "resource": {
             "worker": "Prestador en operación",
             "worker_contact": "Contacto: nombre, teléfono",
+            "worker_device": "Teléfono del prestador (celular perdido)",
             "worker_pii": "Dossier: DNI, nacimiento, datos sensibles",
             "worker_application": "Postulación del prestador a una vacante (agente)",
             "handover": "Traspaso de la conversación al equipo humano (agente)",
@@ -5961,7 +6019,8 @@
             "dossier": "Dossier (DNI, nacimiento, datos sensibles)",
             "documents": "Documentos",
             "encuadres": "Encuadres",
-            "address": "Dirección (línea, coordenada, radio)"
+            "address": "Dirección (línea, coordenada, radio)",
+            "lostDevice": "Celular perdido (borrar el teléfono y ver el estado)"
           }
         },
         "tags": {
@@ -7808,6 +7867,7 @@
         "worker_service_areas": "Área de atención",
         "worker_availability": "Disponibilidad horaria",
         "phone": "Teléfono",
+        "phone_unverified": "Celular verificado",
         "doc_resume_cv": "Currículum vitae",
         "unvalidated_resume_cv": "Currículum vitae (en validación)",
         "doc_identity_document": "Documento de identidad",

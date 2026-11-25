@@ -17,12 +17,12 @@ import { GetWorkerProgressUseCase } from '../../application/GetWorkerProgressUse
 import { LookupWorkerByEmailUseCase } from '../../application/LookupWorkerByEmailUseCase';
 import { reactivateOnActivity } from '../../application/ReactivateArchivedWorkerUseCase';
 import { WorkerRepository } from '../../infrastructure/WorkerRepository';
+import { PgPhoneVerificationRepository } from '../../infrastructure/PgPhoneVerificationRepository';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { QuizResponseRepository } from '../../infrastructure/QuizResponseRepository';
 import { ServiceAreaRepository } from '../../infrastructure/ServiceAreaRepository';
 import { AvailabilityRepository } from '../../infrastructure/AvailabilityRepository';
-import { TwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
-import { IsTestOtpGuardedVerify } from '@modules/auth/application/IsTestOtpGuard';
+import { createOtpChallengePort } from '../../../../bootstrap/createOtpChallengePort';
 import { markOtpStarted } from '@modules/auth/interfaces/routes/claimRoutes';
 import {
   sendPersonalInfoFailure,
@@ -51,15 +51,14 @@ export class WorkerControllerV2 {
     const serviceAreaRepository = new ServiceAreaRepository();
     const availabilityRepository = new AvailabilityRepository();
 
-    const twilioVerifyService = new IsTestOtpGuardedVerify(new TwilioVerifyService());
-    this.initWorkerUseCase = new InitWorkerUseCase(workerRepository, twilioVerifyService);
+    this.initWorkerUseCase = new InitWorkerUseCase(workerRepository, createOtpChallengePort());
     this.provisionCountryClaim = new ProvisionCountryClaimUseCase(countryClaim);
     this.saveQuizUseCase = new SaveQuizResponsesUseCase(workerRepository, quizRepository);
     this.savePersonalInfoUseCase = new SavePersonalInfoUseCase(workerRepository, undefined, pubsub);
     this.saveServiceAreaUseCase = new SaveServiceAreaUseCase(workerRepository, serviceAreaRepository);
     this.saveAvailabilityUseCase = new SaveAvailabilityUseCase(workerRepository, availabilityRepository);
     this.getAvailabilityUseCase = new GetWorkerAvailabilityUseCase(workerRepository, availabilityRepository);
-    this.getProgressUseCase = new GetWorkerProgressUseCase(workerRepository);
+    this.getProgressUseCase = new GetWorkerProgressUseCase(workerRepository, new PgPhoneVerificationRepository(DatabaseConnection.getInstance().getPool()));
     this.lookupWorkerByEmailUseCase = new LookupWorkerByEmailUseCase(workerRepository);
   }
 
@@ -102,6 +101,14 @@ export class WorkerControllerV2 {
       // FR-88/C-43: ficha existente e telefone no corpo → o init aplica o ramo do telefone (grava, ou PHONE_LOCKED).
       const phoneBranch = !existingResult.isFailure && Boolean(phone);
       if (!existingResult.isFailure && !phoneBranch) {
+        // Aceite da política (`lgpdOptIn`, init pelo app): grava no dono do consentimento antes de responder 200.
+        if (lgpdOptIn === true) {
+          const consent = await this.initWorkerUseCase.recordConsent(existingResult.getValue().id);
+          if (consent.isFailure) {
+            res.status(400).json({ success: false, error: consent.error });
+            return;
+          }
+        }
         await this.provisionCountryClaim.execute({ uid: authUid, principal, country: existingResult.getValue().country });
         res.status(200).json({
           success: true,
@@ -153,7 +160,9 @@ export class WorkerControllerV2 {
             candidateWorkerId: output.candidateWorkerId,
             phoneMasked: output.phoneMasked,
             verificationSid: output.verificationSid,
-            ...(output.code ? { code: output.code } : {}),
+            // D797: o app confirma por `phone/confirm` com este id (o mesmo do `verificationSid`; nunca o telefone inteiro).
+            challengeId: output.verificationSid,
+            code: 'CLAIM_PENDING',
           },
         });
         return;
@@ -284,7 +293,7 @@ export class WorkerControllerV2 {
         return;
       }
 
-      const result = await this.getProgressUseCase.execute(authUid);
+      const result = await this.getProgressUseCase.executeWithPhoneVerification(authUid);
 
       if (result.isFailure) {
         res.status(404).json({
@@ -294,12 +303,12 @@ export class WorkerControllerV2 {
         return;
       }
 
-      const worker = result.getValue();
+      const { worker, phoneVerification } = result.getValue();
       const restored = await reactivateOnActivity(worker.id, worker.status);
       if (restored) worker.status = restored;
       res.status(200).json({
         success: true,
-        data: await withMissingFields(this.pool(), worker),
+        data: { ...(await withMissingFields(this.pool(), worker)), phoneVerification },
       });
     } catch (error: any) {
       res.status(500).json({

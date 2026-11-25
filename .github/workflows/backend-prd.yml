@@ -115,6 +115,9 @@ jobs:
           # spec 022, Bloco 3 (T316, D-15/D-26): só prd, sem par de stg. Bucket criado por
           # terraform/environments/prd/storage.tf (T301-T304) — a env só entra de fato no
           # serviço vivo no deploy do PR final de B5.1 (`flip-de-flag-nao-deploya-sozinho`).
+          # D723 (spec 077, 16/11/2026): DB_POOL_MAX=5, DB_SYSTEM_POOL_MAX=2 e --max-instances=6 (eram 20, 5 e 10: os defaults) mantêm a soma teórica de conexões de prd
+          # (worker-functions + MCP + attendance + job) em ~74 das 100 de max_connections. O parágrafo acima descreve o estado ANTERIOR; comentário NUNCA dentro do bloco `env_vars`.
+          # spec 077 (D795/D799): WORKER_DEVICE_ALLOWED_SAS é lida com `.split(',')` (requireWorkerDeviceService.ts) — por isso `\,`, não `;` (mesmo escape do backend-mcp-prd.yml).
           env_vars: |
             NODE_ENV=production
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
@@ -137,8 +140,8 @@ jobs:
             # 20/09/2026: 21 min com KMS desligado em prd (rev 00492-prl).
             USE_KMS_ENCRYPTION=true
             PERMISSION_ENFORCED_ROUTES=admin.analytics;admin.dedup;admin.encuadre;admin.integrations;admin.messaging;admin.patients;admin.permissions;admin.recruitment;admin.test_fixtures;admin.users;admin.vacancies;admin.workers
-            DB_POOL_MAX=20
-            DB_SYSTEM_POOL_MAX=5
+            DB_POOL_MAX=5
+            DB_SYSTEM_POOL_MAX=2
             # spec 086 (Luz em prueba): URL do triage-service = audience do ID token da SA. Secret do repo (a URL não está versionada em lugar nenhum;
             # confirmar com `gcloud run services describe triage-service --format='value(status.url)'` na F4). Vazio = a rota responde 502 (fail-closed).
             TRIAGE_PRUEBA_URL=${{ secrets.TRIAGE_PRUEBA_URL }}
@@ -152,6 +155,7 @@ jobs:
             GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}
             EMAIL_FROM=enlite@enlite.health
             CLOUD_RUN_SERVICE_URL=${{ secrets.CLOUD_RUN_SERVICE_URL }}
+            WORKER_DEVICE_ALLOWED_SAS=mobile-bff-sa@enlite-prd.iam.gserviceaccount.com\,mobile-bff-ks-sa@enlite-prd.iam.gserviceaccount.com
             CLOUD_TASKS_QUEUE_LOCATION=southamerica-east1
             GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}
             GEMINI_MODEL_FAST=gemini-2.5-flash
@@ -218,6 +222,10 @@ jobs:
             ANACARE_PASS=anacare-pass:latest
             SOL_AVISO_GRAVE_DESTINATARIOS=sol-aviso-grave-destinatarios:latest
             E2E_OTP_CODE=e2e-otp-code-prd:latest
+            # spec 077, D758 (PR-INF-46): pepper do HMAC do OTP próprio. O secret `otp-hmac-pepper-prd` e o secretAccessor da SA do
+            # runtime têm de existir ANTES do merge (merge = deploy; sem o secret a revisão não sobe). A env
+            # TWILIO_AUTH_TEMPLATE_CONTENT_SID entra quando a Meta aprovar o template (H-06): é o ContentSid HX…, que ainda não existe.
+            OTP_HMAC_PEPPER=otp-hmac-pepper-prd:latest
           flags: >-
             --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
@@ -226,7 +234,7 @@ jobs:
             --cpu=2
             --timeout=600s
             --concurrency=80
-            --max-instances=10
+            --max-instances=6
             --min-instances=1
             --update-labels=service=worker-functions,setor=plataforma
 

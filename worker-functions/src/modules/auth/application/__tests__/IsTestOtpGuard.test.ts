@@ -14,6 +14,7 @@ import { StartClaimUseCase } from '../StartClaimUseCase';
 import { InitWorkerUseCase } from '@modules/worker/application/InitWorkerUseCase';
 import { AccountLinkService } from '@modules/account-link/AccountLinkService';
 import { ConfirmClaimUseCase } from '../ConfirmClaimUseCase';
+import { TwilioVerifyOtpAdapter } from '../../infrastructure/TwilioVerifyOtpAdapter';
 
 const TEST_TOKEN = 'qa.signup.run1@enlite.test';
 const REAL_TOKEN = 'joana.silva@gmail.com';
@@ -150,7 +151,7 @@ describe('IsTestOtpGuard — os 3 caminhos de envio passam pela guarda', () => {
       findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(ficha)),
       hasAbsorbedRealLogin: jest.fn().mockResolvedValue(Result.ok(false)),
     };
-    const uc = new StartClaimUseCase(repo as never, guarded(sender));
+    const uc = new StartClaimUseCase(repo as never, new TwilioVerifyOtpAdapter(guarded(sender)));
     const res = await uc.execute({ authUid: 'uid-1', email: TEST_TOKEN, phone: FICHA_PHONE });
     expect(res.isSuccess).toBe(true);
     expect(sender.startVerification).toHaveBeenCalledTimes(ctxCases(isTest).expectedCalls);
@@ -164,7 +165,7 @@ describe('IsTestOtpGuard — os 3 caminhos de envio passam pela guarda', () => {
       findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
       findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(ficha)),
     };
-    const uc = new InitWorkerUseCase(repo as never, guarded(sender));
+    const uc = new InitWorkerUseCase(repo as never, new TwilioVerifyOtpAdapter(guarded(sender)));
     const res = await uc.execute({ authUid: 'uid-1', email: TEST_TOKEN, emailVerified: false, phone: FICHA_PHONE });
     expect(res.getValue()).toMatchObject({ status: 'claim_pending' });
     expect(sender.startVerification).toHaveBeenCalledTimes(ctxCases(isTest).expectedCalls);
@@ -202,7 +203,7 @@ describe('IsTestOtpGuard — o CONFIRM dos 2 fluxos relê a ficha alvo (B2)', ()
       hasAbsorbedRealLogin: jest.fn().mockResolvedValue(Result.ok(false)),
       updateImportedWorkerData: jest.fn().mockResolvedValue(Result.ok({ id: ficha.id })),
     };
-    const res = await new ConfirmClaimUseCase(repo as never, g).execute({
+    const res = await new ConfirmClaimUseCase(repo as never, new TwilioVerifyOtpAdapter(g)).execute({
       verificationSid, otp: STUB_CODE, authUid: 'uid-1', email: TEST_TOKEN, candidateWorkerId,
     });
     return { res, repo, sender };

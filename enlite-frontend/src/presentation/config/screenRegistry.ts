@@ -200,6 +200,9 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('address', 'worker_address', ['read']),
       c('documents', 'worker_document', ['read', 'create', 'update', 'delete', 'validate'], 'documents'),
       c('encuadres', 'match', ['read'], 'encuadres'),
+      // "Celular perdido" (spec 077, D795): o botão e a linha de status usam a MESMA célula. Quem a recebe é
+      // decisão dos C-levels (nenhum grupo por migration); o botão exige a célula de verdade (`useHasCell`).
+      c('lostDevice', 'worker_device', ['revoke']),
     ],
   },
   // ── Vagas ──────────────────────────────────────────────────────────────────────────────────

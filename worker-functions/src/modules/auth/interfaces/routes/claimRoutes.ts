@@ -20,8 +20,11 @@ export function claimIpKey(req: Request): string {
   );
 }
 
-/** Limitador de OTP: janela de 15 min, chave `claimIpKey`. Uma definição para claim e init. */
-function otpRateLimit(max: number, error: string, extra: Partial<Options> = {}) {
+/**
+ * Limitador de OTP: janela de 15 min, chave `claimIpKey`. Uma definição para claim, init e verificação do celular
+ * (`phoneVerificationRoutes`, que troca a chave por `extra.keyGenerator` e o corpo por `extra.message`).
+ */
+export function otpRateLimit(max: number, error: string, extra: Partial<Options> = {}) {
   return rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
     max,

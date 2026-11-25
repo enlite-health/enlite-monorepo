@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { IWorkerRepository } from '../ports/IWorkerRepository';
 import { Worker, WorkerStatus, CreateWorkerDTO, SavePersonalInfoDTO } from '../domain/Worker';
 import type { WorkerStatusDeclaration } from '../domain/WorkerStatusFlow';
@@ -19,6 +19,7 @@ import {
 import {
   findByAuthUid as _findByAuthUid,
   updateAuthUid as _updateAuthUid,
+  recordConsentIfMissing as _recordConsentIfMissing,
   setPhoneIfNull as _setPhoneIfNull,
   updateImportedWorkerData as _updateImportedWorkerData,
 } from './WorkerAuthRepository';
@@ -301,6 +302,10 @@ export class WorkerRepository implements IWorkerRepository {
     return _updateAuthUid(this.pool, this.encryptionService, workerId, authUid, phone, consentAt);
   }
 
+  async recordConsentIfMissing(workerId: string, consentAt: Date): Promise<boolean> {
+    return _recordConsentIfMissing(this.pool, workerId, consentAt);
+  }
+
   async setPhoneIfNull(workerId: string, phone: string): Promise<Worker | null> {
     return _setPhoneIfNull(this.pool, workerId, phone);
   }
@@ -398,8 +403,9 @@ export class WorkerRepository implements IWorkerRepository {
   async updateImportedWorkerData(
     workerId: string,
     data: { authUid: string; email: string; consentAt?: Date },
+    afterUpdate?: (tx: PoolClient) => Promise<void>,
   ): Promise<Result<Worker>> {
-    return _updateImportedWorkerData(this.pool, this.encryptionService, workerId, data);
+    return _updateImportedWorkerData(this.pool, this.encryptionService, workerId, data, afterUpdate);
   }
 
   /**

@@ -78,4 +78,13 @@ describe('ClaimShellAbsorber — consentimento na mesma transação (D764)', () 
     expect(h.calls).toContain('ROLLBACK');
     expect(h.calls).not.toContain('COMMIT');
   });
+
+  it('SEM aceite explícito (consentAt ausente) o OTP não presume nada: nenhum UPDATE de consentimento, mas a união fecha', async () => {
+    const h = harness(null);
+    const r = await h.absorber.absorbImportedIntoExisting({ existingId: X, importedId: IMP, authUid: 'uid' });
+    expect(r.isSuccess).toBe(true);
+    expect(h.calls).toContain('MERGE');
+    expect(h.calls).not.toContain('UPDATE:consent');
+    expect(h.calls).toContain('COMMIT');
+  });
 });

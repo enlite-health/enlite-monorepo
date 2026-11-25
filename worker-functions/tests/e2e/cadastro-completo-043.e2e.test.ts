@@ -43,6 +43,7 @@ import { PromoteBlockedApplicationsUseCase } from '../../src/modules/matching/ap
 import { createPromoteBlockedApplicationsHandler } from '../../src/modules/matching/application/PromoteBlockedApplicationsEventHandler';
 import { GetFunnelTableUseCase } from '../../src/modules/matching/application/GetFunnelTableUseCase';
 import { WJAFunnelController } from '../../src/modules/matching/interfaces/controllers/WJAFunnelController';
+import { gravarVerificacao } from './helpers/phoneVerificationFixtures';
 
 const pool = mockPool;
 const SUFFIX = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
@@ -97,6 +98,7 @@ async function makeAlmostCompleteWorker(tag: string): Promise<string> {
   );
   const id = rows[0].id;
   workerIds.push(id);
+  await gravarVerificacao(pool, id); // "tudo que o recálculo exige" inclui o celular verificado (migration 594)
   await pool.query(
     `INSERT INTO worker_service_areas (worker_id, address_line, radius_km) VALUES ($1, 'Av. Corrientes 1234', 10)`,
     [id],

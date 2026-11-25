@@ -1,3 +1,4 @@
+import { TwilioVerifyOtpAdapter } from '@modules/auth/infrastructure/TwilioVerifyOtpAdapter';
 jest.mock('@shared/logging', () => ({
   logger:      { child: jest.fn().mockReturnValue({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }) },
   reportError: jest.fn(),
@@ -60,7 +61,7 @@ describe('InitWorkerUseCase — telefone de worker existente sem telefone', () =
   it('T-F3c-07 OK: ficha sem telefone e celular livre grava o celular normalizado e devolve OK', async () => {
     const found = baseWorker();
     const repo = makeRepository(found);
-    const useCase = new InitWorkerUseCase(repo as any, makeTwilio() as any);
+    const useCase = new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(makeTwilio() as any));
 
     const result = await useCase.execute(input());
 
@@ -86,7 +87,7 @@ describe('InitWorkerUseCase — telefone de worker existente sem telefone', () =
       findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(imported)),
     });
     const twilio = makeTwilio();
-    const useCase = new InitWorkerUseCase(repo as any, twilio as any);
+    const useCase = new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
     const result = await useCase.execute(input());
 
@@ -108,7 +109,7 @@ describe('InitWorkerUseCase — telefone de worker existente sem telefone', () =
       findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(real)),
     });
     const twilio = makeTwilio();
-    const useCase = new InitWorkerUseCase(repo as any, twilio as any);
+    const useCase = new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(twilio as any));
 
     const result = await useCase.execute(input());
 
@@ -121,7 +122,7 @@ describe('InitWorkerUseCase — telefone de worker existente sem telefone', () =
   it('T-F3c-07 PHONE_LOCKED: ficha que já tinha telefone devolve PHONE_LOCKED sem alterar nada', async () => {
     const found = baseWorker({ phone: '5491100000000' });
     const repo = makeRepository(found);
-    const useCase = new InitWorkerUseCase(repo as any, makeTwilio() as any);
+    const useCase = new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(makeTwilio() as any));
 
     const result = await useCase.execute(input());
 
@@ -136,7 +137,7 @@ describe('InitWorkerUseCase — telefone de worker existente sem telefone', () =
   it('T-F3c-07 INVALID_PHONE: telefone curto devolve INVALID_PHONE e não consulta nem grava', async () => {
     const found = baseWorker();
     const repo = makeRepository(found);
-    const useCase = new InitWorkerUseCase(repo as any, makeTwilio() as any);
+    const useCase = new InitWorkerUseCase(repo as any, new TwilioVerifyOtpAdapter(makeTwilio() as any));
 
     const result = await useCase.execute(input('12345'));
 

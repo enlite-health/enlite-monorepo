@@ -33,6 +33,7 @@
 
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { gravarVerificacao } from './helpers/phoneVerificationFixtures';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -82,6 +83,8 @@ describe('Worker document status gate — regras de obrigatoriedade por profiss�
       [authUid, email, profession, `+5411${String(ts).slice(-6)}${String(tag.length).padStart(2, '0')}`],
     );
     const workerId = wRows[0].id;
+    // Os campos obrigatórios do recálculo incluem o celular verificado (migration 594): só documentos variam neste arquivo.
+    await gravarVerificacao(pool, workerId);
 
     await pool.query(
       `INSERT INTO worker_service_areas (worker_id, address_line, radius_km)

@@ -1,5 +1,5 @@
 import { registry, z } from '../registry';
-import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
+import { ErrorResponseSchema, OkMessage, UuidParam, successResponseSchema } from '../schemas/common';
 
 registry.registerPath({
   method: 'get',
@@ -228,6 +228,44 @@ registry.registerPath({
     200: { description: 'Lista paginada de workers.', content: { 'application/json': { schema: OkMessage } } },
     400: { description: 'Query params inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+// Spec 077 (D795) — "Celular perdido": estado do aparelho como o servidor o conhece. Célula `worker_device:revoke`.
+const WorkerDeviceStatusSchema = z
+  .object({
+    hasActiveDevice: z.boolean().openapi({ description: 'Há aparelho ativo ligado à conta da cuidadora.' }),
+    lastOperatorRevocation: z
+      .object({
+        revokedAt: z.string().datetime({ offset: true }).openapi({ description: 'Quando o operador pediu.' }),
+        wipedAt: z
+          .string()
+          .datetime({ offset: true })
+          .nullable()
+          .openapi({ description: 'Quando o app informou que apagou. NULL = o servidor não ouviu o aparelho (NÃO significa que não apagou).' }),
+        requestedByName: z.string().nullable().openapi({ description: 'Nome de quem pediu (o uid do operador nunca sai).' }),
+      })
+      .nullable()
+      .openapi({ description: 'Última revogação feita por operador; NULL = nunca houve.' }),
+  })
+  .openapi('WorkerDeviceStatus');
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/admin/workers/{workerId}/device/status',
+  tags: ['Admin · Workers'],
+  summary: 'Status do aparelho da cuidadora',
+  description:
+    'Painel "Celular perdido": se há aparelho ativo e a última revogação por operador (quando, quem pediu, se o app informou que apagou). ' +
+    'Exige a célula worker_device:revoke. Não devolve id de instalação, chave pública nem token.',
+  security: [{ firebaseAuth: [] }],
+  request: { params: z.object({ workerId: UuidParam }) },
+  responses: {
+    200: { description: 'Status do aparelho.', content: { 'application/json': { schema: successResponseSchema('WorkerDeviceStatusResponse', WorkerDeviceStatusSchema) } } },
+    400: { description: 'workerId inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Sem a célula worker_device:revoke.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });

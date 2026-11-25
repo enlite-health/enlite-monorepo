@@ -208,8 +208,8 @@ test.describe('AuthActionPage — testes visuais', () => {
 
     // Preenche com senhas diferentes
     const inputs = page.locator('input[type="password"]');
-    await inputs.nth(0).fill('password123');
-    await inputs.nth(1).fill('differentpass');
+    await inputs.nth(0).fill('Password123!');
+    await inputs.nth(1).fill('Different123!');
 
     // Submete
     await page.getByRole('button', { name: /auth\.action\.submit/i }).click();

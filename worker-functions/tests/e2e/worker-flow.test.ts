@@ -104,7 +104,9 @@ describe('Worker E2E Flow', () => {
           birthDate: '1960-03-18',
           documentType: 'CPF',
           documentNumber: '123.456.789-00',
-          phone: '+5511920051588',
+          // O MESMO número do passo 0 (init): numa ficha que já tem telefone, trocar o número exige o código mandado ao número
+          // novo (emenda 077 do celular verificado → PHONE_CHANGE_REQUIRES_VERIFICATION). Este fluxo prova o passo 2, não a troca.
+          phone: '+5511999999999',
           profilePhotoUrl: 'https://example.com/photo.jpg',
           languages: ['Português', 'Espanhol'],
           profession: 'CAREGIVER',

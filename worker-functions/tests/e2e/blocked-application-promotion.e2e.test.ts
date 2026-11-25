@@ -39,6 +39,7 @@ import {
   JourneyWorker,
   JourneyVacancy,
 } from './worker-onboarding-journey.helpers';
+import { gravarVerificacao } from './helpers/phoneVerificationFixtures';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -131,6 +132,8 @@ describe('Promoção automática de tentativas bloqueadas (worker.registration_c
     const token = await getWorkerToken(api, worker);
 
     await savePersonalInfo(api, token, worker.id);
+    // O prestador prova a posse do celular (no app, o `confirm` do código; aqui pela fixture): cadastro completo exige (migration 594).
+    await gravarVerificacao(pool, worker.id);
     await saveServiceArea(api, token);
     await saveAvailability(api, token);
     await saveDocuments(api, token, worker.id, DOCS_NON_AT);

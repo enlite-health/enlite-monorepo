@@ -390,6 +390,8 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'own_tactiq_link:read', 'own_tactiq_link:create',
       // acesso-do-cliente (F1, T111): registro de vínculos de área — declaradas em `adminAreaMembershipRoutes.ts` (família admin.users).
       'area_membership:read', 'area_membership:write',
+      // spec 077 (D795): "Celular perdido" — declarada em `workerDeviceRoutes.ts` (família admin.workers).
+      'worker_device:revoke',
       'staff_directory:read',
       // Spec 022, Bloco 4 (fecho, 21/09): notificações in-app — `own_notifications:read|update`
       // (família `admin.users`). Mesma situação das 5 células acima: rota real existe

@@ -166,6 +166,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   interview_host: 'Administração',
   // acesso-do-cliente (F1, T111): registro de vínculos pessoa × área × papel (`/api/admin/area-memberships`).
   area_membership: 'Administração',
+  // Spec 077 (D795): "Celular perdido" na ficha da cuidadora — rota em `workerDeviceRoutes.ts`, família `admin.workers`.
+  worker_device: 'Trabalhadores',
 };
 
 /**
@@ -436,6 +438,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'area_membership:write':
     'Conceder e revogar o vínculo de ÁREA de uma pessoa. Conceder abre o acesso à área na próxima renovação do token; revogar encerra '
     + 'as sessões dela já (motivo obrigatório). Quais perfis recebem esta célula é decisão da operação, nunca de migration.',
+  'worker_device:revoke':
+    'Marcar o celular da cuidadora como perdido: o aparelho ativo é revogado, as sessões dela caem e o app recebe a ordem de '
+    + 'apagar os dados do aparelho (sem aviso na tela). Não desativa a conta. Registra quem pediu e quando. Quais perfis recebem '
+    + 'esta célula é decisão dos C-levels, nunca de migration.',
   'staff_directory:read':
     'Buscar staff ativo por nome ou e-mail para o autocomplete de menção do chat interno do paciente. '
     + 'Devolve apenas UID e nome de exibição — nunca e-mail, telefone ou papel (D-06).',

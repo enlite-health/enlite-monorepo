@@ -52,6 +52,13 @@ describe('authErrorMapper', () => {
       expect(getAuthErrorTranslationKey(error)).toBe('auth.errors.weakPassword');
     });
 
+    it('mapeia auth/password-does-not-meet-requirements e o texto cru do servidor', () => {
+      const porCodigo = new FirebaseError('auth/password-does-not-meet-requirements', 'Password does not meet requirements');
+      expect(getAuthErrorTranslationKey(porCodigo)).toBe('auth.errors.passwordRequirements');
+      const porTexto = new Error('PASSWORD_DOES_NOT_MEET_REQUIREMENTS : Missing password requirements: [Password must contain an upper case character]');
+      expect(getAuthErrorTranslationKey(porTexto)).toBe('auth.errors.passwordRequirements');
+    });
+
     it('should map auth/popup-closed-by-user code', () => {
       const error = new FirebaseError('auth/popup-closed-by-user', 'Popup closed');
       expect(getAuthErrorTranslationKey(error)).toBe('auth.errors.popupClosedByUser');

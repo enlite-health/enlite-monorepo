@@ -3,7 +3,9 @@ import { Worker } from '@modules/worker/domain/Worker';
 import { Result } from '@shared/utils/Result';
 import { logger } from '@shared/logging';
 import { isClaimableWorker } from '@modules/worker/application/isClaimableWorker';
-import { ITwilioVerifyService, otpCheckIsForPhone } from '../infrastructure/TwilioVerifyService';
+import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
+import type { OtpChallengePort } from '../ports/OtpChallengePort';
+import type { PoolClient } from 'pg';
 import { CLAIM_CONFLICT, type IClaimShellAbsorber } from './ClaimShellAbsorber';
 
 export interface ConfirmClaimInput {
@@ -12,11 +14,17 @@ export interface ConfirmClaimInput {
   authUid: string;
   email: string;
   candidateWorkerId: string;
+  /**
+   * Aceite EXPLÍCITO da política (a caixa foi marcada). Sem ele o OTP NÃO presume consentimento: o trio
+   * `lgpd_consent_at`/`terms_accepted_at`/`privacy_accepted_at` fica como está (NULL continua NULL).
+   */
+  consentAt?: Date;
 }
 
 export type ConfirmClaimError =
   | 'INVALID_OTP'
   | 'EXPIRED_OTP'
+  | 'OTP_ALREADY_USED'
   | 'CANDIDATE_NOT_FOUND'
   | 'NOT_IMPORTABLE'
   | 'CLAIM_CONFLICT';
@@ -44,11 +52,22 @@ export type ConfirmClaimError =
 export class ConfirmClaimUseCase {
   constructor(
     private readonly workerRepository: IWorkerRepository,
-    private readonly twilioVerify: ITwilioVerifyService,
+    private readonly otp: OtpChallengePort,
     private readonly shellAbsorber?: IClaimShellAbsorber,
   ) {}
 
-  async execute(input: ConfirmClaimInput): Promise<Result<Worker>> {
+  /**
+   * `afterAbsorb` (só no ramo da casca): roda na transação da absorção, depois do consentimento. É por onde o
+   * `confirm` do celular verificado grava a prova na ficha sobrevivente, na MESMA transação da união.
+   */
+  /**
+   * `afterAdopt` (só no ramo SEM ficha própria, D797/T-13): a conta do token passa a ser a ficha importada (`auth_uid` gravado nela);
+   * o gancho roda na transação desse UPDATE, para a prova do celular entrar NA FICHA RECLAMADA junto da ligação.
+   */
+  async execute(
+    input: ConfirmClaimInput,
+    hooks: { afterAbsorb?: (tx: PoolClient) => Promise<void>; afterAdopt?: (tx: PoolClient) => Promise<void> } = {},
+  ): Promise<Result<Worker>> {
     const startedAt = Date.now();
 
     const log = logger.child({
@@ -61,45 +80,7 @@ export class ConfirmClaimUseCase {
 
     log.info({ msg: 'claim_confirm_requested' });
 
-    // 1. Validar OTP via Twilio Verify
-    let checkResult: Awaited<ReturnType<ITwilioVerifyService['checkVerification']>>;
-
-    try {
-      checkResult = await this.twilioVerify.checkVerification(
-        input.verificationSid,
-        input.otp,
-        {
-          // `candidateWorkerId` vem do corpo: a guarda de OTP de teste só aceita se for a ficha do envio,
-          // lida do banco agora, E de teste.
-          workerId: input.candidateWorkerId,
-          tokenEmail: input.email,
-          fichaIsTest: async () => {
-            const found = await this.workerRepository.findById(input.candidateWorkerId);
-            return found.isSuccess && found.getValue()?.isTest === true;
-          },
-        },
-      );
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return Result.fail<Worker>(`TWILIO_ERROR:${msg}`);
-    }
-
-    if (!checkResult.valid) {
-      const error: ConfirmClaimError =
-        checkResult.status === 'expired' || checkResult.status === 'canceled'
-          ? 'EXPIRED_OTP'
-          : 'INVALID_OTP';
-
-      if (error === 'EXPIRED_OTP') {
-        log.warn({ msg: 'claim_confirm_otp_expired', twilioStatus: checkResult.status });
-      } else {
-        log.warn({ msg: 'claim_confirm_otp_invalid', twilioStatus: checkResult.status });
-      }
-
-      return Result.fail<Worker>(error);
-    }
-
-    // 2. Re-fetch defensivo (proteção contra race condition)
+    // 1. Re-fetch defensivo (proteção contra race condition) — também dá o telefone GRAVADO, que o OTP confere (DP-21)
     const candidateResult = await this.workerRepository.findById(input.candidateWorkerId);
     if (candidateResult.isFailure) {
       return Result.fail<Worker>(candidateResult.error!);
@@ -111,11 +92,30 @@ export class ConfirmClaimUseCase {
       return Result.fail<Worker>('CANDIDATE_NOT_FOUND');
     }
 
-    // 2b. DP-21: o código tem de ter ido ao telefone DESTA ficha. Sem isso, um código aprovado
-    //     para o telefone A (do atacante) reivindicava a ficha B. Compara com o telefone do banco.
-    if (!otpCheckIsForPhone(checkResult, candidate.phone)) {
-      log.warn({ msg: 'claim_confirm_otp_phone_mismatch', hasTo: Boolean(checkResult.to) });
-      return Result.fail<Worker>('INVALID_OTP');
+    // 2. Validar o OTP pelo port. DP-21: o desafio só vale se foi emitido para o telefone DESTA ficha (lido do banco aqui,
+    //    nunca o do cliente): código aprovado para o telefone A (do atacante) não reivindica a ficha B.
+    const phoneOnRecord = candidate.phone
+      ? candidate.phone.startsWith('+') ? candidate.phone : `+${normalizePhoneAR(candidate.phone)}`
+      : '';
+    let outcome: Awaited<ReturnType<OtpChallengePort['check']>>;
+    try {
+      outcome = await this.otp.check({
+        challengeId: input.verificationSid,
+        workerId: input.candidateWorkerId,
+        phoneOnRecord,
+        code: input.otp,
+        // `candidateWorkerId` vem do corpo: a guarda de OTP de teste (plano B) só aceita se for a ficha do envio,
+        // lida do banco agora, E de teste.
+        ctx: { workerId: input.candidateWorkerId, tokenEmail: input.email, fichaIsTest: async () => candidate.isTest === true },
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return Result.fail<Worker>(`TWILIO_ERROR:${msg}`);
+    }
+
+    if (!outcome.ok) {
+      log.warn({ msg: outcome.code === 'EXPIRED_OTP' ? 'claim_confirm_otp_expired' : 'claim_confirm_otp_invalid', code: outcome.code });
+      return Result.fail<Worker>(outcome.code);
     }
 
     // 3. Verifica que a ficha ainda é importable (não foi reclamada em paralelo)
@@ -132,7 +132,7 @@ export class ConfirmClaimUseCase {
     }
 
     // 3b. D764: o authUid do token já tem OUTRA ficha? (findByAuthUid segue a corrente de merges.)
-    const consentAt = new Date();
+    const consentAt = input.consentAt;
     const ownResult = await this.workerRepository.findByAuthUid(input.authUid);
     if (ownResult.isFailure) {
       return Result.fail<Worker>(ownResult.error!);
@@ -148,12 +148,13 @@ export class ConfirmClaimUseCase {
         importedId: candidate.id,
         authUid: input.authUid,
         consentAt,
+        afterAbsorb: hooks.afterAbsorb,
       });
       if (absorbed.isFailure) {
         log.warn({ msg: 'claim_absorb_refused', error: absorbed.error });
         return Result.fail<Worker>(absorbed.error!);
       }
-      // O consentimento do OTP já foi gravado em X dentro da transação da absorção; aqui só relê o resultado.
+      // Com aceite explícito, ele já foi gravado em X dentro da transação da absorção; aqui só relê o resultado.
       const reread = await this.workerRepository.findByAuthUid(input.authUid);
       if (reread.isFailure || reread.getValue() === null) {
         log.error({ msg: 'claim_absorbed_reread_failed' });
@@ -164,10 +165,10 @@ export class ConfirmClaimUseCase {
     }
 
     // 4. Transferência transacional
-    const updateResult = await this.workerRepository.updateImportedWorkerData(
-      input.candidateWorkerId,
-      { authUid: input.authUid, email: input.email, consentAt },
-    );
+    const adoptArgs = [input.candidateWorkerId, { authUid: input.authUid, email: input.email, consentAt }] as const;
+    const updateResult = hooks.afterAdopt
+      ? await this.workerRepository.updateImportedWorkerData(...adoptArgs, hooks.afterAdopt)
+      : await this.workerRepository.updateImportedWorkerData(...adoptArgs);
 
     if (updateResult.isFailure) {
       log.error({

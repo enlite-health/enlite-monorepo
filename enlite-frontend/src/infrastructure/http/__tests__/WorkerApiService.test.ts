@@ -345,7 +345,8 @@ describe('WorkerApiService', () => {
           headers: expect.objectContaining({
             Authorization: 'Bearer mock-token',
           }),
-          body: JSON.stringify(payload),
+          // o telefone NÃO viaja (emenda do celular verificado, §6): só pela rota de verificação
+          body: JSON.stringify({ firstName: 'Gabriel', lastName: 'Stein', profession: 'caregiver' }),
         })
       );
     });

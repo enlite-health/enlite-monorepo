@@ -62,10 +62,16 @@ export async function fillGeneralInfo(page: Page, profession: Profession): Promi
   await page.locator('input#fullName').fill('Worker');
   await page.locator('input#lastName').fill('JourneyE2E');
 
-  const phone = page.locator('input[type="tel"]').first();
-  if (await phone.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    await phone.fill(uniquePhone);
-  }
+  // O telefone não é digitável no perfil (emenda 077 §6, AC-16): entra pelo modal de verificação
+  // (phone/start + phone/confirm; código do bypass E2E_OTP_CODE da stack de teste).
+  await page.getByTestId('phone-change-button').click();
+  const dialogPhone = page.getByRole('dialog').locator('input[type="tel"]');
+  await dialogPhone.fill(uniquePhone);
+  await page.getByTestId('phone-verification-send').click();
+  await page.getByTestId('phone-verification-code').click();
+  await page.keyboard.type('123456', { delay: 30 });
+  await page.getByTestId('phone-verification-confirm').click();
+  await expect(page.getByTestId('phone-verification-code')).toHaveCount(0, { timeout: 20_000 });
   await page.locator('input#birthDate').fill('01/01/1990');
   await page.locator('input#cpf').fill(uniqueCuil);
   await escolherNoCombo(page, page.locator('#sex'), 'Masculino'); // male

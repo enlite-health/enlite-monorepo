@@ -41,6 +41,11 @@ const FIELD_DESTINATION_MAP: Record<string, FieldDestination> = {
   birth_date: { tab: 'general', focus: 'birthDate' },
   document_number: { tab: 'general', focus: 'cpf' },
   phone: { tab: 'general', focus: 'phone' },
+  /**
+   * Celular verificado (emenda 077 §7, D779): o número existe mas a posse não está provada.
+   * Mesmo destino de `phone` (o campo do telefone, onde fica o botão "Verificar").
+   */
+  phone_unverified: { tab: 'general', focus: 'phone' },
   languages: { tab: 'general', focus: 'languages' },
   profession: { tab: 'general', focus: 'profession' },
   knowledge_level: { tab: 'general', focus: 'knowledgeLevel' },
@@ -139,4 +144,43 @@ export function buildProfileUrl(dest: FieldDestination): string {
   const params = new URLSearchParams({ tab: dest.tab });
   if (dest.focus) params.set('focus', dest.focus);
   return `/worker/profile?${params.toString()}`;
+}
+
+/**
+ * Rótulo i18n (es / pt-BR) dos tokens que pedem uma ação própria, não só "ir para a aba".
+ * `null` = o token não tem rótulo próprio (a aba basta).
+ */
+const TOKEN_LABEL_KEYS: Record<string, string> = {
+  phone_unverified: 'phoneVerification.pendingLabel',
+};
+
+export function labelKeyFor(token: string): string | null {
+  return TOKEN_LABEL_KEYS[token] ?? null;
+}
+
+/**
+ * O passo "Tu celular" do passo a passo da web (emenda 077 §7.4). A web não sabe o que é
+ * "legado": vê a AUSÊNCIA de `phone_unverified` em `missingFields` e o `state` do derivado.
+ *   - `pending`: falta o número (`phone`) ou a prova (`phone_unverified`) — ficha nova; conta no total.
+ *   - `ready`: nada pede o celular. Se `badge === 'unverified'` é ficha LEGADA: pronto, com selo
+ *     "Sin verificar" e botão "Verificar".
+ *   - `unknown`: o servidor não informou `missingFields` — "não sei" nunca vira pronto.
+ */
+export type PhoneStepStatus = 'pending' | 'ready' | 'unknown';
+
+export interface PhoneStep {
+  status: PhoneStepStatus;
+  badge: 'no_phone' | 'unverified' | 'verified' | null;
+}
+
+export function phoneStepOf(data: {
+  missingFields?: string[] | null;
+  phoneVerification?: { state: 'no_phone' | 'unverified' | 'verified' } | null;
+}): PhoneStep {
+  const missing = data.missingFields;
+  const state = data.phoneVerification?.state ?? null;
+  if (!Array.isArray(missing)) return { status: 'unknown', badge: state };
+  if (missing.includes('phone')) return { status: 'pending', badge: 'no_phone' };
+  if (missing.includes('phone_unverified')) return { status: 'pending', badge: 'unverified' };
+  return { status: 'ready', badge: state };
 }

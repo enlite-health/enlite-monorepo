@@ -104,6 +104,9 @@ export { createAuthTelemetryRoutes } from './interfaces/routes/authTelemetryRout
 export { createAdminUsersRoutes } from './interfaces/routes/adminUsersRoutes';
 export { createAdminAreaMembershipRoutes } from './interfaces/adminAreaMembershipRoutes';
 export { AreaMembershipController } from './interfaces/controllers/AreaMembershipController';
+export { createAdminWorkerDeviceRoutes, createWorkerDeviceServiceRoutes } from './interfaces/workerDeviceRoutes';
+export { WorkerDeviceController } from './interfaces/controllers/WorkerDeviceController';
+export { requireWorkerDeviceService } from './interfaces/middleware/requireWorkerDeviceService';
 export { createAdminStaffDirectoryRoutes } from './interfaces/routes/adminStaffDirectoryRoutes';
 export { AdminStaffDirectoryController } from './interfaces/controllers/AdminStaffDirectoryController';
 // Heartbeat de presença mudou para módulo PRÓPRIO em 22/09/2026 (change

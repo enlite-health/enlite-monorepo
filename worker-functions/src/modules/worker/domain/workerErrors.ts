@@ -15,6 +15,12 @@ export const WORKER_ERROR_CODES = {
    * SavePersonalInfoUseCase.
    */
   PHONE_NOT_AVAILABLE: 'PHONE_NOT_AVAILABLE',
+  /**
+   * Troca de telefone numa ficha que já tem número, sem código de verificação
+   * (emenda do celular verificado, §6, AC-15). Nome PROVISÓRIO. O telefone só
+   * troca pela rota `phone-verification/start|confirm`.
+   */
+  PHONE_CHANGE_REQUIRES_VERIFICATION: 'PHONE_CHANGE_REQUIRES_VERIFICATION',
 } as const;
 
 export type WorkerErrorCode = (typeof WORKER_ERROR_CODES)[keyof typeof WORKER_ERROR_CODES];

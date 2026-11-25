@@ -107,6 +107,12 @@ const mockWorker: Worker = {
   updatedAt: new Date('2024-03-01T12:00:00Z'),
 };
 
+
+// `GET /api/workers/me` lê primeiro o celular verificado (função derivada) e DEPOIS o `missingFields`: as duas leituras saem do mesmo
+// pool dublê, nesta ordem.
+const PHONE_VERIFICATION_ROW = { rows: [{ state: 'unverified', phone: '+5511988887777', verified_at: null }] };
+const PHONE_VERIFICATION_VIEW = { state: 'unverified', phoneMasked: expect.any(String), verifiedAt: null };
+
 // ─── Testes ───────────────────────────────────────────────────────────────────
 
 describe('WorkerControllerV2', () => {
@@ -210,6 +216,39 @@ describe('WorkerControllerV2', () => {
         })
       );
       expect(initSpy).not.toHaveBeenCalled();
+    });
+
+    it('init com aceite (lgpdOptIn) em ficha existente grava o consentimento ANTES do 200 (init pelo app)', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.ok(mockWorker));
+      const consentSpy = jest.spyOn(controller['initWorkerUseCase'], 'recordConsent').mockResolvedValue(Result.ok(undefined));
+      const [req, res] = mockReqRes({ lgpdOptIn: true }, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
+
+      await controller.initWorker(req, res);
+
+      expect(consentSpy).toHaveBeenCalledWith(WORKER_ID);
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('init SEM aceite em ficha existente não grava consentimento (login)', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.ok(mockWorker));
+      const consentSpy = jest.spyOn(controller['initWorkerUseCase'], 'recordConsent');
+      const [req, res] = mockReqRes({}, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
+
+      await controller.initWorker(req, res);
+
+      expect(consentSpy).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('aceite que não foi gravado vira 400, nunca 200 (sem sucesso silencioso)', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.ok(mockWorker));
+      jest.spyOn(controller['initWorkerUseCase'], 'recordConsent').mockResolvedValue(Result.fail('CONSENT_NOT_RECORDED'));
+      const [req, res] = mockReqRes({ lgpdOptIn: true }, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
+
+      await controller.initWorker(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'CONSENT_NOT_RECORDED' });
     });
 
     it('retorna 201 com novo worker quando worker não existe e initWorkerUseCase cria com sucesso', async () => {
@@ -423,6 +462,7 @@ describe('WorkerControllerV2', () => {
     it('retorna 200 com dados do worker quando getProgressUseCase encontra o worker via user.uid', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce(PHONE_VERIFICATION_ROW);
       mockQuery.mockResolvedValueOnce({ rows: [{ missing: [] }] });
 
       const [req, res] = mockReqRes({}, {}, { uid: AUTH_UID });
@@ -433,7 +473,7 @@ describe('WorkerControllerV2', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
-          data: { ...mockWorker, missingFields: [] },
+          data: { ...mockWorker, missingFields: [], phoneVerification: PHONE_VERIFICATION_VIEW },
         })
       );
     });
@@ -441,6 +481,7 @@ describe('WorkerControllerV2', () => {
     it('retorna 200 com dados do worker com Bearer de A + x-auth-uid de B: age só em A (header ignorado)', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce(PHONE_VERIFICATION_ROW);
       mockQuery.mockResolvedValueOnce({ rows: [{ missing: [] }] });
 
       const [req, res] = mockReqRes({}, { 'x-auth-uid': 'uid-de-B' }, { uid: AUTH_UID });
@@ -453,7 +494,7 @@ describe('WorkerControllerV2', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
-          data: { ...mockWorker, missingFields: [] },
+          data: { ...mockWorker, missingFields: [], phoneVerification: PHONE_VERIFICATION_VIEW },
         })
       );
     });
@@ -470,6 +511,7 @@ describe('WorkerControllerV2', () => {
     it('devolve missingFields com o que o portão exige — inclusive phone e title_certificate', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.ok(mockWorker));
+      mockQuery.mockResolvedValueOnce(PHONE_VERIFICATION_ROW);
       mockQuery.mockResolvedValueOnce({
         rows: [{ missing: ['phone', 'title_certificate'] }],
       });

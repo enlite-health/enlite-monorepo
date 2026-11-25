@@ -142,8 +142,8 @@ test.describe('Onda 2 — ClaimOtpModal e CompleteWhatsappPage', () => {
 
     // Preenche o formulário minimamente para disparar o submit
     await page.fill('input#email', 'test@example.com');
-    await page.fill('input#password', 'senha123');
-    await page.fill('input#confirmPassword', 'senha123');
+    await page.fill('input#password', 'Senha123!');
+    await page.fill('input#confirmPassword', 'Senha123!');
 
     // Marca o checkbox de LGPD
     const lgpdCheckbox = page.locator('input[type="checkbox"]').first();

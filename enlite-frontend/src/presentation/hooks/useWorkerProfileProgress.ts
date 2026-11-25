@@ -8,6 +8,7 @@ import {
   getStep2Progress,
   getStep3Progress,
 } from '../utils/workerProgressValidation';
+import { phoneStepOf } from '../utils/incompleteFieldDestinations';
 
 interface UseWorkerProfileProgressResult {
   progress: WorkerProfileProgress;
@@ -50,6 +51,8 @@ export function useWorkerProfileProgress(
       { id: 'step1', label: t('profile.progress.step1'), completed: stepValidation.step1 },
       { id: 'step2', label: t('profile.progress.step2'), completed: stepValidation.step2 },
       { id: 'step3', label: t('profile.progress.step3'), completed: stepValidation.step3 },
+      // Celular verificado (emenda 077 §7.4): ficha legada sem a pendência aparece PRONTA.
+      { id: 'phone', label: t('phoneVerification.stepLabel'), completed: phoneStepOf(workerData).status === 'ready' },
     ];
 
     const registrationCompletedSteps = registrationSteps.filter((s) => s.completed).length;

@@ -9,6 +9,7 @@ import {
 import { getFirebaseAuth } from '@infrastructure/config/firebase';
 import { AuthNavbar } from '@presentation/components/organisms/AuthNavbar';
 import { ADMIN_HOME_PATH } from '@presentation/config/adminHome';
+import { getAuthErrorTranslationKey } from '@presentation/utils/authErrorMapper';
 import { ActionErrorCard } from './ActionErrorCard';
 import { PasswordResetForm } from './PasswordResetForm';
 
@@ -75,8 +76,10 @@ export function AuthActionPage(): JSX.Element {
       } else {
         navigate('/', { replace: true });
       }
-    } catch {
-      setSubmitError(t('auth.action.genericError'));
+    } catch (err) {
+      // Erro do servidor (ex.: senha fora da política) vai pelo mapper; sem mapa, mensagem genérica.
+      const key = getAuthErrorTranslationKey(err);
+      setSubmitError(t(key ?? 'auth.action.genericError'));
       setPageState('error-submit');
     }
   };

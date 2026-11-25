@@ -210,6 +210,8 @@ describe('fn_worker_missing_fields — branches SQL (banco real)', () => {
          document_type             = 'DNI',
          languages_encrypted       = 'enc-lang',
          phone                     = '+5411888888888',
+         phone_verified_normalized = normalize_phone_ar('+5411888888888'), phone_verified_at = now(),
+         phone_verified_method     = 'otp_whatsapp_template',
          knowledge_level           = 'BASIC',
          title_certificate         = 'DEGREE',
          years_experience          = '3-5',
@@ -263,7 +265,8 @@ async function fillRegistration(workerId: string): Promise<void> {
     `UPDATE workers SET
        first_name_encrypted = 'enc-fname', last_name_encrypted = 'enc-lname', sex_encrypted = 'enc-sex',
        gender_encrypted = 'enc-gender', birth_date_encrypted = 'enc-bd', document_number_encrypted = 'enc-doc',
-       document_type = 'DNI', languages_encrypted = 'enc-lang', phone = $2,
+       document_type = 'DNI', languages_encrypted = 'enc-lang', phone = $2::text,
+       phone_verified_normalized = normalize_phone_ar($2::text), phone_verified_at = now(), phone_verified_method = 'otp_whatsapp_template',
        knowledge_level = 'BASIC', title_certificate = 'DEGREE', years_experience = '3-5',
        experience_types = ARRAY['TEA'], preferred_types = ARRAY['TEA'], preferred_age_range = ARRAY['CHILD']
      WHERE id = $1`,
@@ -458,7 +461,9 @@ describe('Guard fn_guard_registered_status — decide pelo dono, lendo a linha n
          status = 'REGISTERED',
          first_name_encrypted = 'a', last_name_encrypted = 'b', sex_encrypted = 'c', gender_encrypted = 'd',
          birth_date_encrypted = 'e', document_number_encrypted = 'f', document_type = 'DNI', languages_encrypted = 'g',
-         phone = $2, knowledge_level = 'BASIC', title_certificate = 'DEGREE', years_experience = '1-2',
+         phone = $2::text, phone_verified_normalized = normalize_phone_ar($2::text), phone_verified_at = now(),
+         phone_verified_method = 'otp_whatsapp_template',
+         knowledge_level = 'BASIC', title_certificate = 'DEGREE', years_experience = '1-2',
          experience_types = ARRAY['TEA'], preferred_types = ARRAY['TEA'], preferred_age_range = ARRAY['CHILD']
        WHERE id = $1`,
       [id, `+54118${String(Date.now()).slice(-6)}001`],
@@ -502,5 +507,53 @@ describe('Guard fn_guard_registered_status — decide pelo dono, lendo a linha n
     expect(rows[0].def).not.toContain('identity_document_url');
     expect(rows[0].def).not.toContain('criminal_record_url');
     expect(rows[0].def).toContain('fn_worker_missing_fields_of');
+  });
+});
+
+// ── T-F3c-133 (emenda 077 §7.2, AC-17): item `phone_unverified` no DONO da completude ─────────────────
+
+describe('phone_unverified no dono da completude (fn_worker_missing_fields_of)', () => {
+  async function comTelefone(tag: string, opts: { waived?: boolean; verified?: boolean; phone?: boolean } = {}): Promise<string> {
+    const id = await makeWorker('INCOMPLETE_REGISTER', `pu-${tag}`);
+    if (opts.phone === false) return id;
+    phoneSeq += 1;
+    const phone = `+54117${String(Date.now()).slice(-6)}${String(phoneSeq).padStart(3, '0')}`;
+    await pool.query(`UPDATE workers SET phone = $2::text WHERE id = $1`, [id, phone]);
+    if (opts.verified) {
+      await pool.query(
+        `UPDATE workers SET phone_verified_normalized = phone_normalized, phone_verified_at = now(),
+                phone_verified_method = 'otp_whatsapp_template' WHERE id = $1`,
+        [id],
+      );
+    }
+    if (opts.waived) {
+      const c = await pool.connect();
+      try {
+        await c.query(`SET enlite.merge_in_progress = 'on'`);
+        await c.query(`UPDATE workers SET phone_verification_waived_at = now() WHERE id = $1`, [id]);
+        await c.query(`RESET enlite.merge_in_progress`);
+      } finally {
+        c.release();
+      }
+    }
+    return id;
+  }
+
+  it('T-F3c-133 sem marca e telefone não verificado → contém phone_unverified', async () => {
+    expect(await callFn(await comTelefone('a'))).toContain('phone_unverified');
+  });
+
+  it('T-F3c-133 com marca e não verificado → não contém phone_unverified', async () => {
+    expect(await callFn(await comTelefone('b', { waived: true }))).not.toContain('phone_unverified');
+  });
+
+  it('T-F3c-133 verificado → não contém phone_unverified', async () => {
+    expect(await callFn(await comTelefone('c', { verified: true }))).not.toContain('phone_unverified');
+  });
+
+  it('T-F3c-133 sem telefone → só phone (nunca os dois)', async () => {
+    const r = await callFn(await comTelefone('d', { phone: false }));
+    expect(r).toContain('phone');
+    expect(r).not.toContain('phone_unverified');
   });
 });

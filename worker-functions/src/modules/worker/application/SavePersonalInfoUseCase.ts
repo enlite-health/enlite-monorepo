@@ -208,7 +208,17 @@ export class SavePersonalInfoUseCase {
       return Result.ok<string>('');
     }
 
-    // Troca real: o número não pode pertencer a outro worker.
+    // Emenda do celular verificado (§6, AC-15): numa ficha que JÁ tem telefone, a
+    // troca só vale com código mandado ao número novo (rota phone-verification).
+    // Aqui é recusada sem gravar nada — senão um cliente antigo trocaria sem prova.
+    // Ficha SEM telefone: o primeiro registro segue sem código (entra `unverified`).
+    const hadPhone = (currentPhone ?? '').trim() !== '';
+    const phoneChanged = incomingNorm !== normalizePhoneAR(currentPhone);
+    if (phoneChanged && hadPhone) {
+      return Result.fail<string>(WORKER_ERROR_CODES.PHONE_CHANGE_REQUIRES_VERIFICATION);
+    }
+
+    // Primeiro registro: o número não pode pertencer a outro worker.
     const candidates = generatePhoneCandidates(incomingPhone ?? '');
     const ownerResult = await this.workerRepository.findByPhoneCandidates(candidates);
     if (ownerResult.isFailure) {

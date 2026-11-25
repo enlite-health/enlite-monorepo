@@ -5,10 +5,11 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { FormField, PasswordInput } from '@presentation/components/molecules';
+import { passwordSchema } from '@presentation/utils/passwordSchema';
 
 const resetSchema = z
   .object({
-    newPassword: z.string().min(8, 'auth.action.passwordMin'),
+    newPassword: passwordSchema,
     confirmPassword: z.string().min(1, 'auth.action.passwordMin'),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {

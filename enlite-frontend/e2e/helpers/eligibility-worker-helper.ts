@@ -78,6 +78,11 @@ export interface InsertEligibilityWorkerOpts {
   documentNumber?: boolean;
   languages?: boolean;
   phone?: boolean;
+  /**
+   * Prova de posse do celular gravada (emenda 077, migration 594: `phone_unverified` no dono da completude).
+   * Default true quando há telefone — "todos os campos" inclui o celular verificado. `false` deixa o telefone sem prova.
+   */
+  phoneVerified?: boolean;
   knowledgeLevel?: boolean;
   titleCertificate?: boolean;
   yearsExperience?: boolean;
@@ -124,6 +129,7 @@ export function insertEligibilityWorker(
     documentNumber = true,
     languages = true,
     phone: hasPhone = true,
+    phoneVerified = true,
     knowledgeLevel = true,
     titleCertificate = true,
     yearsExperience = true,
@@ -187,11 +193,25 @@ export function insertEligibilityWorker(
   const workerId = extractUUID(idRow);
   if (!workerId) throw new Error(`Could not find worker after insert (auth_uid=${authUid})`);
 
+  if (hasPhone && phoneVerified) markPhoneVerified(workerId);
   insertServiceArea(workerId, serviceArea);
   if (availability) insertAvailability(workerId);
   insertDocuments(workerId, { docResumeCv, docIdentityDocument, docCriminalRecord, docAtCertificate });
 
   return { workerId, authUid, email, phone: hasPhone ? phoneVal : null };
+}
+
+/**
+ * O helper ÚNICO da prova de posse do celular no e2e (o que o `confirm` da rota phone-verification grava): as 3 colunas do
+ * CHECK tudo-ou-nada da migration 594, com o número normalizado pela MESMA função da coluna `phone_normalized`. Sem telefone,
+ * o CHECK recusa (falha alta, nunca prova silenciosa). Quem completa a ficha por fora (ex.: pela API) e precisa dela REGISTERED
+ * chama este depois de gravar o telefone.
+ */
+export function markPhoneVerified(workerId: string): void {
+  runSQL(
+    `UPDATE workers SET phone_verified_normalized = normalize_phone_ar(phone), phone_verified_at = NOW(), ` +
+      `phone_verified_method = 'otp_whatsapp_template' WHERE id = '${workerId}'`,
+  );
 }
 
 function insertServiceArea(workerId: string, withAddressLine: boolean): void {

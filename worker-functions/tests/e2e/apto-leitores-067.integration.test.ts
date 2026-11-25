@@ -25,6 +25,7 @@ import { GetFunnelTableUseCase } from '../../src/modules/matching/application/Ge
 import { esperandoAgendaQuery } from '../../src/modules/matching/application/managementDashboardQueries';
 import { WorkerApplicationRepository } from '../../src/modules/matching/infrastructure/WorkerApplicationRepository';
 import { DatabaseConnection } from '../../src/shared/database/DatabaseConnection';
+import { gravarVerificacao } from './helpers/phoneVerificationFixtures';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -49,6 +50,7 @@ async function makeWorker(id: string, tag: string, docs: 'validated' | 'unvalida
        ARRAY['TEA'], ARRAY['TEA'], ARRAY['CHILD'])`,
     [id, `uid-067-${tag}`, `apto-067-${tag}@e2e.test`, `+54116700${tag.length}${Math.floor(Math.random() * 1e5)}`],
   );
+  await gravarVerificacao(pool, id); // cadastro completo inclui o celular verificado (migration 594)
   if (docs === 'incomplete') return;
   await pool.query(`INSERT INTO worker_service_areas (worker_id, address_line, radius_km) VALUES ($1, 'Av. Test 1', 5)`, [id]);
   await pool.query(
