@@ -201,6 +201,9 @@ jobs:
             SOL_TWILIO_CONTENT_SID_GRAVE=HX1148e6db5ee181e5da04777e4a1122b1
             SOL_AVISO_GRAVE_REENVIO_HORAS=4
             FRONTEND_URL=https://app.enlite.health
+          # spec 077, D758 (PR-INF-46): pepper do HMAC do OTP próprio. O secret `otp-hmac-pepper-prd` e o secretAccessor da SA do
+          # runtime têm de existir ANTES do merge (merge = deploy; sem o secret a revisão não sobe). A env
+          # TWILIO_AUTH_TEMPLATE_CONTENT_SID entra quando a Meta aprovar o template (H-06): é o ContentSid HX…, que ainda não existe.
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             DB_SYSTEM_PASSWORD=enlite-system-db-password:latest
@@ -222,9 +225,6 @@ jobs:
             ANACARE_PASS=anacare-pass:latest
             SOL_AVISO_GRAVE_DESTINATARIOS=sol-aviso-grave-destinatarios:latest
             E2E_OTP_CODE=e2e-otp-code-prd:latest
-            # spec 077, D758 (PR-INF-46): pepper do HMAC do OTP próprio. O secret `otp-hmac-pepper-prd` e o secretAccessor da SA do
-            # runtime têm de existir ANTES do merge (merge = deploy; sem o secret a revisão não sobe). A env
-            # TWILIO_AUTH_TEMPLATE_CONTENT_SID entra quando a Meta aprovar o template (H-06): é o ContentSid HX…, que ainda não existe.
             OTP_HMAC_PEPPER=otp-hmac-pepper-prd:latest
           flags: >-
             --allow-unauthenticated
