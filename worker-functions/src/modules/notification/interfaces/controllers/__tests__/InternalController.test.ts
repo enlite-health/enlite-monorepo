@@ -200,7 +200,13 @@ describe('InternalController', () => {
 
   describe('sweepMessagingRetention', () => {
     it('calls MessagingRetentionService.run and returns the counts', async () => {
-      messagingRetentionService.run.mockResolvedValue({ outboxDeleted: 226, bulkDeleted: 40, tokensDeleted: 1501 });
+      messagingRetentionService.run.mockResolvedValue({
+        outboxDeleted: 226,
+        bulkDeleted: 40,
+        tokensDeleted: 1501,
+        talentumInboxPayloadsCleared: 3,
+        talentumInboxDeleted: 2,
+      });
       const res = mockRes();
       await controller.sweepMessagingRetention(mockReq(), res);
 
@@ -211,6 +217,8 @@ describe('InternalController', () => {
         outboxDeleted: 226,
         bulkDeleted: 40,
         tokensDeleted: 1501,
+        talentumInboxPayloadsCleared: 3,
+        talentumInboxDeleted: 2,
       });
     });
 

@@ -4,6 +4,8 @@ export interface RetentionResult {
   outboxDeleted: number;
   bulkDeleted: number;
   tokensDeleted: number;
+  talentumInboxPayloadsCleared: number;
+  talentumInboxDeleted: number;
 }
 
 /**
@@ -18,6 +20,10 @@ export interface RetentionResult {
  * `cleanup_expired_tokens()` roda ANTES de `archive_old_messages()`: tokens de PII expiram em
  * 24h (janela muito mais curta que os 90/365 dias das outras tabelas) — não há motivo para
  * esperar o ciclo de archiving para limpar o que já devia ter sumido há meses.
+ *
+ * 3ª poda (spec 095, D804): `talentum_webhook_inbox` — payload cifrado de linha PROCESSED some na 1ª execução
+ * semanal após 7 dias (teto real 14 dias); FAILED/UNSUPPORTED/REJECTED_SCHEMA mantêm o payload (redrive) até
+ * a linha inteira sair aos 90 dias.
  *
  * Ver openspec/changes/mensageria-pii-e-retencao/design.md — Decisão B (padrão de job reusado).
  */
@@ -36,6 +42,23 @@ export class MessagingRetentionService {
     const outboxDeleted = Number(archiveRes.rows[0]?.outbox_deleted ?? 0);
     const bulkDeleted = Number(archiveRes.rows[0]?.bulk_deleted ?? 0);
 
-    return { outboxDeleted, bulkDeleted, tokensDeleted };
+    const clearRes = await this.pool.query(
+      `UPDATE talentum_webhook_inbox SET payload_enc = NULL
+        WHERE state = 'PROCESSED' AND processed_at < now() - interval '7 days' AND payload_enc IS NOT NULL`,
+    );
+    const talentumInboxPayloadsCleared = clearRes.rowCount ?? 0;
+
+    const inboxDelRes = await this.pool.query(
+      `DELETE FROM talentum_webhook_inbox WHERE received_at < now() - interval '90 days'`,
+    );
+    const talentumInboxDeleted = inboxDelRes.rowCount ?? 0;
+
+    return {
+      outboxDeleted,
+      bulkDeleted,
+      tokensDeleted,
+      talentumInboxPayloadsCleared,
+      talentumInboxDeleted,
+    };
   }
 }
