@@ -21,6 +21,7 @@ import { WorkerEncuadresCard } from './WorkerEncuadresCard';
 import { WorkerProfessionalCard } from './WorkerProfessionalCard';
 import { WorkerAvailabilityCard } from './WorkerAvailabilityCard';
 import { WorkerTestAccountToggle } from './WorkerTestAccountToggle';
+import { WorkerLostDeviceCard } from './WorkerLostDeviceCard';
 import { WorkerEditModal } from './WorkerEditModal';
 
 interface WorkerDetailContentProps {
@@ -139,6 +140,9 @@ export function WorkerDetailContent({ workerId, header, renderError, allowEdit =
 
       {/* Admin-only: test-account toggle */}
       <WorkerTestAccountToggle workerId={worker.id} initialIsTest={worker.isTest} />
+
+      {/* "Celular perdido" (spec 077, D795): só na página (ação, não leitura); o card se esconde sem a célula worker_device:revoke */}
+      {allowEdit && <WorkerLostDeviceCard workerId={worker.id} />}
 
       {/* Row 2: Address (full-width) — célula própria de endereço, a mesma do mapa (lex P2) */}
       <ContainerGate resource="worker_address">

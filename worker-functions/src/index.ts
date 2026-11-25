@@ -65,7 +65,7 @@ import { createAdminNotificationRoutes } from '@modules/inapp-notification/inter
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import { UserController, resolveCountryScope, sealUnclassifiedRoutes, createAdminRecordCountryScopeRoutes } from '@modules/identity';
-import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createAdminAreaMembershipRoutes, AreaMembershipController, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
+import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createAdminAreaMembershipRoutes, AreaMembershipController, createAdminWorkerDeviceRoutes, createWorkerDeviceServiceRoutes, WorkerDeviceController, requireWorkerDeviceService, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createAdminPresenceRoutes } from '@modules/presence';
 import { routeClass, markRouteClass, createMeAuthzRouter, createMeSimulationRouter, ENLITE_TENANT_ID } from '@modules/identity/permissions';
 import {
@@ -595,6 +595,11 @@ app.use(
     AreaMembershipController.fromPool(DatabaseConnection.getInstance().getPool()),
   ),
 );
+// `POST /api/admin/workers/:workerId/device/revoke` (spec 077, D795) — "Celular perdido"; família `admin.workers`, célula NOVA
+// `worker_device:revoke` (nenhum grupo a recebe por migration; `untilEnforced: 'admin'` até a família virar). O router de serviço
+// (`/v1/workers/:workerId/device*`, guard OIDC + allowlist `WORKER_DEVICE_ALLOWED_SAS`, fail-closed) é montado junto da árvore de pessoas.
+const workerDeviceController = WorkerDeviceController.fromPool(DatabaseConnection.getInstance().getPool());
+app.use('/api/admin', createAdminWorkerDeviceRoutes(authMiddleware, permissionMiddleware, workerDeviceController));
 // `POST /api/admin/me/presence` (change 022-ux-mencao-e-notificacao, Rodada 2/R2-B) — heartbeat
 // de presença do painel admin aberto. Mesma família `admin.users`, célula `own_presence:update`
 // (nasce concedida a todo staff, mesma regra de `own_notifications`, D-07).
@@ -644,6 +649,8 @@ app.use('/v1', createMeSimulationRouter({
 app.use('/v1', createMeAreasRouter(authMiddleware.requireAuth(), DatabaseConnection.getInstance().getPool()));
 // `GET /v1/persons/:pid/tree` — árvore do `iam` para serviços (learn-service/spec B), guard OIDC + allowlist de SA fail-closed (T138).
 app.use('/v1', createPersonTreeRouter(requirePersonTreeService, DatabaseConnection.getInstance().getPool()));
+// Aparelho da cuidadora (spec 077, D795): BFF registra/lê/confirma apagamento. Fail-closed sem `WORKER_DEVICE_ALLOWED_SAS`.
+app.use('/v1', createWorkerDeviceServiceRoutes(requireWorkerDeviceService, workerDeviceController));
 // NOTE: requireAuth (not requireAdmin) — auto-provisioning on first Google login.
 app.get('/api/admin/auth/profile', routeClass('client-policy'), authMiddleware.requireAuth(), (req: Request, res: Response) => {
   adminController.getProfile(req, res);

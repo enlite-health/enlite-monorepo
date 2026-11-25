@@ -2106,6 +2106,26 @@
         "assignError": "Erro ao atribuir etiqueta",
         "removeError": "Erro ao remover etiqueta"
       },
+      "lostDevice": {
+        "title": "Celular perdido",
+        "hint": "Manda o celular do prestador apagar os dados do app e derruba as sessões dele. Não desativa a conta.",
+        "button": "Celular perdido",
+        "confirmTitle": "Confirmar que o celular foi perdido?",
+        "confirmBody": "O celular deste prestador vai receber a ordem de apagar todos os dados do app, sem aviso na tela, assim que se conectar à internet. As sessões dele caem agora. A conta NÃO é desativada: para isso, use a ação de desativar.",
+        "confirmYes": "Sim, apagar o celular",
+        "confirmBusy": "Enviando…",
+        "cancel": "Cancelar",
+        "requested": "Pedido enviado em {{date}} por {{name}}.",
+        "pending": "O servidor ainda não ouviu o celular desde o pedido. Isso não significa que ele não foi apagado.",
+        "wiped": "O app informou que apagou os dados em {{date}}.",
+        "wipedSource": "Este aviso é enviado pelo próprio app.",
+        "unknownRequester": "alguém sem nome registrado",
+        "pushSent": "Aviso enviado ao celular.",
+        "pushNotSent": "Não foi possível avisar o celular; ele será apagado quando se conectar.",
+        "errorNoDevice": "Este prestador não tem celular ativo.",
+        "errorRevoke": "Não foi possível registrar o pedido. Tente de novo.",
+        "errorLoad": "Não foi possível carregar o status do celular."
+      },
       "testAccount": {
         "label": "Conta de teste",
         "hint": "Marca este prestador como conta de teste (QA, demos).",
@@ -5417,7 +5437,8 @@
             "move_to_alta": "Para alta",
             "move_to_discharged": "Para baixa",
             "release_paid_rehearsal": "Liberar ensaio pago",
-            "retry_summary": "Reprocessar resumo"
+            "retry_summary": "Reprocessar resumo",
+            "revoke": "Revogar"
           },
           "category": {
             "Trabalhadores": "Trabalhadores",
@@ -5434,6 +5455,7 @@
           "resource": {
             "worker": "Prestador em operação",
             "worker_contact": "Contato: nome e telefone",
+            "worker_device": "Celular do prestador (celular perdido)",
             "worker_pii": "Dossiê: DNI, nascimento, dados sensíveis",
             "worker_application": "Candidatura do prestador a uma vaga (agente)",
             "handover": "Repasse da conversa para a equipe humana (agente)",
@@ -5920,7 +5942,8 @@
             "dossier": "Dossiê (DNI, nascimento, dados sensíveis)",
             "documents": "Documentos",
             "encuadres": "Encuadres",
-            "address": "Endereço (linha, coordenada, raio)"
+            "address": "Endereço (linha, coordenada, raio)",
+            "lostDevice": "Celular perdido (apagar o celular e ver o status)"
           }
         },
         "tags": {

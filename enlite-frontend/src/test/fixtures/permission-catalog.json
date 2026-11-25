@@ -192,6 +192,7 @@
     "worker_address:read",
     "worker_application:create",
     "worker_contact:read",
+    "worker_device:revoke",
     "worker_document:create",
     "worker_document:delete",
     "worker_document:read",
