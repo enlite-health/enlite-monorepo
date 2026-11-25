@@ -83,6 +83,7 @@ const FABRICAS = [
   'modules/anacare-hours/interfaces/routes/anacareHoursRoutes',
   'modules/anacare-hours/interfaces/routes/anacareHoursSyncRoutes',
   'modules/auth/interfaces/routes/claimRoutes',
+  'modules/auth/interfaces/routes/phoneVerificationRoutes',
   'modules/case/interfaces/routes/adminDailyReportRoutes',
   'modules/case/interfaces/routes/adminInsuranceRoutes',
   'modules/case/interfaces/routes/adminItineraryChangesRoutes',
@@ -213,6 +214,6 @@ describe('T313 — cobertura de classe sobre os routers reais', () => {
       sem.push(...unclassifiedRoutes(rotas).map((r) => `${arquivo}: ${r.method} ${r.path}`));
     }
     expect(sem).toEqual([]);
-    expect(total).toBe(454);
+    expect(total).toBe(456);
   });
 });
