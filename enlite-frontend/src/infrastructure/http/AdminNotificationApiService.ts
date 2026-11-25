@@ -21,7 +21,8 @@ export type NotificationTypeCode =
   | 'ITINERARY_UNCOVERED_SHIFTS'
   | 'PEDIDO_IA_NOVO'
   | 'PEDIDO_IA_GRAVE'
-  | 'PEDIDO_IA_APLICAR';
+  | 'PEDIDO_IA_APLICAR'
+  | 'TALENTUM_WEBHOOK_ALARM';
 
 /** spec 049: SÓ o motivo (nunca e-mail nem token) — o TEXTO vive no cliente (ES/PT na i18n). */
 export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account';
@@ -83,6 +84,14 @@ export interface PedidoIaAplicarPayload {
   prazo: 'hoje' | 'semana';
 }
 
+/** spec 095 §3.5: SÓ enum + inteiro + data (sem id nem nome); o TEXTO vive no cliente. */
+export type TalentumWebhookAlarm = 'inbox_falha' | 'inbox_pendente' | 'veredito_ausente' | 'silencio' | 'CONFLITO_HUMANO';
+export interface TalentumWebhookAlarmPayload {
+  alarme: TalentumWebhookAlarm;
+  quantidade: number;
+  desde: string;
+}
+
 export interface AdminNotification {
   id: string;
   typeCode: NotificationTypeCode;
@@ -102,7 +111,7 @@ export interface AdminNotification {
    * fora da resposta HTTP autenticada (regra dura). */
   messageExcerpt: string | null;
   /** spec 048/049: o payload do tipo (`THERAPEUTIC_PROJECT_CONTACTS_PENDING` ou `ADMISSION_TACTIQ_LINK_REQUIRED`); `null` nos de conversa. */
-  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ImportBlockedPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | null;
+  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ImportBlockedPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | TalentumWebhookAlarmPayload | null;
   /** spec 048: número do Caso do paciente (o sino do PT NUNCA mostra o nome); `null` = paciente sem número. */
   patientCaseNumber?: number | null;
   createdAt: string;

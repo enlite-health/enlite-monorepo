@@ -13,7 +13,7 @@
  * `patientDisplayName` nulos) — texto neutro com o nome do ator, deep-link igual ao padrão
  * (navega se houver `patientId`, D-08).
  */
-import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkReason, ImportBlockedPayload, ItineraryUncoveredShiftsItem, NotificationTypeCode, PedidoIaAplicarPayload } from '@infrastructure/http/AdminNotificationApiService';
+import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkReason, ImportBlockedPayload, ItineraryUncoveredShiftsItem, NotificationTypeCode, PedidoIaAplicarPayload, TalentumWebhookAlarmPayload } from '@infrastructure/http/AdminNotificationApiService';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { formatMessageDateTime } from '@presentation/components/features/admin/PatientDetail/conversation/messageDateFormat';
@@ -191,6 +191,18 @@ function importBlockedText(n: AdminNotification, t: Translate, part: 'title' | '
   });
 }
 
+const TALENTUM_ALARMS = ['inbox_falha', 'inbox_pendente', 'veredito_ausente', 'silencio', 'CONFLITO_HUMANO'] as const;
+
+/** spec 095 §3.5: alarme fora do conjunto, quantidade inválida ou payload ausente = rótulo genérico, nunca crash. */
+function talentumWebhookParts(n: AdminNotification, t: Translate): { quantidade: number; alarme: string } {
+  const p = (n.payload ?? {}) as Partial<TalentumWebhookAlarmPayload>;
+  const known = TALENTUM_ALARMS.find((a) => a === p.alarme);
+  return {
+    quantidade: typeof p.quantidade === 'number' && Number.isInteger(p.quantidade) && p.quantidade >= 1 ? p.quantidade : 1,
+    alarme: known ? t(`admin.notifications.talentumWebhookAlarm.${known}`) : t('admin.notifications.talentumWebhookAlarmUnknown'),
+  };
+}
+
 const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   CONVERSATION_MENTIONED: {
     buildText: (n, t) => t('admin.notifications.mentioned', { actor: actorOrUid(n), patient: patientOrFallback(n, t) }),
@@ -248,6 +260,13 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   PEDIDO_IA_NOVO: pedidoIaHandler('pedidoIaNovo'),
   PEDIDO_IA_GRAVE: pedidoIaHandler('pedidoIaGrave'),
   PEDIDO_IA_APLICAR: pedidoIaAplicarHandler,
+  TALENTUM_WEBHOOK_ALARM: {
+    buildText: (n, t) => t('admin.notifications.talentumWebhookText', talentumWebhookParts(n, t)),
+    getDeepLink: () => null, // sem paciente e sem tela própria do alarme
+    actorLabel: (_n, t) => t('admin.notifications.talentumWebhookActor'),
+    contextLine: (_n, t) => t('admin.notifications.talentumWebhookContext'),
+    detailLine: (n, t) => talentumWebhookParts(n, t).alarme,
+  },
 };
 
 const FALLBACK_HANDLER: NotificationTypeHandler = {

@@ -11,6 +11,7 @@ export type RejectionReasonCategory =
   | 'OVERQUALIFIED'
   | 'DEPENDENCY_MISMATCH'
   | 'TALENTUM_NOT_QUALIFIED'
+  | 'TALENTUM_EXPIRED'
   | 'OTHER';
 
 export type JobPostingPriority = 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW';
