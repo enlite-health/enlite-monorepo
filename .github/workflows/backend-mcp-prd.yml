@@ -101,6 +101,8 @@ jobs:
             PERISKOPE_NOTE_AUTHOR=enlite@enlite.health
             CHATWOOT_URL=https://chatwoot-production-0e81.up.railway.app
             PERISKOPE_PHONE=5491176360496
+            DB_POOL_MAX=2
+            MCP_DB_RO_POOL_MAX=1
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
