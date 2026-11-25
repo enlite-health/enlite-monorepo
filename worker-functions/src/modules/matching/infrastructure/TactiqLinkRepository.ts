@@ -156,6 +156,42 @@ export class TactiqLinkRepository {
     );
   }
 
+  /**
+   * Recusa por falta de assento (F1): guarda o token de quem NÃO ficou `linked`. Linha nova nasce `broken` (`unauthorized`,
+   * `last_notified_status` NULL: o aviso por transição ainda vai disparar). Linha `linked` nunca é tocada. Linha `broken`/`wrong_account`
+   * só tem o segredo trocado quando o ÚLTIMO evento de queda é `recheck_dead` ou `invalid_grant` (token morto); qualquer outra, intocada.
+   * `true` só quando gravou (linha nova ou token substituído). O kind da trilha vai como parâmetro (sql-schema-sync lê literal como tabela.coluna).
+   */
+  async insertBrokenFromRejection(
+    input: { email: string; uid: string; tokenEncrypted: string; clientId: string | null; now: Date },
+    ex: Db = this.db,
+  ): Promise<boolean> {
+    const { rowCount } = await ex.query(
+      `WITH ins AS (
+         INSERT INTO tactiq_links (host_email, firebase_uid, status, client_id, linked_at, last_check_at,
+                                   last_check_outcome, status_changed_at, last_notified_status, missing_since)
+         VALUES ($1, $2, 'broken', $4, NULL, $5, 'unauthorized', $5, NULL, $5)
+         ON CONFLICT (lower(host_email)) DO NOTHING
+         RETURNING id),
+       dead AS (
+         SELECT l.id FROM tactiq_links l
+          WHERE lower(l.host_email) = lower($1) AND l.status IN ('broken', 'wrong_account')
+            AND EXISTS (SELECT 1 FROM (SELECT e.kind, e.reason FROM admission_events e
+                                        WHERE lower(e.host_email) = lower($1) AND e.kind = ANY($6::text[])
+                                        ORDER BY e.at DESC, e.id DESC LIMIT 1) d
+                         WHERE d.kind = $7 OR d.reason = 'invalid_grant')),
+       target AS (SELECT id FROM ins UNION ALL SELECT id FROM dead)
+       INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted, updated_at)
+       SELECT id, $3, $5 FROM target
+       ON CONFLICT (link_id) DO UPDATE SET refresh_token_encrypted = EXCLUDED.refresh_token_encrypted, updated_at = EXCLUDED.updated_at`,
+      [
+        input.email.toLowerCase(), input.uid, input.tokenEncrypted, input.clientId, input.now,
+        ['tactiq_link.broken', 'tactiq_link.wrong_account', 'tactiq_link.recheck_dead'], 'tactiq_link.recheck_dead',
+      ],
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
   /** Rotação: o refresh token novo SUBSTITUI o antigo (grava sempre que o Tactiq devolver um). */
   async rotateToken(email: string, tokenEncrypted: string, ex: Db = this.db): Promise<void> {
     await ex.query(

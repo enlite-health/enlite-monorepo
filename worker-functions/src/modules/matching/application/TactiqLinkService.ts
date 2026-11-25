@@ -8,6 +8,7 @@ import { SystemNotificationPublisher } from '@modules/inapp-notification/applica
 import { TactiqLinkRepository } from '../infrastructure/TactiqLinkRepository';
 import { ChromeReportRepository } from '../infrastructure/ChromeReportRepository';
 import type { ExtensionState } from '../domain/chromeExtensionState';
+import { isSeatCause } from '../domain/tactiqRecheck';
 import { hashState, newOAuthState, newPkcePair } from '../infrastructure/tactiq/pkce';
 import {
   denyReason,
@@ -255,7 +256,9 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
       return reject('ping_transient', err instanceof TactiqTransientError ? err.reason : 'unexpected');
     }
     if (verdict.kind === 'denied') {
-      return reject('access_denied', denyReason({ kind: 'access_action', action: verdict.action }), verdict.title ? { title: verdict.title } : {});
+      const reason = denyReason({ kind: 'access_action', action: verdict.action });
+      if (isSeatCause(reason)) await this.keepTokenOnSeatRejection(consumed, refreshToken, now, ref);
+      return reject('access_denied', reason, verdict.title ? { title: verdict.title } : {});
     }
     if (verdict.kind === 'unrecognized') return reject('access_unrecognized', 'access_unrecognized');
 
@@ -271,6 +274,29 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     await this.repo.appendEvent({ email: consumed.email, kind: 'tactiq_link.linked', outcome: 'linked', at: now, ...(ref ? { ref } : {}) });
     this.log.info({}, 'admission.tactiq_link.linked');
     return { email: consumed.email };
+  }
+
+  /**
+   * Recusa por falta de assento (F1, reverte D754-D1): guarda o token cifrado numa linha `broken` para a trilha e o re-teste.
+   * O evento `broken` só sai se o repositório gravou (linha nova ou token morto trocado): linha `linked` ou outra queda ficam intocadas.
+   */
+  private async keepTokenOnSeatRejection(
+    consumed: { uid: string; email: string },
+    refreshToken: string,
+    now: Date,
+    ref: { scope: string } | undefined,
+  ): Promise<void> {
+    const tokenEncrypted = await this.cipher.encrypt(refreshToken);
+    if (!tokenEncrypted) throw new TactiqExchangeFailedError('empty_token');
+    const stored = await this.repo.insertBrokenFromRejection({
+      email: consumed.email, uid: consumed.uid, tokenEncrypted, clientId: this.deps.clientId?.() ?? null, now,
+    });
+    if (!stored) return;
+    await this.repo.appendEvent({
+      email: consumed.email, kind: 'tactiq_link.broken', outcome: 'broken', reason: 'access_action:request_seat', at: now,
+      ref: { source: 'link', ...ref },
+    });
+    this.log.info({}, 'admission.tactiq_link.token_kept_on_rejection');
   }
 
   /** Autoverificação de conta (passo 5, chamada pela importação da F6): a conta vinculada não enxerga a reunião com o código. */
