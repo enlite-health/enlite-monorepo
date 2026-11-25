@@ -275,6 +275,27 @@ describe('SystemNotificationPublisher — importação bloqueada (spec 083, D-7)
     for (const stage of ['blocked', 'reminder', 'expired']) expect(buildAdmissionImportBlockedPayload({ ...host, stage }).stage).toBe(stage);
   });
 
+  it('not_recorded (D11): só stage=expired ao host; o payload sai com as 6 chaves', () => {
+    const ok = buildAdmissionImportBlockedPayload({ ...host, stage: 'expired', reason: 'not_recorded' });
+    expect(ok).toEqual({ ...host, stage: 'expired', reason: 'not_recorded' });
+  });
+
+  it.each([
+    ['blocked', { stage: 'blocked' }],
+    ['reminder', { stage: 'reminder' }],
+    ['will_be_lost (supervisor)', { stage: 'will_be_lost', audience: 'supervisor' }],
+    ['expired ao supervisor', { stage: 'expired', audience: 'supervisor' }],
+  ])('not_recorded fora de expired/host lança: %s', (_n, over) => {
+    expect(() => buildAdmissionImportBlockedPayload({ ...host, reason: 'not_recorded', ...over })).toThrow(/combinação/);
+  });
+
+  it('publisher publica not_recorded expired/host (um evento, uma notificação)', async () => {
+    const r = repo();
+    const payload = { ...host, stage: 'expired', reason: 'not_recorded' };
+    await new SystemNotificationPublisher(r as never).publishAdmissionImportBlocked({} as never, { recipientUid: 'op1', payload });
+    expect(r.insertEvent).toHaveBeenCalledWith(expect.objectContaining({ typeCode: 'ADMISSION_IMPORT_BLOCKED', payload }), expect.anything());
+  });
+
   it('publisher que recebe payload inválido lança e nada grava', async () => {
     const r = repo();
     await expect(new SystemNotificationPublisher(r as never).publishAdmissionImportBlocked({} as never, { recipientUid: 'op1', payload: { ...host, stage: 'will_be_lost' } })).rejects.toThrow();

@@ -6829,6 +6829,10 @@
           "title": "Venció el plazo para traer la transcripción",
           "body": "Se pasó el plazo y no pudimos traer la transcripción de tu {{reuniao}} del {{data}}, porque {{motivo}}. Vinculá tu cuenta en Mi perfil, Tactiq, Vincular Tactiq, así las próximas reuniones no tienen el mismo problema."
         },
+        "notRecorded": {
+          "title": "Esta entrevista no quedó grabada en Tactiq",
+          "body": "Tu {{reuniao}} del {{data}} no quedó grabada en Tactiq, así que no hay transcripción ni resumen. Tu cuenta de Tactiq sigue conectada. Para las próximas, revisá que la extensión de Tactiq esté activa en Chrome y que estés con tu correo @enlite.health."
+        },
         "willBeLost": {
           "title": "La grabación de la reunión de {{host}} se va a perder",
           "body": "La grabación y la transcripción de la {{reuniao}} de {{host}} del {{data}} todavía no llegaron, porque {{motivo}}. Si {{host}} no vincula Tactiq hasta el {{prazo}}, se van a perder. {{hostStart}} tiene que entrar a Mi perfil, ir a Tactiq y tocar Vincular Tactiq."

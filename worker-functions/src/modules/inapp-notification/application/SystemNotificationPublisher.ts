@@ -142,6 +142,9 @@ export function buildAdmissionImportBlockedPayload(input: {
   if ((input.stage === 'will_be_lost') !== (input.audience === 'supervisor')) {
     throw new Error('admission_import_blocked_payload: combinação stage/audience inválida');
   }
+  if (input.reason === 'not_recorded' && (input.stage !== 'expired' || input.audience !== 'host')) {
+    throw new Error('admission_import_blocked_payload: combinação stage/audience inválida (not_recorded só expired ao host)');
+  }
   const base = {
     stage: input.stage, kind: input.kind, reason: input.reason, audience: input.audience, meetingAt: input.meetingAt, deadlineAt: input.deadlineAt,
   } as AdmissionImportBlockedPayload;

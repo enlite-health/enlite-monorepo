@@ -49,7 +49,7 @@ export interface AdmissionTactiqExtensionPayload {
  */
 export type ImportBlockedStage = 'blocked' | 'reminder' | 'expired' | 'will_be_lost';
 export type ImportBlockedKind = 'admission' | 'enquadre';
-export type ImportBlockedReason = 'no_link' | 'wrong_account';
+export type ImportBlockedReason = 'no_link' | 'wrong_account' | 'not_recorded';
 export type ImportBlockedAudience = 'host' | 'supervisor';
 export interface ImportBlockedPayload {
   stage: ImportBlockedStage;

@@ -577,21 +577,8 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       expect(await eventKinds(h.email)).toEqual(expect.arrayContaining([{ kind: 'tactiq_link.broken', reason: 'invalid_grant' }]));
     });
 
-    it('conta errada (autoverificação do passo 5, chamada pela importação): `linked → wrong_account` + 1 aviso `wrong_account`; repetir não repete', async () => {
-      const h = await newHost({ link: { status: 'linked' } });
-      expect(await service.markWrongAccount(h.email)).toBe(true);
-      expect(await service.markWrongAccount(h.email)).toBe(false);
-      expect(await linkRow(h.email)).toMatchObject({ status: 'wrong_account', last_notified_status: 'wrong_account' });
-      const n = await sino(h.uid);
-      expect(n).toHaveLength(1);
-      expect(n[0].payload).toEqual({ reason: 'wrong_account' });
-      await service.runDailyCheck();
-      expect(await sino(h.uid)).toHaveLength(1);
-      // F2 (tactiq-vinculo-resiliente D3/D5/D6): `wrong_account` com token é re-testável; sem escopo gravado vale só o `ready` (dublê: ready)
-      // → o teste diário reativa sozinho. A reativação não gera aviso novo (continua 1 no sino).
-      expect((await service.statesFor([h.email])).get(h.email)).toBe('linked');
-      expect((await eventKinds(h.email)).map((e) => e.kind)).toContain('tactiq_link.reactivated');
-    });
+    // O caso "conta errada" (`markWrongAccount`) SAIU (tactiq-vinculo-resiliente D8, F4): a importação não produz mais `wrong_account`.
+    // A linha `wrong_account` LEGADA (semeada por SQL) voltar a `linked` no teste diário é provada em `tactiq-recheck.e2e.test.ts` (T207, caso (b)).
 
     it('rota interna POST /api/internal/jobs/admission-tactiq-check → 200 só com contagens (nada de token, e-mail ou nome)', async () => {
       const h = await newHost({ link: { status: 'linked' } });

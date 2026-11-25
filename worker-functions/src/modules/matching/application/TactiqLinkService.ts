@@ -427,16 +427,6 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     }
   }
 
-  /** Autoverificação de conta (passo 5, chamada pela importação da F6): a conta vinculada não enxerga a reunião com o código. */
-  async markWrongAccount(email: string): Promise<boolean> {
-    const now = this.now();
-    const changed = await this.repo.degrade(email, 'wrong_account', 'meeting_not_visible', now);
-    if (!changed) return false;
-    await this.repo.appendEvent({ email, kind: 'tactiq_link.wrong_account', outcome: 'wrong_account', reason: 'meeting_not_visible', at: now });
-    await this.noticeOnTransition(email, 'wrong_account');
-    return true;
-  }
-
   /**
    * A ÚNICA porta para um token do RESPONSÁVEL (R-53): uma leitura do Tactiq por vez por responsável. A trava é advisory de SESSÃO
    * do Postgres (chave `tactiq_link:<e-mail em minúsculas>`, nunca logada): vale entre importação, job de 1 min, teste diário e
@@ -473,11 +463,6 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
       if (enc) await this.repo.rotateToken(email, enc);
     }
     return tokens.accessToken;
-  }
-
-  /** Porta da importação: conta que já importou com sucesso desde o vínculo não é "conta errada" por uma reunião não gravada. */
-  hasImportedSinceLinked(email: string): Promise<boolean> {
-    return this.repo.hasImportedSinceLinked(email);
   }
 
   linkCreatedAfter(email: string, at: Date): Promise<boolean> {

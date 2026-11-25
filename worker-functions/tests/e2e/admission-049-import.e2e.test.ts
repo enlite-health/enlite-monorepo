@@ -8,7 +8,7 @@
  * passthrough): o token do responsável vira `at-<refresh>` no dublê do OAuth, e é POR TOKEN que o dublê do MCP decide o que a
  * conta "enxerga" — é assim que "autor errado" é provado.
  *
- * A6-1 feliz · A6-2 anti-duplicata (2×, estado perdido, sobreposta) · A6-3 casamento · A6-4 conta errada · A6-5 integridade
+ * A6-1 feliz · A6-2 anti-duplicata (2×, estado perdido, sobreposta) · A6-3 casamento · A6-4 reunião não gravada (not_recorded) · A6-5 integridade
  * A6-6 partes · A6-7 cofre recusa o 2º PUT · A6-8 log sem texto · A6-9 vínculo quebrado · estados expired/ambiguous/rejected.
  */
 import { createHash } from 'crypto';
@@ -486,33 +486,48 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
 
   // ── A6-4 e estados de espera ─────────────────────────────────────────────────────────────────────
   describe('autor errado / conta errada / espera / 72 h', () => {
-    it('A6-4: a conta do responsável NÃO enxerga a reunião (só outra conta enxerga): antes de 3 h espera; depois vira `wrong_account` no vínculo, 1 aviso, 0 documentos', async () => {
+    it('A6-4 (D10): a conta do responsável NÃO enxerga a reunião (só outra conta enxerga): antes de 3 h espera; depois `expired`/`not_recorded`, vínculo segue `linked`, 1 aviso ao host, 0 documentos', async () => {
       const a = await appt({ endedMinAgo: 60 });
       mcp.meetingsByToken.set('at-rt-de-outra-conta', [meeting(a, 'tq-4a')]); // existe, mas na conta ERRADA
       mcp.meetingsByToken.set(a.token, []);
 
-      expect(await service.importOne(a.id, clock)).toBe('waiting'); // 1 h: ainda cedo para acusar a conta
+      expect(await service.importOne(a.id, clock)).toBe('waiting'); // 1 h: ainda cedo para dizer que não foi gravada
       expect(await service.importOne(a.id, clock)).toBe('waiting');
       expect((await events(a.id)).filter((e) => e.kind === 'import_waiting')).toHaveLength(1); // 1 evento por transição, não por tentativa
       expect(await row(a.id)).toMatchObject({ import_status: 'waiting', import_attempts: 2 });
       expect(await linkStatus(a.host)).toBe('linked');
 
+      // o serviço REAL de produção, só que COM o aviso do sino ligado (o `service` do arquivo não o tem)
+      const { AdmissionImportService: Svc } = await import('../../src/modules/matching/application/AdmissionImportService');
+      const { AdmissionImportRepository } = await import('../../src/modules/matching/infrastructure/AdmissionImportRepository');
+      const { AdmissionEventRepository } = await import('../../src/modules/matching/infrastructure/AdmissionEventRepository');
+      const { ImportNoticeRepository } = await import('../../src/modules/matching/infrastructure/ImportNoticeRepository');
+      const { ImportBlockNotifier } = await import('../../src/modules/matching/application/ImportBlockNotifier');
+      const { SystemNotificationPublisher } = await import('../../src/modules/inapp-notification/application/SystemNotificationPublisher');
+      const { GcsTranscriptVault: Vault } = await import('../../src/modules/matching/infrastructure/GcsTranscriptVault');
+      const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
+      const pool = DatabaseConnection.getInstance().getPool();
+      const comAviso = new Svc({
+        repo: new AdmissionImportRepository(pool), events: new AdmissionEventRepository(pool), tokens: link, mcp, vault: new Vault({ env: process.env, client: new Storage({ apiEndpoint: FAKE_GCS_URL, projectId: 'enlite-test' }) }),
+        summary: vertex, db: pool, log: logs.log, now: () => clock,
+        notices: new ImportBlockNotifier({ kind: 'admission', prefix: 'admission', publisher: new SystemNotificationPublisher(), recipients: new ImportNoticeRepository(pool), log: logs.log }),
+      } as never);
+
       const later = new Date(clock.getTime() + 3 * HOUR);
-      expect(await service.importOne(a.id, later)).toBe('wrong_account');
-      expect(await linkStatus(a.host)).toBe('wrong_account');
-      expect(await row(a.id)).toMatchObject({ import_status: 'blocked' });
-      expect(await sino(a.uid)).toEqual([{ payload: { reason: 'wrong_account' } }]);
-      expect((await events(a.id)).filter((e) => e.kind === 'import_blocked').map((e) => e.reason)).toEqual(['wrong_account']);
+      expect(await comAviso.importOne(a.id, later)).toBe('expired');
+      expect(await linkStatus(a.host)).toBe('linked'); // o vínculo NÃO cai por reunião não gravada
+      expect(await row(a.id)).toMatchObject({ import_status: 'expired' });
+      expect((await events(a.id)).map((e) => [e.kind, e.reason]).filter(([k]) => k === 'import_expired')).toEqual([['import_expired', 'not_recorded']]);
+      expect((await events(a.id)).filter((e) => e.kind === 'import_blocked')).toHaveLength(0);
+      expect(await sino(a.uid)).toEqual([]); // nenhum aviso de vínculo (não é queda)
+      const avisos = (await admin.query(
+        `SELECT e.payload FROM notifications n JOIN notification_events e ON e.id = n.event_id
+          WHERE n.recipient_uid = $1 AND e.type_code = 'ADMISSION_IMPORT_BLOCKED'`, [a.uid])).rows as Array<{ payload: Record<string, unknown> }>;
+      expect(avisos).toHaveLength(1);
+      expect(avisos[0].payload).toMatchObject({ stage: 'expired', reason: 'not_recorded', audience: 'host', kind: 'admission' });
       expect(await docs(a.id)).toHaveLength(0);
       expect(await vaultFiles(a.id)).toHaveLength(0);
       expect(mcp.transcriptCalls).toHaveLength(0);
-
-      // a trava passa a valer: o vínculo não está `linked`, a importação fica bloqueada SEM novo aviso nem novo evento
-      const searches = mcp.searchCalls.length;
-      expect(await service.importOne(a.id, later)).toBe('blocked');
-      expect(mcp.searchCalls.length).toBe(searches);
-      expect(await sino(a.uid)).toHaveLength(1);
-      expect((await events(a.id)).filter((e) => e.kind === 'import_blocked')).toHaveLength(1);
     });
 
     it('72 h sem arquivo → `expired` + alarme (log de erro com o id da reunião)', async () => {
@@ -1032,7 +1047,7 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     expect(ok.status).toBe(200);
     const body = (await ok.json()) as { success: boolean; data: Record<string, unknown> };
     expect(Object.keys(body.data).sort()).toEqual([
-      'alreadyDone', 'ambiguous', 'blocked', 'candidates', 'done', 'errors', 'expired', 'failed', 'rejected', 'skipped', 'transient', 'waiting', 'wrongAccount',
+      'alreadyDone', 'ambiguous', 'blocked', 'candidates', 'done', 'errors', 'expired', 'failed', 'rejected', 'skipped', 'transient', 'waiting',
     ]);
     expect(Object.values(body.data).every((v) => typeof v === 'number')).toBe(true);
     expect(body.data.done as number).toBeGreaterThanOrEqual(1);

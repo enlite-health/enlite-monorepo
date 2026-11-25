@@ -177,7 +177,7 @@ function importBlockedPayload(n: AdminNotification): Pick<ImportBlockedPayload, 
   return {
     stage,
     kind: p.kind === 'enquadre' ? 'enquadre' : 'admission',
-    reason: p.reason === 'wrong_account' ? 'wrong_account' : 'no_link',
+    reason: p.reason === 'wrong_account' || p.reason === 'not_recorded' ? p.reason : 'no_link',
     audience: stage === 'will_be_lost' || p.audience === 'supervisor' ? 'supervisor' : 'host',
     meetingAt: typeof p.meetingAt === 'string' ? p.meetingAt : '',
     deadlineAt: typeof p.deadlineAt === 'string' ? p.deadlineAt : '',
@@ -200,8 +200,10 @@ function importBlockedText(n: AdminNotification, t: Translate, part: 'title' | '
   const host = p.hostName ?? t(`${base}.hostFallback`);
   // `hostStart`: o mesmo nome, mas com maiúscula quando abre frase (sem nome: "A pessoa responsável").
   const hostStart = p.hostName ?? t(`${base}.hostFallbackStart`);
-  const motivo = t(`${base}.reason.${p.audience}.${p.reason}`, { host });
-  const key = p.stage === 'will_be_lost' ? 'willBeLost' : p.stage;
+  // `not_recorded` (reunião sem gravação, host, `expired`) tem título e corpo PRÓPRIOS: não há "motivo" nem prazo a cumprir.
+  const notRecorded = p.reason === 'not_recorded' && p.stage === 'expired' && p.audience === 'host';
+  const motivo = notRecorded ? '' : t(`${base}.reason.${p.audience}.${p.reason}`, { host });
+  const key = notRecorded ? 'notRecorded' : p.stage === 'will_be_lost' ? 'willBeLost' : p.stage;
   return t(`${base}.${key}.${part}`, {
     host,
     hostStart,

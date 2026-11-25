@@ -394,6 +394,26 @@ describe('ADMISSION_IMPORT_BLOCKED (spec 083, F4)', () => {
     expect(body).toContain('sua entrevista de enquadre de 4 de nov. às 14:00, porque a conta do Tactiq conectada não é a sua.');
   });
 
+  it.each([
+    ['pt-BR', 'Esta entrevista não foi gravada no Tactiq', 'A sua reunião de admissão de 4 de nov. às 14:00 não foi gravada no Tactiq, então não há transcrição nem resumo.'],
+    ['es', 'Esta entrevista no quedó grabada en Tactiq', 'Tu reunión de admisión del 4 de nov. a las 14:00 no quedó grabada en Tactiq, así que no hay transcripción ni resumen.'],
+  ] as const)('not_recorded (expired, host) usa título e corpo PRÓPRIOS, sem prazo nem motivo de vínculo (%s)', async (lng, titulo, inicio) => {
+    const t2 = await realT(lng);
+    const n = aviso({ ...HOST, stage: 'expired', reason: 'not_recorded' });
+    const body = handler().detailLine?.(n, t2) ?? '';
+    expect(handler().buildText(n, t2).startsWith(`${titulo}. `)).toBe(true);
+    expect(body.startsWith(inicio)).toBe(true);
+    expect(body).not.toMatch(/\{\{|admin\.notifications/);
+    expect(body).not.toContain('Vincular');
+  });
+
+  it('not_recorded fora de expired/host NÃO usa o texto de reunião sem gravação (cai no texto do estágio)', async () => {
+    const t2 = await realT('pt-BR');
+    for (const p of [{ ...HOST, reason: 'not_recorded' }, { ...HOST, stage: 'expired', reason: 'not_recorded', audience: 'supervisor' }]) {
+      expect(handler().detailLine?.(aviso(p), t2) ?? '').not.toContain('não foi gravada no Tactiq');
+    }
+  });
+
   it.each([['pt-BR', 'a pessoa responsável'], ['es', 'la persona responsable']] as const)('supervisor: mostra o nome de quem fez a reunião; sem nome usa o fallback (%s)', async (lng, fallback) => {
     const t2 = await realT(lng);
     const com = handler().detailLine?.(aviso({ ...SUP, hostName: 'Marina Gómez' }), t2) ?? '';

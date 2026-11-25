@@ -72,7 +72,7 @@ describe('importação bloqueada por motivo humano — transita uma vez, lembra 
     if (o.link === 'linked') {
       const ins = await admin.query(
         `INSERT INTO tactiq_links (host_email, firebase_uid, status, status_changed_at, last_notified_status, created_at) VALUES ($1,$2,'linked',$3,'linked',$4) RETURNING id`,
-        [host, uid, clock, new Date(clock.getTime() - 24 * HOUR)], /* o vínculo precisa ser ANTERIOR ao fim da reunião: reunião terminada antes do 1º vínculo só expira (não vira wrong_account) */
+        [host, uid, clock, new Date(clock.getTime() - 24 * HOUR)], /* o vínculo precisa ser ANTERIOR ao fim da reunião: reunião terminada antes do 1º vínculo só expira (sem aviso `not_recorded`) */
       );
       await admin.query(`INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted) VALUES ($1,$2)`, [ins.rows[0].id, b64(refresh)]);
     }
@@ -84,7 +84,7 @@ describe('importação bloqueada por motivo humano — transita uma vez, lembra 
     await link.startLink({ uid: a.uid, email: a.host });
     const { state } = oauth.authorizeCalls[oauth.authorizeCalls.length - 1];
     await link.completeLink({ state, code: a.refresh });
-    // o vínculo precisa ser ANTERIOR ao fim da reunião: reunião terminada antes do 1º vínculo só expira (não vira wrong_account)
+    // o vínculo precisa ser ANTERIOR ao fim da reunião: reunião terminada antes do 1º vínculo só expira (sem aviso `not_recorded`)
     await admin.query(`UPDATE tactiq_links SET created_at = $2 WHERE lower(host_email) = lower($1)`, [a.host, new Date(a.start.getTime() - 24 * HOUR)]);
   }
 
@@ -235,7 +235,7 @@ describe('importação bloqueada por motivo humano — transita uma vez, lembra 
     expect(externas()).toEqual(ZERO); // lembrete e expiração sem vínculo nunca falam com token, MCP, cofre nem Vertex
   });
 
-  it('CA-6: vínculo refeito (completeLink REAL) reabre; bloquear de NOVO por `wrong_account` = 2ª transição (evento + log) e o contador de lembretes recomeça', async () => {
+  it('CA-6 (D8): vínculo refeito (completeLink REAL) reabre a fila; o bloqueio `wrong_account` LEGADO (semeado por SQL: nada mais o produz) segue valendo e o contador de lembretes recomeça nele', async () => {
     const a = await appt();
     await service.runOnce(clock);
     const b1 = await bloqueadoEm(a.id);
@@ -243,18 +243,21 @@ describe('importação bloqueada por motivo humano — transita uma vez, lembra 
     expect(await count(a.id, 'import_reminder')).toBe(1);
 
     clock = em(b1, 25 * HOUR);
-    await conectar(a); // a conta conectada NÃO enxerga a reunião
+    await conectar(a);
     ver(a, []);
     expect(await listado(a.id, clock)).toBe(true); // vínculo `linked` mais novo que o bloqueio: volta à fila
+
+    // estado legado (D8): bloqueio `wrong_account` gravado por SQL DEPOIS do vínculo refeito (a importação não o produz mais)
     clock = em(b1, 26 * HOUR);
-    expect((await service.runOnce(clock)).wrongAccount).toBe(1);
+    await admin.query(`UPDATE admission_appointments SET import_status = 'blocked' WHERE id = $1`, [a.id]);
+    await admin.query(`INSERT INTO admission_events (appointment_id, kind, outcome, reason, at) VALUES ($1, 'import_blocked', 'blocked', 'wrong_account', $2)`, [a.id, clock]);
 
     expect((await events(a.id)).map((e) => [e.kind, e.reason])).toEqual([
-      ['import_blocked', 'no_link'], ['import_reminder', 'no_link'], ['import_reopened', 'link_changed'], ['import_blocked', 'wrong_account'],
+      ['import_blocked', 'no_link'], ['import_reminder', 'no_link'], ['import_blocked', 'wrong_account'],
     ]);
     expect(await estado(a.id)).toBe('blocked');
     const transicoes = logLines('admission.import_blocked', a.id).filter((l) => l.reminder === undefined);
-    expect(transicoes.map((l) => l.reason)).toEqual(['no_link', 'wrong_account']); // 2 transições, 2 logs
+    expect(transicoes.map((l) => l.reason)).toEqual(['no_link']); // o legado entrou por SQL: sem log de transição
 
     // o contador recomeça: conta só depois do 2º `import_blocked`
     const b2 = await bloqueadoEm(a.id);
