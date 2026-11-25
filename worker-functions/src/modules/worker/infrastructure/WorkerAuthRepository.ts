@@ -148,6 +148,23 @@ export async function findByAuthUid(
 
 // ─── updateAuthUid ────────────────────────────────────────────────────────────
 
+/**
+ * Aceite da política na ficha JÁ existente (init pelo app, D514: o dono do consentimento é o trio
+ * `lgpd_consent_at`/`terms_accepted_at`/`privacy_accepted_at` de `workers`, o mesmo do cadastro web).
+ * COALESCE: o primeiro aceite vale e nunca é sobrescrito. `false` = ficha não achada (ou absorvida).
+ */
+export async function recordConsentIfMissing(pool: Pool, workerId: string, consentAt: Date): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE workers
+        SET lgpd_consent_at = COALESCE(lgpd_consent_at, $2),
+            terms_accepted_at = COALESCE(terms_accepted_at, $2),
+            privacy_accepted_at = COALESCE(privacy_accepted_at, $2)
+      WHERE id = $1 AND merged_into_id IS NULL`,
+    [workerId, consentAt],
+  );
+  return (result.rowCount ?? 0) === 1;
+}
+
 export async function updateAuthUid(
   pool: Pool,
   encryptionService: KMSEncryptionService,

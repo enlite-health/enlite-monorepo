@@ -14,6 +14,8 @@ export interface IWorkerRepository {
     privacyAccepted: boolean;
   }): Promise<Result<Worker>>;
   updateAuthUid(workerId: string, authUid: string, phone?: string, consentAt?: Date): Promise<Result<Worker>>;
+  /** Aceite da política na ficha existente: COALESCE do trio de consentimento (o 1º aceite vale). `false` = ficha não achada. */
+  recordConsentIfMissing(workerId: string, consentAt: Date): Promise<boolean>;
   /**
    * Grava o telefone SÓ se a ficha ainda não tem (NULL ou vazio). Devolve a ficha, ou `null` se já havia telefone.
    * NÃO captura erro do banco: o `23505` de `idx_workers_phone_unique` sobe para o caso de uso decidir.

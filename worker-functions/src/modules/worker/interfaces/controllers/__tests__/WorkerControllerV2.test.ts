@@ -218,6 +218,39 @@ describe('WorkerControllerV2', () => {
       expect(initSpy).not.toHaveBeenCalled();
     });
 
+    it('init com aceite (lgpdOptIn) em ficha existente grava o consentimento ANTES do 200 (init pelo app)', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.ok(mockWorker));
+      const consentSpy = jest.spyOn(controller['initWorkerUseCase'], 'recordConsent').mockResolvedValue(Result.ok(undefined));
+      const [req, res] = mockReqRes({ lgpdOptIn: true }, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
+
+      await controller.initWorker(req, res);
+
+      expect(consentSpy).toHaveBeenCalledWith(WORKER_ID);
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('init SEM aceite em ficha existente não grava consentimento (login)', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.ok(mockWorker));
+      const consentSpy = jest.spyOn(controller['initWorkerUseCase'], 'recordConsent');
+      const [req, res] = mockReqRes({}, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
+
+      await controller.initWorker(req, res);
+
+      expect(consentSpy).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('aceite que não foi gravado vira 400, nunca 200 (sem sucesso silencioso)', async () => {
+      jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.ok(mockWorker));
+      jest.spyOn(controller['initWorkerUseCase'], 'recordConsent').mockResolvedValue(Result.fail('CONSENT_NOT_RECORDED'));
+      const [req, res] = mockReqRes({ lgpdOptIn: true }, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
+
+      await controller.initWorker(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'CONSENT_NOT_RECORDED' });
+    });
+
     it('retorna 201 com novo worker quando worker não existe e initWorkerUseCase cria com sucesso', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute')
         .mockResolvedValue(Result.fail('Worker not found'));

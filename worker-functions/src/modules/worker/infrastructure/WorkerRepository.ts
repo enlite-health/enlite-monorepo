@@ -19,6 +19,7 @@ import {
 import {
   findByAuthUid as _findByAuthUid,
   updateAuthUid as _updateAuthUid,
+  recordConsentIfMissing as _recordConsentIfMissing,
   setPhoneIfNull as _setPhoneIfNull,
   updateImportedWorkerData as _updateImportedWorkerData,
 } from './WorkerAuthRepository';
@@ -299,6 +300,10 @@ export class WorkerRepository implements IWorkerRepository {
 
   async updateAuthUid(workerId: string, authUid: string, phone?: string, consentAt?: Date): Promise<Result<Worker>> {
     return _updateAuthUid(this.pool, this.encryptionService, workerId, authUid, phone, consentAt);
+  }
+
+  async recordConsentIfMissing(workerId: string, consentAt: Date): Promise<boolean> {
+    return _recordConsentIfMissing(this.pool, workerId, consentAt);
   }
 
   async setPhoneIfNull(workerId: string, phone: string): Promise<Worker | null> {

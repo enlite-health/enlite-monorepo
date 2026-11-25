@@ -23,11 +23,20 @@ export interface InitWorkerInput extends CreateWorkerDTO {
 /** Ficha com este e-mail é de outro login e o token não prova posse do e-mail (DP-20). */
 export const EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED';
 
+/** O aceite veio (`lgpdOptIn`) mas a ficha existente não o recebeu: nunca devolve `ok` sem gravar (PR-2/G-6). */
+export const CONSENT_NOT_RECORDED = 'CONSENT_NOT_RECORDED';
+
 export class InitWorkerUseCase {
   constructor(
     private workerRepository: IWorkerRepository,
     private otp?: OtpChallengePort,
   ) {}
+
+  /** Aceite da política na ficha existente (COALESCE: o 1º aceite vale). Falha alta: nunca `ok` sem gravar. */
+  async recordConsent(workerId: string, at: Date = new Date()): Promise<Result<void>> {
+    const saved = await this.workerRepository.recordConsentIfMissing(workerId, at);
+    return saved ? Result.ok<void>(undefined) : Result.fail<void>(CONSENT_NOT_RECORDED);
+  }
 
   async execute(data: InitWorkerInput): Promise<Result<InitWorkerOutput>> {
     const consentAt = data.lgpdOptIn ? new Date() : undefined;
@@ -40,6 +49,11 @@ export class InitWorkerUseCase {
 
     if (existingWorkerResult.getValue() !== null) {
       const found = existingWorkerResult.getValue()!;
+      // Init pelo app: a ficha já existe, então o aceite entra no MESMO dono do cadastro web (trio em `workers`).
+      if (consentAt) {
+        const recorded = await this.recordConsent(found.id, consentAt);
+        if (recorded.isFailure) return Result.fail<InitWorkerOutput>(recorded.error!);
+      }
       // FR-88/C-43: com telefone no payload, a ficha achada por auth_uid passa pelo ramo do telefone.
       if (data.phone) return this.applyPhone(found, data.phone, data.email);
       return Result.ok<InitWorkerOutput>({ status: 'ok', worker: found });

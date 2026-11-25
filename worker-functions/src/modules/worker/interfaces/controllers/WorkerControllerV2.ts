@@ -101,6 +101,14 @@ export class WorkerControllerV2 {
       // FR-88/C-43: ficha existente e telefone no corpo → o init aplica o ramo do telefone (grava, ou PHONE_LOCKED).
       const phoneBranch = !existingResult.isFailure && Boolean(phone);
       if (!existingResult.isFailure && !phoneBranch) {
+        // Aceite da política (`lgpdOptIn`, init pelo app): grava no dono do consentimento antes de responder 200.
+        if (lgpdOptIn === true) {
+          const consent = await this.initWorkerUseCase.recordConsent(existingResult.getValue().id);
+          if (consent.isFailure) {
+            res.status(400).json({ success: false, error: consent.error });
+            return;
+          }
+        }
         await this.provisionCountryClaim.execute({ uid: authUid, principal, country: existingResult.getValue().country });
         res.status(200).json({
           success: true,
