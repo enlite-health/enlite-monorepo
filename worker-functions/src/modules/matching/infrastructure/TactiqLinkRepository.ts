@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import type { TactiqLinkState } from '../application/ports/TactiqPorts';
 import type { LastDegrade } from '../domain/tactiqRecheck';
+import { activeMasterUids } from './MasterRecipients';
 
 type Db = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
 
@@ -311,7 +312,7 @@ export class TactiqLinkRepository {
     );
   }
 
-  /** A ÚLTIMA tentativa de vínculo na trilha (`linked`, `reactivated` do re-teste ou `link_rejected`); sem evento → `null`. */
+  /** A ÚLTIMA tentativa de vínculo na trilha (`linked`, `reactivated` do re-teste, `link_rejected` ou a queda `broken`); sem evento → `null`. */
   async latestLinkAttempt(
     email: string,
     ex: Db = this.db,
@@ -320,7 +321,7 @@ export class TactiqLinkRepository {
       `SELECT kind, outcome, reason, ref, at FROM admission_events
         WHERE lower(host_email) = lower($1) AND kind = ANY($2::text[])
         ORDER BY at DESC, id DESC LIMIT 1`,
-      [email, ['tactiq_link.linked', 'tactiq_link.link_rejected', 'tactiq_link.reactivated']],
+      [email, ['tactiq_link.linked', 'tactiq_link.link_rejected', 'tactiq_link.reactivated', 'tactiq_link.broken']],
     );
     return rows[0] ?? null;
   }
@@ -342,6 +343,56 @@ export class TactiqLinkRepository {
       [email, kind],
     );
     return rows[0]?.at ?? null;
+  }
+
+  // ── aviso ao Acesso Master (change tactiq-vinculo-resiliente, F3) ──────────────────────────────────
+  /** Membros vivos do Acesso Master (D12): só leitura, a consulta mora em `MasterRecipients`. */
+  activeMasterUids(ex: Db = this.db): Promise<string[]> {
+    return activeMasterUids(ex);
+  }
+
+  /** Nome de FUNCIONÁRIO da operadora (`interview_hosts.display_name`); `null` = fora do roster ou sem nome. Nunca dado de paciente. */
+  async hostDisplayName(email: string, ex: Db = this.db): Promise<string | null> {
+    const { rows } = await ex.query<{ display_name: string | null }>(
+      `SELECT display_name FROM interview_hosts WHERE lower(email) = lower($1) LIMIT 1`,
+      [email],
+    );
+    const name = rows[0]?.display_name?.trim();
+    return name ? name : null;
+  }
+
+  /** A queda MAIS NOVA do e-mail (`broken`, `wrong_account` ou `recheck_dead`), com a origem; `null` = nenhuma. Os kinds vão por parâmetro (sql-schema-sync). */
+  async lastDegrade(email: string, ex: Db = this.db): Promise<LastDegrade | null> {
+    const { rows } = await ex.query<{ kind: string; reason: string | null; source: string | null }>(
+      `SELECT e.kind, e.reason, e.ref->>'source' AS source
+         FROM admission_events e
+        WHERE lower(e.host_email) = lower($1) AND e.kind = ANY($2::text[])
+        ORDER BY e.at DESC, e.id DESC LIMIT 1`,
+      [email, ['tactiq_link.broken', 'tactiq_link.wrong_account', 'tactiq_link.recheck_dead']],
+    );
+    const r = rows[0];
+    return r ? { kind: r.kind, reason: r.reason, source: r.source } : null;
+  }
+
+  /**
+   * O Acesso Master já foi avisado neste EPISÓDIO de falta de assento? Episódio = desde o último `linked`/`reactivated`; "avisado" = o evento
+   * `notified` `seat_missing_master` com `outcome='sent'` mais novo vem depois deles. `no_recipient` não conta (tenta de novo). Só leitura.
+   */
+  async seatEpisodeNotified(email: string, ex: Db = this.db): Promise<boolean> {
+    const { rows } = await ex.query<{ kind: string }>(
+      `SELECT e.kind FROM admission_events e
+        WHERE lower(e.host_email) = lower($1)
+          AND (e.kind = ANY($2::text[]) OR (e.kind = $3 AND e.reason = $4 AND e.outcome = $5))
+        ORDER BY e.at DESC, e.id DESC LIMIT 1`,
+      [email, ['tactiq_link.linked', 'tactiq_link.reactivated'], 'tactiq_link.notified', 'seat_missing_master', 'sent'],
+    );
+    return rows[0]?.kind === 'tactiq_link.notified';
+  }
+
+  /** "Já avisei" por episódio (D12): trava transacional por e-mail + a leitura do episódio (molde `claimMissingNotification`). `true` = pode avisar. */
+  async claimSeatEpisode(email: string, ex: Db): Promise<boolean> {
+    await ex.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`tactiq_seat:${email.toLowerCase()}`]);
+    return !(await this.seatEpisodeNotified(email, ex));
   }
 
   // ── estado do OAuth (508) ──────────────────────────────────────────────────────────────────────────

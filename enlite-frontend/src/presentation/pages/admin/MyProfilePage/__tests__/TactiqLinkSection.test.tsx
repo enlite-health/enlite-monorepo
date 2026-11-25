@@ -11,6 +11,7 @@ vi.mock('react-i18next', () => i18nMock);
 const api = vi.hoisted(() => ({ getOwnTactiqLink: vi.fn(), startTactiqLink: vi.fn() }));
 vi.mock('@infrastructure/http/AdminAdmissionApiService', () => ({ AdminAdmissionApiService: api }));
 
+import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import TactiqLinkSection from '../TactiqLinkSection';
 
 function Where(): JSX.Element {
@@ -153,22 +154,74 @@ describe('negativa de acesso salva (accessDenial)', () => {
     api.getOwnTactiqLink.mockResolvedValue(withDenial('missing', denial('access_action:request_seat')));
     renderPage();
     const box = await screen.findByTestId('tactiq-access-denial');
-    expect(box).toHaveTextContent(tEs('admin.tactiqLink.accessSeat'));
+    expect(box).toHaveTextContent(tEs('admin.tactiqLink.seatAskAdmin'));
     expect(document.body.textContent).not.toContain('access_action');
     expect(document.body.textContent).not.toContain('request_seat');
+  });
+
+  const seat = (extra: object, status = 'missing') => withDenial(status, { accessDenial: { reason: 'access_action:request_seat', title: null, at: '2026-11-19T10:00:00.000Z', ...extra } });
+  const seatKeys = ['seatAuto', 'seatWait', 'seatAskAdmin'] as const;
+
+  it.each([
+    ['seatAuto', { seatMissing: true, adminNotified: true, autoReactivates: true }],
+    ['seatWait', { seatMissing: true, adminNotified: true, autoReactivates: false }],
+    ['seatAskAdmin', { seatMissing: true, adminNotified: false, autoReactivates: true }],
+  ])('(F3) assento: %s por seatMissing/adminNotified/autoReactivates, e o texto nunca manda "vincular"', async (key, extra) => {
+    api.getOwnTactiqLink.mockResolvedValue(seat(extra));
+    renderPage();
+    const box = await screen.findByTestId('tactiq-access-denial');
+    expect(box).toHaveTextContent(tEs(`admin.tactiqLink.${key}`));
+    for (const k of seatKeys) {
+      expect(tEs(`admin.tactiqLink.${k}`).toLowerCase()).not.toMatch(/vincular|vinculá|vincule/);
+      expect(ptBR.admin.tactiqLink[k].toLowerCase()).not.toMatch(/vincular|vinculá|vincule/);
+    }
+  });
+
+  it('(F3) seatMissing=true manda sobre o reason: reason estranho + seatMissing mostra texto de assento', async () => {
+    api.getOwnTactiqLink.mockResolvedValue(seat({ reason: 'qualquer', seatMissing: true, adminNotified: true }));
+    renderPage();
+    expect(await screen.findByTestId('tactiq-access-denial')).toHaveTextContent(tEs('admin.tactiqLink.seatAuto'));
+  });
+
+  it('(F3) seatMissing=false com reason de assento não mostra texto de assento', async () => {
+    api.getOwnTactiqLink.mockResolvedValue(seat({ seatMissing: false }));
+    renderPage();
+    expect(await screen.findByTestId('tactiq-access-denial')).toHaveTextContent(tEs('admin.tactiqLink.accessGenericNoTitle'));
+  });
+
+  it('(F3) campos ausentes = comportamento atual: assento pelo reason, sem afirmar que avisamos', async () => {
+    api.getOwnTactiqLink.mockResolvedValue(seat({}));
+    renderPage();
+    const box = await screen.findByTestId('tactiq-access-denial');
+    expect(box).toHaveTextContent(tEs('admin.tactiqLink.seatAskAdmin'));
+    expect(box.textContent).not.toContain('Ya avisamos');
+  });
+
+  it('(F3) estado broken + negativa de assento: some o "Volvé a vincularlo" de stateHelp.broken', async () => {
+    api.getOwnTactiqLink.mockResolvedValue(seat({ seatMissing: true, adminNotified: true, autoReactivates: true }, 'broken'));
+    renderPage();
+    await screen.findByTestId('tactiq-access-denial');
+    expect(screen.queryByTestId('tactiq-state-help')).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain(tEs('admin.tactiqLink.stateHelp.broken'));
+  });
+
+  it('(F3) estado broken SEM negativa de assento mantém stateHelp.broken', async () => {
+    api.getOwnTactiqLink.mockResolvedValue(view('broken'));
+    renderPage();
+    expect(await screen.findByTestId('tactiq-state-help')).toHaveTextContent(tEs('admin.tactiqLink.stateHelp.broken'));
   });
 
   it('scope_without_details também mostra o texto de assento', async () => {
     api.getOwnTactiqLink.mockResolvedValue(withDenial('missing', denial('scope_without_details')));
     renderPage();
-    expect(await screen.findByTestId('tactiq-access-denial')).toHaveTextContent(tEs('admin.tactiqLink.accessSeat'));
+    expect(await screen.findByTestId('tactiq-access-denial')).toHaveTextContent(tEs('admin.tactiqLink.seatAskAdmin'));
     expect(document.body.textContent).not.toContain('scope_without_details');
   });
 
   it('(2) accessDenial + ?tactiq=error: orientação SEM o banner genérico, e o reason da URL não é usado', async () => {
     api.getOwnTactiqLink.mockResolvedValue(withDenial('missing', denial('access_action:request_seat')));
     renderPage('?tactiq=error&reason=invalid_grant');
-    expect(await screen.findByTestId('tactiq-access-denial')).toHaveTextContent(tEs('admin.tactiqLink.accessSeat'));
+    expect(await screen.findByTestId('tactiq-access-denial')).toHaveTextContent(tEs('admin.tactiqLink.seatAskAdmin'));
     expect(screen.queryByTestId('tactiq-banner-error')).not.toBeInTheDocument();
     expect(document.body.textContent).not.toContain('invalid_grant');
   });

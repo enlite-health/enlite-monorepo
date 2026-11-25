@@ -1,14 +1,20 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { logger } from '@shared/logging';
 import { withSessionAdvisoryLock } from '@shared/database/sessionAdvisoryLock';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { SystemNotificationPublisher } from '@modules/inapp-notification/application/SystemNotificationPublisher';
-import { TactiqLinkRepository } from '../infrastructure/TactiqLinkRepository';
+import { TactiqLinkRepository, type TactiqLinkRow } from '../infrastructure/TactiqLinkRepository';
 import { ChromeReportRepository } from '../infrastructure/ChromeReportRepository';
 import type { ExtensionState } from '../domain/chromeExtensionState';
-import { CONSENT_SCOPE_FROZEN, effectiveScopeHasDetails, isRecheckable, isSeatCause } from '../domain/tactiqRecheck';
+import {
+  CONSENT_SCOPE_FROZEN,
+  effectiveScopeHasDetails,
+  isRecheckable,
+  isSeatCause,
+  type LastDegrade,
+} from '../domain/tactiqRecheck';
 import { hashState, newOAuthState, newPkcePair } from '../infrastructure/tactiq/pkce';
 import {
   denyReason,
@@ -80,6 +86,12 @@ export interface OwnAccessDenial {
   /** Título do Tactiq, já sanitizado; pode ser nulo. */
   title: string | null;
   at: string;
+  /** Falta de assento (`isSeatCause`, D9): a tela lê ISTO, nunca o `reason`. */
+  seatMissing: boolean;
+  /** O Acesso Master já foi avisado neste episódio (D12). Só significa algo com `seatMissing`. */
+  adminNotified: boolean;
+  /** O teste diário volta a vincular sozinho quando o assento chegar (`isRecheckable` ∧ escopo efetivo com `details`, D13). Só com `seatMissing`. */
+  autoReactivates: boolean;
 }
 
 /** `sem_relatorio` também cobre "nunca reportou" (sem linha): o job trata a falta de linha assim; nunca `null`, nunca `ausente`. */
@@ -175,7 +187,7 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     const extension: OwnExtensionView = report
       ? { state: report.state, reportedAt: report.report_at ? report.report_at.toISOString() : null }
       : { state: 'sem_relatorio', reportedAt: null };
-    const accessDenial = await this.accessDenialOf(email);
+    const accessDenial = await this.accessDenialOf(email, row);
     if (!row) return { status: 'missing', linkedAt: null, lastCheckAt: null, statusChangedAt: null, extension, accessDenial };
     return {
       status: row.status,
@@ -189,13 +201,42 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
 
   /**
    * Só a ÚLTIMA tentativa conta: `linked` ou `reactivated` (re-teste diário) mais novo limpa a negativa. `exchange_failed` e `ping_transient` não são orientação de
-   * acesso (a tela mostra o banner genérico) → `null`. Sem e-mail, sem token: só reason, título sanitizado e data.
+   * acesso (a tela mostra o banner genérico) → `null`. A queda `broken` só vira negativa quando a causa é ASSENTO (D13); qualquer outra queda → `null`.
+   * Sem e-mail, sem token: só reason, título sanitizado, data e os 3 derivados.
    */
-  private async accessDenialOf(email: string): Promise<OwnAccessDenial | null> {
+  private async accessDenialOf(email: string, row: TactiqLinkRow | null): Promise<OwnAccessDenial | null> {
     const last = await this.repo.latestLinkAttempt(email);
-    if (!last || last.kind !== 'tactiq_link.link_rejected' || !last.reason) return null;
-    if (last.outcome !== 'access_denied' && last.outcome !== 'access_unrecognized') return null;
-    return { reason: last.reason, title: sanitizeAccessTitle(last.ref?.title), at: last.at.toISOString() };
+    if (!last || !last.reason) return null;
+    const seatMissing = isSeatCause(last.reason);
+    if (last.kind === 'tactiq_link.broken') {
+      if (!seatMissing) return null;
+    } else if (last.kind !== 'tactiq_link.link_rejected' || (last.outcome !== 'access_denied' && last.outcome !== 'access_unrecognized')) {
+      return null;
+    }
+    const base = { reason: last.reason, title: sanitizeAccessTitle(last.ref?.title), at: last.at.toISOString() };
+    if (!seatMissing) return { ...base, seatMissing: false, adminNotified: false, autoReactivates: false };
+    const lastDegrade = row ? await this.repo.lastDegrade(email) : null;
+    return {
+      ...base,
+      seatMissing: true,
+      adminNotified: await this.repo.seatEpisodeNotified(email),
+      autoReactivates: row ? this.seatAutoReactivates(row.status, lastDegrade, await this.repo.lastLinkScope(email)) : false,
+    };
+  }
+
+  /**
+   * Esta falta de assento volta sozinha? (D13) O teste diário tem de poder re-testar a linha (`isRecheckable`) E o escopo efetivo
+   * ter `details` (escopo congelado + `own` → não: o Tactiq não amplia a autorização, F25). Dono único: o aviso do host, o do Master e o perfil.
+   */
+  private seatAutoReactivates(status: string, lastDegrade: LastDegrade | null, lastLinkScope: string | null): boolean {
+    return (
+      isRecheckable({ status, lastDegrade }) &&
+      effectiveScopeHasDetails({
+        refreshScope: null,
+        lastLinkScope,
+        frozen: this.deps.consentScopeFrozen ?? CONSENT_SCOPE_FROZEN,
+      })
+    );
   }
 
   async startLink(input: { uid: string; email: string }): Promise<{ authorizeUrl: string }> {
@@ -263,7 +304,10 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     }
     if (verdict.kind === 'denied') {
       const reason = denyReason({ kind: 'access_action', action: verdict.action });
-      if (isSeatCause(reason)) await this.keepTokenOnSeatRejection(consumed, refreshToken, now, ref);
+      if (isSeatCause(reason)) {
+        await this.keepTokenOnSeatRejection(consumed, refreshToken, now, ref, reason);
+        await this.noticeMastersOfSeatAtLink(consumed, ref?.scope ?? null, now, reason);
+      }
       return reject('access_denied', reason, verdict.title ? { title: verdict.title } : {});
     }
     if (verdict.kind === 'unrecognized') return reject('access_unrecognized', 'access_unrecognized');
@@ -291,6 +335,7 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     refreshToken: string,
     now: Date,
     ref: { scope: string } | undefined,
+    seatReason: string,
   ): Promise<void> {
     const tokenEncrypted = await this.cipher.encrypt(refreshToken);
     if (!tokenEncrypted) throw new TactiqExchangeFailedError('empty_token');
@@ -299,10 +344,87 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     });
     if (!stored) return;
     await this.repo.appendEvent({
-      email: consumed.email, kind: 'tactiq_link.broken', outcome: 'broken', reason: 'access_action:request_seat', at: now,
+      email: consumed.email, kind: 'tactiq_link.broken', outcome: 'broken', reason: seatReason, at: now,
       ref: { source: 'link', ...ref },
     });
     this.log.info({}, 'admission.tactiq_link.token_kept_on_rejection');
+  }
+
+  /**
+   * Recusa por assento no ATO de vincular (D12): o Acesso Master é avisado 1× por episódio (trilha + trava transacional). O host está na tela,
+   * não leva sino. Nunca derruba a recusa: se o aviso falhar, a pessoa ainda recebe o redirect certo e o erro vai ao log (sem e-mail nem nome).
+   */
+  private async noticeMastersOfSeatAtLink(
+    consumed: { uid: string; email: string },
+    scope: string | null,
+    now: Date,
+    seatReason: string,
+  ): Promise<void> {
+    try {
+      const lastDegrade: LastDegrade = { kind: 'tactiq_link.broken', reason: seatReason, source: 'link' };
+      const autoReactivates = this.seatAutoReactivates('broken', lastDegrade, scope);
+      await withActorContext(this.db, (cli) =>
+        this.noticeMastersOfSeat(cli, { email: consumed.email, hostUid: consumed.uid, autoReactivates, now, source: 'link' }),
+      );
+    } catch (err) {
+      this.log.error({ reason: (err as { code?: string })?.code ?? 'unexpected' }, 'admission.tactiq_link.master_notice.failed');
+    }
+  }
+
+  /**
+   * A cópia "{nome} não tem licença do Tactiq" aos membros vivos do Acesso Master, menos o próprio host (D12). Dentro da transação do chamador.
+   * 1× por EPISÓDIO (`claimSeatEpisode`): quem já foi avisado neste episódio não recebe de novo. Devolve `adminNotified`: houve (ou já houve)
+   * aviso ao Master? Sem destinatário → `warn` sem PII e evento `no_recipient`; o host vê `seatAskAdmin`.
+   */
+  private async noticeMastersOfSeat(
+    cli: PoolClient,
+    input: { email: string; hostUid: string | null; autoReactivates: boolean; now: Date; source: 'daily_check' | 'link' },
+  ): Promise<boolean> {
+    if (!(await this.repo.claimSeatEpisode(input.email, cli))) return true;
+    const masters = (await this.repo.activeMasterUids(cli)).filter((uid) => uid !== input.hostUid);
+    if (masters.length === 0) {
+      this.log.warn({}, 'admission.tactiq_link.master_notice.no_recipient');
+      await this.repo.appendEvent(
+        { email: input.email, kind: 'tactiq_link.notified', outcome: 'no_recipient', reason: 'seat_missing_master', at: input.now, ref: { source: input.source } },
+        cli,
+      );
+      return false;
+    }
+    const hostName = (await this.repo.hostDisplayName(input.email, cli)) ?? undefined;
+    for (const recipientUid of masters) {
+      await this.publisher.publishAdmissionTactiqLinkRequired(cli, {
+        recipientUid, reason: 'seat_missing', audience: 'master', hostName, autoReactivates: input.autoReactivates,
+      });
+    }
+    await this.repo.appendEvent(
+      { email: input.email, kind: 'tactiq_link.notified', outcome: 'sent', reason: 'seat_missing_master', at: input.now, ref: { source: input.source, recipients: masters.length } },
+      cli,
+    );
+    return true;
+  }
+
+  /**
+   * Token MORTO (`invalid_grant`, D12): o vínculo não volta sozinho e SÓ a pessoa pode autorizar de novo → o Acesso Master fica sabendo (1× por
+   * evento de queda: quem chama só chama quando a queda MUDOU o estado ou na `recheck_dead`). Falta de assento NÃO passa por aqui (T305 já avisa).
+   * Nunca derruba quem chamou (o job): falha vai ao log, sem e-mail nem nome.
+   */
+  private async noticeMastersOfDeadToken(email: string): Promise<void> {
+    try {
+      await withActorContext(this.db, async (cli) => {
+        const hostUid = await this.repo.activeUserUidByEmail(email, cli);
+        const masters = (await this.repo.activeMasterUids(cli)).filter((uid) => uid !== hostUid);
+        if (masters.length === 0) {
+          this.log.warn({}, 'admission.tactiq_link.master_notice.no_recipient');
+          return;
+        }
+        const hostName = (await this.repo.hostDisplayName(email, cli)) ?? undefined;
+        for (const recipientUid of masters) {
+          await this.publisher.publishAdmissionTactiqLinkRequired(cli, { recipientUid, reason: 'broken', audience: 'master', hostName });
+        }
+      });
+    } catch (err) {
+      this.log.error({ reason: (err as { code?: string })?.code ?? 'unexpected' }, 'admission.tactiq_link.master_notice.failed');
+    }
   }
 
   /** Autoverificação de conta (passo 5, chamada pela importação da F6): a conta vinculada não enxerga a reunião com o código. */
@@ -379,6 +501,7 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
       email, kind: 'tactiq_link.broken', outcome: 'broken', reason: outcome, at: now, ...(source ? { ref: { source } } : {}),
     });
     await this.noticeOnTransition(email, 'broken');
+    if (outcome === 'invalid_grant') await this.noticeMastersOfDeadToken(email);
     return true;
   }
 
@@ -443,6 +566,7 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
             await this.repo.appendEvent({
               email, kind: 'tactiq_link.broken', outcome: 'broken', reason: cause, at: now, ref: { source: 'daily_check' },
             });
+            if (outcome === 'invalid_grant') await this.noticeMastersOfDeadToken(email);
           }
           this.log.warn({ linkId: link.id, outcome, cause }, 'admission.tactiq_link.broken');
           return 'broken';
@@ -492,6 +616,7 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
           await this.repo.recordCheck(email, dead, now);
           await this.repo.appendEvent({ email, kind: 'tactiq_link.recheck_dead', outcome: 'recheck_dead', reason: dead, at: now });
           this.log.warn({ linkId: link.id }, 'admission.tactiq_link.recheck_dead');
+          await this.noticeMastersOfDeadToken(email);
           return 'dead' as const;
         }
         return this.recheckTransient(link.id, email, now, err);
@@ -550,18 +675,36 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
    * perde a corrida (dois jobs) não avisa, e uma falha ao gravar o sino desfaz o carimbo.
    */
   private async noticeOnTransition(email: string, state: NoticeState, knownUid: string | null = null): Promise<boolean> {
-    const reason = noticeReason(state);
     const uid = knownUid ?? (await this.repo.activeUserUidByEmail(email));
     if (!uid) return false; // sem usuário não há sino; NÃO carimba (quando o usuário existir, avisa). O alarme das 48 h cobre.
     const hasRow = (await this.repo.findByEmail(email)) !== null;
+    const seat = state === 'broken' ? await this.seatCauseOf(email) : null;
+    const reason = seat ? 'seat_missing' : noticeReason(state);
     const now = this.now();
     return withActorContext(this.db, async (cli) => {
       const claimed = hasRow ? await this.repo.claimNotification(email, reason, cli) : await this.repo.claimMissingNotification(email, cli);
       if (!claimed) return false;
-      await this.publisher.publishAdmissionTactiqLinkRequired(cli, { recipientUid: uid, reason });
+      if (seat) {
+        // A cópia do Master primeiro (o host só diz "já avisamos" se avisamos); o host que é Master só recebe a dele.
+        const adminNotified = await this.noticeMastersOfSeat(cli, {
+          email, hostUid: uid, autoReactivates: seat.autoReactivates, now, source: 'daily_check',
+        });
+        await this.publisher.publishAdmissionTactiqLinkRequired(cli, {
+          recipientUid: uid, reason, audience: 'host', adminNotified, autoReactivates: seat.autoReactivates,
+        });
+      } else {
+        await this.publisher.publishAdmissionTactiqLinkRequired(cli, { recipientUid: uid, reason });
+      }
       await this.repo.appendEvent({ email, kind: 'tactiq_link.notified', outcome: 'sent', reason, at: now }, cli);
       return true;
     });
+  }
+
+  /** A queda MAIS NOVA foi por assento (D9)? Devolve o `autoReactivates` do host (D13), ou `null` quando não é assento. */
+  private async seatCauseOf(email: string): Promise<{ autoReactivates: boolean } | null> {
+    const lastDegrade = await this.repo.lastDegrade(email);
+    if (!isSeatCause(lastDegrade?.reason)) return null;
+    return { autoReactivates: this.seatAutoReactivates('broken', lastDegrade, await this.repo.lastLinkScope(email)) };
   }
 
   private async alarmIfStale(

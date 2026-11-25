@@ -145,7 +145,17 @@ export interface OwnTactiqLink {
    * Última tentativa de vínculo negada por falta de acesso (trilha, design D7/D9). OPCIONAL pelo mesmo motivo de `extension`
    * (deploy desencontrado): ausente = sem negativa. `reason` é um código interno (nunca exibir); `title` vem do Tactiq (só texto).
    */
-  accessDenial?: { reason: string; title: string | null; at: string } | null;
+  accessDenial?: {
+    reason: string;
+    title: string | null;
+    at: string;
+    /** F3 (D13): falta de assento. Ausente (back antigo) = decide o `reason` salvo, como antes. */
+    seatMissing?: boolean;
+    /** F3: o Acesso Master já foi avisado. Ausente = não afirmar que avisamos. */
+    adminNotified?: boolean;
+    /** F3: o vínculo se reativa sozinho quando o assento chegar. Ausente = trate como sim. */
+    autoReactivates?: boolean;
+  } | null;
 }
 
 export type ResendKind = 'confirmation' | 'reminder_30min';

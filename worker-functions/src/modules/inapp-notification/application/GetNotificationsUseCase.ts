@@ -131,8 +131,7 @@ function payloadOf(
 ): PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | null {
   if (isSystemPtType(code)) return ptPayloadOf(raw);
   if (code === 'ADMISSION_TACTIQ_LINK_REQUIRED') {
-    const reason = raw?.reason;
-    return reason === 'missing' || reason === 'broken' || reason === 'wrong_account' ? { reason } : null;
+    return tactiqLinkPayloadOf(raw);
   }
   if (code === 'ITINERARY_UNCOVERED_SHIFTS') return itineraryPayloadOf(raw);
   if (code === 'PEDIDO_IA_APLICAR') return pedidoAplicarPayloadOf(raw);
@@ -142,6 +141,28 @@ function payloadOf(
     return state === 'installed' || state === 'missing' || state === 'disabled' ? { state } : null;
   }
   return null;
+}
+
+/**
+ * Aviso do vínculo do Tactiq (D11): reconstrói chave a chave, nunca repassa o `raw`. `audience` só vale `master` em `seat_missing`/`broken`
+ * (senão cai para o responsável); `hostName` só na cópia `master`; `adminNotified` só em `seat_missing` ao `host`; `autoReactivates` só em
+ * `seat_missing`. `seat_missing` sem `audience` válida é estranho = sem payload (o front cai no texto `missing`).
+ */
+function tactiqLinkPayloadOf(raw: Record<string, unknown> | null): AdmissionTactiqLinkPayload | null {
+  const reason = raw?.reason;
+  if (reason !== 'missing' && reason !== 'broken' && reason !== 'wrong_account' && reason !== 'seat_missing') return null;
+  const { audience: rawAudience, hostName, adminNotified, autoReactivates } = raw as Record<string, unknown>;
+  const masterAllowed = reason === 'seat_missing' || reason === 'broken';
+  const audience = rawAudience === 'host' || (rawAudience === 'master' && masterAllowed) ? rawAudience : undefined;
+  if (reason === 'seat_missing' && !audience) return null;
+  const out: AdmissionTactiqLinkPayload = { reason };
+  if (audience) out.audience = audience;
+  if (audience === 'master' && typeof hostName === 'string' && hostName !== '') out.hostName = hostName;
+  if (reason === 'seat_missing') {
+    if (audience === 'host' && typeof adminNotified === 'boolean') out.adminNotified = adminNotified;
+    if (typeof autoReactivates === 'boolean') out.autoReactivates = autoReactivates;
+  }
+  return out;
 }
 
 /** Spec 083 D-7: lê chave a chave (enums conferidos); linha malformada = sem payload; `hostName` só se for string não vazia. */

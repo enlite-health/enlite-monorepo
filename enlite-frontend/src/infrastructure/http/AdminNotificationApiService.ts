@@ -24,9 +24,17 @@ export type NotificationTypeCode =
   | 'PEDIDO_IA_APLICAR';
 
 /** spec 049: SÓ o motivo (nunca e-mail nem token) — o TEXTO vive no cliente (ES/PT na i18n). */
-export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account';
+export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account' | 'seat_missing';
 export interface AdmissionTactiqLinkPayload {
   reason: AdmissionTactiqLinkReason;
+  /** F3 (D11): a quem o aviso se dirige. Ausente = host (o aviso de sempre). `broken` + `master` = token morto. */
+  audience?: 'host' | 'master';
+  /** Só na cópia ao Master; ausente = o texto usa o `hostFallback`. */
+  hostName?: string;
+  /** Host: o Acesso Master já foi avisado. Ausente = não afirmar que avisamos. */
+  adminNotified?: boolean;
+  /** O vínculo se reativa sozinho quando o assento chegar. Ausente = sim. */
+  autoReactivates?: boolean;
 }
 
 /** spec 050 F15: SÓ o estado novo da extensão (nunca e-mail nem id de perfil) — o TEXTO vive no cliente. */

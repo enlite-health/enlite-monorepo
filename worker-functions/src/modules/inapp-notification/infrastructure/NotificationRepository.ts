@@ -63,9 +63,19 @@ export interface PtContactsPendingPayload {
  * Payload do aviso "seu usuário não está vinculado ao Tactiq" (spec 049 F4): SÓ o motivo, de um conjunto fechado —
  * nunca e-mail, nome nem token. Construído por `buildAdmissionTactiqLinkPayload`.
  */
-export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account';
+export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account' | 'seat_missing';
+/** Quem lê o aviso: o próprio responsável (`host`, o padrão quando ausente) ou a cópia ao Acesso Master (`master`) — design D11/D12. */
+export type AdmissionTactiqLinkAudience = 'host' | 'master';
+/**
+ * Campos opcionais (change tactiq-vinculo-resiliente, D11): `audience` (obrigatório em `seat_missing`; `master` só em `seat_missing` e `broken`),
+ * `hostName` (nome de FUNCIONÁRIO, só na cópia `master`), `adminNotified` (só `seat_missing` ao `host`) e `autoReactivates` (só `seat_missing`).
+ */
 export interface AdmissionTactiqLinkPayload {
   reason: AdmissionTactiqLinkReason;
+  audience?: AdmissionTactiqLinkAudience;
+  hostName?: string;
+  adminNotified?: boolean;
+  autoReactivates?: boolean;
 }
 
 /**

@@ -6785,7 +6785,14 @@
         "action": "Vincular Tactiq",
         "missing": "Tu usuario no está vinculado a Tactiq. Hasta que lo vincules no vas a poder ser responsable de agendas de admisión.",
         "broken": "Tu usuario no está vinculado a Tactiq. Hasta que lo vincules no vas a poder ser responsable de agendas de admisión.",
-        "wrong_account": "La cuenta de Tactiq vinculada no corresponde a tu usuario. Volvé a vincularla para seguir recibiendo agendas."
+        "wrong_account": "La cuenta de Tactiq vinculada no corresponde a tu usuario. Volvé a vincularla para seguir recibiendo agendas.",
+        "seatAuto": "Falta tu licencia de Tactiq. Ya avisamos al administrador. Cuando te la asigne, tu vínculo se activa solo: no tenés que hacer nada.",
+        "seatWait": "Falta tu licencia de Tactiq. Ya avisamos al administrador. Te vamos a avisar cuando esté resuelto.",
+        "seatAskAdmin": "Falta tu licencia de Tactiq. Pedile a un administrador de Tactiq (Ana Joulie, Javier o Marcel) que te asigne una; cuando la tengas, tu vínculo se activa solo.",
+        "masterSeat": "{{host}} no tiene licencia de Tactiq y sus entrevistas no se pueden grabar. Asignale un asiento en Tactiq.",
+        "masterSeatAuto": " Cuando lo tenga, su vínculo se activa solo.",
+        "masterSeatWait": " {{host}} autorizó Tactiq antes de tener el asiento y Tactiq no amplía esa autorización: cuando el asiento exista, la plataforma le va a pedir una única autorización nueva.",
+        "masterBroken": "El vínculo de Tactiq de {{host}} fue revocado o venció en Tactiq. Solo {{host}} puede autorizarlo de nuevo, en Mi perfil."
       },
       "tactiqExtension": {
         "installed": "La extensión de Tactiq quedó instalada en tu Chrome. Para quedar habilitada para recibir agendas, falta hacer la reunión de prueba.",
@@ -6925,7 +6932,9 @@
       "startError": "No pudimos iniciar la vinculación. Probá de nuevo.",
       "returnLinked": "Listo: tu cuenta de Tactiq quedó vinculada.",
       "returnError": "No pudimos completar la vinculación con Tactiq. Probá de nuevo.",
-      "accessSeat": "Tu cuenta de Tactiq no tiene un asiento del plan del equipo Enlite, así que no puede leer resúmenes ni transcripciones. Pedile a un administrador de Tactiq (Ana Joulie, Javier o Marcel) que te asigne un asiento y después volvé a vincular acá. Verificá también que en app.tactiq.io estés con tu correo @enlite.health.",
+      "seatAuto": "Falta tu licencia de Tactiq. Ya avisamos al administrador. Cuando te la asigne, tu vínculo se activa solo: no tenés que hacer nada.",
+      "seatWait": "Falta tu licencia de Tactiq. Ya avisamos al administrador. Te vamos a avisar cuando esté resuelto.",
+      "seatAskAdmin": "Falta tu licencia de Tactiq. Pedile a un administrador de Tactiq (Ana Joulie, Javier o Marcel) que te asigne una; cuando la tengas, tu vínculo se activa solo.",
       "accessGeneric": "Tactiq indicó que tu cuenta no tiene acceso: «{{title}}». Verificá que en app.tactiq.io estés con tu correo @enlite.health, resolvelo con un administrador de Tactiq y después volvé a vincular acá.",
       "accessGenericNoTitle": "Tactiq indicó que tu cuenta no tiene acceso a los resúmenes y transcripciones. Verificá que en app.tactiq.io estés con tu correo @enlite.health, consultá con un administrador de Tactiq y después volvé a vincular acá."
     },

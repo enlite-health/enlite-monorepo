@@ -101,6 +101,62 @@ describe('SystemNotificationPublisher — aviso do vínculo do Tactiq (spec 049 
   });
 });
 
+describe('buildAdmissionTactiqLinkPayload — contrato da falta de assento (tactiq-vinculo-resiliente, D11)', () => {
+  it('seat_missing ao host: audience + adminNotified + autoReactivates, e nada além', () => {
+    expect(buildAdmissionTactiqLinkPayload('seat_missing', { audience: 'host', adminNotified: true, autoReactivates: false })).toEqual({
+      reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: false,
+    });
+  });
+
+  it('seat_missing ao master: hostName opcional (vazio some) e autoReactivates', () => {
+    expect(buildAdmissionTactiqLinkPayload('seat_missing', { audience: 'master', hostName: 'Fulana Fake', autoReactivates: true })).toEqual({
+      reason: 'seat_missing', audience: 'master', hostName: 'Fulana Fake', autoReactivates: true,
+    });
+    expect(buildAdmissionTactiqLinkPayload('seat_missing', { audience: 'master', hostName: '', autoReactivates: true })).toEqual({
+      reason: 'seat_missing', audience: 'master', autoReactivates: true,
+    });
+  });
+
+  it('broken ao master (token morto): audience + hostName, sem autoReactivates; sem extras segue só { reason }', () => {
+    expect(buildAdmissionTactiqLinkPayload('broken', { audience: 'master', hostName: 'Fulana Fake' })).toEqual({
+      reason: 'broken', audience: 'master', hostName: 'Fulana Fake',
+    });
+    expect(buildAdmissionTactiqLinkPayload('broken')).toEqual({ reason: 'broken' });
+  });
+
+  it.each([
+    ['master com missing', 'missing', { audience: 'master' }],
+    ['master com wrong_account', 'wrong_account', { audience: 'master' }],
+    ['hostName em audience host', 'seat_missing', { audience: 'host', hostName: 'Fulana Fake', adminNotified: true, autoReactivates: true }],
+    ['hostName sem audience', 'broken', { hostName: 'Fulana Fake' }],
+    ['adminNotified na cópia master', 'seat_missing', { audience: 'master', adminNotified: true, autoReactivates: true }],
+    ['adminNotified em broken', 'broken', { audience: 'host', adminNotified: true }],
+    ['autoReactivates em broken', 'broken', { audience: 'master', autoReactivates: true }],
+    ['seat_missing sem audience', 'seat_missing', { autoReactivates: true }],
+    ['seat_missing sem autoReactivates', 'seat_missing', { audience: 'master' }],
+    ['seat_missing ao host sem adminNotified', 'seat_missing', { audience: 'host', autoReactivates: true }],
+    ['audience fora do conjunto', 'broken', { audience: 'supervisor' }],
+  ])('combinação proibida lança: %s', (_n, reason, extras) => {
+    expect(() => buildAdmissionTactiqLinkPayload(reason, extras)).toThrow(/admission_tactiq_link_payload/);
+  });
+
+  it('o publicador repassa os extras ao payload e NÃO grava com combinação proibida', async () => {
+    const r = repo();
+    await new SystemNotificationPublisher(r as never).publishAdmissionTactiqLinkRequired({} as never, {
+      recipientUid: 'm1', reason: 'seat_missing', audience: 'master', hostName: 'Fulana Fake', autoReactivates: true,
+    });
+    expect(r.insertEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: { reason: 'seat_missing', audience: 'master', hostName: 'Fulana Fake', autoReactivates: true } }),
+      expect.anything(),
+    );
+    const r2 = repo();
+    await expect(
+      new SystemNotificationPublisher(r2 as never).publishAdmissionTactiqLinkRequired({} as never, { recipientUid: 'm1', reason: 'missing', audience: 'master' }),
+    ).rejects.toThrow();
+    expect(r2.insertEvent).not.toHaveBeenCalled();
+  });
+});
+
 describe('SystemNotificationPublisher — aviso diário do itinerário (spec 069 F4)', () => {
   const item = { patientId: 'p1', serviceId: 's1', shifts: 2, firstDate: '2026-11-02' };
 

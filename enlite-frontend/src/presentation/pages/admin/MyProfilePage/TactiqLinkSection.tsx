@@ -47,10 +47,24 @@ function bannerFrom(params: URLSearchParams): ReturnBanner {
   return outcome === 'linked' || outcome === 'error' ? { kind: outcome } : null;
 }
 
-/** Chave i18n da orientação, escolhida pelo `reason` SALVO (nunca pela URL); o código não é exibido. */
-function denialKey(reason: string, title: string | null): 'accessSeat' | 'accessGeneric' | 'accessGenericNoTitle' {
-  if (reason === 'scope_without_details' || reason === 'access_action:request_seat') return 'accessSeat';
-  return reason.startsWith('access_action:') && title ? 'accessGeneric' : 'accessGenericNoTitle';
+type Denial = NonNullable<OwnTactiqLink['accessDenial']>;
+type DenialKey = 'seatAuto' | 'seatWait' | 'seatAskAdmin' | 'accessGeneric' | 'accessGenericNoTitle';
+
+/** Falta de assento: o campo do servidor manda; ausente (back antigo), cai no `reason` salvo (comportamento anterior). */
+function isSeatDenial(d: Denial): boolean {
+  return d.seatMissing ?? (d.reason === 'scope_without_details' || d.reason === 'access_action:request_seat');
+}
+
+/**
+ * Chave i18n da orientação (D13/D14). Assento: ninguém avisado → pede ao administrador; avisado e não reativa sozinho → espera;
+ * senão reativa sozinho. Nenhuma manda revincular por assento. O código do `reason` nunca é exibido.
+ */
+function denialKey(d: Denial): DenialKey {
+  if (isSeatDenial(d)) {
+    if (d.adminNotified !== true) return 'seatAskAdmin';
+    return d.autoReactivates === false ? 'seatWait' : 'seatAuto';
+  }
+  return d.reason.startsWith('access_action:') && d.title ? 'accessGeneric' : 'accessGenericNoTitle';
 }
 
 interface Props {
@@ -116,7 +130,7 @@ export default function TactiqLinkSection({ redirect = (url) => window.location.
 
       {status === 'ok' && denial && (
         <Text color="inherit" as="p" size="sm" role="alert" className="rounded-lg bg-amber-100 text-amber-900 px-4 py-3" data-testid="tactiq-access-denial">
-          {t(`admin.tactiqLink.${denialKey(denial.reason, denial.title)}`, { title: denial.title ?? '' })}
+          {t(`admin.tactiqLink.${denialKey(denial)}`, { title: denial.title ?? '' })}
         </Text>
       )}
 
@@ -140,7 +154,10 @@ export default function TactiqLinkSection({ redirect = (url) => window.location.
                 <Text as="span" size="2xs" color="primary" className="uppercase">{tt('stateLabel')}</Text>
                 <SealChip tone={STATE_TONE[state]} testId="tactiq-state">{tt(`state.${state}`)}</SealChip>
               </div>
-              <Text color="inherit" size="sm" className="text-gray-900 mt-5 xl:row-start-2" data-testid="tactiq-state-help">{tt(`stateHelp.${state}`)}</Text>
+              {/* "Volvé a vincularlo" contradiz a orientação de assento (D0/D14): com negativa de assento a ajuda de `broken` não aparece. */}
+              {!(state === 'broken' && denial && isSeatDenial(denial)) && (
+                <Text color="inherit" size="sm" className="text-gray-900 mt-5 xl:row-start-2" data-testid="tactiq-state-help">{tt(`stateHelp.${state}`)}</Text>
+              )}
               {state === 'linked' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-5 xl:row-start-3">
                   <ProfileField label={tt('linkedAt')} value={when(link.linkedAt)} testId="tactiq-linked-at" />

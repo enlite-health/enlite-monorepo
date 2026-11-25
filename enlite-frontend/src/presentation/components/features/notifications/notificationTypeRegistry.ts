@@ -13,7 +13,7 @@
  * `patientDisplayName` nulos) — texto neutro com o nome do ator, deep-link igual ao padrão
  * (navega se houver `patientId`, D-08).
  */
-import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkReason, ImportBlockedPayload, ItineraryUncoveredShiftsItem, NotificationTypeCode, PedidoIaAplicarPayload } from '@infrastructure/http/AdminNotificationApiService';
+import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkPayload, AdmissionTactiqLinkReason, ImportBlockedPayload, ItineraryUncoveredShiftsItem, NotificationTypeCode, PedidoIaAplicarPayload } from '@infrastructure/http/AdminNotificationApiService';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { formatMessageDateTime } from '@presentation/components/features/admin/PatientDetail/conversation/messageDateFormat';
@@ -92,7 +92,28 @@ function patientFileDeepLink(n: AdminNotification): NotificationDeepLink | null 
 /** spec 049 (§3.0.1): o motivo decide a frase; payload ausente/estranho cai na frase de "sem vínculo". */
 function tactiqReason(n: AdminNotification): AdmissionTactiqLinkReason {
   const reason = n.payload && 'reason' in n.payload ? n.payload.reason : null;
-  return reason === 'wrong_account' || reason === 'broken' ? reason : 'missing';
+  return reason === 'wrong_account' || reason === 'broken' || reason === 'seat_missing' ? reason : 'missing';
+}
+
+/**
+ * F3 (D11/D14): o texto do aviso do vínculo. `seat_missing` e `broken` do Master escolhem a chave por `audience`/`adminNotified`/
+ * `autoReactivates`; nenhum texto de assento manda revincular. Payload sem os campos novos = comportamento de antes.
+ */
+function tactiqText(n: AdminNotification, t: Translate): string {
+  const base = 'admin.notifications.tactiq';
+  const reason = tactiqReason(n);
+  const p = n.payload && 'reason' in n.payload && !('stage' in n.payload) ? (n.payload as AdmissionTactiqLinkPayload) : null;
+  const isMaster = p?.audience === 'master';
+  const host = (): string => p?.hostName ?? t('admin.notifications.importBlocked.hostFallbackStart');
+  if (reason === 'seat_missing') {
+    if (isMaster) {
+      return t(`${base}.masterSeat`, { host: host() }) + t(`${base}.${p?.autoReactivates === false ? 'masterSeatWait' : 'masterSeatAuto'}`, { host: host() });
+    }
+    if (p?.adminNotified !== true) return t(`${base}.seatAskAdmin`);
+    return t(`${base}.${p.autoReactivates === false ? 'seatWait' : 'seatAuto'}`);
+  }
+  if (reason === 'broken' && isMaster) return t(`${base}.masterBroken`, { host: host() });
+  return t(`${base}.${reason}`);
 }
 
 /** spec 050 F15: o estado novo decide a frase; payload ausente/estranho cai no texto de "não está ativa" (nunca no de "instalada"). */
@@ -208,11 +229,11 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
     detailLine: (n, t) => t('admin.notifications.ptContactsPendingFields', { fields: ptFieldsLabel(n, t) }),
   },
   ADMISSION_TACTIQ_LINK_REQUIRED: {
-    buildText: (n, t) => t(`admin.notifications.tactiq.${tactiqReason(n)}`),
+    buildText: tactiqText,
     getDeepLink: () => ({ path: TACTIQ_LINK_PATH }),
     actorLabel: (_n, t) => t('admin.notifications.ptContactsPendingActor'),
     contextLine: (_n, t) => t('admin.notifications.tactiq.action'),
-    detailLine: (n, t) => t(`admin.notifications.tactiq.${tactiqReason(n)}`),
+    detailLine: tactiqText,
   },
   ADMISSION_TACTIQ_EXTENSION_CHANGED: {
     buildText: (n, t) => t(`admin.notifications.tactiqExtension.${tactiqExtensionState(n)}`),

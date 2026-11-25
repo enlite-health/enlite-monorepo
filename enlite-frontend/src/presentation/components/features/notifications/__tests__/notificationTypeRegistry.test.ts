@@ -129,6 +129,71 @@ describe('ADMISSION_TACTIQ_LINK_REQUIRED (spec 049, A7-7)', () => {
   });
 });
 
+// F3 (tactiq-vinculo-resiliente, D11/D14): assento e token morto; a chave sai de audience/adminNotified/autoReactivates.
+describe('ADMISSION_TACTIQ_LINK_REQUIRED — F3 (seat_missing, audience, master broken)', () => {
+  const h = () => getNotificationTypeHandler('ADMISSION_TACTIQ_LINK_REQUIRED');
+  const tq = (payload: Record<string, unknown>) =>
+    notif({ typeCode: 'ADMISSION_TACTIQ_LINK_REQUIRED', actorUid: 'system:admission', actorDisplayName: null, patientId: null, patientDisplayName: null, messageId: null, payload: payload as never });
+  const base = 'admin.notifications.tactiq.';
+
+  it('host auto: avisado e reativa sozinho → seatAuto', () => {
+    expect(h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: true }), t)).toBe(`${base}seatAuto:{}`);
+  });
+  it('host wait: avisado e NÃO reativa sozinho → seatWait', () => {
+    expect(h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: false }), t)).toBe(`${base}seatWait:{}`);
+  });
+  it('host sem master (ninguém avisado) → seatAskAdmin; adminNotified ausente também (não afirma que avisou)', () => {
+    expect(h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: false, autoReactivates: true }), t)).toBe(`${base}seatAskAdmin:{}`);
+    expect(h().buildText(tq({ reason: 'seat_missing' }), t)).toBe(`${base}seatAskAdmin:{}`);
+  });
+  it('master auto com nome: masterSeat + masterSeatAuto, com o nome', () => {
+    const out = h().buildText(tq({ reason: 'seat_missing', audience: 'master', hostName: 'Ana Souza', autoReactivates: true }), t);
+    expect(out).toBe(`${base}masterSeat:{"host":"Ana Souza"}${base}masterSeatAuto:{"host":"Ana Souza"}`);
+  });
+  it('master ¬auto: masterSeat + masterSeatWait', () => {
+    const out = h().buildText(tq({ reason: 'seat_missing', audience: 'master', hostName: 'Ana Souza', autoReactivates: false }), t);
+    expect(out).toBe(`${base}masterSeat:{"host":"Ana Souza"}${base}masterSeatWait:{"host":"Ana Souza"}`);
+  });
+  it('master sem nome: usa o hostFallbackStart (nunca "undefined")', () => {
+    const out = h().buildText(tq({ reason: 'seat_missing', audience: 'master' }), t);
+    expect(out).toContain('admin.notifications.importBlocked.hostFallbackStart:{}');
+    expect(out).not.toContain('undefined');
+  });
+  it('master broken (token morto) sem nome → masterBroken; broken do host segue "broken"', () => {
+    expect(h().buildText(tq({ reason: 'broken', audience: 'master' }), t)).toBe(`${base}masterBroken:{"host":"admin.notifications.importBlocked.hostFallbackStart:{}"}`);
+    expect(h().buildText(tq({ reason: 'broken', audience: 'host' }), t)).toBe(`${base}broken:{}`);
+    expect(h().buildText(tq({ reason: 'broken' }), t)).toBe(`${base}broken:{}`);
+  });
+  it('valor estranho de reason continua em "missing", mesmo com audience master', () => {
+    expect(h().buildText(tq({ reason: 'seat_banana', audience: 'master' }), t)).toBe(`${base}missing:{}`);
+  });
+  it('detailLine acompanha o texto', () => {
+    const n = tq({ reason: 'seat_missing', audience: 'host', adminNotified: true });
+    expect(h().detailLine?.(n, t)).toBe(`${base}seatAuto:{}`);
+  });
+
+  it.each([['es', esJson], ['pt-BR', ptBRJson]] as const)('%s: textos reais — host sem "vincular"; master leva o nome (ou o fallback)', async (lng, json) => {
+    const i18n = i18next.createInstance();
+    await i18n.init({ lng, resources: { [lng]: { translation: json } }, interpolation: { escapeValue: false } });
+    const tr = i18n.t.bind(i18n) as unknown as (k: string, o?: Record<string, unknown>) => string;
+    const host = [
+      h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: true }), tr),
+      h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: false }), tr),
+      h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: false }), tr),
+    ];
+    for (const text of host) {
+      expect(text.length).toBeGreaterThan(20);
+      expect(text.toLowerCase()).not.toMatch(/vincular|vinculá|vincule/);
+    }
+    const master = h().buildText(tq({ reason: 'seat_missing', audience: 'master', hostName: 'Ana Souza', autoReactivates: true }), tr);
+    expect(master).toContain('Ana Souza');
+    expect(master).not.toContain('{{');
+    const fallback = h().buildText(tq({ reason: 'broken', audience: 'master' }), tr);
+    expect(fallback).not.toContain('{{');
+    expect(fallback).toMatch(lng === 'es' ? /La persona responsable/ : /A pessoa responsável/);
+  });
+});
+
 // Spec 050 (F15, R-3): o aviso da transição do relatório do Chrome — o servidor manda só `{state}`; o TEXTO vive aqui.
 describe('ADMISSION_TACTIQ_EXTENSION_CHANGED (spec 050, F15)', () => {
   const ext = (state: string | null) =>

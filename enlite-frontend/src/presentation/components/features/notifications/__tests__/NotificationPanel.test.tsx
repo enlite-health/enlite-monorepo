@@ -491,6 +491,19 @@ describe('NotificationPanel — aviso do vínculo do Tactiq (spec 049, A7-7)', (
     expect(screen.queryByText('system:admission')).not.toBeInTheDocument();
   });
 
+  it('F3: assento do host (ES) e cópia do Master com nome (PT) renderizam textos reais; nenhum manda vincular', async () => {
+    const seat = (id: string, payload: object): AdminNotification => ({ ...tactiqNotif('missing'), id, payload: payload as never });
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([
+      seat('s1', { reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: true }),
+      seat('s2', { reason: 'seat_missing', audience: 'master', hostName: 'Ana Souza', autoReactivates: true }),
+    ]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    const host = await screen.findByTestId('notification-item-s1');
+    expect(host.getAttribute('aria-label')).toMatch(/^Falta tu licencia de Tactiq\. Ya avisamos al administrador/);
+    expect(host.getAttribute('aria-label')?.toLowerCase()).not.toMatch(/vincular|vinculá/);
+    expect(screen.getByTestId('notification-item-s2').getAttribute('aria-label')).toMatch(/^Ana Souza no tiene licencia de Tactiq/);
+  });
+
   it('PT pela i18n', async () => {
     await i18n.changeLanguage('pt-BR');
     vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([tactiqNotif('wrong_account')]);
