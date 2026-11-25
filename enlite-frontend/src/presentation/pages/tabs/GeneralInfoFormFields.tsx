@@ -7,10 +7,12 @@
 
 import { Controller } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { PhoneInputIntl } from '@presentation/components/shared/PhoneInputIntl';
 import { Combobox } from '@presentation/components/atoms/Combobox';
 import { maskDate, maskCuilCuit } from '@presentation/hooks/useMask';
 import { FormField, InputWithIcon } from '@presentation/components/molecules';
+import { Button } from '@presentation/components/atoms/Button';
+import { Text } from '@presentation/components/atoms/Text';
+import type { PhoneVerificationView } from '@infrastructure/http/WorkerApiService';
 import type { UseFormReturn } from 'react-hook-form';
 import type { GeneralInfoFormData } from '@presentation/validation/workerRegistrationSchemas';
 
@@ -26,7 +28,28 @@ interface Props {
    * a antes.
    */
   birthDateInvalid?: boolean;
+  /**
+   * Celular verificado (emenda 077 §6, W2): o campo é SÓ LEITURA e o selo vem do
+   * `phoneVerification` do servidor. `null`/ausente = "não apurei": sem selo.
+   */
+  phoneVerification?: PhoneVerificationView | null;
+  /** Abre o modal do código para o número que a ficha já tem. */
+  onVerifyPhone?: () => void;
+  /** Abre o modal do código pedindo o número NOVO (ou o primeiro número). */
+  onChangePhone?: () => void;
 }
+
+const BADGE_CLASS: Record<string, string> = {
+  no_phone: 'bg-gray-100 text-gray-700',
+  unverified: 'bg-amber-100 text-amber-800',
+  verified: 'bg-green-100 text-green-800',
+};
+
+const BADGE_KEY: Record<string, string> = {
+  no_phone: 'phoneVerification.badge.noPhone',
+  unverified: 'phoneVerification.badge.unverified',
+  verified: 'phoneVerification.badge.verified',
+};
 
 const PROFESSION_OPTIONS = [
   { value: 'AT', label: 'Acompañante Terapéutico' },
@@ -60,9 +83,15 @@ const TRASTORNO_OPTIONS = [
   { value: 'trastorno_psiquiatrico', label: 'Trastorno Psiquiátrico' },
 ];
 
-export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, profilePhotoElement, birthDateInvalid = false }: Props) {
+export function GeneralInfoFormFields({
+  form, isFieldReadonly, triggerSave, profilePhotoElement, birthDateInvalid = false,
+  phoneVerification = null, onVerifyPhone, onChangePhone,
+}: Props) {
   const { t } = useTranslation();
-  const { register, control, setValue, formState: { errors } } = form;
+  const { register, control, setValue, watch, formState: { errors } } = form;
+  const phoneValue = watch('phone') || '';
+  const phoneState = phoneVerification?.state ?? (phoneValue ? null : 'no_phone');
+  const hasPhone = phoneValue !== '' && phoneState !== 'no_phone';
 
   const applyDocumentMask = (value: string) => maskCuilCuit(value);
 
@@ -163,15 +192,33 @@ export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, prof
           />
         </FormField>
 
-        {/* Phone */}
+        {/* Phone — SÓ LEITURA: o número só muda pelo código (emenda 077 §6, AC-16). */}
         <div id="phone">
-          <FormField label={t('workerRegistration.generalInfo.phone')} htmlFor="phone-input" error={errors.phone?.message}>
-            <Controller name="phone" control={control} render={({ field }) => (
-              <PhoneInputIntl inputSize="compact" value={field.value} onChange={field.onChange}
-                placeholder={t('workerRegistration.generalInfo.phonePlaceholder')}
-                readOnly={isFieldReadonly('phone')} className="border-gray-600 focus-within:border-primary"
-              />
-            )} />
+          <FormField label={t('workerRegistration.generalInfo.phone')} htmlFor="phone-readonly" error={errors.phone?.message}>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <InputWithIcon inputSize="compact" id="phone-readonly" type="text" readOnly value={phoneValue}
+                  data-testid="phone-readonly" className="bg-gray-200"
+                  placeholder={t('workerRegistration.generalInfo.phonePlaceholder')}
+                />
+                {phoneState && (
+                  <span data-testid="phone-badge" data-state={phoneState}
+                    className={`shrink-0 rounded-full px-2 py-0.5 ${BADGE_CLASS[phoneState]}`}>
+                    <Text as="span" size="xs" weight="medium" color="inherit">{t(BADGE_KEY[phoneState])}</Text>
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {phoneState === 'unverified' && (
+                  <Button type="button" variant="primary" size="sm" onClick={onVerifyPhone} data-testid="phone-verify-button">
+                    {t('phoneVerification.verifyButton')}
+                  </Button>
+                )}
+                <Button type="button" variant="outline" size="sm" onClick={onChangePhone} data-testid="phone-change-button">
+                  {t(hasPhone ? 'phoneVerification.changeButton' : 'phoneVerification.addButton')}
+                </Button>
+              </div>
+            </div>
           </FormField>
         </div>
 
