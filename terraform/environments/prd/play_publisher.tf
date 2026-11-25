@@ -14,6 +14,19 @@ import {
   id = "enlite-prd/androidpublisher.googleapis.com"
 }
 
+# Play Integrity: habilitada pela vinculação Play Console ↔ enlite-prd (Gabriel, 25/11). É o que o App Check
+# (provedor Play Integrity) do health.enlite.mobile usa para atestar o app instalado pela loja.
+resource "google_project_service" "playintegrity" {
+  project            = var.project_id
+  service            = "playintegrity.googleapis.com"
+  disable_on_destroy = false
+}
+
+import {
+  to = google_project_service.playintegrity
+  id = "enlite-prd/playintegrity.googleapis.com"
+}
+
 # Conta de publicação no Play (CI e orquestrador). SEM papel de projeto: o acesso ao Play é concedido no próprio Play
 # Console, não no IAM do GCP. SEM chave JSON: quem publica entra por personificação (token creator abaixo).
 module "sa_play_publisher" {
