@@ -5,6 +5,7 @@
 --      encuadres.rejection_reason_category e worker_job_application_stage_history.reason_category.
 --   3. talentum_webhook_inbox: a trilha de "o que o Talentum nos mandou e quando" (spec §3.2); corpo cifrado (payload_enc).
 --   4. talentum_webhook_alarm_state: dedup do sino (spec §3.5).
+--   5. notification_types: TALENTUM_WEBHOOK_ALARM (o tipo do sino; sem ele o INSERT do aviso falha).
 --
 -- Um dono por conceito (modelar-dado): a inbox é dona de "o que chegou e quando"; talentum_prescreenings continua dona
 -- do status do espelho; ninguém lê a inbox para decidir etapa (só quem processa e quem alarma).
@@ -14,7 +15,9 @@
 -- no próprio dono; REVOKE só de PUBLIC. Sem SECURITY DEFINER. Idempotente (2x). Sem BEGIN/COMMIT (o runner envolve).
 --
 -- Rollback (par): DROP TABLE talentum_webhook_alarm_state, talentum_webhook_inbox; DROP FUNCTION talentum_status_precedence(text);
---   e recriar os 3 CHECKs sem o valor novo (listas de 129 / 117 / 478), depois de provar que nenhuma linha usa o valor.
+--   e recriar os 3 CHECKs sem o valor novo (listas de 129 / 117 / 478), depois de provar que nenhuma linha usa o valor;
+--   e o tipo do sino: DELETE FROM notification_types WHERE code = 'TALENTUM_WEBHOOK_ALARM'
+--   AND NOT EXISTS (SELECT 1 FROM notification_events WHERE type_code = 'TALENTUM_WEBHOOK_ALARM') (molde ROLLBACK_559).
 
 -- ── 1. Precedência do status do espelho (molde funnel_stage_precedence, 477) ─────────────────────────────
 CREATE OR REPLACE FUNCTION talentum_status_precedence(status text)
@@ -114,3 +117,9 @@ REVOKE ALL ON talentum_webhook_alarm_state FROM PUBLIC;
 -- DELETE na inbox: a poda de metadados (90 dias). O alarm_state apaga a linha ao fechar o alarme.
 GRANT SELECT, INSERT, UPDATE, DELETE ON talentum_webhook_inbox TO app_runtime, app_system;
 GRANT SELECT, INSERT, UPDATE, DELETE ON talentum_webhook_alarm_state TO app_runtime, app_system;
+
+-- ── 6. Tipo do sino (T-095-42; molde 559) ────────────────────────────────────────────────────────────────
+INSERT INTO notification_types (code, description) VALUES
+  ('TALENTUM_WEBHOOK_ALARM',
+   'Aviso automático: o webhook do Talentum tem alarme aberto (falha/pendência na inbox, veredito ausente, silêncio) ou um conflito humano; payload fechado {alarme, quantidade, desde}')
+ON CONFLICT (code) DO NOTHING;

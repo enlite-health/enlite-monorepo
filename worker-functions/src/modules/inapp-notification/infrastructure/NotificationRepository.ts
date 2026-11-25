@@ -46,7 +46,8 @@ export type NotificationTypeCode =
   | 'ITINERARY_UNCOVERED_SHIFTS'
   | 'PEDIDO_IA_NOVO'
   | 'PEDIDO_IA_GRAVE'
-  | 'PEDIDO_IA_APLICAR';
+  | 'PEDIDO_IA_APLICAR'
+  | 'TALENTUM_WEBHOOK_ALARM';
 
 /**
  * Payload do aviso de contatos pendentes do PT (spec 048): SÓ ids e nomes de campo — nunca nome do
@@ -121,6 +122,19 @@ export interface PedidoIaAplicarPayload {
   prazo: 'hoje' | 'semana';
 }
 
+/**
+ * Payload do aviso do webhook do Talentum (spec 095 §3.5): 3 chaves fechadas, só enum + inteiro + data — nunca nome, e-mail, telefone,
+ * vaga nem texto livre. Construído por `buildTalentumWebhookAlarmPayload`. `CONFLITO_HUMANO` é por evento (quantidade 1); os outros são
+ * por relógio (o ciclo `events/health`).
+ */
+export type TalentumWebhookAlarm = 'inbox_falha' | 'inbox_pendente' | 'veredito_ausente' | 'silencio' | 'CONFLITO_HUMANO';
+export const TALENTUM_WEBHOOK_ALARMS: readonly TalentumWebhookAlarm[] = ['inbox_falha', 'inbox_pendente', 'veredito_ausente', 'silencio', 'CONFLITO_HUMANO'];
+export interface TalentumWebhookAlarmPayload {
+  alarme: TalentumWebhookAlarm;
+  quantidade: number;
+  desde: string;
+}
+
 export interface InsertNotificationEventInput {
   typeCode: NotificationTypeCode;
   actorUid: string;
@@ -128,7 +142,7 @@ export interface InsertNotificationEventInput {
   conversationId: string | null;
   messageId: string | null;
   /** Metadado SÓ-ids (461). Omitido = `'{}'`. Hoje só o tipo do PT grava aqui. */
-  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload;
+  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | TalentumWebhookAlarmPayload;
 }
 
 export interface NotificationEventRow {

@@ -14,6 +14,7 @@ import {
   deriveFunnelStage, toPersistedFunnelStage, applyNotQualifiedTransition, applyExpiredTransition, revertAutoRejectionOnPositiveVerdict, insertTalentumWorker,
   detectManualChange, evaluateFunnelGuard, TALENTUM_MANUAL_ACTOR_ID, TALENTUM_EXPIRED_REASON,
 } from './talentumFunnel';
+import { TalentumWebhookAlarmNotifier } from './TalentumWebhookAlarmNotifier';
 import { stampActorOnClient } from '@shared/database/actorContext';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
 import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
@@ -83,18 +84,12 @@ export interface IJobPostingLookup {
 
 /**
  * Aviso `CONFLITO_HUMANO` (spec 095 §3.4/§13.6): mudança manual do Talentum contra movimento humano nosso na mesma
- * candidatura. O sino é do T-095-42; este port deixa o ponto de ligação na MESMA transação (`client`). Só ids, sem PII.
+ * candidatura. O default é o sino (`TalentumWebhookAlarmNotifier`, T-095-42), que escreve num SAVEPOINT do MESMO `client`: a falha
+ * do sino não aborta a transação nem faz a linha da inbox virar FAILED. Só ids, sem PII.
  */
 export interface ITalentumConflictNotifier {
   notify(client: PoolClient, conflict: { workerId: string; jobPostingId: string; talentumPrescreeningId: string }): Promise<void>;
 }
-
-/** Enquanto o sino (T-095-42) não existe: deixa rastro estruturado, sem PII (só ids). */
-const logOnlyConflictNotifier: ITalentumConflictNotifier = {
-  async notify(_client, conflict) {
-    logger.warn({ msg: 'talentum_conflito_humano', ...conflict });
-  },
-};
 
 export class ProcessTalentumPrescreening {
   private readonly questionsWriter: PrescreeningQuestionsWriter;
@@ -105,7 +100,7 @@ export class ProcessTalentumPrescreening {
     private readonly jobPostingLookup: IJobPostingLookup,
     private readonly pool: Pool,
     private readonly pubsub: PubSubClient,
-    private readonly conflictNotifier: ITalentumConflictNotifier = logOnlyConflictNotifier,
+    private readonly conflictNotifier: ITalentumConflictNotifier = new TalentumWebhookAlarmNotifier(),
   ) {
     this.questionsWriter = new PrescreeningQuestionsWriter(prescreeningRepo);
   }

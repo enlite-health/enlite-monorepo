@@ -17,13 +17,12 @@
  * Canal real: nenhum. `PubSubClient` é mock em NODE_ENV=test (o ack não dispara o processador; quem processa é a rota interna
  * chamada aqui), o KMS é passthrough base64, a API de teste não alcança terceiro (extra_hosts) e o Talentum nunca é chamado.
  *
- * Prova do aviso CONFLITO_HUMANO (T11): o sino é do T-095-42; hoje o port `ITalentumConflictNotifier` tem como default um
- * `logger.warn({ msg: 'talentum_conflito_humano', workerId, jobPostingId, talentumPrescreeningId })` no container da API,
- * lido por `docker logs` (helper `apiContainer`, o mesmo dos e2e do Vertex).
+ * Prova do aviso CONFLITO_HUMANO (T11): o default do port `ITalentumConflictNotifier` é o sino (T-095-42). O teste lê a TABELA:
+ * `notification_events` (`TALENTUM_WEBHOOK_ALARM`, payload `{alarme:'CONFLITO_HUMANO', quantidade, desde}`) e `notifications`
+ * dos destinatários semeados aqui (1 do Acesso Master e 1 com a célula `talentum:update`). Nenhum canal externo: o sino é só banco.
  */
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
-import { apiContainerLogs } from './helpers/apiContainer';
 import { TALENTUM_WEBHOOK_TEST } from './helpers/talentumWebhook';
 import { envelope, type ResponseBlock } from '../fixtures/talentumPayload';
 import { computeBodyHash } from '../../src/modules/integration/domain/TalentumInbox';
@@ -33,6 +32,11 @@ const PROCESS = '/api/internal/talentum/inbox/process';
 const REDRIVE = '/api/internal/talentum/inbox/redrive';
 const RUN = Date.now().toString(36);
 const HUMAN_UID = `uid-humano-p95-${RUN}`;
+const TENANT = '00000000-0000-0000-0000-000000000001';
+const MASTER_GROUP = 'a0000000-0000-0000-0000-000000000001';
+const MASTER_UID = `uid-master-p95-${RUN}`;
+const COORD_UID = `uid-coord-p95-${RUN}`;
+const COORD_GROUP = `E2E Talentum sino ${RUN}`;
 
 const internalHeaders = () => ({ 'X-Internal-Secret': process.env.INTERNAL_TOKEN_SECRET || 'test-secret-for-e2e-only' });
 
@@ -150,9 +154,40 @@ describe('Talentum — processador da inbox (spec 095 §3.2/§3.4)', () => {
     await pool.query(`DELETE FROM talentum_webhook_inbox WHERE talentum_prescreening_id LIKE $1`, [`proc95-${RUN}-%`]);
   }
 
+  /** Destinatários do sino: 1 no Acesso Master e 1 num grupo DESTE teste com a célula `talentum:update` (nada da operação é tocado). */
+  async function seedRecipients() {
+    await pool.query(
+      `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES
+         ($1, $3, 'admin', 'ACTIVE', true, $5), ($2, $4, 'recruiter', 'ACTIVE', true, $5)`,
+      [MASTER_UID, COORD_UID, `${MASTER_UID}@e2e.local`, `${COORD_UID}@e2e.local`, TENANT],
+    );
+    await pool.query(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [MASTER_UID, MASTER_GROUP, TENANT]);
+    const g = await pool.query<{ id: string }>(
+      `INSERT INTO iam.permission_groups (tenant_id, name, description, is_system) VALUES ($1, $2, 'e2e sino talentum', false) RETURNING id`,
+      [TENANT, COORD_GROUP],
+    );
+    const granted = await pool.query(
+      `INSERT INTO iam.group_permissions (group_id, permission_id) SELECT $1, id FROM iam.permissions WHERE resource = 'talentum' AND action = 'update'`,
+      [g.rows[0].id],
+    );
+    expect(granted.rowCount).toBe(1); // a célula existe no catálogo do stack: contagem 0 seria "não semeei", não sucesso
+    await pool.query(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ($1, $2, $3)`, [COORD_UID, g.rows[0].id, TENANT]);
+  }
+
+  async function cleanRecipients() {
+    const uids = [MASTER_UID, COORD_UID];
+    await pool.query(`DELETE FROM notifications WHERE recipient_uid = ANY($1::text[])`, [uids]);
+    await pool.query(`DELETE FROM iam.user_groups WHERE user_id = ANY($1::text[])`, [uids]);
+    await pool.query(`DELETE FROM iam.group_permissions WHERE group_id IN (SELECT id FROM iam.permission_groups WHERE name = $1)`, [COORD_GROUP]);
+    await pool.query(`DELETE FROM iam.permission_groups WHERE name = $1`, [COORD_GROUP]);
+    await pool.query(`DELETE FROM users WHERE firebase_uid = ANY($1::text[])`, [uids]);
+  }
+
   beforeAll(async () => {
     pool = new Pool({ connectionString: DATABASE_URL });
     await waitForBackend(api);
+    await cleanRecipients();
+    await seedRecipients();
     for (const c of CASES) {
       wid[c] = (await pool.query(`INSERT INTO workers (auth_uid, email, status) VALUES ($1, $2, 'INCOMPLETE_REGISTER') RETURNING id`, [`talentum_${PROF(c)}`, EMAIL(c)])).rows[0].id;
       jid[c] = (await pool.query(`INSERT INTO job_postings (title, description, status) VALUES ($1, 'test', 'SEARCHING') RETURNING id`, [TITLE(c)])).rows[0].id;
@@ -161,6 +196,7 @@ describe('Talentum — processador da inbox (spec 095 §3.2/§3.4)', () => {
 
   afterAll(async () => {
     await clean();
+    await cleanRecipients();
     await pool.query(`DELETE FROM job_postings WHERE id = ANY($1::uuid[])`, [Object.values(jid)]);
     await pool.query(`DELETE FROM workers WHERE id = ANY($1::uuid[])`, [Object.values(wid)]);
     await pool.end();
@@ -299,7 +335,8 @@ describe('Talentum — processador da inbox (spec 095 §3.2/§3.4)', () => {
   });
 
   // ── T11 ───────────────────────────────────────────────────────────────────────────────────────────────
-  it('T11: manual com a última linha da trilha de uid humano NOSSO → só o espelho muda, o WJA fica, e sai o aviso CONFLITO_HUMANO', async () => {
+  it('T11: manual com a última linha da trilha de uid humano NOSSO → só o espelho muda, o WJA fica, e o aviso CONFLITO_HUMANO entra no sino (tabela)', async () => {
+    const t11Start = new Date();
     await send('T11', body('T11', 'COMPLETED'));
     expect(await stage('T11')).toBe('COMPLETED');
     await humanMove('T11', 'REJECTED');
@@ -313,14 +350,22 @@ describe('Talentum — processador da inbox (spec 095 §3.2/§3.4)', () => {
     expect(await encuadre('T11')).toEqual({ resultado: 'RECHAZADO', cat: 'DISTANCE' });
     expect(await trail('T11')).toEqual(before);
 
-    // Prova do aviso: o default do port é `logger.warn` no container da API; só ids, sem PII.
-    const line = apiContainerLogs()
-      .split('\n')
-      .find((l) => l.includes('talentum_conflito_humano') && l.includes(PSC('T11')));
-    expect(line).toBeDefined();
-    expect(line).toContain(wid.T11);
-    expect(line).toContain(jid.T11);
-    expect(line).not.toContain(EMAIL('T11'));
+    // Prova do aviso: a TABELA do sino (não o log). Só enum + inteiro + data; os dois destinatários semeados recebem.
+    const { rows: ev } = await pool.query(
+      `SELECT e.id, e.actor_uid, e.patient_id, e.payload, e.payload::text AS raw,
+              (SELECT array_agg(n.recipient_uid ORDER BY n.recipient_uid) FROM notifications n WHERE n.event_id = e.id) AS uids
+         FROM notification_events e
+        WHERE e.type_code = 'TALENTUM_WEBHOOK_ALARM' AND e.payload->>'alarme' = 'CONFLITO_HUMANO' AND e.created_at >= $1`,
+      [t11Start],
+    );
+    expect(ev).toHaveLength(1); // um aviso por evento: 1 conflito → 1 evento
+    expect(ev[0].actor_uid).toBe('system:talentum-webhook');
+    expect(ev[0].patient_id).toBeNull();
+    expect(Object.keys(ev[0].payload).sort()).toEqual(['alarme', 'desde', 'quantidade']);
+    expect(ev[0].payload.quantidade).toBe(1);
+    expect(ev[0].uids).toEqual(expect.arrayContaining([MASTER_UID, COORD_UID].sort()));
+    // sem PII (nem o e-mail do candidato, nem os ids de worker/vaga)
+    for (const forbidden of [EMAIL('T11'), PSC('T11'), wid.T11, jid.T11]) expect(ev[0].raw).not.toContain(forbidden);
   });
 
   // ── T12 ───────────────────────────────────────────────────────────────────────────────────────────────

@@ -56,6 +56,11 @@ export const SWEEP_SAFE_EVENTS = ['worker.mirror_requested', 'worker.registratio
  * Controller for internal endpoints triggered by Pub/Sub push, Cloud Tasks, and Cloud Scheduler.
  * All endpoints are protected by InternalAuthMiddleware.
  */
+/** Sino do ciclo do webhook do Talentum (implementado por `matching/application/TalentumWebhookAlarmNotifier`). */
+export interface TalentumWebhookCycleNotifier {
+  notifyCycle(health: TalentumWebhookHealth, now: Date): Promise<void>;
+}
+
 export class InternalController {
   constructor(
     private readonly eventProcessor: DomainEventProcessor,
@@ -71,6 +76,8 @@ export class InternalController {
     private readonly itineraryDailyRunHealthService?: ItineraryDailyRunHealthService,
     /** spec 095 F4: opcional pelo mesmo motivo — sem ele o bloco do webhook do Talentum é omitido. */
     private readonly talentumWebhookHealthService?: TalentumWebhookHealthService,
+    /** spec 095 T-095-42: opcional — sem ele só o WARN sai (o sino com dedup é este colaborador; nunca lança). */
+    private readonly talentumWebhookAlarmNotifier?: TalentumWebhookCycleNotifier,
   ) {}
 
   /**
@@ -339,10 +346,14 @@ export class InternalController {
       let talentumWebhook: TalentumWebhookHealth | null = null;
       if (this.talentumWebhookHealthService) {
         try {
-          talentumWebhook = await this.talentumWebhookHealthService.getHealth(new Date());
+          const now = new Date();
+          talentumWebhook = await this.talentumWebhookHealthService.getHealth(now);
           for (const [alarme, quantidade] of Object.entries(talentumWebhook)) {
             if (quantidade > 0) logger.warn({ msg: 'talentum_webhook_alarm', alarme, quantidade });
           }
+          // Sino (dedup 24 h em talentum_webhook_alarm_state). A falha vira WARN `sino_falhou` dentro do notificador; o catch abaixo
+          // é só rede de segurança para o health dos outros blocos não cair.
+          if (this.talentumWebhookAlarmNotifier) await this.talentumWebhookAlarmNotifier.notifyCycle(talentumWebhook, now);
         } catch (e) {
           talentumWebhook = null;
           logger.error({ msg: '[talentum-webhook/health] error', error: e instanceof Error ? e.message : String(e) });

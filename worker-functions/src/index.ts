@@ -117,6 +117,7 @@ import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthSe
 import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
 import { ItineraryDailyRunHealthService } from '@shared/events/ItineraryDailyRunHealthService';
 import { TalentumWebhookHealthService } from '@shared/events/TalentumWebhookHealthService';
+import { TalentumWebhookAlarmNotifier } from '@modules/matching/application/TalentumWebhookAlarmNotifier';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyAutoInviteHandler';
@@ -942,7 +943,8 @@ const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, 
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
 const messagingRetentionService = new MessagingRetentionService(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool), new ItineraryDailyRunHealthService(dbPool), new TalentumWebhookHealthService(dbPool));
+const talentumAlarmNotifier = new TalentumWebhookAlarmNotifier({ pool: dbPool });
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool), new ItineraryDailyRunHealthService(dbPool), new TalentumWebhookHealthService(dbPool), talentumAlarmNotifier);
 app.use('/api/internal', systemContextMiddleware('job:internal'), createInternalRoutes(internalController));
 app.use(
   '/api/internal',
@@ -970,7 +972,7 @@ app.use(
 const talentumInboxProcessor = new ProcessTalentumInboxUseCase(
   dbPool,
   new TalentumInboxRepository(),
-  new ProcessTalentumPrescreening(new TalentumPrescreeningRepository(), new WorkerRepository(), new JobPostingLookup(dbPool), dbPool, pubsubClient),
+  new ProcessTalentumPrescreening(new TalentumPrescreeningRepository(), new WorkerRepository(), new JobPostingLookup(dbPool), dbPool, pubsubClient, talentumAlarmNotifier),
   { execute: (data, environment) => new CreateJobPostingFromTalentumUseCase(dbPool, talentumPrescreeningIdResolver).execute(data, environment) },
 );
 app.use(

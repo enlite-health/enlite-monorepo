@@ -560,6 +560,19 @@ describe('InternalController', () => {
         expect((res.json as jest.Mock).mock.calls[0][0].talentumWebhook).toEqual(h);
       });
 
+      it('o laço do health chama o sino do ciclo com a contagem e o MESMO relógio (depois do WARN)', async () => {
+        const h = { inbox_falha: 2, inbox_pendente: 0, veredito_ausente: 0, silencio: 0 };
+        const notifyCycle = jest.fn().mockResolvedValue(undefined);
+        const getHealth = jest.fn().mockResolvedValue(h);
+        const c = new InternalController(
+          eventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler,
+          domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, undefined, undefined, { getHealth } as never, { notifyCycle },
+        );
+        await c.getEventsHealth(mockReq({}, {}), mockRes());
+        expect(notifyCycle).toHaveBeenCalledTimes(1);
+        expect(notifyCycle).toHaveBeenCalledWith(h, getHealth.mock.calls[0][0]);
+      });
+
       it('tudo 0 → nenhum WARN; detector que falha não derruba o health (200); sem o serviço o bloco é omitido', async () => {
         await comTalentum(jest.fn().mockResolvedValue({ inbox_falha: 0, inbox_pendente: 0, veredito_ausente: 0, silencio: 0 })).getEventsHealth(mockReq({}, {}), mockRes());
         expect(alarmes()).toHaveLength(0);

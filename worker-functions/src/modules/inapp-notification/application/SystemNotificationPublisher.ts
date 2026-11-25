@@ -18,6 +18,8 @@ import {
   type ItineraryUncoveredShiftsPayload,
   type PedidoIaAplicarPayload,
   type AdmissionImportBlockedPayload,
+  type TalentumWebhookAlarmPayload,
+  TALENTUM_WEBHOOK_ALARMS,
   IMPORT_STAGES,
   IMPORT_KINDS,
   IMPORT_REASONS,
@@ -34,6 +36,9 @@ export const SYSTEM_ITINERARY_ACTOR_UID = 'system:itinerary-daily';
 /** Sentinela do aviso da fila de pedidos do Sol (spec 078 M3b-2): sem autor humano, sem FK (461). */
 export const SYSTEM_SOL_FILA_ACTOR_UID = 'system:sol-fila';
 
+/** Sentinela do aviso do webhook do Talentum (spec 095 §3.5): sem autor humano, sem FK (461). A tela mostra "Enlite", nunca o uid. */
+export const SYSTEM_TALENTUM_WEBHOOK_ACTOR_UID = 'system:talentum-webhook';
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -44,6 +49,20 @@ export function buildPedidoIaAplicarPayload(input: { pedidoId: string; degrau: n
   if (!UUID_RE.test(input.pedidoId)) throw new Error('PedidoIaAplicarPayload: pedidoId inválido');
   if (input.degrau !== 3 && input.degrau !== 4) throw new Error('PedidoIaAplicarPayload: degrau fora de {3,4}');
   return { pedido_id: input.pedidoId, degrau: input.degrau, grave: input.grave, prazo: input.grave ? 'hoje' : 'semana' };
+}
+
+/**
+ * Payload fechado do aviso do webhook do Talentum: `{ alarme, quantidade, desde }`. Reconstrói chave a chave: QUALQUER chave extra (nome,
+ * e-mail, id) faz LANÇAR, não ser ignorada — um chamador que tente passar dado a mais é erro de programação, não dado que some em silêncio.
+ * `alarme` fora do conjunto fechado, `quantidade` não inteira ou < 1 e `desde` que não é data também lançam.
+ */
+export function buildTalentumWebhookAlarmPayload(input: { alarme: string; quantidade: number; desde: string }): TalentumWebhookAlarmPayload {
+  const extra = Object.keys(input).filter((k) => k !== 'alarme' && k !== 'quantidade' && k !== 'desde');
+  if (extra.length > 0) throw new Error('talentum_webhook_alarm_payload: chave fora do contrato');
+  if (!inSet(TALENTUM_WEBHOOK_ALARMS, input.alarme) || !Number.isInteger(input.quantidade) || input.quantidade < 1 || !isIso(input.desde)) {
+    throw new Error('talentum_webhook_alarm_payload: valor fora do contrato');
+  }
+  return { alarme: input.alarme as TalentumWebhookAlarmPayload['alarme'], quantidade: input.quantidade, desde: input.desde };
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -188,6 +207,25 @@ export class SystemNotificationPublisher {
       client,
     );
     await this.repository.insertNotifications(eventId, [input.recipientUid], client);
+    return eventId;
+  }
+
+  /**
+   * Spec 095 §3.5: UM evento + uma notificação por destinatário (coordenação de Recrutamento + Master), na transação do chamador (o estado
+   * de dedup do alarme vai na MESMA transação). Sem destinatário não grava e devolve `null`. `patientId` sempre `null`.
+   */
+  async publishTalentumWebhookAlarm(
+    client: PoolClient,
+    input: { recipientUids: readonly string[]; payload: { alarme: string; quantidade: number; desde: string } },
+  ): Promise<string | null> {
+    const payload = buildTalentumWebhookAlarmPayload(input.payload);
+    const uids = [...new Set(input.recipientUids)];
+    if (uids.length === 0) return null;
+    const eventId = await this.repository.insertEvent(
+      { typeCode: 'TALENTUM_WEBHOOK_ALARM', actorUid: SYSTEM_TALENTUM_WEBHOOK_ACTOR_UID, patientId: null, conversationId: null, messageId: null, payload },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, uids, client);
     return eventId;
   }
 
