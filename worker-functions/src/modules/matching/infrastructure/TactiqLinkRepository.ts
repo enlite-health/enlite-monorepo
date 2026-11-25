@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import type { TactiqLinkState } from '../application/ports/TactiqPorts';
+import type { LastDegrade } from '../domain/tactiqRecheck';
 
 type Db = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
 
@@ -127,6 +128,52 @@ export class TactiqLinkRepository {
     return rows[0] ?? null;
   }
 
+  /**
+   * Re-teste diário (F2): linhas `broken`/`wrong_account` com segredo + o evento de queda MAIS NOVO (`lastDegrade`, LATERAL). Quem decide se
+   * re-testa é `isRecheckable` (domínio, dono do conceito); aqui só vai o que a decisão precisa. Os kinds vão por parâmetro (sql-schema-sync).
+   */
+  async listRecheckableWithToken(
+    ex: Db = this.db,
+  ): Promise<Array<{ id: string; host_email: string; status: string; refresh_token_encrypted: string; lastDegrade: LastDegrade | null }>> {
+    const { rows } = await ex.query<{
+      id: string; host_email: string; status: string; refresh_token_encrypted: string;
+      last_kind: string | null; last_reason: string | null; last_source: string | null;
+    }>(
+      `SELECT l.id, l.host_email, l.status, s.refresh_token_encrypted,
+              d.kind AS last_kind, d.reason AS last_reason, d.source AS last_source
+         FROM tactiq_links l
+         JOIN tactiq_link_secrets s ON s.link_id = l.id
+         LEFT JOIN LATERAL (SELECT e.kind, e.reason, e.ref->>'source' AS source
+                              FROM admission_events e
+                             WHERE lower(e.host_email) = lower(l.host_email) AND e.kind = ANY($1::text[])
+                             ORDER BY e.at DESC, e.id DESC LIMIT 1) d ON true
+        WHERE l.status IN ('broken', 'wrong_account')
+        ORDER BY l.host_email`,
+      [['tactiq_link.broken', 'tactiq_link.wrong_account', 'tactiq_link.recheck_dead']],
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      host_email: r.host_email,
+      status: r.status,
+      refresh_token_encrypted: r.refresh_token_encrypted,
+      lastDegrade: r.last_kind ? { kind: r.last_kind, reason: r.last_reason, source: r.last_source } : null,
+    }));
+  }
+
+  /**
+   * `scope` do último vínculo/recusa por assento do e-mail: o evento MAIS NOVO entre `tactiq_link.linked` e `tactiq_link.broken` com
+   * `source='link'` (F1). `null` = nenhum evento ou sem escopo gravado (legado: "não apurado").
+   */
+  async lastLinkScope(email: string, ex: Db = this.db): Promise<string | null> {
+    const { rows } = await ex.query<{ scope: string | null }>(
+      `SELECT e.ref->>'scope' AS scope FROM admission_events e
+        WHERE lower(e.host_email) = lower($1) AND (e.kind = $2 OR (e.kind = $3 AND e.ref->>'source' = 'link'))
+        ORDER BY e.at DESC, e.id DESC LIMIT 1`,
+      [email, 'tactiq_link.linked', 'tactiq_link.broken'],
+    );
+    return rows[0]?.scope ?? null;
+  }
+
   // ── escrita ────────────────────────────────────────────────────────────────────────────────────────
   /** Vincula (ou revincula): estado `linked`, token novo, "já avisei" zerado para `linked`. Nunca devolve o token. */
   async upsertLinked(
@@ -202,6 +249,31 @@ export class TactiqLinkRepository {
     );
   }
 
+  /**
+   * Rotação do re-teste (D6): compare-and-swap sobre o segredo lido. `false` = o segredo mudou no meio (revínculo concorrente, F23):
+   * quem chama NÃO reativa. Não filtra por `linked`: a linha re-testada está `broken`/`wrong_account`.
+   */
+  async rotateTokenIfUnchanged(linkId: string, oldEncrypted: string, newEncrypted: string, ex: Db = this.db): Promise<boolean> {
+    const { rowCount } = await ex.query(
+      `UPDATE tactiq_link_secrets SET refresh_token_encrypted = $3, updated_at = now()
+        WHERE link_id = $1 AND refresh_token_encrypted = $2`,
+      [linkId, oldEncrypted, newEncrypted],
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
+  /** `broken | wrong_account → linked` (D6). `status_changed_at` anda: reabre os itens bloqueados da 083 (F14). `true` só quando MUDOU. */
+  async reactivate(linkId: string, now: Date, ex: Db = this.db): Promise<boolean> {
+    const { rowCount } = await ex.query(
+      `UPDATE tactiq_links
+          SET status = 'linked', status_changed_at = $2, missing_since = NULL, last_check_at = $2,
+              last_check_outcome = 'ok', last_notified_status = 'linked'
+        WHERE id = $1 AND status IN ('broken', 'wrong_account')`,
+      [linkId, now],
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
   async recordCheck(email: string, outcome: string, now: Date, ex: Db = this.db): Promise<void> {
     await ex.query(`UPDATE tactiq_links SET last_check_at = $2, last_check_outcome = $3 WHERE lower(host_email) = lower($1)`, [email, now, outcome]);
   }
@@ -239,7 +311,7 @@ export class TactiqLinkRepository {
     );
   }
 
-  /** A ÚLTIMA tentativa de vínculo na trilha (`linked` ou `link_rejected`), a mais nova primeiro; sem evento → `null`. */
+  /** A ÚLTIMA tentativa de vínculo na trilha (`linked`, `reactivated` do re-teste ou `link_rejected`); sem evento → `null`. */
   async latestLinkAttempt(
     email: string,
     ex: Db = this.db,
@@ -248,7 +320,7 @@ export class TactiqLinkRepository {
       `SELECT kind, outcome, reason, ref, at FROM admission_events
         WHERE lower(host_email) = lower($1) AND kind = ANY($2::text[])
         ORDER BY at DESC, id DESC LIMIT 1`,
-      [email, ['tactiq_link.linked', 'tactiq_link.link_rejected']],
+      [email, ['tactiq_link.linked', 'tactiq_link.link_rejected', 'tactiq_link.reactivated']],
     );
     return rows[0] ?? null;
   }

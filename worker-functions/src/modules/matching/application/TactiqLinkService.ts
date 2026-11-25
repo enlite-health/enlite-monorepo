@@ -8,13 +8,14 @@ import { SystemNotificationPublisher } from '@modules/inapp-notification/applica
 import { TactiqLinkRepository } from '../infrastructure/TactiqLinkRepository';
 import { ChromeReportRepository } from '../infrastructure/ChromeReportRepository';
 import type { ExtensionState } from '../domain/chromeExtensionState';
-import { isSeatCause } from '../domain/tactiqRecheck';
+import { CONSENT_SCOPE_FROZEN, effectiveScopeHasDetails, isRecheckable, isSeatCause } from '../domain/tactiqRecheck';
 import { hashState, newOAuthState, newPkcePair } from '../infrastructure/tactiq/pkce';
 import {
   denyReason,
   sanitizeAccessTitle,
   sanitizeScopeList,
   type AccessVerdict,
+  type BrokenSource,
   TactiqInvalidGrantError,
   TactiqTransientError,
   TactiqUnauthorizedError,
@@ -93,6 +94,9 @@ export interface TactiqCheckSummary {
   ok: number;
   broken: number;
   transient: number;
+  /** Linhas `broken`/`wrong_account` re-testadas nesta rodada (F2) e as que voltaram a `linked`. */
+  rechecked: number;
+  reactivated: number;
   notified: number;
   alarms: number;
 }
@@ -114,6 +118,8 @@ export interface TactiqLinkServiceDeps {
   clientId?: () => string | null;
   log?: AdmissionLogger;
   now?: () => Date;
+  /** Escopo congelado no consentimento (design D5). Padrão: `CONSENT_SCOPE_FROZEN`; o teste injeta os dois valores. */
+  consentScopeFrozen?: boolean;
 }
 
 /** Chave da trava por responsável: e-mail em minúsculas, sem nunca ir para log, erro ou trilha. */
@@ -182,7 +188,7 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
   }
 
   /**
-   * Só a ÚLTIMA tentativa conta: `linked` mais novo limpa a negativa. `exchange_failed` e `ping_transient` não são orientação de
+   * Só a ÚLTIMA tentativa conta: `linked` ou `reactivated` (re-teste diário) mais novo limpa a negativa. `exchange_failed` e `ping_transient` não são orientação de
    * acesso (a tela mostra o banner genérico) → `null`. Sem e-mail, sem token: só reason, título sanitizado e data.
    */
   private async accessDenialOf(email: string): Promise<OwnAccessDenial | null> {
@@ -325,7 +331,7 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
         accessToken = await this.refreshAndRotate(email, link.refresh_token_encrypted);
       } catch (err) {
         if (err instanceof TactiqInvalidGrantError) {
-          await this.markBroken(email, 'invalid_grant');
+          await this.markBroken(email, 'invalid_grant', 'import');
           return { ok: false, reason: 'broken' };
         }
         this.log.warn({ linkId: link.id, reason: (err as { reason?: string })?.reason ?? 'unexpected' }, 'admission.tactiq_link.token_transient');
@@ -362,23 +368,39 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
   }
 
   /** O Tactiq recusou o token (401/403) durante a importação: o vínculo caiu. `true` só quando MUDOU (uma transição, um aviso). */
-  async markBroken(email: string, outcome: 'invalid_grant' | 'unauthorized' = 'unauthorized'): Promise<boolean> {
+  async markBroken(
+    email: string,
+    outcome: 'invalid_grant' | 'unauthorized' = 'unauthorized',
+    source?: BrokenSource,
+  ): Promise<boolean> {
     const now = this.now();
     if (!(await this.repo.degrade(email, 'broken', outcome, now))) return false;
-    await this.repo.appendEvent({ email, kind: 'tactiq_link.broken', outcome: 'broken', reason: outcome, at: now });
+    await this.repo.appendEvent({
+      email, kind: 'tactiq_link.broken', outcome: 'broken', reason: outcome, at: now, ...(source ? { ref: { source } } : {}),
+    });
     await this.noticeOnTransition(email, 'broken');
     return true;
   }
 
   // ── o teste diário ─────────────────────────────────────────────────────────────────────────────────
   async runDailyCheck(): Promise<TactiqCheckSummary> {
-    const summary: TactiqCheckSummary = { rosterHosts: 0, pinged: 0, ok: 0, broken: 0, transient: 0, notified: 0, alarms: 0 };
+    const summary: TactiqCheckSummary = {
+      rosterHosts: 0, pinged: 0, ok: 0, broken: 0, transient: 0, rechecked: 0, reactivated: 0, notified: 0, alarms: 0,
+    };
 
     for (const link of await this.repo.listLinkedWithToken()) {
       const verdict = await this.checkOne(link);
       if (verdict === 'busy') continue; // responsável ocupado (ou sem vínculo vivo agora): não pingou, não rebaixa, não grava nada; amanhã
       summary.pinged += 1;
       summary[verdict] += 1;
+    }
+
+    for (const link of await this.repo.listRecheckableWithToken()) {
+      if (!isRecheckable({ status: link.status, lastDegrade: link.lastDegrade })) continue;
+      const result = await this.recheckOne(link);
+      if (result === 'busy') continue;
+      summary.rechecked += 1;
+      if (result === 'reactivated') summary.reactivated += 1;
     }
 
     const roster = await this.repo.listActiveRoster();
@@ -418,7 +440,9 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
           const cause =
             err instanceof TactiqUnauthorizedError && err.cause.kind !== 'unspecified' ? denyReason(err.cause) : outcome;
           if (await this.repo.degrade(email, 'broken', outcome, now)) {
-            await this.repo.appendEvent({ email, kind: 'tactiq_link.broken', outcome: 'broken', reason: cause, at: now });
+            await this.repo.appendEvent({
+              email, kind: 'tactiq_link.broken', outcome: 'broken', reason: cause, at: now, ref: { source: 'daily_check' },
+            });
           }
           this.log.warn({ linkId: link.id, outcome, cause }, 'admission.tactiq_link.broken');
           return 'broken';
@@ -430,6 +454,88 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
       }
     });
     return locked.acquired && locked.value !== 'skipped' ? locked.value : 'busy';
+  }
+
+  /**
+   * Re-teste de uma linha `broken`/`wrong_account` com token (F2, design D4-D6), na trava do host. A renovação rotaciona o refresh: o novo
+   * entra por compare-and-swap sobre o segredo lido (um revínculo concorrente vence, F23). Reativa só com `ready` E escopo efetivo com
+   * `details`; `denied`/`unrecognized`/sem `details` ficam como estão; token morto sai do re-teste (`recheck_dead`); rede/KMS tenta amanhã.
+   */
+  private async recheckOne(link: {
+    id: string;
+    host_email: string;
+    status: string;
+    refresh_token_encrypted: string;
+  }): Promise<'reactivated' | 'kept' | 'dead' | 'superseded' | 'transient' | 'busy'> {
+    const now = this.now();
+    const email = link.host_email;
+    const locked = await withSessionAdvisoryLock(this.db, hostLockKey(email), async () => {
+      let tokens: Awaited<ReturnType<TactiqOAuthPort['refresh']>>;
+      try {
+        const current = await this.cipher.decrypt(link.refresh_token_encrypted);
+        tokens = await this.deps.oauth.refresh(current);
+        if (tokens.refreshToken && tokens.refreshToken !== current) {
+          const enc = await this.cipher.encrypt(tokens.refreshToken);
+          if (enc && !(await this.repo.rotateTokenIfUnchanged(link.id, link.refresh_token_encrypted, enc))) {
+            this.log.warn({ linkId: link.id }, 'admission.tactiq_link.recheck_superseded');
+            return 'superseded' as const;
+          }
+        }
+      } catch (err) {
+        const dead =
+          err instanceof TactiqInvalidGrantError
+            ? 'invalid_grant'
+            : err instanceof TactiqUnauthorizedError && err.cause.kind === 'token_endpoint'
+              ? denyReason(err.cause)
+              : null;
+        if (dead) {
+          await this.repo.recordCheck(email, dead, now);
+          await this.repo.appendEvent({ email, kind: 'tactiq_link.recheck_dead', outcome: 'recheck_dead', reason: dead, at: now });
+          this.log.warn({ linkId: link.id }, 'admission.tactiq_link.recheck_dead');
+          return 'dead' as const;
+        }
+        return this.recheckTransient(link.id, email, now, err);
+      }
+
+      let verdict: AccessVerdict;
+      try {
+        verdict = await this.deps.mcp.ping(tokens.accessToken);
+      } catch (err) {
+        if (err instanceof TactiqUnauthorizedError) {
+          await this.repo.recordCheck(email, 'unauthorized', now);
+          return 'kept' as const;
+        }
+        return this.recheckTransient(link.id, email, now, err);
+      }
+      if (verdict.kind !== 'ready') {
+        await this.repo.recordCheck(email, verdict.kind, now);
+        return 'kept' as const;
+      }
+      const refreshScope = sanitizeScopeList(tokens.scope)?.join(' ');
+      const hasDetails = effectiveScopeHasDetails({
+        refreshScope,
+        lastLinkScope: await this.repo.lastLinkScope(email),
+        frozen: this.deps.consentScopeFrozen ?? CONSENT_SCOPE_FROZEN,
+      });
+      if (!hasDetails) {
+        await this.repo.recordCheck(email, 'scope_without_details', now);
+        return 'kept' as const;
+      }
+      if (!(await this.repo.reactivate(link.id, now))) return 'kept' as const;
+      await this.repo.appendEvent({
+        email, kind: 'tactiq_link.reactivated', outcome: 'linked', at: now, ref: { from: link.status, ...(refreshScope ? { scope: refreshScope } : {}) },
+      });
+      this.log.info({ linkId: link.id, from: link.status }, 'admission.tactiq_link.reactivated');
+      return 'reactivated' as const;
+    });
+    return locked.acquired ? locked.value : 'busy';
+  }
+
+  /** Rede, 5xx, KMS: não prova nada; registra e tenta amanhã. */
+  private async recheckTransient(linkId: string, email: string, now: Date, err: unknown): Promise<'transient'> {
+    await this.repo.recordCheck(email, 'transient_error', now);
+    this.log.warn({ linkId, reason: (err as { reason?: string })?.reason ?? 'unexpected' }, 'admission.tactiq_link.recheck_transient');
+    return 'transient';
   }
 
   /** Operadora sem linha: o relógio das 48 h nasce AQUI (1ª vez que o sistema a viu sem vínculo), não na criação do roster. */

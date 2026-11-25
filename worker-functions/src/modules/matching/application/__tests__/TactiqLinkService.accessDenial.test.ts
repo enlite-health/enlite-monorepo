@@ -18,10 +18,12 @@ type Attempt = { kind: string; outcome: string | null; reason: string | null; re
  * consulta que decide qual tentativa vale, então ordenar errado tem de reprovar aqui.
  */
 function build(trail: Attempt[]) {
-  const query = jest.fn(async (sql: string) => {
+  const query = jest.fn(async (sql: string, params: unknown[] = []) => {
     if (!sql.includes('admission_events')) return { rows: [] };
     const asc = /ORDER BY at ASC/i.test(sql);
-    const rows = [...trail].sort((x, y) => (asc ? 1 : -1) * (x.at.getTime() - y.at.getTime()));
+    // `kind = ANY($2::text[])`: o banco de mentira também obedece a lista de kinds que a consulta pede (a lista é o que se prova).
+    const wanted = Array.isArray(params[1]) ? (params[1] as string[]) : null;
+    const rows = trail.filter((a) => !wanted || wanted.includes(a.kind)).sort((x, y) => (asc ? 1 : -1) * (x.at.getTime() - y.at.getTime()));
     return { rows: /LIMIT 1/i.test(sql) ? rows.slice(0, 1) : rows };
   });
   const repo = new TactiqLinkRepository({ query } as unknown as Pool);
@@ -42,6 +44,7 @@ const rej = (outcome: string, reason: string, ref: Record<string, unknown> | nul
   kind: 'tactiq_link.link_rejected', outcome, reason, ref, at,
 });
 const linked = (at: Date): Attempt => ({ kind: 'tactiq_link.linked', outcome: 'linked', reason: null, ref: null, at });
+const reactivated = (at: Date): Attempt => ({ kind: 'tactiq_link.reactivated', outcome: 'linked', reason: null, ref: { from: 'broken' }, at });
 
 describe('getOwn.accessDenial', () => {
   it('último link_rejected por acesso → objeto {reason, title, at} (título sanitizado)', async () => {
@@ -65,6 +68,16 @@ describe('getOwn.accessDenial', () => {
   it('`linked` mais novo que a recusa → null', async () => {
     const own = await build([rej('access_denied', 'access_action:upgrade', null, T1), linked(T2)]).service.getOwn(HOST);
     expect(own.accessDenial).toBeNull();
+  });
+
+  it('`link_rejected` depois `reactivated` → null (a reativação do re-teste limpa a negativa, F17)', async () => {
+    const own = await build([rej('access_denied', 'access_action:request_seat', null, T1), reactivated(T2)]).service.getOwn(HOST);
+    expect(own.accessDenial).toBeNull();
+  });
+
+  it('`reactivated` e depois nova recusa → objeto (a ÚLTIMA decide)', async () => {
+    const own = await build([reactivated(T1), rej('access_denied', 'access_action:upgrade', null, T2)]).service.getOwn(HOST);
+    expect(own.accessDenial).toMatchObject({ reason: 'access_action:upgrade', at: T2.toISOString() });
   });
 
   it('recusa mais nova que um `linked` → objeto (a ÚLTIMA decide)', async () => {

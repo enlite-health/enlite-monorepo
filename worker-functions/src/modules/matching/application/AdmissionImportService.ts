@@ -385,7 +385,7 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
   /** 401/403 do MCP derruba o vínculo (e bloqueia); rede/5xx só adia. Nunca o corpo nem a mensagem do erro. */
   private async mcpFailure(a: S, err: unknown, where: string, now: Date): Promise<ImportOutcome> {
     if (err instanceof TactiqUnauthorizedError) {
-      await this.deps.tokens.markBroken(a.host_email);
+      await this.deps.tokens.markBroken(a.host_email, 'unauthorized', 'import');
       if (await this.setBlocked(a, 'no_link', now)) {
         this.log.error({ [this.naming.idKey]: a.id, reason: 'unauthorized', where }, `${this.naming.prefix}.import_blocked`);
       }

@@ -587,14 +587,17 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       expect(n[0].payload).toEqual({ reason: 'wrong_account' });
       await service.runDailyCheck();
       expect(await sino(h.uid)).toHaveLength(1);
-      expect((await service.statesFor([h.email])).get(h.email)).toBe('wrong_account');
+      // F2 (tactiq-vinculo-resiliente D3/D5/D6): `wrong_account` com token é re-testável; sem escopo gravado vale só o `ready` (dublê: ready)
+      // → o teste diário reativa sozinho. A reativação não gera aviso novo (continua 1 no sino).
+      expect((await service.statesFor([h.email])).get(h.email)).toBe('linked');
+      expect((await eventKinds(h.email)).map((e) => e.kind)).toContain('tactiq_link.reactivated');
     });
 
     it('rota interna POST /api/internal/jobs/admission-tactiq-check → 200 só com contagens (nada de token, e-mail ou nome)', async () => {
       const h = await newHost({ link: { status: 'linked' } });
       const res = await http('POST', '/api/internal/jobs/admission-tactiq-check', null);
       expect(res.status).toBe(200);
-      expect(Object.keys(res.body.data).sort()).toEqual(['alarms', 'broken', 'notified', 'ok', 'pinged', 'rosterHosts', 'transient']);
+      expect(Object.keys(res.body.data).sort()).toEqual(['alarms', 'broken', 'notified', 'ok', 'pinged', 'reactivated', 'rechecked', 'rosterHosts', 'transient']);
       expect(res.body.data.pinged).toBeGreaterThanOrEqual(1);
       expect(JSON.stringify(res.body)).not.toContain(h.email);
       expect(JSON.stringify(res.body)).not.toContain('rt-');
@@ -764,6 +767,6 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (F4:
     expect([401, 403]).toContain(denied.status);
     const ok = await call('POST', '/api/internal/jobs/admission-tactiq-check', null, { 'X-Internal-Secret': 'test-secret-for-e2e-only' });
     expect(ok.status).toBe(200);
-    expect(Object.keys(ok.body.data).sort()).toEqual(['alarms', 'broken', 'notified', 'ok', 'pinged', 'rosterHosts', 'transient']);
+    expect(Object.keys(ok.body.data).sort()).toEqual(['alarms', 'broken', 'notified', 'ok', 'pinged', 'reactivated', 'rechecked', 'rosterHosts', 'transient']);
   });
 });
