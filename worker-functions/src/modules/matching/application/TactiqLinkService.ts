@@ -672,7 +672,10 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
       const state: TactiqLinkState = row ? row.status : 'missing';
       if (state === 'linked') continue;
 
-      if (await this.noticeOnTransition(host.email, state, row?.firebase_uid ?? null)) summary.notified += 1;
+      // F5 (D16): sem linha e sem licença declarada a tela esconde o botão ("vinculá" não tem onde clicar): o aviso `missing` ao host
+      // NÃO sai e o episódio NÃO é carimbado — depois da declaração o comportamento é o de sempre. Dono da regra: `canStartLink`.
+      const startable = canStartLink({ hasRow: row !== null, seatDeclared: row ? false : await this.repo.seatDeclared(host.email) });
+      if (startable && (await this.noticeOnTransition(host.email, state, row?.firebase_uid ?? null))) summary.notified += 1;
       if (await this.alarmIfStale(host.id, host.email, state, row)) summary.alarms += 1;
     }
 

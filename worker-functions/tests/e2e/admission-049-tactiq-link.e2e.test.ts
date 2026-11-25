@@ -497,15 +497,24 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       ]);
     });
 
-    it('A4-4: operadora do roster SEM vínculo (nunca teve linha) → 1 aviso `missing` por transição, não a cada rodada; o evento `missing` e o `notified` ficam na trilha', async () => {
+    it('A4-4 (F5, D16): operadora do roster SEM vínculo e SEM licença declarada → silêncio: 0 aviso `missing` ao host e nenhum carimbo `notified`; só o evento `missing` (relógio das 48 h)', async () => {
       const h = await newHost();
+      await service.runDailyCheck();
+      await service.runDailyCheck();
+      expect(await sino(h.uid)).toHaveLength(0);
+      expect(await eventKinds(h.email)).toEqual([{ kind: 'tactiq_link.missing', reason: null }]);
+    });
+
+    it('A4-4: operadora do roster SEM vínculo (nunca teve linha) e com a licença declarada → 1 aviso `missing` por transição, não a cada rodada; o evento `missing` e o `notified` ficam na trilha', async () => {
+      const h = await newHost();
+      await declareTactiqSeat(admin, h.email); // F5 (D16): sem licença declarada o aviso `missing` não sai
       await service.runDailyCheck();
       await service.runDailyCheck();
       await service.runDailyCheck();
       const n = await sino(h.uid);
       expect(n).toHaveLength(1);
       expect(n[0].payload).toEqual({ reason: 'missing' });
-      expect((await eventKinds(h.email)).map((e) => e.kind)).toEqual(['tactiq_link.missing', 'tactiq_link.notified']);
+      expect((await eventKinds(h.email)).map((e) => e.kind)).toEqual(['tactiq_link.seat_declared', 'tactiq_link.missing', 'tactiq_link.notified']);
     });
 
     it('A4-4: operadora do roster SEM USUÁRIO → nada no sino e NÃO carimba (avisa quando o usuário existir); o evento `missing` nasce (relógio das 48 h)', async () => {
@@ -513,6 +522,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       await service.runDailyCheck();
       expect(await eventKinds(h.email)).toEqual([{ kind: 'tactiq_link.missing', reason: null }]);
       // o usuário aparece depois → o próximo teste diário avisa (1×)
+      await declareTactiqSeat(admin, h.email); // F5 (D16): o aviso `missing` só sai com a licença declarada
       await admin.query(`INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES ($1,$2,'admin','ACTIVE',true,$3)`, [`tq049-late-${RUN}-${seq}`, h.email, TENANT_E2E]);
       hostUids.push(`tq049-late-${RUN}-${seq}`);
       await service.runDailyCheck();

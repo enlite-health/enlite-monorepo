@@ -28,7 +28,7 @@ const brokenRow = (): TactiqLinkRow => ({
   last_check_outcome: 'unauthorized', status_changed_at: new Date('2026-11-01T00:00:00Z'), last_notified_status: null, missing_since: null,
 });
 
-function build(o: { row?: boolean; lastLinkScope?: string | null; masters?: string[]; frozen?: boolean; roster?: boolean } = {}) {
+function build(o: { row?: boolean; lastLinkScope?: string | null; masters?: string[]; frozen?: boolean; roster?: boolean; claimMissing?: boolean } = {}) {
   const events: Ev[] = [];
   let tick = 0;
   const last = (kinds: string[]) => [...events].reverse().find((e) => kinds.includes(e.kind));
@@ -59,7 +59,7 @@ function build(o: { row?: boolean; lastLinkScope?: string | null; masters?: stri
       o.row ? [{ id: 'link-1', host_email: HOST, status: 'broken', refresh_token_encrypted: 'enc-old', lastDegrade: { kind: 'tactiq_link.broken', reason: 'access_action:request_seat', source: 'link' } }] : []),
     listActiveRoster: jest.fn(async () => (o.roster ? [{ id: 'h1', email: HOST, country: 'AR' }] : [])),
     firstEventAt: jest.fn(async () => new Date()),
-    claimMissingNotification: jest.fn().mockResolvedValue(false),
+    claimMissingNotification: jest.fn().mockResolvedValue(o.claimMissing ?? false),
     claimNotification: jest.fn().mockResolvedValue(false),
     rotateTokenIfUnchanged: jest.fn().mockResolvedValue(true),
     recordCheck: jest.fn().mockResolvedValue(undefined),
@@ -230,5 +230,36 @@ describe('T506 — legado (D0.b): `seat_arrived` 1× por episódio, host `seat_r
     const s = await t.service.runDailyCheck();
     expect(s).toMatchObject({ rechecked: 1, reactivated: 1 }); // sem congelamento vale só o ready (F2)
     expect(t.events.some((e) => e.kind === 'tactiq_link.seat_arrived')).toBe(false);
+  });
+});
+
+describe('F5 (D16) — o aviso `missing` ao host do teste diário só sai quando `canStartLink`', () => {
+  const missingToHost = (p: Array<Record<string, unknown>>) => p.filter((x) => x.reason === 'missing');
+
+  it('sem linha e SEM declaração → 0 aviso `missing` ao host e nenhum carimbo (nem claim, nem evento `notified`)', async () => {
+    const t = build({ roster: true, claimMissing: true });
+    const s = await t.service.runDailyCheck();
+    expect(missingToHost(t.published)).toEqual([]);
+    expect(t.repo.claimMissingNotification).not.toHaveBeenCalled();
+    expect(t.events.filter((e) => e.kind === 'tactiq_link.notified' && e.reason === 'missing')).toEqual([]);
+    expect(s.notified).toBe(0);
+  });
+
+  it('sem linha e declarado → 1 aviso `missing` ao host, carimbado como hoje', async () => {
+    const t = build({ roster: true, claimMissing: true });
+    await declare(t, true);
+    const s = await t.service.runDailyCheck();
+    expect(missingToHost(t.published)).toEqual([{ recipientUid: HOST_UID, reason: 'missing' }]);
+    expect(t.repo.claimMissingNotification).toHaveBeenCalledTimes(1);
+    expect(t.events.filter((e) => e.kind === 'tactiq_link.notified' && e.reason === 'missing')).toHaveLength(1);
+    expect(s.notified).toBe(1);
+  });
+
+  it('com linha `broken` (legado, sem declaração) → o aviso de hoje (claimNotification), sem depender da declaração', async () => {
+    const t = build({ roster: true, row: true, lastLinkScope: OWN });
+    t.repo.claimNotification.mockResolvedValue(true);
+    await t.service.runDailyCheck();
+    expect(t.repo.claimNotification).toHaveBeenCalledTimes(1);
+    expect(t.published.filter((x) => x.audience === 'host' && x.recipientUid === HOST_UID)).not.toHaveLength(0);
   });
 });
