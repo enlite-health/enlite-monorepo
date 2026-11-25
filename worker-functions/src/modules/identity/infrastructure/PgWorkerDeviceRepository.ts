@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import type { ActiveWorkerDevice } from '../domain/WorkerDevice';
 import type {
+  RegisteredDevice,
   RegisterDeviceRecord,
   RevokedDeviceView,
   WorkerDeviceRepository,
@@ -14,16 +15,18 @@ import type {
 export class PgWorkerDeviceRepository implements WorkerDeviceRepository {
   constructor(private readonly pool: Pick<Pool, 'connect' | 'query'>) {}
 
-  async registerReplacingActive(record: RegisterDeviceRecord): Promise<{ deviceId: string; replacedDeviceId: string | null }> {
+  async registerReplacingActive(record: RegisterDeviceRecord): Promise<RegisteredDevice> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
-      const replaced = await client.query<{ id: string }>(
+      // `other_device` sai do PRÓPRIO UPDATE que revoga (nunca de leitura separada): só é true se a linha desligada era
+      // de OUTRA instalação. A comparação é no banco, entre UUIDs (maiúscula/minúscula do app não conta).
+      const replaced = await client.query<{ id: string; other_device: boolean }>(
         `UPDATE worker_devices
             SET status = 'revogado', revoked_at = NOW(), revoked_reason = 'substituido'
           WHERE worker_id = $1 AND status = 'ativo'
-          RETURNING id`,
-        [record.workerId],
+          RETURNING id, installation_id <> $2::uuid AS other_device`,
+        [record.workerId, record.installationId],
       );
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO worker_devices (worker_id, installation_id, public_key, fcm_token_enc)
@@ -31,7 +34,11 @@ export class PgWorkerDeviceRepository implements WorkerDeviceRepository {
         [record.workerId, record.installationId, record.publicKey, record.fcmTokenEnc],
       );
       await client.query('COMMIT');
-      return { deviceId: inserted.rows[0].id, replacedDeviceId: replaced.rows[0]?.id ?? null };
+      return {
+        deviceId: inserted.rows[0].id,
+        replacedDeviceId: replaced.rows[0]?.id ?? null,
+        replacedPrevious: replaced.rows.some((r) => r.other_device === true),
+      };
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw error;

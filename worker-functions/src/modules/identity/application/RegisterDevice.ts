@@ -24,7 +24,8 @@ export class RegisterDevice {
     private readonly cipher: TokenCipher,
   ) {}
 
-  async execute(input: RegisterDeviceInput): Promise<Result<{ deviceId: string }>> {
+  /** `replacedPrevious`: este registro desligou outro aparelho ativo da cuidadora (o app mostra o aviso "celular novo"). */
+  async execute(input: RegisterDeviceInput): Promise<Result<{ deviceId: string; replacedPrevious: boolean }>> {
     if (!isUuid(input.workerId)) return Result.fail('INVALID_WORKER_ID');
     if (!isInstallationId(input.installationId)) return Result.fail('INVALID_INSTALLATION_ID');
     if (typeof input.publicKey !== 'string' || input.publicKey.length === 0 || input.publicKey.length > MAX_PUBLIC_KEY_LENGTH) {
@@ -36,13 +37,13 @@ export class RegisterDevice {
     }
     try {
       const fcmTokenEnc = token === null ? null : await this.cipher.encrypt(token);
-      const { deviceId } = await this.devices.registerReplacingActive({
+      const { deviceId, replacedPrevious } = await this.devices.registerReplacingActive({
         workerId: input.workerId,
         installationId: input.installationId,
         publicKey: input.publicKey,
         fcmTokenEnc,
       });
-      return Result.ok({ deviceId });
+      return Result.ok({ deviceId, replacedPrevious });
     } catch (error) {
       // 23505 aqui = outro registro da mesma cuidadora ganhou a corrida; o app repete. Sem mensagem do driver (pode ecoar valor).
       const code = (error as { code?: string }).code;

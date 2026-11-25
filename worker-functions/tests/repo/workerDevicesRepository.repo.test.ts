@@ -64,4 +64,42 @@ describe('PgWorkerDeviceRepository (Postgres real)', () => {
     expect(second).toEqual(first);
     expect(await repo.confirmWipe(workerId, crypto.randomUUID())).toBe(false);
   });
+
+  describe('replacedPrevious (aviso "celular novo", D795) — vem do UPDATE da transação', () => {
+    let otherWorker: string;
+    beforeAll(async () => {
+      const uid = `repo-dev-rp-${crypto.randomUUID()}`;
+      const w = await pool.query<{ id: string }>(`INSERT INTO workers (auth_uid, email) VALUES ($1, $2) RETURNING id`, [uid, `${uid}@enlite.test`]);
+      otherWorker = w.rows[0].id;
+    });
+    afterAll(async () => {
+      await pool.query(`DELETE FROM workers WHERE id = $1`, [otherWorker]);
+    });
+    const regOther = (installationId: string) =>
+      repo.registerReplacingActive({ workerId: otherWorker, installationId, publicKey: 'pk', fcmTokenEnc: null });
+
+    it('primeiro aparelho da cuidadora -> false', async () => {
+      const first = await regOther(crypto.randomUUID());
+      expect(first.replacedPrevious).toBe(false);
+      expect(first.replacedDeviceId).toBeNull();
+    });
+
+    it('aparelho novo com o antigo ativo -> true, e o antigo fica revogado por substituição', async () => {
+      const old = await repo.findActive(otherWorker);
+      const next = await regOther(crypto.randomUUID());
+      expect(next.replacedPrevious).toBe(true);
+      const row = (await pool.query(`SELECT status, revoked_reason FROM worker_devices WHERE id = $1`, [old!.deviceId])).rows[0];
+      expect(row).toEqual({ status: 'revogado', revoked_reason: 'substituido' });
+      expect((await repo.findActive(otherWorker))?.deviceId).toBe(next.deviceId);
+    });
+
+    it('o MESMO aparelho registrando de novo (mesmo installationId, até em maiúsculas) -> false', async () => {
+      const active = await repo.findActive(otherWorker);
+      const again = await regOther(active!.installationId.toUpperCase());
+      expect(again.replacedPrevious).toBe(false);
+      expect(again.replacedDeviceId).toBe(active!.deviceId); // o tratamento de antes se mantém: a linha velha é trocada
+      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM worker_devices WHERE worker_id = $1 AND status = 'ativo'`, [otherWorker]);
+      expect(rows[0].n).toBe(1);
+    });
+  });
 });

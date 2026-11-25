@@ -4,10 +4,11 @@
  */
 import express from 'express';
 import request from 'supertest';
+import { RegisterDevice } from '../RegisterDevice';
 import { RevokeDevice } from '../RevokeDevice';
 import { PgWorkerDeviceRepository } from '../../infrastructure/PgWorkerDeviceRepository';
 import { FirebaseSessionRevoker } from '../../infrastructure/FirebaseSessionRevoker';
-import { createAdminWorkerDeviceRoutes } from '../../interfaces/workerDeviceRoutes';
+import { createAdminWorkerDeviceRoutes, createWorkerDeviceServiceRoutes } from '../../interfaces/workerDeviceRoutes';
 import { WorkerDeviceController } from '../../interfaces/controllers/WorkerDeviceController';
 import { PermissionMiddleware } from '../../interfaces/middleware/PermissionMiddleware';
 import type { PermissionClient, ResolvedAuthz } from '@modules/identity/permissions';
@@ -113,4 +114,23 @@ describe('T-F3c-DB-11 aparelho da cuidadora', () => {
     await request(app).post(`/api/admin/workers/${WORKER}/device/revoke`).expect(200);
     expect(repo.revokeActive).toHaveBeenCalledWith(WORKER, 'op-1');
   });
+
+  it.each([true, false])(
+    'T-F3c-DB-11 registrar devolve replacedPrevious=%s do repositório, pelo caso de uso e pela rota de serviço',
+    async (replacedPrevious) => {
+      const repo = repoStub({
+        registerReplacingActive: jest.fn().mockResolvedValue({ deviceId: 'novo', replacedDeviceId: replacedPrevious ? 'velho' : null, replacedPrevious }),
+      });
+      const register = new RegisterDevice(repo, cipher);
+      const res = await register.execute({ workerId: WORKER, installationId: INSTALLATION, publicKey: 'pk' });
+      expect(res.getValue()).toEqual({ deviceId: 'novo', replacedPrevious });
+
+      const app = express();
+      app.use(express.json());
+      const pass: express.RequestHandler = (_req, _res, next) => next();
+      app.use('/v1', createWorkerDeviceServiceRoutes(pass, new WorkerDeviceController({ register } as never)));
+      const http = await request(app).post(`/v1/workers/${WORKER}/device`).send({ installationId: INSTALLATION, publicKey: 'pk' }).expect(201);
+      expect(http.body).toEqual({ success: true, data: { deviceId: 'novo', replacedPrevious } });
+    },
+  );
 });

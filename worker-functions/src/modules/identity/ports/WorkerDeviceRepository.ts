@@ -14,10 +14,21 @@ export interface RevokedDeviceView {
   fcmTokenEnc: string | null;
 }
 
+export interface RegisteredDevice {
+  deviceId: string;
+  /** Linha que este registro revogou (inclusive a do MESMO aparelho re-registrando); `null` = não havia ativo. */
+  replacedDeviceId: string | null;
+  /**
+   * `true` só se este registro desligou o ativo de OUTRA instalação da mesma cuidadora (celular novo, D795).
+   * `false` = não havia ativo, ou é o mesmo aparelho re-registrando. Vem do UPDATE da própria transação.
+   */
+  replacedPrevious: boolean;
+}
+
 /** Porta de persistência de `worker_devices`. A regra "um ativo por cuidadora" mora no banco; aqui só se a usa. */
 export interface WorkerDeviceRepository {
   /** UMA transação: revoga o ativo anterior (motivo `substituido`) e insere o novo ativo. */
-  registerReplacingActive(record: RegisterDeviceRecord): Promise<{ deviceId: string; replacedDeviceId: string | null }>;
+  registerReplacingActive(record: RegisterDeviceRecord): Promise<RegisteredDevice>;
   findActive(workerId: string): Promise<ActiveWorkerDevice | null>;
   /** Marca o ativo como revogado por operador. `null` = não havia aparelho ativo. */
   revokeActive(workerId: string, operatorUid: string): Promise<RevokedDeviceView | null>;
