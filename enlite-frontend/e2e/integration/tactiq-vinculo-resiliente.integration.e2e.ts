@@ -188,7 +188,9 @@ test.describe('admissao-083 — tactiq-vinculo-resiliente: perfil, sino e Entrev
       meetingAt: MEETING_AT, deadlineAt: DEADLINE_AT, stage: 'expired', kind: 'admission', reason: 'not_recorded', audience: 'host',
     });
     const item = await abrirSinoNoItem(page, id);
-    await expect(item).toContainText(ES.notifications.importBlocked.notRecorded.title);
+    // O cartão não renderiza o título: ele vai só no `aria-label` ("título. corpo", `notificationTypeRegistry.buildText`).
+    const tituloEscapado = ES.notifications.importBlocked.notRecorded.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    await expect(item).toHaveAttribute('aria-label', new RegExp(`^${tituloEscapado}\\.`));
     const corpo = item.getByTestId(`notification-excerpt-${id}`);
     const pedacos = pedacosFixos(ES.notifications.importBlocked.notRecorded.body);
     expect(pedacos.length).toBeGreaterThan(1); // controle positivo: o modelo do JSON foi lido

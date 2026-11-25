@@ -299,6 +299,11 @@ test.describe('admissao-049 — vínculo Tactiq do operador: vincular, volta do 
     }
     psql(`INSERT INTO tactiq_links (host_email, firebase_uid, status, linked_at, last_check_at, last_check_outcome)
           VALUES ('${jaVinculada.email}', '${jaVinculada.uid}', 'linked', now() - interval '3 days', now() - interval '2 hours', 'ok')`);
+    // F5 (D16, change tactiq-vinculo-resiliente): quem NUNCA vinculou só vê o botão "Vincular Tactiq" com a licença DECLARADA na trilha
+    // (`canStartLink`). A declaração é o evento que `TactiqLinkService.declareSeat` grava. A trilha é só-acréscimo (trigger, migration 504): o
+    // evento não se apaga no `afterAll`; o e-mail com RUN_ID isola esta rodada.
+    psql(`INSERT INTO admission_events (host_email, kind, outcome, ref, at)
+          VALUES ('${vinculadora.email}', 'tactiq_link.seat_declared', 'declared', '{"actorUid":"system-e2e-049-tq-${RUN_ID}"}'::jsonb, now() - interval '1 hour')`);
   });
 
   test.afterAll(() => {

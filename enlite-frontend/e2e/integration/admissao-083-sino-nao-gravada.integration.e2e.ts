@@ -99,7 +99,8 @@ test.describe('admissao-083 — sino: reunião que não foi gravada no Tactiq (t
     expect(psql(`SELECT payload->>'reason' FROM notification_events e JOIN notifications n ON n.event_id = e.id WHERE n.id = '${id}'`).trim()).toBe('not_recorded');
 
     const item = await abrirSinoNoItem(page, id, 'es');
-    await expect(item).toContainText('Esta entrevista no quedó grabada en Tactiq');
+    // O cartão não renderiza o título: ele vai só no `aria-label` ("título. corpo", `notificationTypeRegistry.buildText`).
+    await expect(item).toHaveAttribute('aria-label', /^Esta entrevista no quedó grabada en Tactiq\./);
     await expect(item.getByTestId(`notification-excerpt-${id}`)).toContainText(
       'Tu reunión de admisión del 4 de nov. a las 14:00 no quedó grabada en Tactiq, así que no hay transcripción ni resumen.',
     );
@@ -113,7 +114,7 @@ test.describe('admissao-083 — sino: reunião que não foi gravada no Tactiq (t
   test('feliz pt-BR: o mesmo aviso em português, enquadre', async ({ page }, testInfo) => {
     const id = semearAviso({ stage: 'expired', kind: 'enquadre', reason: 'not_recorded', audience: 'host' });
     const item = await abrirSinoNoItem(page, id, 'pt-BR');
-    await expect(item).toContainText('Esta entrevista não foi gravada no Tactiq');
+    await expect(item).toHaveAttribute('aria-label', /^Esta entrevista não foi gravada no Tactiq\./);
     await expect(item.getByTestId(`notification-excerpt-${id}`)).toContainText(
       'A sua entrevista de enquadre de 4 de nov. às 14:00 não foi gravada no Tactiq, então não há transcrição nem resumo.',
     );

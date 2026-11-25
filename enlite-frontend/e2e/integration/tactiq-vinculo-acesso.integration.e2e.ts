@@ -18,12 +18,16 @@
  * `integration-e2e-group-simulation` do `_frontend-integration.yml` (o grep casa também com o título; o `pr-gate.yml` roda com o engine OFF).
  * Eventos `tactiq_link.*` NUNCA se apagam (trigger append-only, migration 504): o e-mail com RUN_ID isola cada rodada.
  */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
 import { seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, ABAC_TENANT, safeSql, psql } from '../helpers/abac-stack-helper';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const PERFIL = '/admin/mi-cuenta';
 const TITULO = 'Plan sin acceso a resúmenes';
+/** O texto da orientação de assento vem do `es.json` REAL (F3 trocou `accessSeat` por `seatAuto|seatWait|seatAskAdmin`; sem aviso ao administrador na seed → `seatAskAdmin`). */
+const SEAT_ASK_ADMIN = (JSON.parse(readFileSync(fileURLToPath(new URL('../../src/infrastructure/i18n/locales/es.json', import.meta.url)), 'utf8')) as { admin: { tactiqLink: { seatAskAdmin: string } } }).admin.tactiqLink.seatAskAdmin;
 
 test.describe('admissao-049 — vínculo Tactiq: orientação de acesso negado a partir do estado salvo (tela) @integration', () => {
   test.describe.configure({ mode: 'serial' });
@@ -71,15 +75,16 @@ test.describe('admissao-049 — vínculo Tactiq: orientação de acesso negado a
     await expect(page).toHaveURL(new RegExp(`${PERFIL}$`));
     const caixa = page.getByTestId('tactiq-access-denial');
     await expect(caixa).toBeVisible({ timeout: 30_000 });
-    await expect(caixa).toContainText('no tiene un asiento del plan del equipo Enlite');
+    await expect(caixa).toContainText(SEAT_ASK_ADMIN);
     await expect(caixa).toContainText('Ana Joulie, Javier o Marcel');
+    expect((await caixa.innerText()).replace(/\s+/g, ' '), 'a orientação de assento não manda vincular').not.toMatch(/vincular/i);
     await expect(page.getByTestId('tactiq-banner-error')).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText('request_seat');
     await expect(page.locator('body')).not.toContainText('access_action');
     await page.screenshot({ path: testInfo.outputPath('1-acesso-assento.png') });
 
     await page.reload(); // URL sem query: o texto vem do estado salvo
-    await expect(page.getByTestId('tactiq-access-denial')).toContainText('no tiene un asiento del plan del equipo Enlite', { timeout: 30_000 });
+    await expect(page.getByTestId('tactiq-access-denial')).toContainText(SEAT_ASK_ADMIN, { timeout: 30_000 });
   });
 
   test('alt 1: negativa genérica com título + ?tactiq=error → orientação com o título como texto, sem banner genérico nem código', async ({ page }, testInfo) => {
@@ -100,7 +105,7 @@ test.describe('admissao-049 — vínculo Tactiq: orientação de acesso negado a
     await page.goto(PERFIL);
     await expect(page.getByTestId('tactiq-state')).toHaveText('Vinculado', { timeout: 30_000 }); // controle positivo: a tela carregou o estado
     await expect(page.getByTestId('tactiq-access-denial')).toHaveCount(0);
-    await expect(page.locator('body')).not.toContainText('asiento del plan');
+    await expect(page.locator('body')).not.toContainText(SEAT_ASK_ADMIN);
     await page.screenshot({ path: testInfo.outputPath('3-acesso-resolvida.png') });
   });
 });
