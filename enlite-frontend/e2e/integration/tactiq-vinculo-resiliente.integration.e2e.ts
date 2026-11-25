@@ -58,6 +58,8 @@ const operadora = mk('operadora'); // sino + Master de Entrevistadores
 const hostF5 = mk('hostf5');
 const todos = [auto, espera, pedeAdmin, operadora, hostF5];
 const HOST_F5_NOME = `Host Licencia ${RUN_ID}`;
+/** O nome que a TELA mostra (e que nomeia o checkbox) é o do usuário (`users.display_name`, semeado por `seedStaffInGroup`), que vence o da linha de `interview_hosts`. */
+const HOST_F5_NOME_NA_TELA = `E2E ${hostF5.uid}`;
 
 const grupos: Record<string, string> = {};
 let hostF5RowId = '';
@@ -245,7 +247,7 @@ test.describe('admissao-083 — tactiq-vinculo-resiliente: perfil, sino e Entrev
       await expect(master.getByRole('heading', { name: ES.interviewHosts.title })).toBeVisible({ timeout: 30_000 });
       const linha = master.getByRole('row').filter({ hasText: hostF5.email });
       await expect(linha).toBeVisible({ timeout: 15_000 });
-      const caixa = linha.getByRole('checkbox', { name: ES.interviewHosts.seatLabel.replace('{{name}}', HOST_F5_NOME) });
+      const caixa = linha.getByRole('checkbox', { name: ES.interviewHosts.seatLabel.replace('{{name}}', HOST_F5_NOME_NA_TELA) });
       await expect(caixa).not.toBeChecked(); // controle: a licença começa NÃO declarada
       await caixa.click();
       await expect(caixa).toBeChecked({ timeout: 15_000 });
@@ -258,7 +260,7 @@ test.describe('admissao-083 — tactiq-vinculo-resiliente: perfil, sino e Entrev
       ).toBe('tactiq_link.seat_declared');
       expect(hostF5RowId).not.toBe(''); // a linha do `interview_hosts` que o Master marcou é a semeada
       await master.reload(); // a marcação vem do estado salvo, não do clique
-      await expect(master.getByRole('row').filter({ hasText: hostF5.email }).getByRole('checkbox', { name: ES.interviewHosts.seatLabel.replace('{{name}}', HOST_F5_NOME) })).toBeChecked({ timeout: 30_000 });
+      await expect(master.getByRole('row').filter({ hasText: hostF5.email }).getByRole('checkbox', { name: ES.interviewHosts.seatLabel.replace('{{name}}', HOST_F5_NOME_NA_TELA) })).toBeChecked({ timeout: 30_000 });
     } finally {
       await contextoMaster.close();
     }
