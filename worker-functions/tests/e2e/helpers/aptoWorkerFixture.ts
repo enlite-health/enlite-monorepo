@@ -4,11 +4,15 @@
  * "Apto" = REGISTERED + cadastro completo + documentos obrigatórios VALIDADOS (a regra vive no SQL; este arquivo só
  * semeia a massa, não repete a regra). Dados SINTÉTICOS, sem PII.
  *
+ * Cadastro completo inclui o celular verificado (emenda 077, migration 594: `phone_unverified` no dono da completude): a prova de
+ * posse é gravada pelo helper ÚNICO `gravarVerificacao` (phoneVerificationFixtures), o mesmo que os testes do celular usam.
+ *
  *   validated   : documentos obrigatórios enviados E com a chave em document_validations → apto
  *   unvalidated : enviados, SEM validação → REGISTERED mas NÃO apto (Bloqueados)
  *   none        : cadastro completo, sem worker_documents → o dono diz incompleto
  */
 import type { Pool } from 'pg';
+import { gravarVerificacao } from './phoneVerificationFixtures';
 
 export type AptoDocs = 'validated' | 'unvalidated' | 'none';
 
@@ -29,6 +33,7 @@ export async function completeWorkerProfile(pool: Pool, workerId: string, docs: 
      WHERE id = $1`,
     [workerId, enc('Ficticia'), enc('Teste'), enc('FEMALE'), enc('FEMALE'), enc('1990-01-01'), enc('12345678'), enc('["es"]')],
   );
+  await gravarVerificacao(pool, workerId);
   await pool.query(`DELETE FROM worker_service_areas WHERE worker_id = $1`, [workerId]);
   await pool.query(`INSERT INTO worker_service_areas (worker_id, address_line, radius_km) VALUES ($1, 'Av. Test 1', 5)`, [workerId]);
   await pool.query(`DELETE FROM worker_availability WHERE worker_id = $1`, [workerId]);

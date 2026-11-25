@@ -14,6 +14,7 @@
 
 import { Pool } from 'pg';
 import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
+import { gravarVerificacao } from './helpers/phoneVerificationFixtures';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -116,6 +117,8 @@ describe('GET /api/workers/me e PUT /api/workers/me/general-info — expansão d
     if (putRes.status !== 200) {
       throw new Error(`fixture PUT general-info falhou: ${putRes.status} ${JSON.stringify(putRes.data)}`);
     }
+    // Cadastro 100% completo inclui o celular verificado (migration 594); aqui pela fixture, no app pelo `confirm`.
+    await gravarVerificacao(pool, id);
 
     await pool.query(
       `INSERT INTO worker_service_areas (worker_id, address_line, radius_km)

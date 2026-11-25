@@ -38,6 +38,7 @@ import {
   DOCS_NON_AT,
   DOCS_AT_FULL,
 } from './worker-onboarding-journey.helpers';
+import { gravarVerificacao } from './helpers/phoneVerificationFixtures';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -182,6 +183,8 @@ async function runWorkerJourney(
     // 3a. Completa toda INFO pessoal + service_area + availability
     //     uniqueSuffix = id do worker B garante phone/documentNumber únicos
     await savePersonalInfo(api, tokenB, wB.id);
+    // O prestador prova a posse do celular (no app, o `confirm` do código; aqui pela fixture): cadastro completo exige (migration 594).
+    await gravarVerificacao(pool, wB.id);
     await saveServiceArea(api, tokenB);
     await saveAvailability(api, tokenB);
 
@@ -270,6 +273,8 @@ async function runWorkerJourney(
     // ── Worker A: completa INFO → deve virar REGISTERED ──
     //     uniqueSuffix = id do worker A garante phone/documentNumber únicos
     await savePersonalInfo(api, tokenA, wA.id);
+    // O prestador prova a posse do celular (no app, o `confirm` do código; aqui pela fixture): cadastro completo exige (migration 594).
+    await gravarVerificacao(pool, wA.id);
     await saveServiceArea(api, tokenA);
     await saveAvailability(api, tokenA);
 
