@@ -6,6 +6,7 @@ import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogServ
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
 import { ItineraryDailyRunHealthService } from '@shared/events/ItineraryDailyRunHealthService';
+import { TalentumWebhookHealthService, TalentumWebhookHealth } from '@shared/events/TalentumWebhookHealthService';
 import { OutboxProcessor } from '../../infrastructure/OutboxProcessor';
 import { BulkDispatchScheduler } from '../../infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '../../infrastructure/BulkDispatchTalentumScheduler';
@@ -68,6 +69,8 @@ export class InternalController {
     private readonly ptContactReminderHealthService?: TherapeuticContactReminderHealthService,
     /** spec 069 F4: opcional pelo mesmo motivo — sem ele o bloco da rotina diária do itinerário é omitido. */
     private readonly itineraryDailyRunHealthService?: ItineraryDailyRunHealthService,
+    /** spec 095 F4: opcional pelo mesmo motivo — sem ele o bloco do webhook do Talentum é omitido. */
+    private readonly talentumWebhookHealthService?: TalentumWebhookHealthService,
   ) {}
 
   /**
@@ -329,6 +332,23 @@ export class InternalController {
         logger.warn({ msg: 'itinerary_daily_run_failures', country: f.country, operationDate: f.operationDate, failures: f.failures });
       }
 
+      /**
+       * spec 095 F4 — webhook do Talentum: predicado de ESTADO; reemite 1 WARN por alarme com contagem > 0 a CADA ciclo (heartbeat).
+       * Sem PII (só enum + inteiro). Falha do detector NÃO derruba o health dos outros blocos.
+       */
+      let talentumWebhook: TalentumWebhookHealth | null = null;
+      if (this.talentumWebhookHealthService) {
+        try {
+          talentumWebhook = await this.talentumWebhookHealthService.getHealth(new Date());
+          for (const [alarme, quantidade] of Object.entries(talentumWebhook)) {
+            if (quantidade > 0) logger.warn({ msg: 'talentum_webhook_alarm', alarme, quantidade });
+          }
+        } catch (e) {
+          talentumWebhook = null;
+          logger.error({ msg: '[talentum-webhook/health] error', error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
       const stuckRows = summary.filter(row => row.stuck);
 
       for (const row of stuckRows) {
@@ -357,6 +377,7 @@ export class InternalController {
         anaCareMirror: mirror,
         ...(ptContactReminders ? { ptContactReminders } : {}),
         ...(itineraryDailyRun ? { itineraryDailyRun } : {}),
+        ...(talentumWebhook ? { talentumWebhook } : {}),
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
