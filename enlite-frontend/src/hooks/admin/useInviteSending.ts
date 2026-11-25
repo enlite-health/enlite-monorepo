@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockedReasonMessage } from '@infrastructure/http/AdminMessagingApiService';
 import { useInviteProgressStore, type SendItem } from '@presentation/stores/inviteProgressStore';
 import type { InviteTarget } from '@presentation/components/features/admin/VacancyMatch/inviteTypes';
 
 export type RowSend = { kind: 'sending' } | { kind: 'error'; text: string };
+/** Identidade estável: a linha em envio não muda de referência a cada patch da fila. */
+const SENDING: RowSend = { kind: 'sending' };
 export interface StepOutcome { sent: number; failed: number }
 
 /**
@@ -15,7 +17,11 @@ export interface StepOutcome { sent: number; failed: number }
  */
 export function useInviteSending(vacancyId: string | undefined, step: string, refetch: () => Promise<void>) {
   const { t } = useTranslation();
-  const items = useInviteProgressStore((s) => s.items);
+  // Só o que a tela usa da fila: quem está pendente/enviando nesta vaga. Uma string estável por valor —
+  // o patch `pending→sending` não muda nada aqui, então só a conclusão de cada envio re-renderiza.
+  const activeKey = useInviteProgressStore((s) =>
+    s.items.filter((i) => i.vacancyId === vacancyId && (i.status === 'pending' || i.status === 'sending')).map((i) => i.workerId).join('|'),
+  );
   const isSending = useInviteProgressStore((s) => s.isSending);
   const stepOf = useRef<Record<string, string>>({});
   const startIdx = useRef(0);
@@ -60,15 +66,14 @@ export function useInviteSending(vacancyId: string | undefined, step: string, re
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSending, vacancyId]);
 
-  const live = new Map<string, SendItem>();
-  for (const i of items) if (i.vacancyId === vacancyId) live.set(i.workerId, i);
+  const active = useMemo(() => new Set(activeKey ? activeKey.split('|') : []), [activeKey]);
+  const failedRows = useMemo(() => {
+    const m = new Map<string, RowSend>();
+    for (const [id, f] of Object.entries(failed)) m.set(id, { kind: 'error', text: f.text });
+    return m;
+  }, [failed]);
 
-  const rowSend = (workerId: string): RowSend | undefined => {
-    const it = live.get(workerId);
-    if (it && (it.status === 'pending' || it.status === 'sending')) return { kind: 'sending' };
-    const f = failed[workerId];
-    return f ? { kind: 'error', text: f.text } : undefined;
-  };
+  const rowSend = (workerId: string): RowSend | undefined => (active.has(workerId) ? SENDING : failedRows.get(workerId));
 
   const enqueue = (targets: InviteTarget[]): void => {
     if (!vacancyId || targets.length === 0) return;

@@ -92,6 +92,7 @@ export function useVacancyInviteBoard(vacancyId: string | undefined, { enabled, 
   const refetch = useCallback(async (): Promise<void> => {
     if (!vacancyId) return;
     setIsRefreshing(true);
+    setError(null);
     try {
       setResults(await AdminApiService.getMatchResults(vacancyId, INVITE_LIMIT));
     } catch (err: unknown) {
