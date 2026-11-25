@@ -7577,6 +7577,7 @@
       },
       "error": {
         "load": "Não conseguimos carregar os prestadores.",
+        "refresh": "Não conseguimos atualizar a lista após o envio. Recarregue a página para ver o estado real dos convites.",
         "retry": "Tentar de novo"
       },
       "deBaja": {

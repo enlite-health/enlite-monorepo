@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LoaderCircle } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
@@ -22,7 +23,7 @@ interface Props {
 }
 
 /** B.8 — linha de prestador (64 px). */
-export function InviteRow({ row, focused, highlighted, send, onToggle, onNameClick, onHover }: Props): JSX.Element {
+function InviteRowView({ row, focused, highlighted, send, onToggle, onNameClick, onHover }: Props): JSX.Element {
   const { t } = useTranslation();
   const c = row.candidate;
   const id = c.workerId;
@@ -110,3 +111,31 @@ export function InviteRow({ row, focused, highlighted, send, onToggle, onNameCli
     </div>
   );
 }
+
+/**
+ * `buildBoardView` devolve `RowModel` novos a cada cálculo (mesmo para quem não mudou), então a
+ * comparação é por CONTEÚDO: com 200+ linhas e um patch da fila por envio, só a linha afetada redesenha.
+ */
+function sameRow(a: Props, b: Props): boolean {
+  const x = a.row;
+  const y = b.row;
+  return (
+    a.focused === b.focused &&
+    a.highlighted === b.highlighted &&
+    a.send?.kind === b.send?.kind &&
+    (a.send as { text?: string } | undefined)?.text === (b.send as { text?: string } | undefined)?.text &&
+    a.onToggle === b.onToggle &&
+    a.onNameClick === b.onNameClick &&
+    a.onHover === b.onHover &&
+    x.candidate === y.candidate &&
+    x.invited === y.invited &&
+    x.selectable === y.selectable &&
+    x.selected === y.selected &&
+    x.docsComplete === y.docsComplete &&
+    x.distanceKm === y.distanceKm &&
+    x.badge?.kind === y.badge?.kind &&
+    (x.badge as { dayMonth?: string } | null)?.dayMonth === (y.badge as { dayMonth?: string } | null)?.dayMonth
+  );
+}
+
+export const InviteRow = memo(InviteRowView, sameRow);

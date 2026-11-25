@@ -7653,6 +7653,7 @@
       },
       "error": {
         "load": "No pudimos cargar a los prestadores.",
+        "refresh": "No pudimos actualizar la lista tras el envío. Recargá la página para ver el estado real de las invitaciones.",
         "retry": "Reintentar"
       },
       "deBaja": {
