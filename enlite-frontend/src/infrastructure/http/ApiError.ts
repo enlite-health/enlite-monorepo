@@ -10,6 +10,8 @@ export interface ApiErrorResponse {
   reason?: string;
   workerStatus?: string | null;
   missingFields?: string[];
+  /** Link que o SERVIDOR monta para o time (ex.: CLAIM_CONFLICT do celular). O cliente nunca monta URL. */
+  handoffUrl?: string;
 }
 
 export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
@@ -19,6 +21,7 @@ export class ApiError extends Error {
   readonly reason?: string;
   readonly workerStatus?: string | null;
   readonly missingFields?: string[];
+  readonly handoffUrl?: string;
   readonly status: number;
 
   constructor(payload: ApiErrorResponse, status: number) {
@@ -28,6 +31,7 @@ export class ApiError extends Error {
     this.reason = payload.reason;
     this.workerStatus = payload.workerStatus;
     this.missingFields = payload.missingFields;
+    this.handoffUrl = payload.handoffUrl;
     this.status = status;
   }
 }

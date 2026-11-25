@@ -204,7 +204,7 @@
   "claim": {
     "otpModal": {
       "title": "Detectamos sua ficha pré-existente",
-      "subtitle": "Enviamos um código por SMS para o número {{phoneMasked}}. Digite os 6 dígitos para confirmar e recuperar seu cadastro.",
+      "subtitle": "Enviamos um código por WhatsApp para o número {{phoneMasked}}. Digite os 6 dígitos para confirmar e recuperar seu cadastro.",
       "inputLabel": "Código de verificação",
       "confirmButton": "Confirmar",
       "cancelButton": "Cancelar",
@@ -228,6 +228,41 @@
     },
     "checkPage": {
       "loading": "Carregando…"
+    }
+  },
+  "phoneVerification": {
+    "badge": {
+      "noPhone": "Sem número",
+      "unverified": "Não verificado",
+      "verified": "Verificado"
+    },
+    "stepLabel": "Seu celular",
+    "pendingLabel": "Verifique seu celular",
+    "verifyButton": "Verificar",
+    "changeButton": "Trocar número",
+    "addButton": "Adicionar número",
+    "readonlyHint": "Para trocar seu número, enviamos um código por WhatsApp para o número novo.",
+    "modal": {
+      "titleVerify": "Verifique seu celular",
+      "titleChange": "Troque seu número",
+      "phoneLabel": "Número do WhatsApp",
+      "phoneHint": "Enviamos um código de 6 dígitos por WhatsApp para este número.",
+      "sendButton": "Enviar código",
+      "codeSubtitle": "Enviamos um código de 6 dígitos por WhatsApp para o {{phoneMasked}}.",
+      "codeLabel": "Código de verificação",
+      "confirmButton": "Confirmar",
+      "cancelButton": "Cancelar",
+      "resendButton": "Reenviar código",
+      "errorInvalidPhone": "O número não é válido. Confira e tente de novo.",
+      "errorInvalidOtp": "O código está incorreto. Confira e tente de novo.",
+      "errorExpired": "O código venceu. Peça um novo.",
+      "errorUsed": "Esse código já foi usado. Peça um novo.",
+      "errorRateLimited": "Tentativas demais. Aguarde um pouco e tente de novo.",
+      "errorChannel": "Não conseguimos enviar o código por WhatsApp agora. Tente de novo em alguns minutos.",
+      "errorGeneric": "Não conseguimos concluir a verificação. Tente de novo.",
+      "conflictTitle": "Precisamos da ajuda da equipe",
+      "conflictBody": "Não conseguimos unir este número à sua ficha de forma automática. Nossa equipe resolve com você, sem perder seus dados.",
+      "teamButton": "Falar com a equipe"
     }
   },
   "accountLink": {
