@@ -102,7 +102,7 @@ test.describe('Vínculo de contas — ponta a ponta REAL @integration', () => {
     }
   });
 
-  test('409 real → modal real → OTP errado (erro real) → certo → conflito real → merge real → resumo', async ({ page }) => {
+  test('PHONE_IN_USE real → modal real → OTP errado (erro real) → certo → conflito real → merge real → resumo', async ({ page }) => {
     await installInterceptors(page);
 
     // Login pela UI (auth interceptado; todo o resto é real)
@@ -115,11 +115,15 @@ test.describe('Vínculo de contas — ponta a ponta REAL @integration', () => {
     await page.goto('/worker/profile');
     await page.waitForLoadState('networkidle');
 
-    // Digita o número da conta ANTIGA → autosave REAL → 409 REAL do backend
-    const phoneInput = page.locator('input[type="tel"]').first();
+    // O telefone não é mais digitado no perfil (emenda 077 §6, AC-16): entra pela verificação.
+    // Informa o número da conta ANTIGA no modal → phone/start REAL → PHONE_IN_USE REAL do backend.
+    await page.goto('/worker/profile?tab=general', { waitUntil: 'networkidle' });
+    await expect(page.getByTestId('phone-readonly')).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId('phone-change-button').click();
+    const phoneInput = page.getByRole('dialog').locator('input[type="tel"]');
     await expect(phoneInput).toBeVisible({ timeout: 15_000 });
     await phoneInput.fill(PHONE_TYPED);
-    await phoneInput.blur();
+    await page.getByTestId('phone-verification-send').click();
 
     // ── Modal com dados REAIS (email mascarado veio do banco) ─────────────
     const modal = page.getByTestId('phone-conflict-modal');

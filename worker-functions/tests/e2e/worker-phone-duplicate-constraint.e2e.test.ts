@@ -13,10 +13,13 @@
  * Garantias verificadas aqui:
  *   1. Round-trip do próprio número (mesmo humano, formato diferente) com uma
  *      duplicata existente → 200, NUNCA vaza 23505 (cenário exato da tela).
- *   2. Troca real para um número que pertence a OUTRO worker → 409 com código
- *      PHONE_NOT_AVAILABLE e mensagem amigável, SEM revelar a outra conta e SEM
- *      vazar SQL.
- *   3. Troca real para um número livre → 200 e grava o número canônico.
+ *   2. PRIMEIRO registro (ficha SEM telefone) de um número que pertence a OUTRO
+ *      worker → 409 com código PHONE_NOT_AVAILABLE e mensagem amigável, SEM
+ *      revelar a outra conta e SEM vazar SQL.
+ *   3. PRIMEIRO registro de um número livre → 200 e grava o número canônico.
+ *   4. Emenda do celular verificado (§6, AC-15): TROCA numa ficha que já tem
+ *      telefone, por este PUT, → 400 PHONE_CHANGE_REQUIRES_VERIFICATION com `code`,
+ *      sem gravar nada (a troca só vale pela verificação: phone/start + confirm).
  */
 
 import axios, { AxiosInstance } from 'axios';
@@ -66,13 +69,16 @@ describe('Worker phone duplicate constraint — regressão idx_workers_phone_uni
   let workerDId: string;
   let workerCId: string;
   let workerMId: string;
+  let workerEId: string; // ficha SEM telefone: o PRIMEIRO registro entra por este PUT
   let tokenA: string;
+  let tokenE: string;
 
   const stamp = Date.now();
   const uidA = `phone-dup-A-${stamp}`;
   const uidD = `phone-dup-D-${stamp}`;
   const uidC = `phone-dup-C-${stamp}`;
   const uidM = `phone-dup-M-${stamp}`;
+  const uidE = `phone-dup-E-${stamp}`;
 
   beforeAll(async () => {
     api = axios.create({ baseURL: API_URL, headers: { 'Content-Type': 'application/json' } });
@@ -89,6 +95,9 @@ describe('Worker phone duplicate constraint — regressão idx_workers_phone_uni
     // logo NÃO pode ser tratada como "dona" do número (mig 219/dedup).
     workerMId = await initWorker(uidM, `phone-dup-m-${stamp}@example.com`);
 
+    // Worker E: segue SEM telefone (primeiro registro, que ainda não exige código).
+    workerEId = await initWorker(uidE, `phone-dup-e-${stamp}@example.com`);
+
     // Simula os formatos históricos diretamente no banco (a API normalizaria).
     await db.query('UPDATE workers SET phone = $1 WHERE id = $2', [LOCAL_A, workerAId]); // A: 10 díg
     await db.query('UPDATE workers SET phone = $1 WHERE id = $2', [CANON_A, workerDId]); // D: 13 díg (mesmo nº de A)
@@ -101,11 +110,12 @@ describe('Worker phone duplicate constraint — regressão idx_workers_phone_uni
     ]);
 
     tokenA = await mockToken(uidA, `phone-dup-a-${stamp}@example.com`);
+    tokenE = await mockToken(uidE, `phone-dup-e-${stamp}@example.com`);
   });
 
   afterAll(async () => {
     // M aponta para C via merged_into_id (FK) — limpa M antes de C.
-    for (const id of [workerAId, workerDId, workerMId, workerCId]) {
+    for (const id of [workerAId, workerDId, workerMId, workerCId, workerEId]) {
       if (id) await db.query('DELETE FROM workers WHERE id = $1', [id]);
     }
     await db.end();
@@ -137,6 +147,15 @@ describe('Worker phone duplicate constraint — regressão idx_workers_phone_uni
     return { headers: { Authorization: `Bearer ${tokenA}` } };
   }
 
+  function authE() {
+    return { headers: { Authorization: `Bearer ${tokenE}` } };
+  }
+
+  /** Devolve E ao estado "sem telefone" (primeiro registro) entre os cenários. */
+  async function resetE() {
+    await db.query('UPDATE workers SET phone = NULL WHERE id = $1', [workerEId]);
+  }
+
   it('CENÁRIO DA TELA: round-trip do próprio número (formato canônico) com duplicata existente → 200, sem 23505', async () => {
     // A está gravado como LOCAL_A; uma duplicata D tem o MESMO número em CANON_A.
     // O form reenvia o número em formato canônico (≠ string de A, = string de D).
@@ -160,12 +179,13 @@ describe('Worker phone duplicate constraint — regressão idx_workers_phone_uni
     expect(prof.rows[0].profession).toBe('CAREGIVER');
   });
 
-  it('troca real para número de OUTRO worker → 409 PHONE_NOT_AVAILABLE, sem vazar SQL nem citar outra conta', async () => {
-    // A tenta mudar o phone para o número de C (em formato local, normaliza p/ CANON_C).
+  it('primeiro registro de número de OUTRO worker → 409 PHONE_NOT_AVAILABLE, sem vazar SQL nem citar outra conta', async () => {
+    await resetE();
+    // E (sem telefone) tenta registrar o número de C (formato local, normaliza p/ CANON_C).
     const localOfC = CANON_C.slice(3); // 10 dígitos do número de C
     let caught: any;
     try {
-      await api.put('/api/workers/me/general-info', { ...basePayload, phone: localOfC }, authA());
+      await api.put('/api/workers/me/general-info', { ...basePayload, phone: localOfC }, authE());
     } catch (err: any) {
       caught = err;
     }
@@ -183,31 +203,51 @@ describe('Worker phone duplicate constraint — regressão idx_workers_phone_uni
     expect(errText).not.toContain('account');
     expect(errText).not.toContain('otro');
 
-    // Garante que NÃO alterou o phone de A.
-    const row = await db.query('SELECT phone FROM workers WHERE id = $1', [workerAId]);
-    expect(row.rows[0].phone).toBe(LOCAL_A);
+    // Garante que NÃO gravou telefone em E.
+    const row = await db.query('SELECT phone FROM workers WHERE id = $1', [workerEId]);
+    expect(row.rows[0].phone).toBeNull();
   });
 
-  it('troca real para número LIVRE → 200 e grava o número canônico', async () => {
+  it('primeiro registro de número LIVRE → 200 e grava o número canônico', async () => {
+    await resetE();
     const res = await api.put(
       '/api/workers/me/general-info',
       { ...basePayload, phone: LOCAL_FREE },
-      authA(),
+      authE(),
     );
 
     expect(res.status).toBe(200);
-    const row = await db.query('SELECT phone FROM workers WHERE id = $1', [workerAId]);
+    const row = await db.query('SELECT phone FROM workers WHERE id = $1', [workerEId]);
     expect(row.rows[0].phone).toBe(CANON_FREE);
   });
 
-  it('colisão informada já em formato canônico também é bloqueada sem vazar SQL', async () => {
+  it('TROCA numa ficha que já tem telefone, por este PUT → 400 PHONE_CHANGE_REQUIRES_VERIFICATION com code, sem gravar', async () => {
+    // A já tem LOCAL_A. Número livre OU número de outro worker: nos dois casos a
+    // troca exige verificação e NADA é gravado (nem o 409 antecipa a recusa).
+    for (const novo of [LOCAL_FREE, CANON_C]) {
+      let caught: any;
+      try {
+        await api.put('/api/workers/me/general-info', { ...basePayload, phone: novo }, authA());
+      } catch (err: any) {
+        caught = err;
+      }
+      expect(caught).toBeDefined();
+      expect(caught.response.status).toBe(400);
+      expect(caught.response.data.code).toBe('PHONE_CHANGE_REQUIRES_VERIFICATION');
+      const row = await db.query('SELECT phone FROM workers WHERE id = $1', [workerAId]);
+      expect(row.rows[0].phone).toBe(LOCAL_A);
+    }
+  });
+
+  it('colisão informada já em formato canônico no primeiro registro também é bloqueada sem vazar SQL', async () => {
     // Submete exatamente o número canônico de C. A checagem prévia bloqueia com
     // 409; e, como rede de segurança, o catch do repo traduziria um eventual
     // 23505 para o mesmo código — em nenhum caminho a mensagem crua do Postgres
     // chega ao cliente.
+    await resetE();
     let caught: any;
     try {
-      await api.put('/api/workers/me/general-info', { ...basePayload, phone: CANON_C }, authA());
+      await api.put('/api/workers/me/general-info', { ...basePayload, phone: CANON_C }, authE());
     } catch (err: any) {
       caught = err;
     }
@@ -217,22 +257,23 @@ describe('Worker phone duplicate constraint — regressão idx_workers_phone_uni
   });
 
   it('FOLLOW-UP 2: número cujo único dono é um registro MERGED → 200 (não bloqueia)', async () => {
-    // A muda para o número humano de M (informa o local; normaliza p/ CANON_M).
+    // E registra pela 1ª vez o número humano de M (informa o local; normaliza p/ CANON_M).
     // M segura esse número mas está MERGED → não conta como dona. Antes do fix,
     // findByPhoneCandidates ignorava merged_into_id, retornava M e bloqueava com
     // um 409 PHONE_NOT_AVAILABLE falso. Agora o lookup exclui merged → libera.
+    await resetE();
     const res = await api.put(
       '/api/workers/me/general-info',
       { ...basePayload, phone: LOCAL_M },
-      authA(),
+      authE(),
     );
 
     expect(res.status).toBe(200);
     expect(res.data.success).toBe(true);
 
-    // A passou a ter o número canônico; M (merged) permanece com o formato local.
-    const a = await db.query('SELECT phone FROM workers WHERE id = $1', [workerAId]);
-    expect(a.rows[0].phone).toBe(CANON_M);
+    // E (primeiro registro) passou a ter o número canônico; M (merged) permanece com o formato local.
+    const e = await db.query('SELECT phone FROM workers WHERE id = $1', [workerEId]);
+    expect(e.rows[0].phone).toBe(CANON_M);
     const m = await db.query('SELECT phone, merged_into_id FROM workers WHERE id = $1', [workerMId]);
     expect(m.rows[0].phone).toBe(LOCAL_M);
     expect(m.rows[0].merged_into_id).toBe(workerCId);
@@ -242,7 +283,7 @@ describe('Worker phone duplicate constraint — regressão idx_workers_phone_uni
     // 1. Grava um perfil completo (firstName + profession etc.).
     const full = await api.put(
       '/api/workers/me/general-info',
-      { ...basePayload, firstName: 'Eliana', lastName: 'Juarez', profession: 'CAREGIVER', phone: LOCAL_M },
+      { ...basePayload, firstName: 'Eliana', lastName: 'Juarez', profession: 'CAREGIVER' },
       authA(),
     );
     expect(full.status).toBe(200);
