@@ -13,7 +13,7 @@ import { areAllRequiredDocsComplete } from '@presentation/utils/workerDocumentRe
 import { DocumentApiService } from '@infrastructure/http/DocumentApiService';
 import type { WorkerProgressResponse } from '@infrastructure/http/WorkerApiService';
 import type { WorkerDocumentsResponse } from '@infrastructure/http/DocumentApiService';
-import type { TabId } from '@presentation/utils/incompleteFieldDestinations';
+import { labelKeyFor, phoneStepOf, type TabId } from '@presentation/utils/incompleteFieldDestinations';
 
 interface ProfileCompletionSummaryProps {
   /** Fecha o resumo e volta a editar o perfil. */
@@ -100,6 +100,32 @@ export function ProfileCompletionSummary({
     return out;
   })();
 
+  // Passo "Tu celular" (emenda 077 §7.4): pendente na ficha nova; PRONTO com selo "Sin verificar"
+  // e botão "Verificar" na ficha legada (o servidor tirou `phone_unverified`, o estado segue `unverified`).
+  const phoneStep = workerData ? phoneStepOf(workerData) : null;
+  const phoneIsPending = phoneStep?.status === 'pending' && phoneStep.badge === 'unverified';
+  const phoneIsLegacyUnverified = phoneStep?.status === 'ready' && phoneStep.badge === 'unverified';
+  const phoneRow =
+    phoneIsPending || phoneIsLegacyUnverified ? (
+      <div
+        className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2"
+        data-testid="summary-phone-step"
+        data-status={phoneIsPending ? 'pending' : 'ready'}
+      >
+        <Text as="span" size="sm" weight="medium" color="primary" className="flex-1">
+          {phoneIsPending ? t(labelKeyFor('phone_unverified') as string) : t('phoneVerification.stepLabel')}
+        </Text>
+        {phoneIsLegacyUnverified && (
+          <Text as="span" size="xs" weight="medium" color="muted" data-testid="summary-phone-badge">
+            {t('phoneVerification.badge.unverified')}
+          </Text>
+        )}
+        <Button type="button" variant="outline" size="sm" data-testid="summary-phone-verify" onClick={() => onGoToTab('general')}>
+          {t('phoneVerification.verifyButton')}
+        </Button>
+      </div>
+    ) : null;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
@@ -149,6 +175,7 @@ export function ProfileCompletionSummary({
             >
               {t('profile.summary.viewVacancies', 'Ver vacantes')}
             </Button>
+            {phoneRow}
           </div>
         ) : (
           <div className="flex flex-col gap-4" data-testid="summary-pending">
@@ -181,6 +208,7 @@ export function ProfileCompletionSummary({
                   <ChevronRight className="w-4 h-4 text-amber-500 shrink-0 group-hover:translate-x-0.5 transition-transform" />
                 </button>
               ))}
+              {phoneRow}
             </div>
 
             <div className="flex justify-end gap-3 pt-2">
