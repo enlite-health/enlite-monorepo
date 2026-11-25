@@ -67,3 +67,82 @@ resource "google_pubsub_subscription_iam_member" "talentum_inbox_push_subscriber
   role         = "roles/pubsub.subscriber"
   member       = "serviceAccount:service-${data.google_project.this.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
 }
+
+# ---------------------------------------------------------------------------
+# Alarme do webhook do Talentum (T-095-51)
+# ---------------------------------------------------------------------------
+# Emitida pelo health check (GET /api/internal/events/health, a cada 5 min) a CADA ciclo, 1 WARN por alarme com contagem > 0:
+#   { msg: "talentum_webhook_alarm", alarme: <nome>, quantidade: <inteiro> } (sem PII).
+# Sinal de ESTADO: não auto-resolve enquanto a condição durar.
+resource "google_logging_metric" "talentum_webhook_alarm" {
+  project     = var.project_id
+  name        = "talentum_webhook_alarm"
+  description = "Webhook do Talentum: inbox com falha, pendente, veredito ausente, silêncio ou aviso do sino que falhou. Sinal de ESTADO reemitido a cada ciclo do health check."
+  filter      = "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"worker-functions\" AND jsonPayload.msg=\"talentum_webhook_alarm\""
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+}
+
+resource "google_monitoring_alert_policy" "talentum_webhook_alarm" {
+  project      = var.project_id
+  display_name = "[ATENÇÃO] Webhook do Talentum com alarme ativo (inbox, veredito, silêncio ou sino)"
+  combiner     = "OR"
+  enabled      = true
+  severity     = "WARNING"
+
+  notification_channels = [var.events_notification_channel]
+
+  documentation {
+    mime_type = "text/markdown"
+    subject   = "Webhook do Talentum com alarme ativo: vereditos de candidatos podem não estar chegando ao Kanban"
+    content   = <<-EOT
+      ## O que este alerta afirma
+      O health check (`GET /api/internal/events/health`, a cada 5 min) reemite um WARN `talentum_webhook_alarm` por alarme com contagem > 0
+      (campos `alarme` e `quantidade`, sem PII). Sinal de **ESTADO**: dura enquanto a condição durar. Ver o campo `alarme` no log do `worker-functions`:
+      - `inbox_falha` — há linhas da inbox em `FAILED`, `REJECTED_SCHEMA` ou `UNSUPPORTED`;
+      - `inbox_pendente` — há linha `RECEIVED` parada há mais de 15 min: órfã de publish (o Pub/Sub não entregou ou a assinatura não existe);
+      - `veredito_ausente` — espelho `COMPLETED` há mais de 2 h sem veredito;
+      - `silencio` — 0 eventos em 6 h dentro da janela 09-21 (Buenos Aires): o Talentum parou de chamar o webhook;
+      - `sino_falhou` — o aviso do sino (in-app) falhou.
+
+      ## Primeiros passos
+      1. `inbox_pendente`: provar a assinatura VIVA — `gcloud pubsub subscriptions describe talentum-inbox-push` — e olhar o DLQ `talentum-inbox-dlq`.
+      2. `inbox_falha`: ler o `status` e o motivo (só enum/código) nos logs do `worker-functions`; corrigir a causa antes do redrive.
+      3. `silencio`: conferir com o Talentum se o webhook está ativo e se o ingress do serviço continua aberto.
+
+      ## Redrive (reprocessa linhas da inbox, por chave ou por estado; só contagens na resposta)
+      `curl -X POST -H "X-Internal-Secret: $SEGREDO" "$BASE/api/internal/talentum/inbox/redrive"`
+    EOT
+  }
+
+  # 7 dias: não fecha por decurso de prazo enquanto o heartbeat renovar.
+  alert_strategy {
+    auto_close = "604800s"
+  }
+
+  conditions {
+    display_name = "alarme do webhook do Talentum ativo"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/talentum_webhook_alarm\" AND resource.type=\"cloud_run_revision\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "0s"
+
+      trigger {
+        count = 1
+      }
+
+      aggregations {
+        alignment_period     = "1800s"
+        per_series_aligner   = "ALIGN_DELTA"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  depends_on = [google_logging_metric.talentum_webhook_alarm]
+}
