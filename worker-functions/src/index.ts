@@ -179,7 +179,9 @@ import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
 import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
 import { registerEnquadreInternalJobRoutes } from './bootstrap/registerEnquadreInternalJobRoutes';
-import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController } from '@modules/integration';
+import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController, createTalentumInboxInternalRoutes, TalentumInboxInternalController, ProcessTalentumInboxUseCase, TalentumInboxRepository, CreateJobPostingFromTalentumUseCase, talentumPrescreeningIdResolver } from '@modules/integration';
+import { ProcessTalentumPrescreening, TalentumPrescreeningRepository, JobPostingLookup } from '@modules/matching';
+import { WorkerRepository } from '@modules/worker';
 import { createAdminPedidosIaRoutes, createPedidoIaController, createAssistantsPlatformController, createAdminAssistantsRoutes, createAssistantCountService, createAdminLuzPruebaRoutes, createLuzPruebaController } from '@modules/agentes';
 import { createAdminCostsRoutes, createGetCostOverviewUseCase } from '@modules/custos';
 import { registerFunnelStageHandlers } from './shared/events/registerFunnelStageHandlers';
@@ -961,6 +963,20 @@ app.use(
   systemContextMiddleware('job:itinerary-daily'),
   internalAuthMiddleware,
   createItineraryDailyInternalRoutes(new ItineraryDailyInternalController()),
+);
+
+// spec 095 T-095-31: processador da inbox do Talentum (push do Pub/Sub, só com o inboxId) + redrive manual. Mesmo guard dos jobs internos.
+const talentumInboxProcessor = new ProcessTalentumInboxUseCase(
+  dbPool,
+  new TalentumInboxRepository(),
+  new ProcessTalentumPrescreening(new TalentumPrescreeningRepository(), new WorkerRepository(), new JobPostingLookup(dbPool), dbPool, pubsubClient),
+  { execute: (data, environment) => new CreateJobPostingFromTalentumUseCase(dbPool, talentumPrescreeningIdResolver).execute(data, environment) },
+);
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:talentum-inbox'),
+  internalAuthMiddleware,
+  createTalentumInboxInternalRoutes(new TalentumInboxInternalController(talentumInboxProcessor, dbPool)),
 );
 
 // spec 049 F4: teste diário do vínculo do Tactiq + aviso no sino por transição + alarme 48 h (Cloud Scheduler, 1×/dia).
