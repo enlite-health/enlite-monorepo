@@ -9,7 +9,7 @@
 import type { Request, Response } from 'express';
 import request from 'supertest';
 import { appDeRota } from '@shared/__tests__/appDeRota';
-import { ipKey, createAccountLinkRoutes } from '../accountLinkRoutes';
+import { ipKey, createAccountLinkRoutes, LOOKUP_UID_MAX, LOOKUP_IP_MAX } from '../accountLinkRoutes';
 import type { AccountLinkController } from '../AccountLinkController';
 import type { AuthMiddleware } from '../../identity/interfaces/middleware/AuthMiddleware';
 
@@ -124,10 +124,10 @@ describe('createAccountLinkRoutes — montagem, flagGate e limitadores', () => {
     });
   });
 
-  describe('ordem: só start/confirm têm rate limiter; lookup/finalize/undo não', () => {
-    it('lookup: flagGate + routeClass + 2 middlewares de auth + handler (SEM rate limit) — 5 na pilha', () => {
+  describe('ordem: start/confirm/lookup têm rate limiter; finalize/undo não', () => {
+    it('lookup: flagGate + routeClass + limite IP + 2 de auth + limite uid + handler — 7 na pilha', () => {
       const rota = encontrarRota(router, '/workers/me/account-link/lookup', 'post');
-      expect(rota.stack).toHaveLength(5);
+      expect(rota.stack).toHaveLength(7);
     });
     it('finalize: mesma forma do lookup (SEM rate limit) — 5 na pilha', () => {
       const rota = encontrarRota(router, '/workers/me/account-link/finalize', 'post');
@@ -272,5 +272,69 @@ describe('createAccountLinkRoutes — LIGAÇÃO real com IPv6 (mesmo /56 deve co
     const bloqueado = await request(server).post('/api/workers/me/account-link/start').set('X-Forwarded-For', enderecos[5]).send({});
     expect(bloqueado.status).toBe(429);
     expect(controller.start).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * LOOKUP — oráculo de enumeração de telefone: limite por CONTA (uid) E por IP.
+ * MORRE se `lookupUidLimit`/`lookupIpLimit` saírem da rota: o (N+1)º lookup da
+ * mesma conta voltaria 200 em vez de 429.
+ * O auth double aqui lê o uid de `X-Test-Uid` (o JWT real põe `req.user.uid`).
+ */
+describe('createAccountLinkRoutes — lookup: limite por conta e por IP', () => {
+  const controller = {
+    lookup: jest.fn((_req: Request, res: Response) => { res.status(200).json({ m: 'lookup' }); }),
+  } as unknown as AccountLinkController;
+
+  const authComUid = {
+    requireAuth: () => (req: Request, _res: Response, next: () => void) => {
+      (req as Request & { user?: { uid: string } }).user = { uid: String(req.headers['x-test-uid']) };
+      next();
+    },
+    requirePermission: () => (_req: Request, _res: Response, next: () => void) => next(),
+  } as unknown as AuthMiddleware;
+
+  const server = appDeRota('accountLinkLookupLimite', '/api', () => createAccountLinkRoutes(controller, authComUid));
+  const URL = '/api/workers/me/account-link/lookup';
+
+  let flagOriginal: string | undefined;
+  beforeAll(() => { flagOriginal = process.env.ACCOUNT_LINK_ENABLED; process.env.ACCOUNT_LINK_ENABLED = 'true'; });
+  afterAll(() => {
+    if (flagOriginal === undefined) delete process.env.ACCOUNT_LINK_ENABLED;
+    else process.env.ACCOUNT_LINK_ENABLED = flagOriginal;
+  });
+  afterEach(() => { (controller.lookup as jest.Mock).mockClear(); });
+
+  const chamar = (uid: string, ip: string) =>
+    request(server).post(URL).set('X-Test-Uid', uid).set('X-Forwarded-For', ip).send({ phone: '+000' });
+
+  it('por CONTA: o 11º da mesma conta é 429 (code RATE_LIMITED + Retry-After), mesmo variando o IP', async () => {
+    for (let i = 0; i < LOOKUP_UID_MAX; i++) {
+      expect((await chamar('conta-A', `ip-a-${i}`)).status).toBe(200);
+    }
+    (controller.lookup as jest.Mock).mockClear();
+    const bloqueado = await chamar('conta-A', 'ip-a-novo');
+    expect(bloqueado.status).toBe(429);
+    expect(bloqueado.body).toMatchObject({ success: false, code: 'RATE_LIMITED' });
+    expect(Number(bloqueado.headers['retry-after'])).toBeGreaterThan(0);
+    expect(controller.lookup).not.toHaveBeenCalled();
+  });
+
+  it('por CONTA: outra conta (mesmo IP) segue 200 depois que a conta A estourou', async () => {
+    const ok = await chamar('conta-B', 'ip-b');
+    expect(ok.status).toBe(200);
+    expect(controller.lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it('por IP: o 31º do mesmo IP é 429 com contas diferentes (code + Retry-After)', async () => {
+    for (let i = 0; i < LOOKUP_IP_MAX; i++) {
+      expect((await chamar(`conta-ip-${i}`, 'ip-compartilhado')).status).toBe(200);
+    }
+    (controller.lookup as jest.Mock).mockClear();
+    const bloqueado = await chamar('conta-ip-nova', 'ip-compartilhado');
+    expect(bloqueado.status).toBe(429);
+    expect(bloqueado.body).toMatchObject({ success: false, code: 'RATE_LIMITED' });
+    expect(Number(bloqueado.headers['retry-after'])).toBeGreaterThan(0);
+    expect(controller.lookup).not.toHaveBeenCalled();
   });
 });
