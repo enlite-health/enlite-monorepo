@@ -193,7 +193,7 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(containersOfTab(s, 'encuadres').map((c) => c.resource)).toEqual(['match']);
     expect(containersOfTab(s, 'availability').map((c) => c.resource)).toEqual(['worker']);
     expect(containersOfTab(s, 'financial')).toEqual([]);
-    expect(s.containers?.map((c) => c.resource)).toEqual(['worker', 'worker_contact', 'worker_pii', 'worker_address', 'worker_document', 'match']);
+    expect(s.containers?.map((c) => c.resource)).toEqual(['worker', 'worker_contact', 'worker_pii', 'worker_address', 'worker_document', 'match', 'worker_device']);
   });
 
   it('D286 fase 2 — vaga: o card Paciente é célula do PACIENTE (patient_identity); Links é a vaga', () => {
