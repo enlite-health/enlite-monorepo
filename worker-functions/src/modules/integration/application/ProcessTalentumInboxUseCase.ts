@@ -20,8 +20,11 @@
  */
 import type { Pool } from 'pg';
 import { withActorContext } from '@shared/database/actorContext';
+import { reportError } from '@shared/logging';
 import type { ITalentumInboxRepository, TalentumInboxRow } from '../domain/TalentumInbox';
 import {
+  PRESCREENING_CREATED_SUBTYPE,
+  PRESCREENING_RESPONSE_SUBTYPES,
   TalentumPrescreeningPayloadSchema,
   type TalentumPrescreeningResponseParsed,
 } from '../interfaces/webhooks/validators/talentumPrescreeningSchema';
@@ -53,6 +56,9 @@ export interface ProcessInboxOptions {
   /** Redrive: reprocessa também uma linha `UNSUPPORTED`/`REJECTED_SCHEMA` (depois do deploy que aceita o formato). */
   reprocess?: boolean;
 }
+
+/** Destino de uma linha que NÃO foi processada nem falhou: fica guardada e avisa (F4), mas nunca relança (o Pub/Sub não reentrega). */
+type RowVerdict = { kind: 'PROCESSED' } | { kind: 'SETTLED'; state: 'UNSUPPORTED' | 'REJECTED_SCHEMA'; errorCode: string };
 
 /** Causa SEM PII: erro do pg → só `code`/`constraint`; erro nosso → 1ª linha da mensagem (molde `describeError` do script). */
 export function describeError(err: unknown): string {
@@ -87,10 +93,14 @@ export class ProcessTalentumInboxUseCase {
       for (const item of pending) {
         await client.query('SAVEPOINT talentum_inbox_row');
         try {
-          await this.processRow(item);
-          await this.inbox.markProcessed(client, item.id);
+          const verdict = await this.processRow(item);
+          if (verdict.kind === 'PROCESSED') {
+            await this.inbox.markProcessed(client, item.id);
+            processed += 1;
+          } else {
+            await this.inbox.markState(client, item.id, verdict.state, verdict.errorCode);
+          }
           await client.query('RELEASE SAVEPOINT talentum_inbox_row');
-          processed += 1;
         } catch (err) {
           await client.query('ROLLBACK TO SAVEPOINT talentum_inbox_row');
           await this.inbox.markFailed(client, item.id, describeError(err));
@@ -100,21 +110,50 @@ export class ProcessTalentumInboxUseCase {
       }
     });
 
-    console.log(`${TAG} inboxId=${inboxId} | processed=${processed} | failed=${failure ? 1 : 0}`);
+    console.log(
+      `${TAG} inboxId=${inboxId} | talentumPrescreeningId=${row.talentumPrescreeningId ?? 'none'} | processed=${processed} | failed=${failure ? 1 : 0}`,
+    );
     if (failure) throw failure.error;
     return { inboxId, outcome: 'PROCESSED', processed };
   }
 
-  private async processRow(item: TalentumInboxRow): Promise<void> {
+  private async processRow(item: TalentumInboxRow): Promise<RowVerdict> {
     const payload = await this.inbox.decryptPayload(item);
+
+    // 1) Formato desconhecido (action/subtype fora do que o processador entende) → UNSUPPORTED, sem tentar o schema.
+    //    A linha fica guardada; depois do deploy que aceita o formato, o redrive a reprocessa.
+    const unsupported = unsupportedReason(payload);
+    if (unsupported) return { kind: 'SETTLED', state: 'UNSUPPORTED', errorCode: unsupported };
+
+    // 2) Schema completo (saiu do ack). Recusa → REJECTED_SCHEMA + alarme só com as CHAVES que falharam, nunca valores.
     const parsed = TalentumPrescreeningPayloadSchema.safeParse(payload);
-    if (!parsed.success) throw new Error('payload_invalido');
+    if (!parsed.success) {
+      const paths = Object.keys(parsed.error.flatten().fieldErrors);
+      reportError(new Error('TALENTUM_PAYLOAD_REJECTED'), {
+        source: 'ProcessTalentumInboxUseCase:schema',
+        kind: 'TALENTUM_PAYLOAD_REJECTED',
+        inboxId: item.id,
+        paths,
+      });
+      return { kind: 'SETTLED', state: 'REJECTED_SCHEMA', errorCode: 'SCHEMA_INVALID' };
+    }
 
     if (parsed.data.action === 'PRESCREENING') {
       // Criação de vaga (evento `PRESCREENING`/`CREATED`): o mesmo caso de uso que o VacancyCreatedHandler chamava.
       await this.jobPostingCreator.execute(parsed.data.data, item.environment);
-      return;
+      return { kind: 'PROCESSED' };
     }
     await this.prescreeningProcessor.execute(parsed.data, { environment: item.environment });
+    return { kind: 'PROCESSED' };
   }
+}
+
+/** `null` se o formato é conhecido; senão o código (sem PII) do porquê. Só lê `action` e `subtype`, e nunca os loga. */
+function unsupportedReason(payload: unknown): string | null {
+  const b = (payload ?? {}) as { action?: unknown; subtype?: unknown };
+  if (b.action === 'PRESCREENING_RESPONSE') {
+    return (PRESCREENING_RESPONSE_SUBTYPES as readonly unknown[]).includes(b.subtype) ? null : 'UNSUPPORTED_SUBTYPE';
+  }
+  if (b.action === 'PRESCREENING') return b.subtype === PRESCREENING_CREATED_SUBTYPE ? null : 'UNSUPPORTED_SUBTYPE';
+  return 'UNSUPPORTED_ACTION';
 }

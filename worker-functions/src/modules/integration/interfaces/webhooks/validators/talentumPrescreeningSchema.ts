@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+/** Subtypes que o processador entende (fonte única: o schema e o `UNSUPPORTED` do processador leem esta lista). */
+export const PRESCREENING_RESPONSE_SUBTYPES = ['INITIATED', 'IN_PROGRESS', 'COMPLETED', 'ANALYZED'] as const;
+
+/** Subtype do evento de criação de vaga (`action: PRESCREENING`). */
+export const PRESCREENING_CREATED_SUBTYPE = 'CREATED' as const;
+
 // ─────────────────────────────────────────────────────────────────
 // Schemas individuais reutilizados em registerQuestions e response.state
 // ─────────────────────────────────────────────────────────────────
@@ -46,7 +52,7 @@ const TalentumResponseDataSchema = z.object({
 
 const TalentumPrescreeningCreatedSchema = z.object({
   action:  z.literal('PRESCREENING'),
-  subtype: z.literal('CREATED'),
+  subtype: z.literal(PRESCREENING_CREATED_SUBTYPE),
   data: z.object({
     _id:  z.string().min(1).trim(),
     name: z.string().min(1).trim(),
@@ -61,7 +67,7 @@ const TalentumPrescreeningCreatedSchema = z.object({
 
 const TalentumPrescreeningResponseSchema = z.object({
   action:  z.literal('PRESCREENING_RESPONSE'),
-  subtype: z.enum(['INITIATED', 'IN_PROGRESS', 'COMPLETED', 'ANALYZED']),
+  subtype: z.enum(PRESCREENING_RESPONSE_SUBTYPES),
   data: z.object({
     prescreening: TalentumPrescreeningDataSchema,
     profile:      TalentumProfileDataSchema,
