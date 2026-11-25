@@ -38,6 +38,16 @@ export function sendPersonalInfoFailure(res: Response, error: string | undefined
     });
     return;
   }
+  if (error === WORKER_ERROR_CODES.PHONE_CHANGE_REQUIRES_VERIFICATION) {
+    // 400 com `code` estável: o cliente abre o modal de verificação pelo code,
+    // nunca pela frase.
+    res.status(400).json({
+      success: false,
+      code: WORKER_ERROR_CODES.PHONE_CHANGE_REQUIRES_VERIFICATION,
+      error,
+    });
+    return;
+  }
   res.status(400).json({ success: false, error });
 }
 
