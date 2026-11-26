@@ -64,7 +64,6 @@ const dashboardFixture = {
     equiposPorArmar: 86,
     pacientesActivos: 193,
     vacantesAbiertas: 145,
-    vacantesPausadas: 21,
   },
   pacientes: {
     activos: 193,
@@ -109,8 +108,8 @@ describe('BigNumbersSection abre a ajuda do card certo', () => {
     expect(screen.queryByTestId('mgmt-help-drawer')).not.toBeInTheDocument();
 
     const buttons = screen.getAllByTestId('metric-help');
-    // 13 cards com ajuda na seção de números clave
-    expect(buttons.length).toBe(13);
+    // 12 cards com ajuda na seção de números clave
+    expect(buttons.length).toBe(12);
 
     // O primeiro card da seção é o % de resposta rápida
     fireEvent.click(buttons[0]);

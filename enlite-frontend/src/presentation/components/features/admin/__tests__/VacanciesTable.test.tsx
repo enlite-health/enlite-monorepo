@@ -8,7 +8,7 @@ describe('VacanciesTable', () => {
     {
       id: 'fd269cde-d8c9-4fdc-88a9-5b19ebcdb531',
       caseNumber: 349, caseOrdinal: 1,
-      lifecycle: 'aberta',
+      lifecycle: null,
       diasAberto: '05',
       stageCounts: {
         COMPATIBLE: 6,
@@ -29,7 +29,7 @@ describe('VacanciesTable', () => {
     {
       id: 'c83963ee-beaf-45f2-88a3-365147b0c205',
       caseNumber: 348, caseOrdinal: 1,
-      lifecycle: 'aberta',
+      lifecycle: null,
       diasAberto: '03',
       stageCounts: {
         COMPATIBLE: 8,
@@ -98,8 +98,9 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('349#01')).toBeInTheDocument();
     expect(screen.getByText('348#01')).toBeInTheDocument();
 
-    const statusElements = screen.getAllByText('admin.vacancyDetail.lifecycle.aberta');
-    expect(statusElements).toHaveLength(2);
+    // vaga no ar não tem selo (F15): nenhum "aberta" na linha
+    expect(screen.queryByTestId('vacancy-lifecycle-badge')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.vacancyDetail.lifecycle.aberta')).not.toBeInTheDocument();
   });
 
   it('should render numeric data fields (stageCounts das 9 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)', () => {
@@ -155,7 +156,7 @@ describe('VacanciesTable', () => {
   it('o rascunho é um CICLO DE VIDA (D3): a linha em rascunho mostra o badge "rascunho" e o testid do selo; a publicada não', () => {
     const mixed: VacancyRow[] = [
       { ...realApiData[0], id: 'draft-1', isDraft: true, lifecycle: 'rascunho' },
-      { ...realApiData[1], id: 'published-1', isDraft: false, lifecycle: 'aberta' },
+      { ...realApiData[1], id: 'published-1', isDraft: false, lifecycle: null },
     ];
     render(<VacanciesTable vacancies={mixed} />);
 
@@ -167,8 +168,8 @@ describe('VacanciesTable', () => {
 
   it('a linha mostra o estado do paciente (pílula) ao lado do ciclo de vida; sem a célula (null) a pílula mostra "—"', () => {
     const rows: VacancyRow[] = [
-      { ...realApiData[0], id: 'com-estado', lifecycle: 'aberta', patientStatus: 'SEARCHING' },
-      { ...realApiData[1], id: 'sem-celula', lifecycle: 'aberta', patientStatus: null },
+      { ...realApiData[0], id: 'com-estado', lifecycle: null, patientStatus: 'SEARCHING' },
+      { ...realApiData[1], id: 'sem-celula', lifecycle: null, patientStatus: null },
     ];
     render(<VacanciesTable vacancies={rows} />);
     const pills = screen.getAllByTestId('patient-status-pill');
@@ -195,7 +196,7 @@ describe('VacanciesTable — última ação (DX-3.5) e ordem das colunas', () =>
   const base: VacancyRow = {
     id: 'vac-x',
     caseNumber: 9999, caseOrdinal: 1,
-    lifecycle: 'aberta',
+    lifecycle: null,
     diasAberto: '01',
     stageCounts: {},
     postulados: '0',
@@ -245,7 +246,7 @@ describe('VacanciesTable — última ação (DX-3.5) e ordem das colunas', () =>
 // Coluna "Caso" (spec 046 F2): o texto vem da função com dono, a célula não concatena nada.
 describe('VacanciesTable — coluna Caso (spec 046 F2, A5/A7/A8)', () => {
   const base: VacancyRow = {
-    id: 'vac-c', caseNumber: 1234, caseOrdinal: 2, lifecycle: 'aberta', diasAberto: '01',
+    id: 'vac-c', caseNumber: 1234, caseOrdinal: 2, lifecycle: null, diasAberto: '01',
     stageCounts: {}, postulados: '0', faltantes: '0', isDraft: false, lastActionAt: null,
   };
   const cellOf = () => screen.getByTestId('vacancy-row-vac-c').querySelectorAll('td')[1];

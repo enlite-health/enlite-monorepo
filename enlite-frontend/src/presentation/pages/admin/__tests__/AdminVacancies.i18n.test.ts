@@ -56,8 +56,7 @@ const REQUIRED_KEYS = [
   'table.missing',
   'table.view',
   'table.edit',
-  // Filtros de estado (E7): ciclo de vida e estado do paciente
-  'filters.lifecycle.label',
+  // Filtro de estado do paciente (E7)
   'filters.patientStatus.label',
   // Priority options
   'priorityOptions.all',

@@ -13,7 +13,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 const vaga = (over: Partial<VacancyByAddressSummary>): VacancyByAddressSummary => ({
-  id: 'v1', case_number: 1, vacancy_number: 1, title: 'Caso 1', status: 'PENDING_ACTIVATION', lifecycle: 'aberta',
+  id: 'v1', case_number: 1, vacancy_number: 1, title: 'Caso 1', status: 'PENDING_ACTIVATION', lifecycle: null,
   is_draft: false, talentum_published_at: null, created_at: '2026-01-01T00:00:00Z', ...over,
 });
 
@@ -23,14 +23,15 @@ describe('AddressHasVacancyDialog', () => {
     render(
       <AddressHasVacancyDialog
         isOpen
-        vacancies={[vaga({}), vaga({ id: 'v2', status: 'ON_HOLD', lifecycle: 'pausada' })]}
+        vacancies={[vaga({}), vaga({ id: 'v2', status: 'ON_HOLD', lifecycle: null })]}
         onEditExisting={vi.fn()}
         onContinueCreating={vi.fn()}
         onCancel={vi.fn()}
       />,
     );
-    expect(screen.getByText('admin.vacancyDetail.lifecycle.aberta')).toBeInTheDocument();
-    expect(screen.getByText('admin.vacancyDetail.lifecycle.pausada')).toBeInTheDocument();
+    // vaga no ar ou pausada (legado) não tem selo: nada de "aberta"/"pausada" (F15)
+    expect(screen.queryByTestId('vacancy-lifecycle-badge')).not.toBeInTheDocument();
+    expect(screen.queryByText(/admin\.vacancyDetail\.lifecycle\.(aberta|pausada|cerrada)/)).not.toBeInTheDocument();
     expect(keysLidas.some((k) => k.startsWith('admin.vacancyDetail.vacancyForm.statusOptions.'))).toBe(false);
     expect(screen.queryByText('PENDING_ACTIVATION')).not.toBeInTheDocument();
   });

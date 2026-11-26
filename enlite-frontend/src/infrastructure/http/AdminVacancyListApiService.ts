@@ -19,8 +19,6 @@ export interface VacancyListFilters {
   client?: string;
   /** Valor de banco: aceito pelo servidor só por compatibilidade; a tela não o oferece mais (E7). */
   status?: string;
-  /** E7: ciclo de vida da vaga (`rascunho`|`aberta`|`pausada`|`cerrada`|`baja`). */
-  lifecycle?: string;
   /** E7: estado do paciente (`p.status`) — o servidor recusa com 403 sem `patient:read`. */
   patient_status?: string;
   limit?: string;

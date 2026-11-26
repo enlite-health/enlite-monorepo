@@ -11,7 +11,7 @@ import { ApiError } from '@infrastructure/http/ApiError';
  *
  * Em vez de mostrar essa mensagem técnica para o operador, redirecionamos para
  * o detalhe da vaga (`/admin/vacancies/{id}`), onde o caminho correto de edição
- * localizada (`VacancyScheduleEditModal` + `VacancyStatusEditor`) vive.
+ * localizada (`VacancyScheduleEditModal`) vive.
  *
  * Retorna `true` quando interceptou o erro (chamador deve dar return),
  * `false` quando deixou passar (chamador segue o tratamento de erro normal).

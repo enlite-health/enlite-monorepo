@@ -16,7 +16,7 @@ const MOCK_VACANCIES: VacancyRow[] = [
   {
     id: '1',
     caseNumber: 100, caseOrdinal: 1,
-    lifecycle: 'aberta',
+    lifecycle: null,
     diasAberto: '05',
     stageCounts: {
       INVITED: 10,

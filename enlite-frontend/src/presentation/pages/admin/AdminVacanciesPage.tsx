@@ -19,7 +19,7 @@ import { DraftVacancyChoiceDialog } from '@presentation/components/features/admi
 import { useVacanciesData } from '@hooks/admin/useVacanciesData';
 import { useTableSort } from '@hooks/useTableSort';
 import type { VacancySortKey } from '@presentation/components/features/admin/VacanciesTable';
-import { getLifecycleOptions, getPatientStatusOptions, getSemaphoreOptions } from './vacanciesData';
+import { getPatientStatusOptions, getSemaphoreOptions } from './vacanciesData';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 
 const INITIAL_ADVANCED: VacancyAdvancedFilters = {
@@ -36,12 +36,10 @@ const INITIAL_ADVANCED: VacancyAdvancedFilters = {
 export function AdminVacanciesPage(): JSX.Element {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const lifecycleOptions = getLifecycleOptions(t);
   const patientStatusOptions = getPatientStatusOptions(t);
   const semaphoreOptions = getSemaphoreOptions(t);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedLifecycle, setSelectedLifecycle] = useState('');
   const [selectedPatientStatus, setSelectedPatientStatus] = useState('');
   // Spec 084 F2/F4: "Mostrar dadas de baja" (só consulta) e a lista manual do Talentum.
   const [showBaja, setShowBaja] = useState(false);
@@ -66,7 +64,6 @@ export function AdminVacanciesPage(): JSX.Element {
   }, []);
 
   const handleSearchChange = (v: string) => { setSearchQuery(v); setCurrentPage(1); };
-  const handleLifecycleChange = (v: string) => { setSelectedLifecycle(v); setCurrentPage(1); };
   const handlePatientStatusChange = (v: string) => { setSelectedPatientStatus(v); setCurrentPage(1); };
   const handleItemsPerPageChange = (v: string) => { setItemsPerPage(v); setCurrentPage(1); };
   const handleSort = useCallback((key: VacancySortKey) => { toggleSort(key); setCurrentPage(1); }, [toggleSort]);
@@ -78,7 +75,6 @@ export function AdminVacanciesPage(): JSX.Element {
   const filters = useMemo(() => {
     const base: Record<string, string> = {
       search: searchQuery,
-      lifecycle: selectedLifecycle,
       patient_status: selectedPatientStatus,
       limit: itemsPerPage,
       offset: String((currentPage - 1) * parseInt(itemsPerPage)),
@@ -100,7 +96,7 @@ export function AdminVacanciesPage(): JSX.Element {
       base.order = sort.direction;
     }
     return base;
-  }, [searchQuery, selectedLifecycle, selectedPatientStatus, itemsPerPage, currentPage, advancedFilters, sort, showBaja, talentumManual]);
+  }, [searchQuery, selectedPatientStatus, itemsPerPage, currentPage, advancedFilters, sort, showBaja, talentumManual]);
 
   const { vacancies: rawVacancies, stats: rawStats, total, isLoading, error, refetch } = useVacanciesData(filters);
   // Esqueleto só na 1ª carga. Nas buscas seguintes (ordenar/filtrar/paginar) a tabela fica montada
@@ -346,9 +342,6 @@ export function AdminVacanciesPage(): JSX.Element {
         <VacancyFilters
           searchQuery={searchQuery}
           onSearchChange={handleSearchChange}
-          selectedLifecycle={selectedLifecycle}
-          onLifecycleChange={handleLifecycleChange}
-          lifecycleOptions={lifecycleOptions}
           selectedPatientStatus={selectedPatientStatus}
           onPatientStatusChange={handlePatientStatusChange}
           patientStatusOptions={patientStatusOptions}

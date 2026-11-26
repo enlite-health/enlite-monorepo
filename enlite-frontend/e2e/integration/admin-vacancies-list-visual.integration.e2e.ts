@@ -48,7 +48,7 @@ const MOCK_VACANCIES = [
   {
     id: 'v-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     caseNumber: 234, caseOrdinal: 12,
-    lifecycle: 'aberta',
+    lifecycle: null,
     patient_status: 'ACTIVE',
     statusRaw: 'ACTIVE',
     priority: 'URGENT',
@@ -62,7 +62,7 @@ const MOCK_VACANCIES = [
   {
     id: 'v-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
     caseNumber: 245, caseOrdinal: 4,
-    lifecycle: 'pausada',
+    lifecycle: null,
     patient_status: 'ON_HOLD',
     statusRaw: 'ON_HOLD',
     priority: 'HIGH',
@@ -232,49 +232,47 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
     // Removed Clientes filter
     await expect(page.getByText(/^Clientes$/)).toHaveCount(0);
 
-    // Filter bar has at least 1 combobox (Ciclo de vida) — Clientes e Prioridad se foram
+    // Filter bar has at least 1 combobox (Estado del paciente) — Clientes e Prioridad se foram
     // (additional comboboxes added by advanced filters: Tipo, Provincia, Localidad, Sexo, Días)
     const selectCount = await filterBar(page).getByRole('combobox').count();
     expect(selectCount).toBeGreaterThanOrEqual(1);
 
-    // Estado fica na barra; Prioridad não (A4)
-    await expect(filterBar(page).getByText(/^Ciclo de vida$/)).toBeVisible();
+    // Estado del paciente fica na barra; Ciclo de vida saiu (semaforo-da-vaga F4) e Prioridad também (A4)
+    await expect(filterBar(page).getByText(/^Estado del paciente$/)).toBeVisible();
+    await expect(filterBar(page).getByText(/^Ciclo de vida$/)).toHaveCount(0);
     await expect(filterBar(page).getByText(/^Prioridad$/)).toHaveCount(0);
   });
 
-  test('Ciclo de vida filter exposes the 5 lifecycle values (D3/E7) — no legacy DB value', async ({ page }) => {
+  test('NÃO há filtro de Ciclo de vida (semaforo-da-vaga F4): o 1º combobox é o Estado del paciente', async ({ page }) => {
     await loginAsAdmin(page);
 
     await page.goto('/admin/vacancies');
     await expect(page.getByText('234#12')).toBeVisible({ timeout: 15_000 });
 
-    // O painel só existe aberto: abre o gatilho do Ciclo de vida e lê os RÓTULOS que o usuário vê (o valor não está no DOM).
-    const lifecycleSelect = filterBar(page).getByRole('combobox').nth(0);
-    await lifecycleSelect.click();
-    const labels = await lifecycleSelect.locator('xpath=..').getByRole('option').allTextContents();
-    expect(labels.map((l) => l.trim()).sort()).toEqual(['Abierta', 'Borrador', 'Cerrada', 'Dada de baja', 'En espera'].sort());
+    await expect(page.getByTestId('vacancy-filter-lifecycle')).toHaveCount(0);
+    // O painel só existe aberto: abre o 1º gatilho e lê os RÓTULOS que o usuário vê (o valor não está no DOM).
+    const primeiro = filterBar(page).getByRole('combobox').nth(0);
+    await primeiro.click();
+    const labels = await primeiro.locator('xpath=..').getByRole('option').allTextContents();
+    expect(labels.map((l) => l.trim())).not.toContain('Abierta');
+    expect(labels.map((l) => l.trim())).not.toContain('Dada de baja');
     await page.keyboard.press('Escape');
   });
 
-  test('Lifecycle and patient-status filters forward their values to /api/admin/vacancies query', async ({ page }) => {
+  test('Patient-status filter forwards its value to /api/admin/vacancies query, and no lifecycle param is ever sent', async ({ page }) => {
     await loginAsAdmin(page);
 
     await page.goto('/admin/vacancies');
     await expect(page.getByText('234#12')).toBeVisible({ timeout: 15_000 });
 
-    const lifecycleSelect = filterBar(page).getByRole('combobox').nth(0);
-    const reqLifecycle = page.waitForRequest((req) =>
-      req.url().includes('/api/admin/vacancies') && req.url().includes('lifecycle=pausada'),
-    );
-    await escolherNoCombo(page, lifecycleSelect, 'En espera'); // pausada
-    expect((await reqLifecycle).url()).toContain('lifecycle=pausada');
-
-    const patientSelect = filterBar(page).getByRole('combobox').nth(1);
+    const patientSelect = filterBar(page).getByRole('combobox').nth(0);
     const reqPatient = page.waitForRequest((req) =>
       req.url().includes('/api/admin/vacancies') && req.url().includes('patient_status=SEARCHING'),
     );
     await escolherNoCombo(page, patientSelect, 'Búsqueda');
-    expect((await reqPatient).url()).toContain('patient_status=SEARCHING');
+    const url = (await reqPatient).url();
+    expect(url).toContain('patient_status=SEARCHING');
+    expect(url).not.toContain('lifecycle=');
   });
 
   test('matches Playwright screenshot baseline (es locale)', async ({ page }) => {
