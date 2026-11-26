@@ -15,7 +15,7 @@ export interface StepOutcome { sent: number; failed: number }
  * envio): congela o resultado por passo desta visita, e relê o servidor com UM GET (`refetch`) —
  * nunca POST. Até o GET voltar, quem já saiu aparece "Invitado hoy" pelo `messagedAt` do callback.
  */
-export function useInviteSending(vacancyId: string | undefined, step: string, refetch: () => Promise<void>) {
+export function useInviteSending(vacancyId: string | undefined, step: string, refetch: () => Promise<boolean>) {
   const { t } = useTranslation();
   // Só o que a tela usa da fila: quem está pendente/enviando nesta vaga. Uma string estável por valor —
   // o patch `pending→sending` não muda nada aqui, então só a conclusão de cada envio re-renderiza.
@@ -60,7 +60,9 @@ export function useInviteSending(vacancyId: string | undefined, step: string, re
         for (const i of bad) next[i.workerId] = { step: stepFor(i.workerId), text: errorText(i) };
         return next;
       });
-      void refetchRef.current().then(() => setLocalMessaged({}));
+      // Só limpa o transitório se o servidor respondeu: com o GET falho, quem acabou de ser convidado
+      // continuaria "Invitado hoy" só por este mapa — limpá-lo devolveria a pessoa a "por invitar" e marcada.
+      void refetchRef.current().then((ok) => ok && setLocalMessaged({}));
     }
     wasSending.current = isSending;
     // eslint-disable-next-line react-hooks/exhaustive-deps

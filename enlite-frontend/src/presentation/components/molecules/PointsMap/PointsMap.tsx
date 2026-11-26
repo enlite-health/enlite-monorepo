@@ -142,7 +142,7 @@ export function PointsMap({
   const infoNodeRef = useRef<HTMLDivElement>(document.createElement('div'));
   const emphasizedRef = useRef<Set<string>>(new Set());
   /** O que cada marcador já tem no SDK (posição, ícone, título): só o que MUDOU é reaplicado. */
-  const appliedRef = useRef<Map<string, { lat: number; lng: number; icon: string; title: string }>>(new Map());
+  const appliedRef = useRef<Map<string, Record<'pos' | 'icon' | 'title', string>>>(new Map());
   const pointsById = useMemo(() => new Map(points.map((p) => [p.id, p])), [points]);
   const pulseRef = useRef<number | null>(null);
   const onCenterChangeRef = useRef(onCenterChange);
@@ -299,16 +299,21 @@ export function PointsMap({
     for (const [id, p] of wanted) {
       const position = { lat: p.lat as number, lng: p.lng as number };
       const title = p.tooltip ?? p.title;
-      const icon = `${markerShape}|${p.color}|${JSON.stringify(p.style ?? null)}`;
+      const applied = { pos: `${position.lat},${position.lng}`, icon: `${markerShape}|${p.color}|${JSON.stringify(p.style ?? null)}`, title };
       const existing = markersRef.current.get(id);
       if (existing) {
         // `setIcon`/`setPosition` em marcador `optimized:false` custa um repaint de DOM cada: com 200+
         // pinos, reaplicar tudo a cada envio da fila travava a aba. Só o que mudou.
+        // Tabela propriedade → setter (Strategy/tabela de despacho, em vez de um `if` por propriedade):
+        // acrescentar uma propriedade é uma linha, e a regra "só o que mudou" mora num lugar só.
         const was = appliedRef.current.get(id);
-        if (!was || was.lat !== position.lat || was.lng !== position.lng) existing.setPosition(position);
-        if (!was || was.icon !== icon) existing.setIcon(iconFor(p));
-        if (!was || was.title !== title) existing.setTitle(title);
-        appliedRef.current.set(id, { ...position, icon, title });
+        const setters: Record<keyof typeof applied, () => void> = {
+          pos: () => existing.setPosition(position),
+          icon: () => existing.setIcon(iconFor(p)),
+          title: () => existing.setTitle(title),
+        };
+        (Object.keys(setters) as Array<keyof typeof applied>).forEach((k) => was?.[k] !== applied[k] && setters[k]());
+        appliedRef.current.set(id, applied);
         continue;
       }
       const marker = new google.maps.Marker({ map, position, title: p.tooltip ?? p.title, icon: iconFor(p), ...(markerShape === 'dot' ? { optimized: false } : {}) });
@@ -316,7 +321,7 @@ export function PointsMap({
       marker.addListener('mouseover', () => onHoverRef.current?.(id));
       marker.addListener('mouseout', () => onHoverRef.current?.(null));
       markersRef.current.set(id, marker);
-      appliedRef.current.set(id, { ...position, icon, title });
+      appliedRef.current.set(id, applied);
     }
   }, [status, points, iconFor, markerShape]);
 
@@ -336,7 +341,11 @@ export function PointsMap({
     emphasizedRef.current = next;
   }, [status, hoveredId, selectedId, pointsById, iconFor]);
 
-  // 4. Balão do ponto selecionado.
+  // 4. Balão do ponto selecionado. Depende da POSIÇÃO do selecionado (chave primitiva), não do array
+  //    `points`: com a fila de envio, `points` muda a cada convite e o balão reabria/recentralizava
+  //    o mapa ("pulo") sem o ponto ter saído do lugar.
+  const sel = pointsById.get(selectedId ?? '');
+  const selKey = sel ? `${sel.lat},${sel.lng}` : null;
   useEffect(() => {
     const map = mapRef.current;
     const info = infoRef.current;
@@ -346,8 +355,7 @@ export function PointsMap({
       return;
     }
     const marker = markersRef.current.get(selectedId);
-    const point = points.find((p) => p.id === selectedId);
-    if (!marker || !point) {
+    if (!marker || selKey === null) {
       info.close();
       return;
     }
@@ -361,7 +369,7 @@ export function PointsMap({
     // roubar o foco para dentro dele tira o teclado de onde a pessoa estava —
     // além de pintar o anel de foco no link já na abertura.
     info.open({ map, anchor: marker, shouldFocus: false });
-  }, [status, selectedId, points]);
+  }, [status, selectedId, selKey]);
 
   const markersCount = points.filter((p) => p.lat !== null && p.lng !== null).length;
   // Gate por `status`: ref não dispara render (idem os outros efeitos daqui).

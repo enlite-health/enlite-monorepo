@@ -63,6 +63,27 @@ describe('useVacancyInviteBoard', () => {
     expect([...result.current.currentIds]).toEqual(['w1']);
   });
 
+  it('refetch com GET ok resolve true e limpa o erro', async () => {
+    get.mockResolvedValueOnce(meta(-34.6) as never).mockResolvedValue(withCands);
+    const { result } = renderHook(() => useVacancyInviteBoard('v1', { enabled: true, canExecute: true }));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    let ok: boolean | undefined;
+    await act(async () => { ok = await result.current.refetch(); });
+    expect(ok).toBe(true);
+    expect(result.current.error).toBeNull();
+  });
+
+  it('refetch com GET falho RESOLVE false (não rejeita), guarda o erro e mantém status ready', async () => {
+    get.mockResolvedValueOnce(meta(-34.6) as never).mockResolvedValueOnce(withCands).mockRejectedValueOnce(new Error('rede'));
+    const { result } = renderHook(() => useVacancyInviteBoard('v1', { enabled: true, canExecute: true }));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    let ok: boolean | undefined;
+    await act(async () => { ok = await result.current.refetch(); });
+    expect(ok).toBe(false);
+    expect(result.current.error).toBe('rede');
+    expect(result.current.status).toBe('ready');
+  });
+
   it('erro de carga vira status error', async () => {
     get.mockRejectedValueOnce(new Error('boom'));
     const { result } = renderHook(() => useVacancyInviteBoard('v1', { enabled: true, canExecute: true }));
