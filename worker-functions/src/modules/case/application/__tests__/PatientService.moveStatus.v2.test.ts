@@ -193,7 +193,7 @@ describe('PatientService.moveStatus v2', () => {
       });
     });
 
-    it.each(['vacancy_launch', 'recruitment_activation'] as const)(
+    it.each(['recruitment_activation', 'kanban'] as const)(
       'ADMISSION → SEARCHING com changeSource %s → consulta o catálogo (linha da 479) e grava, set_config com a origem',
       async (source) => {
         db('ADMISSION', [['ADMISSION', 'SEARCHING']]);
@@ -476,7 +476,8 @@ describe('PatientService.moveStatus v2', () => {
 });
 
 // ─── cadeia Fase 15 (DX-15.4): `movePatientStatus` no client da transação de quem chama ───
-import { movePatientStatus, PatientStatusNotReadyError } from '../PatientStatusWriter';
+import { PatientStatusNotReadyError } from '../PatientStatusWriter';
+import { movePatientStatus } from '../../interfaces/composition/patientStatusComposition';
 import type { PoolClient } from 'pg';
 
 describe('movePatientStatus com o client de quem chama (cadeia Fase 15)', () => {

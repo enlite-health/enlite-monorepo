@@ -94,7 +94,16 @@ describe('loadPatientCompleteness', () => {
     await loadPatientCompleteness(client, PID);
     expect(sqls[0]).toMatch(/WHERE p\.id = \$1 AND p\.deleted_at IS NULL/);
     expect(sqls[0]).not.toContain(PID); // id vai por parâmetro, não concatenado
-    expect((client.query as jest.Mock).mock.calls[0][1]).toEqual([PID]);
+    expect((client.query as jest.Mock).mock.calls[0][1]).toEqual([PID, null]); // sem serviceId = o paciente inteiro
+  });
+
+  it('D2 — com serviceId, só ele entra na contagem de "sem horário" (pcs.id = $2, por parâmetro)', async () => {
+    const SID = '22222222-2222-4222-8222-222222222222';
+    const { client, sqls } = clientQueDevolve([FICHA_COMPLETA]);
+    await loadPatientCompleteness(client, PID, SID);
+    expect(sqls[0]).toMatch(/pcs\.id = \$2::uuid/);
+    expect(sqls[0]).not.toContain(SID);
+    expect((client.query as jest.Mock).mock.calls[0][1]).toEqual([PID, SID]);
   });
 
   it('a REGRA é do domínio, não daqui: o mesmo insumo dá o mesmo veredito de computePatientCompleteness', async () => {

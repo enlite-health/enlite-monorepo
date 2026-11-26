@@ -4233,7 +4233,6 @@
           "activateRecruitmentTooltip": "Falta: {{items}}",
           "viewVacancy": "Ver vacante",
           "activateRecruitmentToast": "Vacante en borrador creada",
-          "activateRecruitmentPatientNotMoved": "Vacante creada. El paciente sigue en Admisión: falta {{items}} en un servicio activo.",
           "activateRecruitmentError": "No se pudo activar el reclutamiento",
           "activateRecruitmentAlreadyRecruiting": "Este servicio ya tiene una vacante en curso",
           "payerKindOptions": {
@@ -5129,6 +5128,7 @@
           "activate": "Activación",
           "system": "Sistema",
           "recruitment_activation": "Activación del reclutamiento",
+          "vacancy_launch": "Lanzamiento de la vacante",
           "admin_panel_override": "Panel (fuera del flujo)",
           "kanban_override": "Kanban (fuera del flujo)"
         },

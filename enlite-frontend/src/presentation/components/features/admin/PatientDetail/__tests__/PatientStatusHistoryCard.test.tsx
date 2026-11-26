@@ -70,6 +70,18 @@ describe('PatientStatusHistoryCard', () => {
     expect(screen.getByTestId('status-history-row-0')).toHaveTextContent('Painel (fora do fluxo)');
   });
 
+  // D1: o lançamento da vaga não move mais o paciente, mas linhas antigas da trilha (migration 479) têm essa origem — o Historial
+  // as mostra traduzidas (es "Lanzamiento de la vacante" / pt-BR "Lançamento da vaga"), nunca o valor cru.
+  it('origem antiga do lançamento da vaga aparece traduzida, não como valor cru', async () => {
+    getPatientStatusHistory.mockResolvedValue([
+      { from: 'ADMISSION', to: 'SEARCHING', source: 'vacancy_launch', at: '2026-10-05T10:00:00.000Z', reason: null, actorUid: null },
+    ]);
+    render(<PatientStatusHistoryCard patientId="p1" />);
+    const row0 = await screen.findByTestId('status-history-row-0');
+    expect(row0).toHaveTextContent('Lançamento da vaga');
+    expect(row0).not.toHaveTextContent('vacancy_launch');
+  });
+
   it('origem *_override aparece traduzida como "fora do fluxo" (painel e Kanban), não como valor cru', async () => {
     getPatientStatusHistory.mockResolvedValue([
       { from: 'ACTIVE', to: 'SEARCHING', source: 'admin_panel_override', at: '2026-10-10T14:00:00.000Z', reason: null, actorUid: 'uid-a' },

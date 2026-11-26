@@ -21,7 +21,7 @@ import { Pool, PoolClient } from 'pg';
 import { ItineraryAllocationUseCase } from '../../src/modules/case/application/ItineraryAllocationUseCase';
 import { AssembleItineraryUseCase } from '../../src/modules/case/application/AssembleItineraryUseCase';
 import { PatientStatusDerivation } from '../../src/modules/case/application/PatientStatusDerivation';
-import { movePatientStatus } from '../../src/modules/case/application/PatientStatusWriter';
+import { movePatientStatus } from '../../src/modules/case/interfaces/composition/patientStatusComposition';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';

@@ -7,16 +7,15 @@
  *   6. o paciente `ACTIVE` (já com um serviço em atendimento — é o que o próprio status
  *      `ACTIVE` representa) ganha um 2º serviço novo; o foguete + lançamento (`/talentum` →
  *      "Publicar en Talentum") desse 2º serviço NÃO regride o paciente — ele continua `ACTIVE`
- *      (API e coluna do Kanban do paciente), a trilha `vacancy_launch` fica em 0, e o gancho
- *      (`VacancyLaunchHook.movePatientIfInFunnel`) registra `patient: 'unchanged'` (fora do
- *      funil de Admissão — `isAdmissionFunnelStatus('ACTIVE')` é falso, DX-6.3).
+ *      (API e coluna do Kanban do paciente) e a trilha `vacancy_launch` fica em 0 (o envio à Talentum não move
+ *      o paciente — estado-automatico-do-paciente, D1; o gancho do lançamento foi apagado).
  *
  * DX-6.3: `seedLaunchablePatient({ status: 'ACTIVE', ... })` cria pelo helper só UM serviço via
  * API (o que o foguete usa) — medido que basta: `ActivateRecruitmentUseCase` só lê a completude
  * do PRÓPRIO serviço (endereço + horário) e o `insurance_informed` do paciente; não consulta
  * outros serviços nem o `status` do paciente para decidir se recruta. Não foi preciso semear um
  * 1º serviço adicional com horário + vaga fechada — o `status: 'ACTIVE'` já É o que representa
- * "serviço em atendimento" para o gancho (`movePatientIfInFunnel` só olha `target.patientStatus`).
+ * "serviço em atendimento" (o foguete só move quem está no funil de admissão).
  *
  * Compatíveis (`stages.COMPATIBLE`, o controle positivo do match sem convite) é da Fase 4, fora da
  * rota (b) (D455): a asserção sai daqui e volta na rota (a).
@@ -99,7 +98,7 @@ test.describe('funil-vacante lancamento segundo servico @integration', () => {
       expect(statusAfter, 'status depois do publish — não regride').toBe('ACTIVE');
 
       const trailAfter = countLaunchTrail(patient.patientId);
-      expect(trailAfter, 'trilha vacancy_launch continua em 0 (gancho não moveu)').toBe(0);
+      expect(trailAfter, 'trilha vacancy_launch continua em 0 (o envio não move)').toBe(0);
 
       const columnAfterLaunch = await readPatientKanbanColumn(page, patient.patientId);
       expect(columnAfterLaunch, 'coluna do Kanban do paciente continua ACTIVE').toBe('ACTIVE');

@@ -14,7 +14,6 @@ jest.mock('firebase-functions', () => ({ logger: { info: jest.fn(), warn: jest.f
 
 import * as functions from 'firebase-functions';
 import {
-  movePatientStatus,
   PatientStatusPermissionError,
   PatientStatusTransitionError,
   PatientStatusNotReadyError,
@@ -26,8 +25,10 @@ import { CLINICAL_PATIENT_STATUSES, type ClinicalPatientStatus } from '../../dom
 import { CELULA_DO_DESTINO } from '../../domain/trocaForaDoFluxo';
 import { patientStatusSchema } from '../../interfaces/validators/patientSectionSchemas';
 import { naFsm, PARES_NA_FSM, PARES_FSM_36 } from './fixtures/fsmClinicaProd20261010';
+import { writerSobreClient } from './fixtures/portsSobreClient';
 
 const PID = '11111111-1111-4111-8111-111111111111';
+const movePatientStatus = writerSobreClient(mockClient);
 
 const FICHA_COMPLETA = {
   birth_date: '1980-01-01', has_consent: true, insurance_informed: 'OSDE',

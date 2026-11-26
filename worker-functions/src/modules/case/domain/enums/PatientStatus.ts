@@ -69,11 +69,11 @@ export function isAdmissionFunnelStatus(value: unknown): value is AdmissionFunne
 }
 
 /**
- * D469 (02/10/2026, revê a invariante 7/D434): sair do funil de admissão para Búsqueda é ato
- * INTENCIONAL — o foguete (`recruitment_activation`), o envio à Talentum (`vacancy_launch`) ou o
- * arrasto no Kanban do paciente (`kanban`). O PUT /status do select da ficha (`admin_panel`) e a
- * derivação (`system`) continuam recusados. Quem decide é `isFunnelToSearchingTransition` + a lista
- * `FUNNEL_TO_SEARCHING_SOURCES` no `PatientStatusWriter`; a linha existe no catálogo (479).
+ * D469 (02/10/2026, revê a invariante 7/D434) + D1 (estado-automatico-do-paciente): sair do funil de admissão para Búsqueda
+ * é ato INTENCIONAL — o foguete (`recruitment_activation`) e, até a F5, o arrasto no Kanban do paciente (`kanban`). O envio
+ * à Talentum NÃO move mais; o PUT /status do select da ficha (`admin_panel`) e a derivação (`system`) continuam recusados.
+ * Quem decide é `isFunnelToSearchingTransition` + a tabela de origem (`POLITICA_POR_ORIGEM` em `PatientChangeSource`);
+ * a linha existe no catálogo (479).
  */
 export function isFunnelToSearchingTransition(from: unknown, to: unknown): boolean {
   return isAdmissionFunnelStatus(from) && to === 'SEARCHING';

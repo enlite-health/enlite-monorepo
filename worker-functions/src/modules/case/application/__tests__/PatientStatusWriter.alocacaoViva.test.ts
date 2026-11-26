@@ -10,11 +10,13 @@ jest.mock('../patientTransaction', () => ({
 jest.mock('firebase-functions', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 
 import type { PoolClient } from 'pg';
-import { movePatientStatus, PatientStatusLockedByAllocationError } from '../PatientStatusWriter';
+import { PatientStatusLockedByAllocationError } from '../PatientStatusWriter';
+import { writerSobreClient } from './fixtures/portsSobreClient';
 import { loadStatusOptions, ACTIVE_ALLOCATION_BLOCK } from '../PatientStatusOptions';
 import { destinosNaFsm, naFsm } from './fixtures/fsmClinicaProd20261010';
 
 const PID = '11111111-1111-4111-8111-111111111111';
+const movePatientStatus = writerSobreClient(mockClient);
 const FICHA_COMPLETA = {
   birth_date: '1980-01-01', has_consent: true, insurance_informed: 'OSDE',
   active_address_count: '1', active_responsible_count: '0', active_service_count: '1',

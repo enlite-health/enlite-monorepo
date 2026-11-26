@@ -15,10 +15,8 @@ import { inPatientTransaction, CaseNumberConflictRetry, rethrowAsCaseNumberRetry
 import type { AttentionReason } from '../domain/enums/AttentionReason';
 import type { PatientStatus } from '../domain/enums/PatientStatus';
 import type { ManualChangeSource } from '../domain/enums/PatientChangeSource';
-import {
-  movePatientStatus,
-  type MoveStatusOptions,
-} from './PatientStatusWriter';
+import type { MovePatientStatus, MoveStatusOptions } from './PatientStatusWriter';
+import { movePatientStatus as compositionMovePatientStatus } from '../interfaces/composition/patientStatusComposition';
 import { listPatientStatusOptions, type PatientStatusOptions } from './PatientStatusOptions';
 import { PatientDeviceTypeRepository } from '../infrastructure/PatientDeviceTypeRepository';
 import { PatientInsuranceVerifiedRepository } from '../infrastructure/PatientInsuranceVerifiedRepository';
@@ -97,7 +95,8 @@ export class PatientService {
     };
   }
 
-  constructor(geocoder?: GeocodingService) {
+  /** `moveStatus`: o escritor de estado (E2 — a composição na borda entrega o real; os testes entregam um dublê). */
+  constructor(geocoder?: GeocodingService, private readonly moveStatusWriter: MovePatientStatus = compositionMovePatientStatus) {
     this.identityRepo    = new PatientIdentityRepository();
     this.clinicalRepo    = new PatientClinicalRepository();
     this.responsibleRepo = new PatientResponsibleRepository();
@@ -294,7 +293,7 @@ export class PatientService {
     status: PatientStatus,
     opts: MoveStatusOptions = { changeSource: 'admin_panel' },
   ): Promise<{ id: string; status: PatientStatus }> {
-    return movePatientStatus(patientId, status, opts);
+    return this.moveStatusWriter(patientId, status, opts);
   }
 
   /** Spec 051 (F3): destinos de estado que o servidor aceitaria para este paciente e este ator. */

@@ -16,12 +16,16 @@ import {
  * usa as linhas para montar as vagas) e `PatientQueryRepository` as faz como subselects da
  * listagem.
  *
+ * `serviceId` (D2, escopo `servico` do foguete): a contagem de "serviço ativo sem horário" olha SÓ esse serviço
+ * (mesmo fragmento `serviceWithoutScheduleSql`); sem ele, todos os serviços ativos do paciente (o que sempre foi).
+ *
  * Recebe o `PoolClient` de propósito: a guarda roda DENTRO da transação que já segurou a linha
  * do paciente com `FOR UPDATE`. Ler por fora abriria janela entre a checagem e o UPDATE.
  */
 export async function loadPatientCompleteness(
   client: PoolClient,
   patientId: string,
+  serviceId?: string,
 ): Promise<PatientCompletenessResult> {
   const res = await client.query<{
     birth_date: string | Date | null;
@@ -56,6 +60,7 @@ export async function loadPatientCompleteness(
        -- serviço ativo sem horário: nenhuma faixa vigente hoje (decisão do Gabriel 07/09; spec 056: fragmento único).
        (SELECT COUNT(*) FROM patient_contracted_services pcs
          WHERE pcs.patient_id = p.id AND pcs.active
+           AND ($2::uuid IS NULL OR pcs.id = $2::uuid)
            AND ${serviceWithoutScheduleSql('pcs')})
                                                                      AS services_without_schedule_count,
        p.status,
@@ -65,7 +70,7 @@ export async function loadPatientCompleteness(
        ${activeDiagnosisCountSql('p.id')}                             AS active_diagnosis_count
      FROM patients p
     WHERE p.id = $1 AND p.deleted_at IS NULL`,
-    [patientId],
+    [patientId, serviceId ?? null],
   );
 
   const row = res.rows[0];

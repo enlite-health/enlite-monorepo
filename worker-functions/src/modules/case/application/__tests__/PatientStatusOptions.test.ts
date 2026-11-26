@@ -12,12 +12,14 @@ jest.mock('firebase-functions', () => ({ logger: { info: jest.fn(), warn: jest.f
 import type { PoolClient } from 'pg';
 import { MANUAL_CHANGE_SOURCES, type ManualChangeSource } from '../../domain/enums/PatientChangeSource';
 import { loadStatusOptions } from '../PatientStatusOptions';
-import { movePatientStatus, trocaPassaPelaGuarda, PatientStatusPermissionError, PatientStatusTransitionError } from '../PatientStatusWriter';
+import { trocaPassaPelaGuarda, PatientStatusPermissionError, PatientStatusTransitionError } from '../PatientStatusWriter';
 import { CLINICAL_PATIENT_STATUSES, PATIENT_STATUSES, isClinicalPatientStatus, type PatientStatus } from '../../domain/enums/PatientStatus';
 import { CELULA_DO_DESTINO } from '../../domain/trocaForaDoFluxo';
 import { naFsm, destinosNaFsm, PARES_FSM_36 } from './fixtures/fsmClinicaProd20261010';
+import { writerSobreClient } from './fixtures/portsSobreClient';
 
 const PID = '11111111-1111-4111-8111-111111111111';
+const movePatientStatus = writerSobreClient(mockClient);
 const FICHA_COMPLETA = {
   birth_date: '1980-01-01', has_consent: true, insurance_informed: 'OSDE',
   active_address_count: '1', active_responsible_count: '0', active_service_count: '1',

@@ -9,10 +9,10 @@
  *     serviço sem vacante viva não conta);
  *   - `cobertas`/`scheduleHours` são a conta da Fase 7 (`buildServiceCoverages`) na data de operação
  *     do país; a ausência datada não entra na conta;
- *   - move por `movePatientStatus` com `changeSource: 'system'` e o client recebido (nenhum
+ *   - move pelo escritor de estado (`MovePatientStatus`, vindo da composição) com `changeSource: 'system'` e o client recebido (nenhum
  *     BEGIN/COMMIT próprio — comitaria a alocação no meio).
  * A recusa da completude (`PatientStatusNotReadyError`) não desfaz a alocação: o estado fica e a
- * recusa vai para `logger.warn` sem PII (molde `VacancyLaunchHook`). Qualquer outro erro propaga.
+ * recusa vai para `logger.warn` sem PII . Qualquer outro erro propaga.
  * A derivação é incondicional: sem feature flag (D476).
  */
 import * as functions from 'firebase-functions';
@@ -21,7 +21,8 @@ import { derivarEstadoPaciente, type EntradaDerivacao, type ServicoParaDerivar }
 import { PatientStatusDerivationReader, type DerivationSubject } from '../infrastructure/PatientStatusDerivationReader';
 import { PatientKanbanServicesReader, type KanbanServicesRows } from '../infrastructure/PatientKanbanServicesReader';
 import { buildServiceCoverages, operationDateOf } from './itineraryCoverage';
-import { movePatientStatus, PatientStatusNotReadyError } from './PatientStatusWriter';
+import { PatientStatusNotReadyError, type MovePatientStatus } from './PatientStatusWriter';
+import { movePatientStatus as compositionMovePatientStatus } from '../interfaces/composition/patientStatusComposition';
 
 export type DerivationOutcome = 'not_subject' | 'unchanged' | 'moved' | 'not_ready';
 
@@ -55,18 +56,18 @@ export interface DerivationServicesReaderPort {
 export interface PatientStatusDerivationDeps {
   subjectReader?: DerivationSubjectReaderPort;
   servicesReader?: DerivationServicesReaderPort;
-  moveStatus?: typeof movePatientStatus;
+  moveStatus?: MovePatientStatus;
 }
 
 export class PatientStatusDerivation implements PatientStatusDerivationPort {
   private readonly subjectReader: DerivationSubjectReaderPort;
   private readonly servicesReader: DerivationServicesReaderPort;
-  private readonly moveStatus: typeof movePatientStatus;
+  private readonly moveStatus: MovePatientStatus;
 
   constructor(deps: PatientStatusDerivationDeps = {}) {
     this.subjectReader = deps.subjectReader ?? new PatientStatusDerivationReader();
     this.servicesReader = deps.servicesReader ?? new PatientKanbanServicesReader();
-    this.moveStatus = deps.moveStatus ?? movePatientStatus;
+    this.moveStatus = deps.moveStatus ?? compositionMovePatientStatus;
   }
 
   /**

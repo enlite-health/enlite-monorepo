@@ -20,6 +20,7 @@ import {
   LinkableVacancyExistsError,
   RecruitmentNotReadyError,
 } from '../../application/ActivateRecruitmentUseCase';
+import { buildActivateRecruitmentUseCase } from '../composition/patientStatusComposition';
 import {
   LinkExistingVacancyUseCase,
   VacancyNotLinkableError,
@@ -54,7 +55,7 @@ const serviceParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uu
 export class AdminPatientContractedServicesController {
   constructor(
     private readonly repo: PatientContractedServiceRepository = new PatientContractedServiceRepository(),
-    private readonly activateRecruitmentUseCase: ActivateRecruitmentUseCase = new ActivateRecruitmentUseCase(),
+    private readonly activateRecruitmentUseCase: ActivateRecruitmentUseCase = buildActivateRecruitmentUseCase(),
     /** `requestNow` único por requisição (spec 058 §H): é dele que o repositório tira o `asOf` do país do serviço. */
     private readonly now: () => Date = () => new Date(),
     /** Spec 079: vínculo de vaga existente ao serviço (composição aqui, como o foguete). */
@@ -216,10 +217,6 @@ export class AdminPatientContractedServicesController {
           vacancyId: result.vacancyId,
           patientStatus: result.patientStatus,
           statusChanged: result.statusChanged,
-          // `missing` pode trazer `DIAGNOSIS`: sai como `CLINICAL_DATA` para quem não lê `patient_clinical`.
-          ...(result.patientNotMoved
-            ? { patientNotMoved: { missing: exposeBlockingCodes(result.patientNotMoved.missing, clinicalCellsOf(req)) } }
-            : {}),
         },
       });
     } catch (err: unknown) {
