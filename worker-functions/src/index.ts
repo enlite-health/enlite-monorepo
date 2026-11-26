@@ -183,6 +183,7 @@ import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMainten
 import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
 import { registerEnquadreInternalJobRoutes } from './bootstrap/registerEnquadreInternalJobRoutes';
 import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController, createTalentumInboxInternalRoutes, TalentumInboxInternalController, ProcessTalentumInboxUseCase, TalentumInboxRepository, CreateJobPostingFromTalentumUseCase, talentumPrescreeningIdResolver } from '@modules/integration';
+import type { CreateJobPostingFromTalentumPrefetch } from './modules/integration/application/CreateJobPostingFromTalentumUseCase';
 import { ProcessTalentumPrescreening, TalentumPrescreeningRepository, JobPostingLookup } from '@modules/matching';
 import { WorkerRepository } from '@modules/worker';
 import { createAdminPedidosIaRoutes, createPedidoIaController, createAssistantsPlatformController, createAdminAssistantsRoutes, createAssistantCountService, createAdminLuzPruebaRoutes, createLuzPruebaController } from '@modules/agentes';
@@ -974,7 +975,13 @@ const talentumInboxProcessor = new ProcessTalentumInboxUseCase(
   dbPool,
   new TalentumInboxRepository(),
   new ProcessTalentumPrescreening(new TalentumPrescreeningRepository(), new WorkerRepository(), new JobPostingLookup(dbPool), dbPool, pubsubClient, talentumAlarmNotifier),
-  { execute: (data, environment, client) => new CreateJobPostingFromTalentumUseCase(client ? txBoundPool(client) : dbPool, talentumPrescreeningIdResolver).execute(data, environment) },
+  {
+    // A busca no Talentum (prefetch) roda FORA da transação do processador; `execute` só grava no client dela (T-095-30).
+    prefetch: (data) => new CreateJobPostingFromTalentumUseCase(dbPool, talentumPrescreeningIdResolver).prefetch(data),
+    execute: (data, environment, client, prefetched) =>
+      new CreateJobPostingFromTalentumUseCase(client ? txBoundPool(client) : dbPool, talentumPrescreeningIdResolver)
+        .execute(data, environment, prefetched as CreateJobPostingFromTalentumPrefetch | undefined),
+  },
 );
 app.use(
   '/api/internal',

@@ -53,8 +53,20 @@ export type AfterCommit = (effect: () => Promise<void>) => void;
 
 /** Port da criação de vaga por evento `PRESCREENING` (`CreateJobPostingFromTalentumUseCase`). */
 export interface IJobPostingFromTalentumCreator {
+  /**
+   * Busca externa (Secret Manager + API do Talentum), feita ANTES de abrir a transação da linha: HTTP dentro dela seguraria
+   * a conexão e o advisory lock da chave durante a chamada. O resultado volta em `execute(..., prefetched)`. Opcional:
+   * sem ela, `execute` resolve sozinho (comportamento antigo, para quem não usa transação).
+   */
+  prefetch?(data: { _id: string; name: string }): Promise<unknown>;
   /** `client` = a transação do processador: o caso de uso roda nela, sem 2ª conexão do pool (T-095-30). */
-  execute(data: { _id: string; name: string }, environment: TalentumEnvironment, client?: PoolClient): Promise<unknown>;
+  execute(data: { _id: string; name: string }, environment: TalentumEnvironment, client?: PoolClient, prefetched?: unknown): Promise<unknown>;
+}
+
+/** Estado de UMA chamada de `execute` (nunca do singleton). */
+interface CallState {
+  prefetched: Map<string, { value?: unknown; error?: unknown }>;
+  payloads: Map<string, unknown>;
 }
 
 export type ProcessInboxOutcome = 'PROCESSED' | 'ALREADY_PROCESSED' | 'NOT_FOUND' | 'SKIPPED';
@@ -95,6 +107,9 @@ export class ProcessTalentumInboxUseCase {
     let key: { prescreeningId: string | null; profileId: string | null } | undefined;
     const seen = new Set<string>(); // linha já tratada NESTA chamada (o redrive de assentada a mantém "pendente": não repetir)
     const reprocessIds = [inboxId];
+    // Estado POR CHAMADA (o caso de uso é singleton, com pushes concorrentes): busca externa da criação de vaga e payload já decifrado.
+    const call: CallState = { prefetched: new Map(), payloads: new Map() };
+    const prefetched = call.prefetched;
 
     // UMA transação POR LINHA (T-095-30), cada uma com UMA conexão do pool: leitura, lock da chave, processamento e marcas
     // rodam no `client` dela; nada daqui (nem de `processRow`) chama `pool.connect()`/`pool.query()`. Por linha, e não uma
@@ -106,6 +121,7 @@ export class ProcessTalentumInboxUseCase {
       const step = await withActorContext(this.pool, async (client): Promise<
         | { kind: 'early'; result: ProcessInboxResult }
         | { kind: 'done' }
+        | { kind: 'prefetch'; itemId: string; data: { _id: string; name: string } }
         | { kind: 'row'; effects: Array<() => Promise<void>>; more: boolean; failure?: { error: unknown } }
       > => {
         if (!key) {
@@ -121,12 +137,18 @@ export class ProcessTalentumInboxUseCase {
         const item = pending.find((p) => !seen.has(p.id));
         if (!item) return { kind: 'done' };
         seen.add(item.id);
+        // Criação de vaga: a busca externa sai ANTES da transação (T-095-30). Esta passada só descobre que precisa dela,
+        // solta a conexão e o lock, e a linha volta na próxima passada já com o resultado em `prefetched`.
+        if (this.jobPostingCreator.prefetch && !prefetched.has(item.id)) {
+          const need = await this.creationData(item, call);
+          if (need) { seen.delete(item.id); return { kind: 'prefetch', itemId: item.id, data: need }; }
+        }
         const more = pending.some((p) => !seen.has(p.id)); // havia outra pendente além desta: só então vale outra transação
 
         await client.query('SAVEPOINT talentum_inbox_row');
         const effects: Array<() => Promise<void>> = [];
         try {
-          const verdict = await this.processRow(item, client, (effect) => { effects.push(effect); });
+          const verdict = await this.processRow(item, client, (effect) => { effects.push(effect); }, call);
           if (verdict.kind === 'PROCESSED') {
             await this.inbox.markProcessed(client, item.id);
             processed += 1;
@@ -145,6 +167,12 @@ export class ProcessTalentumInboxUseCase {
 
       if (step.kind === 'early') return step.result;
       if (step.kind === 'done') break;
+      if (step.kind === 'prefetch') {
+        // Sem transação aberta. Falha da busca → guardada e relançada DENTRO do SAVEPOINT da linha: vira FAILED como qualquer erro.
+        try { prefetched.set(step.itemId, { value: await this.jobPostingCreator.prefetch!(step.data) }); }
+        catch (error) { prefetched.set(step.itemId, { error }); }
+        continue;
+      }
       for (const effect of step.effects) await effect(); // já commitado: o consumidor do Pub/Sub enxerga o que a linha gravou
       if (step.failure) { failure = step.failure; break; } // ordem importa: as mais novas não são tentadas; entram na próxima entrega
       if (!step.more) break;
@@ -157,8 +185,21 @@ export class ProcessTalentumInboxUseCase {
     return { inboxId, outcome: 'PROCESSED', processed };
   }
 
-  private async processRow(item: TalentumInboxRow, client: PoolClient, afterCommit: AfterCommit): Promise<RowVerdict> {
-    const payload = await this.inbox.decryptPayload(item);
+  private async payloadOf(item: TalentumInboxRow, call: CallState): Promise<unknown> {
+    if (!call.payloads.has(item.id)) call.payloads.set(item.id, await this.inbox.decryptPayload(item));
+    return call.payloads.get(item.id);
+  }
+
+  /** `{_id, name}` se a linha é uma criação de vaga válida (a única que faz busca externa); senão `null`. */
+  private async creationData(item: TalentumInboxRow, call: CallState): Promise<{ _id: string; name: string } | null> {
+    const payload = await this.payloadOf(item, call);
+    if (unsupportedReason(payload)) return null;
+    const parsed = TalentumPrescreeningPayloadSchema.safeParse(payload);
+    return parsed.success && parsed.data.action === 'PRESCREENING' ? parsed.data.data : null;
+  }
+
+  private async processRow(item: TalentumInboxRow, client: PoolClient, afterCommit: AfterCommit, call: CallState): Promise<RowVerdict> {
+    const payload = await this.payloadOf(item, call);
 
     // 1) Formato desconhecido (action/subtype fora do que o processador entende) → UNSUPPORTED, sem tentar o schema.
     //    A linha fica guardada; depois do deploy que aceita o formato, o redrive a reprocessa.
@@ -180,7 +221,10 @@ export class ProcessTalentumInboxUseCase {
 
     if (parsed.data.action === 'PRESCREENING') {
       // Criação de vaga (evento `PRESCREENING`/`CREATED`): o mesmo caso de uso que o VacancyCreatedHandler chamava.
-      await this.jobPostingCreator.execute(parsed.data.data, item.environment, client);
+      const pre = call.prefetched.get(item.id);
+      if (pre?.error) throw pre.error; // a busca externa falhou fora da transação: a linha vira FAILED aqui, no SAVEPOINT
+      if (pre) await this.jobPostingCreator.execute(parsed.data.data, item.environment, client, pre.value);
+      else await this.jobPostingCreator.execute(parsed.data.data, item.environment, client);
       return { kind: 'PROCESSED' };
     }
     await this.prescreeningProcessor.execute(parsed.data, { environment: item.environment, client, afterCommit });
