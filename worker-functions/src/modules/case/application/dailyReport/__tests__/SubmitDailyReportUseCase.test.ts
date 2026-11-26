@@ -2,6 +2,7 @@ import { SubmitDailyReportUseCase, type SubmitDailyReportCommand } from '../Subm
 import { DailyReportConflictError, DailyReportError, type ReportAnswer } from '../../../domain/DailyReport';
 import { AccountInactiveError } from '../../GetWorkerItineraryUseCase';
 import { PresenceUnavailableError, type PresenceReader, type PresenceStatus } from '../../ports/PresenceReaderPort';
+import type { DailyReportPort } from '../../ports/DailyReportPort';
 import { fakePort, fakeState, version, guard, obj, OTHER_SERVICE, type FakeState } from './fakeDailyReport';
 
 const choice = (itemId: string, scaleCode: string, optionCode: string, reasonCode: string | null = null, itemKind: 'objective' | 'activity' = 'objective'): ReportAnswer =>
@@ -234,6 +235,33 @@ describe('SubmitDailyReportUseCase — contrato do PUT', () => {
 
     it('a presença é conferida ANTES do molde: presença aberta + PTI desatualizado → presence_open', async () => {
       expect(await codeOf(run(fakeState(), cmd({ ptiVersionId: null, answers: [] }), fakePresence('OPEN')))).toBe('daily_report_presence_open');
+    });
+
+    it('o PresenceReader é chamado SEM transação aberta (HTTP nunca segura conexão do pool), e as fases de banco rodam em tx próprias antes e depois', async () => {
+      const s = fakeState();
+      const inner = fakePort(s);
+      let active = 0;
+      const log: string[] = [];
+      const tracked: DailyReportPort = { run: (work) => { active++; log.push('tx+'); return inner.run(work).finally(() => { active--; log.push('tx-'); }); } };
+      const presence: PresenceReader = { statusOf: async () => { log.push(active === 0 ? 'presence(sem-tx)' : 'presence(DENTRO-DE-TX)'); return 'CLOSED'; } };
+      expect(await new SubmitDailyReportUseCase(tracked, presence).execute(cmd())).toBe('created');
+      expect(log).toEqual(['tx+', 'tx-', 'presence(sem-tx)', 'tx+', 'tx-']);
+    });
+
+    it('outro PUT grava o mesmo id enquanto a presença é consultada → a 2ª tx devolve 200 (replayed) sem gravar de novo', async () => {
+      const s = fakeState();
+      const presence: PresenceReader = {
+        statusOf: async () => { await run(s, cmd()); return 'CLOSED'; }, // o "outro PUT" completo termina durante a consulta
+      };
+      expect(await new SubmitDailyReportUseCase(fakePort(s), presence).execute(cmd())).toBe('replayed');
+      expect(s.inserted).toHaveLength(1);
+    });
+
+    it('outro id grava a mesma guarda durante a consulta → 409 daily_report_exists', async () => {
+      const s = fakeState();
+      const presence: PresenceReader = { statusOf: async () => { await run(s, cmd({ reportId: 'r-2' })); return 'CLOSED'; } };
+      expect(await codeOf(new SubmitDailyReportUseCase(fakePort(s), presence).execute(cmd()))).toBe('daily_report_exists');
+      expect(s.inserted).toHaveLength(1);
     });
   });
 });

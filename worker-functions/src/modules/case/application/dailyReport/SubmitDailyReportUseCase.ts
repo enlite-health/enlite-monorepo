@@ -10,6 +10,8 @@
  *   5c. o servidor escolhe o PTI vigente na data da guarda; `null` ou versão ≠ vigente com PTI vigente → 409 `daily_report_template_outdated` (retentável);
  *   6. respostas contra o molde → erros nomeados; 7. grava (201). Corrida de 2 PUTs: o UNIQUE pega o 2º e o use case relê UMA vez e decide 200/409.
  *
+ * Transações: a consulta do 5b roda FORA de qualquer transação (ver `SubmitDailyReportUseCase`): 1-5 numa tx, 5b sem tx, 3/4 + 5c-7 em outra tx.
+ *
  * Revoga a DC-10 ("o servidor não exige check-out"). Nada aqui loga nem ecoa `narrative` ou respostas.
  */
 import type { DailyReportPort, DailyReportTx, GuardOccurrence } from '../ports/DailyReportPort';
@@ -40,36 +42,62 @@ export interface SubmitDailyReportCommand {
 
 export type SubmitOutcome = 'created' | 'replayed';
 
+/** Saída da 1ª transação (passos 1-5): ou já respondeu (retry idempotente) ou entrega o que a presença e a 2ª transação precisam. */
+type Prepared = { outcome: SubmitOutcome } | { outcome: null; workerId: string; guard: GuardOccurrence; content: ReportContent };
+
+/**
+ * Três fases, para NUNCA segurar conexão do pool durante chamada de rede (DB_POOL_MAX=5 em prd: attendance lento esgotaria o pool do WF):
+ *   A (tx curta) passos 1-5 · presença (HTTP ao attendance, SEM transação aberta) · B (tx curta) 3/4 de novo + 5c-7.
+ * A 3/4 se repete em B porque outro PUT pode ter gravado enquanto a presença era consultada; o UNIQUE continua sendo a trava final.
+ */
 export class SubmitDailyReportUseCase {
   constructor(private readonly port: DailyReportPort, private readonly presence: PresenceReader) {}
 
   async execute(cmd: SubmitDailyReportCommand): Promise<SubmitOutcome> {
+    const prepared = await this.port.run((tx) => this.prepare(tx, cmd));
+    if (prepared.outcome !== null) return prepared.outcome;
+    const { workerId, guard, content } = prepared;
+
+    if (!isPresenceClosed(await this.presence.statusOf(guard.occurrenceId))) throw new DailyReportConflictError('daily_report_presence_open');
+
     try {
-      return await this.port.run((tx) => this.attempt(tx, cmd));
+      return await this.port.run((tx) => this.persist(tx, cmd, workerId, guard, content));
     } catch (err) {
       if (!(err instanceof DuplicateReportError)) throw err;
-      // corrida: o outro PUT venceu entre a leitura e o INSERT; relê numa transação nova e decide.
-      return this.port.run((tx) => this.attempt(tx, cmd));
+      // corrida: o outro PUT venceu entre a leitura e o INSERT; relê numa transação nova e decide 200/409.
+      return this.port.run((tx) => this.persist(tx, cmd, workerId, guard, content));
     }
   }
 
-  private async attempt(tx: DailyReportTx, cmd: SubmitDailyReportCommand): Promise<SubmitOutcome> {
+  /** Passos 1-5 (só banco): conta, guarda, idempotência, outra id, janela. */
+  private async prepare(tx: DailyReportTx, cmd: SubmitDailyReportCommand): Promise<Prepared> {
     const workerId = await tx.workerIdByUid(cmd.uid);
     if (workerId === null) throw new AccountInactiveError();
     const guard = (await tx.guardsOf(workerId, cmd.today)).find((g) => g.occurrenceId === cmd.occurrenceId);
     if (!guard) throw new DailyReportError('occurrence_unknown');
 
     const content = this.contentOf(cmd, workerId, guard);
+    const replayed = await this.idempotency(tx, cmd, workerId, guard, content);
+    if (replayed) return { outcome: replayed };
+    if (ReportDue.of(guard.endsAt).isWindowClosed(cmd.now)) throw new DailyReportError('daily_report_window_closed');
+    return { outcome: null, workerId, guard, content };
+  }
+
+  /** Passos 3-4: mesmo `id` (mesmo conteúdo = 'replayed'; outro = 409) e outra `id` na mesma guarda (409). `null` = nada gravado ainda. */
+  private async idempotency(tx: DailyReportTx, cmd: SubmitDailyReportCommand, workerId: string, guard: GuardOccurrence, content: ReportContent): Promise<'replayed' | null> {
     const same = await tx.reportById(cmd.reportId);
     if (same) {
       if (sameReportContent(same, content)) return 'replayed';
       throw new DailyReportConflictError('daily_report_conflict');
     }
     if ((await tx.reportIdOfGuard(workerId, guard.slotId, guard.onDate)) !== null) throw new DailyReportConflictError('daily_report_exists');
-    if (ReportDue.of(guard.endsAt).isWindowClosed(cmd.now)) throw new DailyReportError('daily_report_window_closed');
+    return null;
+  }
 
-    if (!isPresenceClosed(await this.presence.statusOf(guard.occurrenceId))) throw new DailyReportConflictError('daily_report_presence_open');
-
+  /** Passos 3/4 de novo + 5c-7 (só banco). */
+  private async persist(tx: DailyReportTx, cmd: SubmitDailyReportCommand, workerId: string, guard: GuardOccurrence, content: ReportContent): Promise<SubmitOutcome> {
+    const replayed = await this.idempotency(tx, cmd, workerId, guard, content);
+    if (replayed) return replayed;
     const catalog = await tx.scaleCatalog();
     const template = await this.templateFor(tx, cmd.ptiVersionId, guard, catalog);
     template.validate(cmd.answers, catalog);
