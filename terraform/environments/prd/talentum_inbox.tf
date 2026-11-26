@@ -1,8 +1,11 @@
 # ---------------------------------------------------------------------------
 # Inbox do webhook do Talentum (spec 095): Pub/Sub + alarme
 # ---------------------------------------------------------------------------
-# NÃO APLICADO — apply é GATE do Gabriel, depois do deploy da main (a rota
-# POST /api/internal/talentum/inbox/process precisa existir antes da primeira entrega).
+# NÃO APLICADO — apply é GATE do Gabriel, em DUAS levas:
+#   1. ANTES do merge: os recursos de Pub/Sub (tópico, DLQ, subscription, IAM). Sem o tópico, o ack do webhook publica no vazio
+#      e os eventos ficam RECEIVED na inbox.
+#   2. DEPOIS do deploy da main: a métrica de log e a alert policy, com "vai" próprio (a rota
+#      POST /api/internal/talentum/inbox/process e o log do alarme precisam existir no serviço vivo).
 #
 # Molde: events.tf (tópico + subscription push com OIDC de `pubsub-invoker`, audience =
 # `worker_functions_run_url`, a mesma que o internalAuthMiddleware confere via
@@ -116,7 +119,9 @@ resource "google_monitoring_alert_policy" "talentum_webhook_alarm" {
       3. `silencio`: conferir com o Talentum se o webhook está ativo e se o ingress do serviço continua aberto.
 
       ## Redrive (reprocessa linhas da inbox, por chave ou por estado; só contagens na resposta)
-      `curl -X POST -H "X-Internal-Secret: $SEGREDO" "$BASE/api/internal/talentum/inbox/redrive"`
+      Corpo obrigatório (sem ele a rota responde 400): por estado (`state` em FAILED|UNSUPPORTED|REJECTED_SCHEMA|RECEIVED, `limit` 1-500, padrão 50) OU por chave (`talentumPrescreeningId` + `talentumProfileId`); nunca os dois.
+      `curl -X POST -H "Authorization: Bearer $(gcloud auth print-identity-token --audiences="$BASE")" -H "Content-Type: application/json" -d '{"state":"FAILED","limit":50}' "$BASE/api/internal/talentum/inbox/redrive"`
+      (`$BASE` = URL do `worker-functions`, a mesma `worker_functions_run_url`; a identidade precisa ser aceita pelo `internalAuthMiddleware`.)
     EOT
   }
 
