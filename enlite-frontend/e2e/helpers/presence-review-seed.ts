@@ -12,6 +12,7 @@
  */
 import { execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
+import { scalar } from './abac-stack-helper';
 
 export const ATTENDANCE_DB_URL = process.env.ATTENDANCE_TEST_DB_URL ?? 'postgresql://enlite_admin:enlite_password@localhost:5441/attendance';
 export const ATTENDANCE_API_URL = process.env.ATTENDANCE_API_URL ?? 'http://localhost:8090';
@@ -79,7 +80,8 @@ export function seedPendingException(o: { workerId: string; slotId: string; onDa
 /** `decision|resolution_code|decided_by_uid` da decisão gravada pelo attendance, ou '' se a exceção segue pendente. */
 export function decisionOf(workerId: string, eventId: string): string {
   const out = attendancePsql(workerId, `SELECT decision || '|' || resolution_code || '|' || decided_by_uid FROM attendance.presence_exception_decision WHERE event_id = '${eventId}'`);
-  return out.split('\n').filter(Boolean).pop() ?? '';
+  // o 1º resultado do `-c` é o `set_config` (ecoa o worker_id, sem `|`): só a linha da decisão tem `|`; sem decisão sobra '' (nunca o eco do set_config)
+  return out.split('\n').filter((l) => l.includes('|')).pop() ?? '';
 }
 
 export interface MonthHours {
@@ -92,12 +94,26 @@ export interface MonthHours {
  * Os cabeçalhos de auth do stack local vêm de `E2E_ATTENDANCE_HOURS_HEADERS` (JSON, ex.: o JWT do prestador e o `X-Serverless-Authorization`): o
  * stack da F9 é quem sabe como o attendance autentica ali. Sem a variável, falha dizendo isso — nunca devolve zero.
  */
-export async function readMonthHours(month: string): Promise<MonthHours> {
-  const raw = process.env.E2E_ATTENDANCE_HOURS_HEADERS;
-  if (!raw) throw new Error('E2E_ATTENDANCE_HOURS_HEADERS não definida: informe os cabeçalhos de auth do prestador para GET /internal/v1/sync/hours (ver cabeçalho de presence-review-seed.ts)');
-  const res = await fetch(`${ATTENDANCE_API_URL}/internal/v1/sync/hours`, { headers: JSON.parse(raw) as Record<string, string> });
+export async function readMonthHours(month: string, workerId?: string): Promise<MonthHours> {
+  const headers = hoursHeaders(workerId);
+  const res = await fetch(`${ATTENDANCE_API_URL}/internal/v1/sync/hours`, { headers });
   if (!res.ok) throw new Error(`GET /internal/v1/sync/hours respondeu ${res.status}`);
   const body = (await res.json()) as { items: Array<{ month: string; worked_minutes: number; shifts: number }> };
   const row = body.items.find((i) => i.month === month);
   return { workedMinutes: row?.worked_minutes ?? 0, shifts: row?.shifts ?? 0 };
+}
+
+/**
+ * Auth do prestador na API de horas: `E2E_ATTENDANCE_HOURS_HEADERS` (JSON) manda; sem ela, com `workerId`, monta o token mock do stack local
+ * (`mock_<base64>`, o mesmo que o WF e o attendance do stack da F9 aceitam) para o `auth_uid` desse prestador no banco do WF — o uid do titular é
+ * aleatório por rodada, então não dá para fixá-lo numa variável de ambiente.
+ */
+function hoursHeaders(workerId?: string): Record<string, string> {
+  const raw = process.env.E2E_ATTENDANCE_HOURS_HEADERS;
+  if (raw) return JSON.parse(raw) as Record<string, string>;
+  if (!workerId) throw new Error('E2E_ATTENDANCE_HOURS_HEADERS não definida e sem workerId: informe os cabeçalhos de auth do prestador para GET /internal/v1/sync/hours');
+  const uid = scalar(`SELECT auth_uid FROM workers WHERE id = '${workerId}'`);
+  if (!uid) throw new Error('prestador sem auth_uid no banco do WF: não há como autenticar na API de horas');
+  const token = Buffer.from(JSON.stringify({ uid, email: `${uid}@e2e.local`, role: 'worker', country: 'AR' })).toString('base64');
+  return { Authorization: `Bearer mock_${token}`, 'x-app-version': 'e2e-presence-review' };
 }

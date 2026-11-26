@@ -57,7 +57,7 @@ test.describe('revisión de presencia 077 — a coordenación decide, sin célul
     grantCell(grupos.coord, 'presence_exception', 'review');
     // O contrato de acesso tem cache no backend: espera a célula chegar ANTES de abrir a tela.
     await pollAuthz(request, COORD, (b) => b?.permissions?.includes('presence_exception:review'));
-    minutosAntes = await readMonthHours(recusada.onDate.slice(0, 7));
+    minutosAntes = await readMonthHours(recusada.onDate.slice(0, 7), w);
   });
 
   test.afterAll(() => {
@@ -108,7 +108,7 @@ test.describe('revisión de presencia 077 — a coordenación decide, sin célul
     await expect(page.getByTestId('presence-row').filter({ hasText: label(recusada.onDate) })).toHaveCount(0);
 
     expect(decisionOf(seed.titularWorkerId, recusada.eventId)).toBe(`REFUSED|NOT_AT_PATIENT|${COORD.uid}`);
-    const depois = await readMonthHours(mes);
+    const depois = await readMonthHours(mes, seed.titularWorkerId);
     expect(depois.workedMinutes).toBe(minutosAntes.workedMinutes - 120);
     expect(depois.shifts).toBe(minutosAntes.shifts - 1);
   });
