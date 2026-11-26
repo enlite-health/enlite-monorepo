@@ -178,7 +178,7 @@ export async function getRealEncuadreId(
   return 'unknown';
 }
 
-export type TalentumSubtype = 'INITIATED' | 'IN_PROGRESS' | 'COMPLETED' | 'ANALYZED';
+export type TalentumSubtype = 'INITIATED' | 'IN_PROGRESS' | 'COMPLETED' | 'ANALYZED' | 'EXPIRED';
 
 export interface TalentumWebhookOpts {
   /** ID único do prescreening no Talentum (deve ser estável por cenário). */
