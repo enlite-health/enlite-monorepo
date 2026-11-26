@@ -6,6 +6,7 @@ import {
   loadStageCounts,
   loadVacancyActivity,
   PatientStatusFilterForbiddenError,
+  VacancySemaphoreFilterError,
   VacancyListRow,
 } from './vacancyListHelpers';
 import { buildVacancyListItem, parseVacancySort, sortVacancyItems } from './vacancyListSort';
@@ -88,7 +89,7 @@ export class VacanciesController {
     if (!countries) return;
     try {
       const {
-        search, status, lifecycle, patient_status: patientStatus, include_baja, talentum_manual,
+        search, status, lifecycle, patient_status: patientStatus, include_baja, talentum_manual, semaphore,
         worker_type, state, city, required_sex,
         days, time_from, time_to,
         limit = '20', offset = '0',
@@ -102,6 +103,7 @@ export class VacanciesController {
         search, status, lifecycle, patientStatus,
         includeBaja: include_baja,
         talentumManual: talentum_manual,
+        semaphore,
         workerType: worker_type,
         state,
         city,
@@ -152,6 +154,10 @@ export class VacanciesController {
     } catch (error: unknown) {
       if (error instanceof SortParamError) {
         res.status(400).json({ success: false, error: error.message });
+        return;
+      }
+      if (error instanceof VacancySemaphoreFilterError) {
+        res.status(400).json({ success: false, code: error.code, error: error.messages['pt-BR'], messages: error.messages });
         return;
       }
       if (error instanceof PatientStatusFilterForbiddenError) {

@@ -28,7 +28,9 @@ import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
 import { workerNotTestSql, excludeTestVacancySql } from '@shared/database/testRealmSql';
 import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { INICIAIS_REDIGIDAS, PATIENT_CONTAINER_CELL, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
-import { cicloDeVidaSql, isCicloDeVida, type CicloDeVida } from '../../domain/vacancyLifecycle';
+import { cicloDeVidaSql, isCicloDeVida, CICLO_POR_STATUS, type CicloDeVida, type VacancyStatusValue } from '../../domain/vacancyLifecycle';
+import { CORES, corDoSemaforo, corDoSemaforoSql, parseCoresCsv, type CorDoSemaforo } from '../../domain/vacancySemaphore';
+import { semaforoContagemSql } from '../../infrastructure/vacancySemaphoreSql';
 import {
   tallyKanbanColumns,
   type KanbanTallyRow,
@@ -82,6 +84,8 @@ const LIST_VACANCIES_BASE = `
       WHERE wja.job_posting_id = jp.id
         AND ${WORKER_ACTIVE_SQL}) AS current_applicants,
     jp.max_applicants,
+    -- semaforo-da-vaga F2: n do dono (semaforoContagemSql), materializado UMA vez no LATERAL abaixo; a cor sai de corDoSemaforoSql.
+    sem.n AS semaphore_n,
     p.first_name as patient_first_name,
     p.last_name as patient_last_name,
     CASE
@@ -121,6 +125,7 @@ const LIST_VACANCIES_BASE = `
   ${vacancyEffectiveJoinSql('jp')}
   LEFT JOIN patients p ON jp.patient_id = p.id
   LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
+  LEFT JOIN LATERAL (SELECT ${semaforoContagemSql('jp.id')} AS n) sem ON true
   WHERE jp.case_number IS NOT NULL
     AND jp.deleted_at IS NULL
     AND ${excludeTestVacancySql('jp')}
@@ -177,6 +182,8 @@ export interface ListVacanciesFilters {
   includeBaja?: unknown;
   /** Spec 084 F4/R13: `true` = só as vagas na lista "pausar/retomar à mão no Talentum". */
   talentumManual?: unknown;
+  /** semaforo-da-vaga F2: CSV de cores (`red`,`yellow`,`green`). Valor fora de `CORES` → `VacancySemaphoreFilterError` (400). Nunca devolve baixada. */
+  semaphore?: unknown;
   limit: string;
   offset: string;
 }
@@ -187,6 +194,8 @@ export interface ListVacanciesQuery {
   paramIndex: number;
 }
 
+const CORES_LISTA = CORES.join(', ');
+
 const isTrue = (v: unknown): boolean => v === true || v === 'true' || v === '1';
 
 /** Filtrar por estado do paciente sem poder LÊ-LO é oráculo (lex P5): o controller traduz em 403 `{ field, cell }`. */
@@ -195,6 +204,18 @@ export class PatientStatusFilterForbiddenError extends Error {
   readonly cell = PATIENT_CONTAINER_CELL;
   constructor() {
     super('Forbidden');
+  }
+}
+
+/** Filtro `semaphore` inválido: o controller traduz em 400 `VACANCY_SEMAPHORE_INVALID` com as duas línguas (a tela traduz pelo código). */
+export class VacancySemaphoreFilterError extends Error {
+  readonly code = 'VACANCY_SEMAPHORE_INVALID';
+  readonly messages = {
+    es: `El filtro de semáforo solo acepta: ${CORES_LISTA}.`,
+    'pt-BR': `O filtro de semáforo só aceita: ${CORES_LISTA}.`,
+  };
+  constructor() {
+    super('Invalid semaphore filter');
   }
 }
 
@@ -250,6 +271,15 @@ export function buildListVacanciesQuery(
     if (!(opts.canFilterByPatientStatus ?? true)) throw new PatientStatusFilterForbiddenError();
     baseQuery += ` AND p.status = $${paramIndex}`;
     params.push(filters.patientStatus);
+    paramIndex++;
+  }
+
+  if (filters.semaphore !== undefined) {
+    const cores = parseCoresCsv(filters.semaphore);
+    if (cores === null) throw new VacancySemaphoreFilterError();
+    // A baixada tem semaphore null (P2): o filtro nunca a devolve, mesmo com include_baja. `n` é o do LATERAL (sem repetir a subquery).
+    baseQuery += ` AND ${corDoSemaforoSql('sem.n')} = ANY($${paramIndex}::text[]) AND jp.status <> 'DE_BAJA'`;
+    params.push(cores);
     paramIndex++;
   }
 
@@ -388,12 +418,21 @@ export interface VacancyListRow {
   redacted?: { patient?: true };
   baja_reason?: string | null;
   has_service?: boolean | null;
+  /** `n` do semáforo (COUNT do fragmento do dono; `pg` devolve int como número, bigint como texto). */
+  semaphore_n?: number | string | null;
   talentum_pause_state?: string | null;
   dias_aberto: number | null;
   convidados: number | string | null;
   postulados: number | string | null;
   selecionados: number | string | null;
   faltantes: number | string | null;
+}
+
+/** P2: `null` tem UM sentido — vaga dada de baixa. O ciclo vem da tabela do dono (`CICLO_POR_STATUS`), sem literal de status aqui. */
+function semaphoreOf(row: VacancyListRow): { n: number; color: CorDoSemaforo } | null {
+  const baixada = CICLO_POR_STATUS[row.status as VacancyStatusValue] === 'baja';
+  const n = Number(row.semaphore_n ?? 0);
+  return baixada ? null : { n, color: corDoSemaforo(n) };
 }
 
 export function mapVacancyListRow(row: VacancyListRow) {
@@ -418,6 +457,7 @@ export function mapVacancyListRow(row: VacancyListRow) {
     bajaReason: row.baja_reason ?? null,
     hasService: row.has_service === true,
     talentumPauseState: row.talentum_pause_state ?? null,
+    semaphore: semaphoreOf(row),
     diasAberto: row.dias_aberto?.toString().padStart(2, '0') ?? '00',
     convidados: row.convidados?.toString().padStart(2, '0') ?? '00',
     postulados: row.postulados?.toString().padStart(2, '0') ?? '00',

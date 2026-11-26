@@ -46,6 +46,15 @@ export const GRAVIDADE_DA_COR: Readonly<Record<CorDoSemaforo, number>> = {
   red: 2,
 };
 
+const isCor = (v: unknown): v is CorDoSemaforo => (CORES as readonly unknown[]).includes(v);
+
+/** CSV de cores do filtro da lista; `null` = qualquer item fora de `CORES` (inclui vazio): o chamador recusa, nunca ignora. */
+export function parseCoresCsv(raw: unknown): CorDoSemaforo[] | null {
+  if (typeof raw !== 'string') return null;
+  const itens = raw.split(',');
+  return itens.every(isCor) ? itens : null;
+}
+
 /** A pior cor da lista; lista vazia -> `null` ("sem vaga", nunca verde). */
 export const piorCor = (cores: readonly CorDoSemaforo[]): CorDoSemaforo | null =>
   cores.reduce<CorDoSemaforo | null>(

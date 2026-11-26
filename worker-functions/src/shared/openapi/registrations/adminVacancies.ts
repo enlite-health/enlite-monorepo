@@ -1,6 +1,7 @@
 import { registry, z } from '../registry';
 import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
 import { CICLOS_DE_VIDA, STATUS_GRAVAVEIS } from '@modules/matching/domain/vacancyLifecycle';
+import { CORES } from '@modules/matching/domain/vacancySemaphore';
 
 const VacancyListQuery = z.object({
   search: z.string().optional().openapi({ description: 'Busca textual por título ou caso.', example: 'Caso 766' }),
@@ -14,6 +15,10 @@ const VacancyListQuery = z.object({
   talentum_manual: z.enum(['true', 'false']).optional().openapi({
     description: 'Spec 084 F4: `true` = só as vagas na lista "pausar/retomar à mão no Talentum" (o Talentum recusou, 403).',
     example: 'true',
+  }),
+  semaphore: z.string().optional().openapi({
+    description: `Filtro por cor do semáforo: CSV de ${CORES.join(', ')}. Roda no servidor antes da paginação e NUNCA devolve vaga dada de baixa. Valor fora da lista → 400 \`VACANCY_SEMAPHORE_INVALID\` (es + pt-BR em \`messages\`).`,
+    example: 'red,yellow',
   }),
   limit: z.coerce.number().optional().openapi({ description: 'Máximo de itens (default 20).', example: 20 }),
   offset: z.coerce.number().optional().openapi({ description: 'Itens a pular (default 0).', example: 0 }),
@@ -79,12 +84,14 @@ registry.registerPath({
     'Retorna vagas com filtros opcionais de status e busca textual. ' +
     'Ordem padrão (sem `sort`): data de criação decrescente. Com `sort`/`order` ordena a lista inteira antes de paginar. ' +
     'Cada vaga traz `caseNumber` (número do caso lido do paciente; null se a vaga não tem paciente visível ao ator) e ' +
-    '`caseOrdinal` (posição da vaga no caso); o texto `EN1234#01` é formatado pelo frontend.',
+    '`caseOrdinal` (posição da vaga no caso); o texto `EN1234#01` é formatado pelo frontend. ' +
+    '`semaphore: { n, color: red|yellow|green } | null` (semaforo-da-vaga): `n` = prestadores nas colunas Seleccionado + Respuesta rápida do Kanban da vaga, ' +
+    'sem quem foi desligado nem quem tem marca de saída ativa no serviço; `null` tem um só sentido: vaga dada de baixa.',
   security: [{ firebaseAuth: [] }],
   request: { query: VacancyListQuery },
   responses: {
     200: { description: 'Lista paginada de vagas.', content: { 'application/json': { schema: OkMessage } } },
-    400: { description: '`sort` fora da allowlist ou `order` inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    400: { description: '`sort` fora da allowlist, `order` inválido ou `semaphore` fora das cores (`VACANCY_SEMAPHORE_INVALID`).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
