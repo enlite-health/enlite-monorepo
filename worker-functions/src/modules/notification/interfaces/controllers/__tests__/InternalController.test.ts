@@ -573,6 +573,15 @@ describe('InternalController', () => {
         expect(notifyCycle).toHaveBeenCalledWith(h, getHealth.mock.calls[0][0]);
       });
 
+      it('detector que lança (getHealth) → WARN talentum_webhook_alarm {alarme: detector_falhou} sem a mensagem do erro; health segue 200', async () => {
+        const res = mockRes();
+        await comTalentum(jest.fn().mockRejectedValue(new Error('linha com dado sensivel'))).getEventsHealth(mockReq({}, {}), res);
+        expect(alarmes()).toHaveLength(1);
+        expect(alarmes()[0][0]).toEqual({ msg: 'talentum_webhook_alarm', alarme: 'detector_falhou' });
+        expect(JSON.stringify(alarmes())).not.toContain('sensivel');
+        expect(res.status).toHaveBeenCalledWith(200);
+      });
+
       it('tudo 0 → nenhum WARN; detector que falha não derruba o health (200); sem o serviço o bloco é omitido', async () => {
         await comTalentum(jest.fn().mockResolvedValue({ inbox_falha: 0, inbox_pendente: 0, veredito_ausente: 0, silencio: 0 })).getEventsHealth(mockReq({}, {}), mockRes());
         expect(alarmes()).toHaveLength(0);

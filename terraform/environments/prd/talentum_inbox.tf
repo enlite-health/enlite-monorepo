@@ -107,7 +107,8 @@ resource "google_monitoring_alert_policy" "talentum_webhook_alarm" {
       - `inbox_pendente` — há linha `RECEIVED` parada há mais de 15 min: órfã de publish (o Pub/Sub não entregou ou a assinatura não existe);
       - `veredito_ausente` — espelho `COMPLETED` há mais de 2 h sem veredito;
       - `silencio` — 0 eventos em 6 h dentro da janela 09-21 (Buenos Aires): o Talentum parou de chamar o webhook;
-      - `sino_falhou` — o aviso do sino (in-app) falhou.
+      - `sino_falhou` — o aviso do sino (in-app) falhou;
+      - `detector_falhou` — o próprio detector (a leitura de estado do health) falhou: o webhook está sem vigia até a causa sair; ver o ERROR `[talentum-webhook/health] error`.
 
       ## Primeiros passos
       1. `inbox_pendente`: provar a assinatura VIVA — `gcloud pubsub subscriptions describe talentum-inbox-push` — e olhar o DLQ `talentum-inbox-dlq`.

@@ -357,6 +357,9 @@ export class InternalController {
         } catch (e) {
           talentumWebhook = null;
           logger.error({ msg: '[talentum-webhook/health] error', error: e instanceof Error ? e.message : String(e) });
+          // Detector cego: sem este WARN a falha só aparece como ERROR e a alert policy (filtra `talentum_webhook_alarm`) não dispara.
+          // Sem a mensagem do erro (o pg pode ecoar dado): só o enum.
+          logger.warn({ msg: 'talentum_webhook_alarm', alarme: 'detector_falhou' });
         }
       }
 
