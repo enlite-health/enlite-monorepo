@@ -6,12 +6,13 @@
 import type { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
+import { utcCivilDayOf } from '@shared/locale/civilClock';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { ShiftDirectory, ShiftFacts } from '../application/ports/CoordinationAlertPorts';
 import { reviewItemKey, type ReviewItemEnricher, type ReviewItemFacts, type ReviewQueueEntry } from '../application/ports/PresenceReviewPorts';
 
 const DAY_MS = 86_400_000;
-const isoDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+const isoDay = (ms: number): string => utcCivilDayOf(new Date(ms));
 
 /** Janela do turno do item: o dia do turno; sem `on_date` (entrada recusada), o dia da recusa ± 1 (o turno pode virar a meia-noite). */
 function windowOf(e: ReviewQueueEntry): { from: string; to: string } {
