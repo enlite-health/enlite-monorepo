@@ -17,6 +17,7 @@ import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqL
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { formatMessageDateTime } from '@presentation/components/features/admin/PatientDetail/conversation/messageDateFormat';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 export type Translate = (key: string, opts?: Record<string, unknown>) => string;
 
@@ -246,15 +247,10 @@ function presenceDate(n: AdminNotification): string | null {
   return typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d.split('-').reverse().join('/') : null;
 }
 
-/** Os 2 avisos de presença são da operação argentina (D664); a hora do turno sai no fuso do país, nunca no do navegador. */
-const PRESENCE_TIME_ZONE = 'America/Argentina/Buenos_Aires';
-const PRESENCE_TIME_FORMAT = new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: PRESENCE_TIME_ZONE });
-
-/** Instante ISO -> `HH:MM` no fuso do país; ausente/inválido = null (o texto cai na variante sem hora). */
+/** Instante ISO -> `HH:MM` no fuso do país (D664, `formatInstant`: Buenos Aires, 24 h), nunca no do navegador; ausente/inválido = null (o texto cai na variante sem hora). */
 function presenceTime(n: AdminNotification, field: 'start_time' | 'end_time'): string | null {
   const v = (n.payload as Partial<PresenceAlertPayload> | null | undefined)?.[field];
-  const ms = typeof v === 'string' ? Date.parse(v) : NaN;
-  return Number.isNaN(ms) ? null : PRESENCE_TIME_FORMAT.format(new Date(ms));
+  return typeof v === 'string' ? formatInstant(v, { hour: '2-digit', minute: '2-digit' }) : null;
 }
 
 /** `presenceOpen4h` cita a hora do FIM previsto; `checkInRefusedNoEntry`, a do INÍCIO (§5.5). */
