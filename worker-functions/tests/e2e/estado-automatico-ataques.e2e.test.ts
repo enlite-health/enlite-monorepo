@@ -182,6 +182,8 @@ describe('Ataques ao fluxo automático do estado do paciente (D807) @integration
 
   afterAll(async () => {
     await limpar();
+    // O admin inserido no beforeAll não pode sobrar: staff ACTIVE sem grupo reprova a pré-condição de `iam-config-export-import` (F12) quando esta suíte roda antes dela.
+    await pool.query(`DELETE FROM users WHERE firebase_uid = $1`, [asAdmin.uid]);
     await pool.end();
     if (closeStub) await closeStub();
   });
