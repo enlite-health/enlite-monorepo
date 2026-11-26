@@ -130,6 +130,17 @@ describe('PatientStatusActions', () => {
     await waitFor(() => expect(getPatientStatusActions).toHaveBeenCalledTimes(2));
   });
 
+  it('erro sem código mapeado: mostra a mensagem i18n genérica, nunca o `message` cru do backend', async () => {
+    getPatientStatusActions.mockResolvedValue(lista('ON_HOLD', [acao('retomar', 'SEARCHING')]));
+    performPatientStatusAction.mockRejectedValue(new Error('duplicate key value violates constraint patients_pkey'));
+    render(<PatientStatusActions patient={{ ...base, status: 'ON_HOLD' }} onSaved={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('patient-status-action-retomar'));
+    const box = await screen.findByTestId('patient-status-action-error');
+    expect(box).toHaveTextContent(t('admin.patients.status.error'));
+    expect(box).not.toHaveTextContent('duplicate key');
+    expect((es as any).admin.patients.status.error).toBeTruthy();
+  });
+
   it('403 da lista (sem patient:update) → nada na tela; falha de leitura → aviso com "tentar de novo", nunca todas as ações', async () => {
     getPatientStatusActions.mockRejectedValueOnce(new PatientApiError('no', 403));
     const { container, unmount } = render(<PatientStatusActions patient={{ ...base, status: 'ACTIVE' }} onSaved={vi.fn()} />);

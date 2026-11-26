@@ -238,7 +238,7 @@ const PACIENTE_INTEIRO: EscopoDaCompletude = { kind: 'paciente' };
  * `opts.escopo` e só vale quando a tabela diz `servico` — o chamador não escolhe o escopo, só informa o serviço (D2).
  * Sem serviço informado, mede o paciente inteiro (o mais estrito).
  */
-const escopoDaTroca = (opts: MoveStatusOptions): EscopoDaCompletude =>
+export const escopoDaTroca = (opts: Pick<MoveStatusOptions, 'changeSource' | 'escopo'>): EscopoDaCompletude =>
   escopoDaCompletudeDe(opts.changeSource) === 'servico' && opts.escopo?.kind === 'servico' ? opts.escopo : PACIENTE_INTEIRO;
 
 export type MovePatientStatus = (

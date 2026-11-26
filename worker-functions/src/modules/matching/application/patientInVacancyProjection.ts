@@ -53,7 +53,7 @@ const CAMPOS_DE_ENDERECO = ['patient_address_formatted', 'patient_address_raw', 
 export const INICIAIS_REDIGIDAS = '—';
 
 /** E6: ver o JSDoc do arquivo. Mexe só em `patient_status`/`redacted`; o resto da linha passa intacto. */
-function projectPatientStatus<T extends PatientInVacancyRow>(row: T, cells: readonly string[] | null | undefined): T {
+export function projectPatientStatus<T extends PatientInVacancyRow>(row: T, cells: readonly string[] | null | undefined): T {
   if (!('patient_status' in row)) return row;
   const semEstadoParaMostrar = row.patient_id == null || (canReadPatientStatus(cells) && row.patient_status == null);
   if (semEstadoParaMostrar) {

@@ -11,7 +11,7 @@ import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
-import { canReadPatientOperational, patientContainerReadsOf, canReadPatientContainer, patientContainerCell } from '../../application/patientContainerAccess';
+import { patientContainerReadsOf, canReadPatientContainer, patientContainerCell } from '../../application/patientContainerAccess';
 import { hourlyValueActorOf } from '../../application/contractedServiceHourlyValueAccess';
 import {
   toAdminPatientListItem,
@@ -52,6 +52,7 @@ import {
 } from '../../application/PatientTestFixtureService';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GeocodingService } from '../../../../infrastructure/services/GeocodingService';
+import { projectPatientStatus } from '@modules/matching/application/patientInVacancyProjection';
 import { fetchPatientVacancies } from '../../infrastructure/PatientVacanciesQueryHelper';
 import { insertPatientAddress, fetchPatientAddresses } from '../../infrastructure/PatientAddressQueryHelper';
 
@@ -807,11 +808,13 @@ export class AdminPatientsController {
       const vacancies = await fetchPatientVacancies(this.db, parsed.data.id);
       // D3/E6: o estado do paciente na vaga viaja sob o container `patient` — sem `patient:read` sai `null` + `redacted.patient`.
       const cells = clinicalCellsOf(req);
-      const data = vacancies.map((v) => {
-        const { patientStatus, ...resto } = v;
-        return canReadPatientOperational(cells)
-          ? (patientStatus != null ? { ...resto, patientStatus } : resto)
-          : { ...resto, patientStatus: null, redacted: { patient: true as const } };
+      // A redação do estado tem UM dono (`projectPatientStatus`, a MESMA da vaga); aqui só traduz snake_case ↔ camelCase.
+      const data = vacancies.map(({ patientStatus, ...resto }) => {
+        const { patient_status, patient_id: _id, ...saida } = projectPatientStatus(
+          { ...resto, patient_id: parsed.data.id, patient_status: patientStatus },
+          cells,
+        );
+        return patient_status === undefined ? saida : { ...saida, patientStatus: patient_status };
       });
       res.status(200).json({ success: true, data });
     } catch (err: unknown) {

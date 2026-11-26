@@ -13,13 +13,11 @@ import type {
   CreatePatientResult,
   PatientSectionName,
   PatientSectionPayload,
-  UpdatePatientStatusResult,
   PatientStatusActions,
   PatientStatusActionPayload,
   PatientStatusActionResult,
   PatientKanbanItem,
   PatientFunnelData,
-  UpdatePatientStatusPayload,
   PatientStatusHistoryEntry,
   InsuranceProvider,
   PatientAddressLogisticsPayload,
@@ -327,17 +325,6 @@ export class AdminPatientsApiServiceClass {
       details?: Record<string, unknown>;
     };
     throw new PatientApiError(json.error || `HTTP ${response.status}`, response.status, json);
-  }
-
-  /**
-   * PUT /api/admin/patients/:id/status — os estados humanos e o movimento dentro do funil (estado v2, spec 012; Búsqueda/Reemplazo/Activo e a origem `kanban` → 422 PATIENT_STATUS_NOT_MANUAL desde a F5).
-   * Aceita a string legada ou o payload com motivo/nota/origem/motivo de saída. 422 com `code`
-   * (PATIENT_STATUS_TRANSITION_NOT_ALLOWED / ON_HOLD_REASON_REQUIRED /
-   * SUSPENSION_EXIT_REASON_REQUIRED, migration 486) sai como PatientApiError.
-   */
-  async updatePatientStatus(id: string, status: string | UpdatePatientStatusPayload): Promise<UpdatePatientStatusResult> {
-    const body: UpdatePatientStatusPayload = typeof status === 'string' ? { status } : status;
-    return this.writeJson<UpdatePatientStatusResult>('PUT', `/api/admin/patients/${id}/status`, body);
   }
 
   /** GET /api/admin/patients/:id/status-actions — as ações humanas que o SERVIDOR aceitaria agora (F3). */

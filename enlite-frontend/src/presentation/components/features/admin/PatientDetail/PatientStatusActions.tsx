@@ -82,7 +82,8 @@ export function PatientStatusActions({ patient, onSaved }: Props): JSX.Element |
     } catch (err) {
       const api = err instanceof PatientApiError ? err : null;
       const friendly = api ? friendlyStatusMessage(t, refusalFromError(api, a.destino)) : null;
-      setError(friendly ?? (err instanceof Error ? err.message : ts('error')));
+      // Nunca `err.message` do backend na tela: o código mapeado (friendly) ou o genérico i18n.
+      setError(friendly ?? ts('error'));
       // A lista pode ter ficado velha (permissão revogada, dado completado em outra aba): relê.
       if (api && (api.status === 403 || api.status === 422)) reload();
     } finally {

@@ -32,6 +32,10 @@ export function especificadoresDe(fonte: string): string[] {
   return achados;
 }
 
+/** Direção de dependência: `application/` nunca importa `interfaces/` (a composição é quem monta). Dívida declarada, fora do escopo desta change. */
+export const DIVIDA_APPLICATION_IMPORTA_INTERFACES = ['CreateLeadUseCase.ts', 'PatientService.ts'];
+export const IMPORTA_INTERFACES = /^\.\.\/interfaces\//; // o `interfaces/` do PRÓPRIO módulo case
+
 const violacoesDe = (fonte: string): string[] => especificadoresDe(fonte).filter((e) => ESPECIFICADOR_PROIBIDO.test(e));
 const ler = (rel: string): string => fs.readFileSync(path.join(CASE, rel), 'utf8');
 
@@ -54,5 +58,15 @@ describe('case: ports & adapters (D7)', () => {
 
   it.each(ALLOWLIST)('%s não importa infraestrutura, interfaces, @shared/database nem pg', (rel) => {
     expect(violacoesDe(ler(rel))).toEqual([]);
+  });
+
+  it('application/ não importa interfaces/ (exceto a dívida declarada): controle positivo e varredura', () => {
+    expect(especificadoresDe("import { movePatientStatus } from '../interfaces/composition/patientStatusComposition';").filter((e) => IMPORTA_INTERFACES.test(e))).toHaveLength(1);
+    expect(especificadoresDe("import { movePatientStatus } from '../infrastructure/patientStatusWriterInstance';").filter((e) => IMPORTA_INTERFACES.test(e))).toHaveLength(0);
+    const dir = path.join(CASE, 'application');
+    const arquivos = fs.readdirSync(dir).filter((f) => f.endsWith('.ts'));
+    expect(arquivos.length).toBeGreaterThan(10);
+    const violadores = arquivos.filter((f) => especificadoresDe(ler(`application/${f}`)).some((e) => IMPORTA_INTERFACES.test(e)));
+    expect(violadores).toEqual(DIVIDA_APPLICATION_IMPORTA_INTERFACES);
   });
 });

@@ -2,7 +2,7 @@ import { ACAO_NAMES, ACOES, acaoDisponivelDe, exigenciasDe, type Acao, type Exig
 import { blockingCodesForStatusChange, type PatientCompletenessCode } from '../domain/PatientCompleteness';
 import type { PatientStatus } from '../domain/enums/PatientStatus';
 import { ACTIVE_ALLOCATION_BLOCK, type ViaDaTroca } from '../domain/enums/PatientStatusBlock';
-import { avaliarTroca } from './PatientStatusWriter';
+import { avaliarTroca, escopoDaTroca } from './PatientStatusWriter';
 import type {
   CompletenessReaderPort,
   HorasDoItinerarioPort,
@@ -68,15 +68,22 @@ export class ListPatientStatusActionsUseCase {
       const vivas = await this.ports.allocation.countLive(tx, input.patientId);
       const exigeCompletude = (a: (typeof aceitas)[number]): readonly PatientCompletenessCode[] =>
         blockingCodesForStatusChange(a.destino, current);
-      const missing = vivas === 0 && aceitas.some((a) => exigeCompletude(a).length > 0)
-        ? await this.ports.completeness.missingFor(tx, input.patientId, { kind: 'paciente' })
-        : [];
-
-      const actions = aceitas.map((a): PatientStatusActionOption => {
-        const faltando = exigeCompletude(a).filter((c) => missing.includes(c));
-        const blockedBy: PatientStatusActionOption['blockedBy'] = vivas > 0 ? [ACTIVE_ALLOCATION_BLOCK] : faltando;
-        return blockedBy.length > 0 ? { ...a, blockedBy } : a;
-      });
+      // O escopo vem da tabela de origem da ação (dono único: `escopoDaTroca`, o MESMO do escritor); 1 leitura por escopo distinto.
+      const leituras = new Map<string, Promise<PatientCompletenessCode[]>>();
+      const missingDe = (acao: Acao): Promise<PatientCompletenessCode[]> => {
+        const escopo = escopoDaTroca({ changeSource: ACOES[acao].origem });
+        const chave = JSON.stringify(escopo);
+        const lida = leituras.get(chave) ?? this.ports.completeness.missingFor(tx, input.patientId, escopo);
+        leituras.set(chave, lida);
+        return lida;
+      };
+      const actions: PatientStatusActionOption[] = [];
+      for (const a of aceitas) {
+        const exigidos = exigeCompletude(a);
+        const missing = vivas === 0 && exigidos.length > 0 ? await missingDe(a.acao) : [];
+        const blockedBy: PatientStatusActionOption['blockedBy'] = vivas > 0 ? [ACTIVE_ALLOCATION_BLOCK] : exigidos.filter((c) => missing.includes(c));
+        actions.push(blockedBy.length > 0 ? { ...a, blockedBy } : a);
+      }
       return { current, actions };
     });
   }

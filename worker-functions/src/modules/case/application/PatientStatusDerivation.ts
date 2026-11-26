@@ -9,7 +9,7 @@
  *     serviço sem vacante viva não conta);
  *   - `cobertas`/`scheduleHours` são a conta da Fase 7 (`buildServiceCoverages`) na data de operação
  *     do país; a ausência datada não entra na conta;
- *   - move pelo escritor de estado (`MovePatientStatus`, vindo da composição) com `changeSource: 'system'` e o client recebido (nenhum
+ *   - move pelo escritor de estado (`MovePatientStatus`, injetado; o padrão é a instância Pg da infraestrutura — `application/` nunca importa `interfaces/`) com `changeSource: 'system'` e o client recebido (nenhum
  *     BEGIN/COMMIT próprio — comitaria a alocação no meio).
  * A recusa da completude (`PatientStatusNotReadyError`) não desfaz a alocação: o estado fica e a
  * recusa vai para `logger.warn` sem PII . Qualquer outro erro propaga.
@@ -22,7 +22,7 @@ import { PatientStatusDerivationReader, type DerivationSubject } from '../infras
 import { PatientKanbanServicesReader, type KanbanServicesRows } from '../infrastructure/PatientKanbanServicesReader';
 import { buildServiceCoverages, operationDateOf } from './itineraryCoverage';
 import { PatientStatusNotReadyError, type MovePatientStatus } from './PatientStatusWriter';
-import { movePatientStatus as compositionMovePatientStatus } from '../interfaces/composition/patientStatusComposition';
+import { movePatientStatus as compositionMovePatientStatus } from '../infrastructure/patientStatusWriterInstance';
 
 export type DerivationOutcome = 'not_subject' | 'unchanged' | 'moved' | 'not_ready';
 

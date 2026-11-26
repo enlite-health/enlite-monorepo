@@ -7,6 +7,8 @@ import { ListPatientStatusActionsUseCase } from '../ListPatientStatusActionsUseC
 import type { EntradaDerivacao } from '../../domain/derivarEstadoPaciente';
 import type { PatientCompletenessCode } from '../../domain/PatientCompleteness';
 import type { PatientStatus } from '../../domain/enums/PatientStatus';
+import * as writer from '../PatientStatusWriter';
+import { ACOES } from '../../domain/acoesDeEstado';
 import type { StatusTx } from '../ports/patientStatusPorts';
 
 const TX = {} as StatusTx;
@@ -86,6 +88,19 @@ describe('ListPatientStatusActionsUseCase', () => {
     const a = await acoes(uc);
     expect(a.find((x) => x.acao === 'retomar')?.blockedBy).toEqual(['ADDRESS']);
     expect(a.find((x) => x.acao === 'dar_alta')?.blockedBy).toBeUndefined();
+  });
+
+  it('o escopo da completude vem da tabela de origem (escopoDaTroca do escritor), não de literal fixo no use case', async () => {
+    const spy = jest.spyOn(writer, 'escopoDaTroca').mockReturnValue({ kind: 'servico', serviceId: 'svc-1' });
+    try {
+      const { uc, missingFor } = montar('ON_HOLD', { servicos: COBRE });
+      await acoes(uc);
+      expect(missingFor).toHaveBeenCalledTimes(1);
+      expect(missingFor).toHaveBeenCalledWith(TX, PID, { kind: 'servico', serviceId: 'svc-1' });
+      expect(spy).toHaveBeenCalledWith({ changeSource: ACOES.retomar.origem });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('paciente inexistente → "not found"', async () => {

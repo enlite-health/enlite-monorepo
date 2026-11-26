@@ -376,7 +376,6 @@ class AdminApiServiceClass {
   getPatientVacancies(patientId: string) { return AdminPatientsApiService.getPatientVacancies(patientId); }
   createPatient(payload: Parameters<typeof AdminPatientsApiService.createPatient>[0]) { return AdminPatientsApiService.createPatient(payload); }
   updatePatientSection(...args: Parameters<typeof AdminPatientsApiService.updatePatientSection>) { return AdminPatientsApiService.updatePatientSection(...args); }
-  updatePatientStatus(...args: Parameters<typeof AdminPatientsApiService.updatePatientStatus>) { return AdminPatientsApiService.updatePatientStatus(...args); }
   getPatientStatusActions(...args: Parameters<typeof AdminPatientsApiService.getPatientStatusActions>) { return AdminPatientsApiService.getPatientStatusActions(...args); }
   performPatientStatusAction(...args: Parameters<typeof AdminPatientsApiService.performPatientStatusAction>) { return AdminPatientsApiService.performPatientStatusAction(...args); }
   getPatientStatusHistory(id: string) { return AdminPatientsApiService.getPatientStatusHistory(id); }
