@@ -30,9 +30,14 @@ export class PgTransactionRunner implements TransactionRunnerPort {
 }
 
 export class PgCompletenessReader implements CompletenessReaderPort {
-  /** `paciente` mede todos os serviços ativos; `servico` mede só o `serviceId` (a leitura filtra `pcs.id`). */
+  /** `paciente` mede todos os serviços ativos; `servico` mede só o `serviceId` (a leitura filtra `pcs.id`); `servicos_com_vaga_viva` só os com vaga viva. */
   async missingFor(tx: StatusTx, patientId: string, escopo: EscopoDaCompletude) {
-    const { missing } = await loadPatientCompleteness(pg(tx), patientId, escopo.kind === 'servico' ? escopo.serviceId : undefined);
+    const { missing } = await loadPatientCompleteness(
+      pg(tx),
+      patientId,
+      escopo.kind === 'servico' ? escopo.serviceId : undefined,
+      escopo.kind === 'servicos_com_vaga_viva',
+    );
     return missing;
   }
 }

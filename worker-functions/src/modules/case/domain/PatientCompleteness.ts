@@ -167,10 +167,10 @@ function blockingCodesForTarget(toStatus: string): readonly PatientCompletenessC
 /**
  * Onde a completude de uma troca de estado é MEDIDA (estado-automatico-do-paciente, D2): o paciente inteiro
  * (`paciente`: todos os serviços ativos, o que a troca manual e a derivação sempre fizeram) ou só o serviço
- * contratado clicado (`servico`: o foguete). Muda ONDE se mede, nunca O QUE se exige — os códigos continuam
+ * contratado clicado (`servico`: o foguete) ou só os serviços com vaga viva (`servicos_com_vaga_viva`: a derivação pelo itinerário, item 19). Muda ONDE se mede, nunca O QUE se exige — os códigos continuam
  * saindo de `blockingCodesForStatusChange`. Dono do conceito; o escritor e o adapter leem daqui.
  */
-export type EscopoDaCompletude = { kind: 'paciente' } | { kind: 'servico'; serviceId: string };
+export type EscopoDaCompletude = { kind: 'paciente' } | { kind: 'servico'; serviceId: string } | { kind: 'servicos_com_vaga_viva' };
 
 /**
  * Status do paciente em que o checklist/botão "Activar paciente" fazem sentido. Fora daqui

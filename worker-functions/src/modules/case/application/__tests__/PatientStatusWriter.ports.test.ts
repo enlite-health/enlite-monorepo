@@ -45,6 +45,14 @@ describe('createPatientStatusWriter — por ports', () => {
     expect(ports.completeness.missingFor).toHaveBeenCalledWith(expect.anything(), PID, { kind: 'paciente' });
   });
 
+  it('item 19 — derivação (system): a completude é medida só nos serviços com vaga viva, e um serviço informado pelo chamador não muda isso', async () => {
+    const { ports, move } = montar([], 'SEARCHING');
+    await move(PID, 'REPLACEMENT', { changeSource: 'system' });
+    expect(ports.completeness.missingFor).toHaveBeenLastCalledWith(expect.anything(), PID, { kind: 'servicos_com_vaga_viva' });
+    await move(PID, 'ACTIVE', { changeSource: 'system', escopo: { kind: 'servico', serviceId: SID } });
+    expect(ports.completeness.missingFor).toHaveBeenLastCalledWith(expect.anything(), PID, { kind: 'servicos_com_vaga_viva' });
+  });
+
   it('completude faltando no escopo medido → PatientStatusNotReadyError e nenhum UPDATE', async () => {
     const { move, queries } = montar(['SERVICE_SCHEDULE']);
     await expect(move(PID, 'SEARCHING', { changeSource: 'recruitment_activation', escopo: { kind: 'servico', serviceId: SID } }))

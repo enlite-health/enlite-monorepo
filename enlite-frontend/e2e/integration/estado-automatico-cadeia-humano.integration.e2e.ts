@@ -8,7 +8,7 @@
  *
  *  1  paciente em Admisión (lido do Kanban) com 2 serviços: S1 completo (2 faixas de 4 h) e S2 INCOMPLETO (sem endereço);
  *  2  A1-tela — o foguete do S2 fica DESABILITADO e o clique de mouse não cria vaga (0 vaga, estado intacto);
- *     (o S2 é desativado por SQL depois do passo 2: com ele ativo a derivação é recusada por completude — achado na LISTA da change)
+ *     (o S2 segue ATIVO e incompleto até o fim: a derivação mede só os serviços com vaga viva — item 19)
  *  3  foguete do S1 → card do Kanban em "Búsqueda" + subcard do serviço; `patients.status = SEARCHING`; trilha `recruitment_activation`;
  *  4  a lista de vagas mostra o estado do PACIENTE ("Búsqueda") ao lado do ciclo de vida da vaga ("Borrador");
  *  5  [API] montar o itinerário; alocar o prestador A na 1ª faixa PELA TELA (cobre 4 de 8 h) → "Reemplazos" (card, lista de vagas, banco, trilha `system`);
@@ -162,9 +162,6 @@ test.describe('estado-automatico-cadeia-humano: a cadeia do fluxo automático pe
         expect(statusDe(patientId)).toBe('ADMISSION');
         expect(contarTrilha(patientId, 'recruitment_activation')).toBe(0);
         await registrar(page, testInfo, '2-foguete-incompleto', patientId);
-        // fixture (SQL): o S2 incompleto sai da cena. Medido: com ele ativo a derivação para REPLACEMENT/ACTIVE é recusada
-        // (`patient_status.derivation_not_ready`, SERVICE_SCHEDULE medido sobre TODOS os serviços) e o paciente fica em Búsqueda — LISTA da change.
-        runSQL(`UPDATE patient_contracted_services SET active = false, ended_at = NOW() WHERE id = '${s2}'`);
       });
 
       let vacancyId = '';

@@ -47,11 +47,17 @@ describe('PgCompletenessReader — escopo da completude', () => {
     expect(missing).toContain('SERVICE_SCHEDULE');
   });
 
+  it('item 19 — escopo servicos_com_vaga_viva: pede o filtro de vaga viva ($3 = true) e não filtra por serviceId ($2 = null)', async () => {
+    const tx = bancoComDoisServicos();
+    await reader.missingFor(tx, PID, { kind: 'servicos_com_vaga_viva' });
+    expect((tx.query as jest.Mock).mock.calls[0][1]).toEqual([PID, null, true]);
+  });
+
   it('o serviceId vai por parâmetro ($2), nunca interpolado no SQL', async () => {
     const tx = bancoComDoisServicos();
     await reader.missingFor(tx, PID, { kind: 'servico', serviceId: SERVICO_COMPLETO });
     const [sql, params] = (tx.query as jest.Mock).mock.calls[0];
     expect(String(sql)).not.toContain(SERVICO_COMPLETO);
-    expect(params).toEqual([PID, SERVICO_COMPLETO]);
+    expect(params).toEqual([PID, SERVICO_COMPLETO, false]);
   });
 });

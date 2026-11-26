@@ -8,8 +8,11 @@
 
 import type { PatientStatus } from './PatientStatus';
 
-/** Onde a completude do destino é medida: o paciente inteiro ou só o serviço contratado clicado (D2). */
-export type EscopoDaCompletudeDaOrigem = 'paciente' | 'servico';
+/**
+ * Onde a completude do destino é medida: o paciente inteiro, só o serviço contratado clicado (D2) ou só os serviços com vaga viva
+ * (derivação pelo itinerário: serviço ativo sem vaga viva não entra na conta de horas, então não pode barrar o estado — item 19).
+ */
+export type EscopoDaCompletudeDaOrigem = 'paciente' | 'servico' | 'servicos_com_vaga_viva';
 
 export interface PoliticaDeOrigem {
   /** Decisão de uma PESSOA (exige motivo de saída de SUSPENDED, respeita a trava de alocação viva, pode virar `*_override`). */
@@ -34,7 +37,8 @@ const HUMANOS = ['ON_HOLD', 'SUSPENDED', 'ALTA', 'DISCHARGED'] as const satisfie
 export const POLITICA_POR_ORIGEM = {
   // O foguete mede o SERVIÇO clicado (D2): o gate dele já mediu o mesmo serviço, então a recusa do escritor é inalcançável.
   recruitment_activation: { humana: false, aceitaNaRota: false, saiDoFunilParaSearching: true, escopoDaCompletude: 'servico', destinos: ['SEARCHING'] },
-  system: { humana: false, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente', destinos: DERIVADOS },
+  // A derivação mede só os serviços com vaga viva: o MESMO universo de `derivarPelasHoras` (serviço sem vacante viva não conta).
+  system: { humana: false, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'servicos_com_vaga_viva', destinos: DERIVADOS },
   admin_panel: { humana: true, aceitaNaRota: true, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente', destinos: [...FUNIL, ...HUMANOS] },
   // F5: o arrasto saiu — `kanban` não sai do funil e não pede destino nenhum (a rota ainda a aceita para devolver 422).
   kanban: { humana: true, aceitaNaRota: true, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente', destinos: [] },

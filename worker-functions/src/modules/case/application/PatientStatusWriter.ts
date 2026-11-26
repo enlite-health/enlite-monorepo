@@ -232,14 +232,18 @@ export interface MoveStatusOptions {
  * reusaria o client fixado na request e comitaria no meio. Sem ele, a transação própria de sempre.
  */
 const PACIENTE_INTEIRO: EscopoDaCompletude = { kind: 'paciente' };
+const SERVICOS_COM_VAGA_VIVA: EscopoDaCompletude = { kind: 'servicos_com_vaga_viva' };
 
 /**
  * Onde medir a completude desta troca. QUEM manda é a tabela de origem (`escopoDaCompletudeDe`); o `serviceId` só viaja em
  * `opts.escopo` e só vale quando a tabela diz `servico` — o chamador não escolhe o escopo, só informa o serviço (D2).
  * Sem serviço informado, mede o paciente inteiro (o mais estrito).
  */
-export const escopoDaTroca = (opts: Pick<MoveStatusOptions, 'changeSource' | 'escopo'>): EscopoDaCompletude =>
-  escopoDaCompletudeDe(opts.changeSource) === 'servico' && opts.escopo?.kind === 'servico' ? opts.escopo : PACIENTE_INTEIRO;
+export const escopoDaTroca = (opts: Pick<MoveStatusOptions, 'changeSource' | 'escopo'>): EscopoDaCompletude => {
+  const escopoDaOrigem = escopoDaCompletudeDe(opts.changeSource);
+  if (escopoDaOrigem === 'servicos_com_vaga_viva') return SERVICOS_COM_VAGA_VIVA;
+  return escopoDaOrigem === 'servico' && opts.escopo?.kind === 'servico' ? opts.escopo : PACIENTE_INTEIRO;
+};
 
 export type MovePatientStatus = (
   patientId: string,

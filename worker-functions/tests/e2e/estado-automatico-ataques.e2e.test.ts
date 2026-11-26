@@ -13,6 +13,8 @@
  *   A5  a derivação não toca estado humano: paciente `ON_HOLD` com o itinerário quase cheio, evento de alocação → continua `ON_HOLD`
  *       (controle positivo: o MESMO evento num paciente `SEARCHING` deriva para `ACTIVE` e grava 1 linha `system`);
  *   A6  ação humana com alocação viva → 422 PATIENT_STATUS_LOCKED_BY_ALLOCATION (pausar, suspender, dar alta, dar baja; retomar de `ON_HOLD`).
+ *  A7  item 19: S1 completo e coberto + S2 ATIVO e INCOMPLETO (sem endereço, sem horário) SEM vaga viva → a derivação pela alocação sai de Búsqueda
+ *       (REPLACEMENT com metade coberta, ACTIVE com tudo coberto, 1 linha `system` cada); o S2 sem vaga viva não entra na completude.
  * Os ataques que só fazem sentido SEM o botão (PUT/arrasto direto do estado derivado) são da F5 (D6).
  *
  * Outbound mapeado: foguete, vagas, ações de estado e alocação só fazem SELECT/INSERT/UPDATE em Postgres. O único caminho que sai do processo é
@@ -304,5 +306,26 @@ describe('Ataques ao fluxo automático do estado do paciente (D807) @integration
     const ok = await acao(sem.patientId, { action: 'pausar', onHoldReason: 'SCHOOL' });
     expect(ok.status).toBe(200);
     expect(await statusDe(sem.patientId)).toBe('ON_HOLD');
+  });
+
+  it.each([
+    { cobertas: 'metade das faixas', preAlocadas: 0, esperado: 'REPLACEMENT' },
+    { cobertas: 'todas as faixas', preAlocadas: 1, esperado: 'ACTIVE' },
+  ])('A7 (item 19): S1 completo ($cobertas cobertas) + S2 ativo e incompleto sem vaga viva → a derivação leva SEARCHING a $esperado', async ({ preAlocadas, esperado }) => {
+    const c = await cenarioDeItinerario(`a7-${esperado.toLowerCase()}`, 'SEARCHING', preAlocadas);
+    // S2: ativo, SEM endereço e SEM faixa (SERVICE_ADDRESS e SERVICE_SCHEDULE faltando), SEM vaga (job_postings) = sem vaga viva.
+    const s2 = (await pool.query<{ id: string }>(
+      `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by)
+       VALUES ($1, 'AT', true, 'AR', 'estado-auto-ataques', 'estado-auto-ataques') RETURNING id`, [c.patientId],
+    )).rows[0].id;
+    // controle de premissa: o S2 está ativo e não tem vaga viva; o S1 tem
+    expect((await pool.query(`SELECT 1 FROM patient_contracted_services WHERE id = $1 AND active`, [s2])).rowCount).toBe(1);
+    expect((await pool.query(`SELECT 1 FROM job_postings WHERE contracted_service_id = $1 AND deleted_at IS NULL`, [s2])).rowCount).toBe(0);
+    expect((await pool.query(`SELECT 1 FROM job_postings WHERE contracted_service_id = $1 AND deleted_at IS NULL`, [c.serviceId])).rowCount).toBe(1);
+
+    const r = await alocar(c, c.slots[preAlocadas], c.workerB);
+    expect(r.status).toBe(201);
+    expect(await statusDe(c.patientId)).toBe(esperado);
+    expect(await trilha(c.patientId, 'system')).toBe(1);
   });
 });

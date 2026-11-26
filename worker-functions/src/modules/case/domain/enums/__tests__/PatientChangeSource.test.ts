@@ -45,10 +45,14 @@ describe('PatientChangeSource — tabela de política por origem', () => {
     expect([...ROTA_CHANGE_SOURCES]).not.toContain('resume');
   });
 
-  it('D2: o foguete mede o SERVIÇO; toda outra origem mede o paciente inteiro', () => {
+  it('D2/item 19: o foguete mede o SERVIÇO; a derivação (system) mede os serviços com vaga viva; toda outra origem mede o paciente inteiro', () => {
     const escopos = Object.fromEntries(CHANGE_SOURCES.map((s: PatientChangeSource) => [s, escopoDaCompletudeDe(s)]));
     expect(escopos.recruitment_activation).toBe('servico');
+    expect(escopos.system).toBe('servicos_com_vaga_viva');
     expect(CHANGE_SOURCES.filter((s) => escopoDaCompletudeDe(s) === 'servico')).toEqual(['recruitment_activation']);
+    expect(CHANGE_SOURCES.filter((s) => escopoDaCompletudeDe(s) === 'servicos_com_vaga_viva')).toEqual(['system']);
+    expect(CHANGE_SOURCES.filter((s) => escopoDaCompletudeDe(s) === 'paciente').sort()).toEqual(
+      ['activate', 'admin_panel', 'kanban', 'resume', 'vacancy_launch']);
   });
 
   it('F5: quem pode pedir cada destino clínico sai da tabela — admin_panel só os humanos, kanban nenhum, o resto do fluxo automático os derivados', () => {
