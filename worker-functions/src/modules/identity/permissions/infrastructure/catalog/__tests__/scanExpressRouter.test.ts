@@ -463,6 +463,8 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'luz_prueba:chat',
       // Emenda 077 §5.4 (F-g): SEM rota por desenho — o consumidor é `PresenceAlertRecipients` (`cells.includes('presence_alert:receive')`), que decide quem recebe o alerta.
       'presence_alert:receive',
+      // Emenda 077 §6: descrição em CELL_DESCRIPTION; a rota real é adminPresenceReviewRoutes (fora do fixture de 2 rotas).
+      'presence_exception:review',
       // Spec 080 (assistentes no app): 13 células com descrição em CELL_DESCRIPTION; as rotas reais vivem no
       // assistants-service (não neste fixture de 2 rotas), então saem aqui como complemento.
       'assistant_maria:chat', 'assistant_lucero:chat', 'assistant_candela:chat',

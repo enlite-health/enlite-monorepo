@@ -289,3 +289,5 @@ export { ServiceHoursSummaryReader } from './infrastructure/ServiceHoursSummaryR
 export { countVigenteForVacancy } from './infrastructure/VacancyAllocationProbe';
 export { PresenceAlertsInternalController } from './interfaces/controllers/PresenceAlertsInternalController';
 export { createPresenceAlertsInternalRoutes } from './interfaces/routes/presenceAlertsInternalRoutes';
+export { PresenceReviewController } from './interfaces/controllers/PresenceReviewController';
+export { createAdminPresenceReviewRoutes } from './interfaces/routes/adminPresenceReviewRoutes';

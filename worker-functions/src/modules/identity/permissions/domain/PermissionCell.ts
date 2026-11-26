@@ -139,6 +139,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   luz_prueba: 'Operações',
   // Emenda 077 §5.4 (F-g) — aviso de presença sem furo à coordenação; consumidor: `PresenceAlertRecipients` (`cells.includes`), sem rota.
   presence_alert: 'Operações',
+  // Emenda 077 §6 — fila de revisão de presença da coordenação (painel); rotas em `adminPresenceReviewRoutes.ts`, família `admin.patients`.
+  presence_exception: 'Operações',
   assistant_maria: 'Operações',
   assistant_lucero: 'Operações',
   assistant_candela: 'Operações',
@@ -600,6 +602,8 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'luz_prueba:chat': 'Luz (prueba): conversar como la prestadora sintética',
   // ── Emenda 077 §5.4 — recebe o alerta de presença (turno sem saída 4 h depois do fim; entrada recusada sem entrada aceita). Só este aviso; NÃO é patient_itinerary:update.
   'presence_alert:receive': 'Recibir el aviso a coordinación cuando un turno queda sin salida registrada o con la entrada rechazada y sin entrada aceptada (solo ids y horarios, sin datos de persona).',
+  // ── Emenda 077 §6 — ver a fila de revisão de presença (nome do prestador e nº do caso) e decidir as exceções de lugar (aprobar/rechazar com código de resolução).
+  'presence_exception:review': 'Revisar la fila de presencia: ver prestador y caso de cada turno y aprobar o rechazar las excepciones de lugar con un código de resolución.',
   'assistant_maria:chat': 'Conversar con la asistente de gestión de reclutamiento',
   'assistant_lucero:chat': 'Conversar con Lucero (gestora clínica, solo estados y conteos)',
   'assistant_candela:chat': 'Conversar con Candela (gestora de coordinación)',

@@ -49,6 +49,8 @@ import {
   ItineraryDailyInternalController,
   createItineraryDailyInternalRoutes,
   PresenceAlertsInternalController,
+  PresenceReviewController,
+  createAdminPresenceReviewRoutes,
   createPresenceAlertsInternalRoutes,
   createAdminPatientsRoutes,
   createAdminInsuranceRoutes,
@@ -822,6 +824,9 @@ app.use(
 
 // ========== Admin informes da guarda (spec 092) — leitura, com redação do texto por célula ==========
 app.use('/api/admin', createAdminDailyReportRoutes(buildAdminDailyReportController(), authMiddleware, permissionMiddleware));
+
+// ========== Fila de revisão de presença da coordenação (emenda 077 §6) — célula presence_exception:review ==========
+app.use('/api/admin', createAdminPresenceReviewRoutes(new PresenceReviewController(), authMiddleware, permissionMiddleware));
 
 // ========== Quadro C — time do serviço contratado (cadeia Fase 10) ==========
 app.use('/api/admin', createAdminServiceTeamRoutes(new AdminServiceTeamController(), authMiddleware, permissionMiddleware));
