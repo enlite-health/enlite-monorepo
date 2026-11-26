@@ -165,7 +165,7 @@ describe('Spec 084 — baixa de vaga antiga, volta só pelo serviço @integratio
       const vagaId = await criarVaga({ patientId, caseNumber: 884004 });
       await api.post('/api/admin/vacancies/baja', { vacancyIds: [vagaId] }, asAdmin);
 
-      for (const status of ['SEARCHING', 'ACTIVE', 'ON_HOLD', 'CLOSED']) {
+      for (const status of ['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED']) {
         const put = await api.put(`/api/admin/vacancies/${vagaId}`, { status }, asAdmin);
         expect(put.status).toBe(409);
         expect(put.data.code).toBe('VACANCY_DE_BAJA_NO_REACTIVATION');

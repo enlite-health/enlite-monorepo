@@ -218,12 +218,12 @@ describe('GET /api/vacancies/:id — diagnosisLabel (HTTP real, Postgres real, R
     esperaSemCodigoNemUriNemTextoLivre(texto);
   });
 
-  it('em todos os casos as chaves de data são exatamente a lista positiva (21), sem patient_id', async () => {
+  it('em todos os casos as chaves de data são exatamente a lista positiva (22), sem patient_id', async () => {
     const esperadas = [
       'id', 'case_number', 'vacancy_number', 'title', 'status', 'is_disabled', 'service_type',
       'required_professions', 'required_sex', 'age_range_min', 'age_range_max', 'worker_attributes',
       'schedule', 'schedule_days_hours', 'salary_text', 'talentum_description', 'can_apply',
-      'patient_zone', 'country', 'created_at', 'diagnosisLabel',
+      'patient_zone', 'country', 'created_at', 'diagnosisLabel', 'lifecycle',
     ].sort();
     for (const caso of ['feliz', 'semCid', 'doisSemPrincipal', 'doisComPrincipal'] as Caso[]) {
       const { body } = await getPublica(caso);
