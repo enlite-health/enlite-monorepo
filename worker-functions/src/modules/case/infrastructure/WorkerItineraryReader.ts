@@ -26,6 +26,7 @@ import { addDaysToDateString, weekdayOfDateString } from '../domain/itineraryEve
 import { isCheckinReliable, type GeocodeLocationType } from '../domain/geocodeQuality';
 import { expandServiceOccurrences } from '../domain/serviceOccurrences';
 import { patientRefOf } from '../domain/patientRef';
+import { occurrenceWindowOf } from '../domain/occurrenceWindow';
 import { readOccurrenceInputsByPatient } from './occurrenceInputs';
 
 /** Namespace fixo do contrato (`x-occurrence-id-namespace`, SUP-F1-11). */
@@ -109,16 +110,6 @@ export function degradePoint20m(lat: number, lng: number): { lat: number; lng: n
   return { lat: snap(lat), lng: snap(lng) };
 }
 
-/** Offset fixo por país (sem horário de verão hoje). País desconhecido cai em AR, único país em operação. */
-const UTC_OFFSET_HOURS: Record<string, number> = { AR: -3, BR: -3, UY: -3 };
-
-function toIso(date: string, hhmm: string, country: string, dayShift: number): string {
-  const [y, m, d] = date.split('-').map(Number);
-  const [hh, mm] = hhmm.split(':').map(Number);
-  const offset = UTC_OFFSET_HOURS[country] ?? -3;
-  return new Date(Date.UTC(y, m - 1, d + dayShift, hh - offset, mm, 0)).toISOString().replace('.000Z', 'Z');
-}
-
 interface PatientRow {
   id: string;
   first_name: string | null;
@@ -172,14 +163,14 @@ export async function readWorkerWindow(client: PoolClient, args: { workerId: str
         gone.set(occurrenceIdOf(o.slotId, today, workerId), 'ABSENCE');
       }
       if (o.workerId !== workerId || o.assignmentId === null) continue;
-      const overnight = o.endTime <= o.startTime ? 1 : 0;
+      const window = occurrenceWindowOf({ date: o.date, startTime: o.startTime, endTime: o.endTime, country: patient.country });
       rows.push({
         occurrence_id: occurrenceIdOf(o.slotId, o.date, workerId),
         slot_id: o.slotId,
         assignment_id: o.assignmentId,
         on_date: o.date,
-        starts_at: toIso(o.date, o.startTime, patient.country, 0),
-        ends_at: toIso(o.date, o.endTime, patient.country, overnight),
+        starts_at: window.startsAt,
+        ends_at: window.endsAt,
         kind: o.titularWorkerId !== workerId && o.substituteWorkerId === workerId ? 'SUBSTITUTION' : 'REGULAR',
         patient_first_name: patient.first_name?.trim() || 'Paciente',
         patient_ref: patientRefOf(patientId),
