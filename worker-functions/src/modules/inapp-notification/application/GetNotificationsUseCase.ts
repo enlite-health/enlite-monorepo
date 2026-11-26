@@ -25,6 +25,7 @@ import {
   type PedidoIaAplicarPayload,
   type NotificationTypeCode,
   type PtContactsPendingPayload,
+  type CoordinationAlertPayload,
 } from '../infrastructure/NotificationRepository';
 import type { ActorPatientConversationAccessChecker } from './ports';
 
@@ -48,7 +49,7 @@ export interface NotificationDto {
    *  origem É o root, ou quando não há `messageId` no evento. */
   rootMessageId: string | null;
   /** spec 048: SÓ no tipo `THERAPEUTIC_PROJECT_CONTACTS_PENDING` (4 chaves, ids + nome de campo); `null` nos de conversa. */
-  payload: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | TalentumWebhookAlarmPayload | null;
+  payload: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | TalentumWebhookAlarmPayload | CoordinationAlertPayload | null;
   /** spec 048: número do Caso (`patients.case_number`) do tipo do PT — o sino NUNCA mostra o nome do paciente nele. */
   patientCaseNumber: number | null;
   /** Item 2 (card com trecho, F7/F8): MESMO gate de `patientDisplayName` — só resolvido quando o
@@ -80,7 +81,7 @@ export class GetNotificationsUseCase {
     // mesmo cache já existente, agora também usado para gatear o trecho (item 2).
     let recipientAllowed: boolean | undefined;
     for (const row of rows) {
-      if (row.patientId && this.accessChecker && !isSystemPtType(row.typeCode)) {
+      if (row.patientId && this.accessChecker && !isSystemAlertType(row.typeCode)) {
         if (recipientAllowed === undefined) {
           recipientAllowed = await this.accessChecker.canReadPatientConversation(params.recipientUid);
         }
@@ -91,7 +92,7 @@ export class GetNotificationsUseCase {
     // messageExcerpt (item 2) É gated: só para linhas com patientId E recipientAllowed — MESMO
     // conjunto que teria patientDisplayName resolvido, decifrado em LOTE (F8).
     const eligibleMessageIds = recipientAllowed
-      ? dedupNonNull(rows.filter((row) => row.patientId && !isSystemPtType(row.typeCode)).map((row) => row.messageId))
+      ? dedupNonNull(rows.filter((row) => row.patientId && !isSystemAlertType(row.typeCode)).map((row) => row.messageId))
       : [];
     const excerpts = await this.repository.findMessageExcerpts(eligibleMessageIds);
 
@@ -102,7 +103,7 @@ export class GetNotificationsUseCase {
 
       // spec 048 (Gabriel, 08/10): o aviso do PT NUNCA leva o nome do paciente, mesmo para quem tem a célula de
       // conversa — só o número do Caso. Por isso o tipo de sistema nem entra na resolução do nome/trecho.
-      if (row.patientId && this.accessChecker && recipientAllowed && !isSystemPtType(row.typeCode)) {
+      if (row.patientId && this.accessChecker && recipientAllowed && !isSystemAlertType(row.typeCode)) {
         patientDisplayName = await this.repository.findPatientDisplayName(row.patientId);
         if (row.messageId) messageExcerpt = excerpts.get(row.messageId) ?? null;
       }
@@ -126,11 +127,16 @@ export class GetNotificationsUseCase {
 
 const isSystemPtType = (code: NotificationTypeCode): boolean => code === 'THERAPEUTIC_PROJECT_CONTACTS_PENDING';
 
+/** Aviso de sistema sem nome de paciente: o do PT e os 2 de presença (§5.5 — o sino mostra data e hora; nome/caso só na tela da fila, sob a célula dela). */
+const isSystemAlertType = (code: NotificationTypeCode): boolean =>
+  isSystemPtType(code) || code === 'PRESENCE_OPEN_4H' || code === 'CHECK_IN_REFUSED_NO_ENTRY';
+
 /** Payload por tipo: o do PT (4 chaves) ou o da admissão (`reason`); conversa não tem payload. */
 function payloadOf(
   code: NotificationTypeCode,
   raw: Record<string, unknown> | null,
-): PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | TalentumWebhookAlarmPayload | null {
+): PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | TalentumWebhookAlarmPayload | CoordinationAlertPayload | null {
+  if (code === 'PRESENCE_OPEN_4H' || code === 'CHECK_IN_REFUSED_NO_ENTRY') return coordinationAlertPayloadOf(raw);
   if (isSystemPtType(code)) return ptPayloadOf(raw);
   if (code === 'ADMISSION_TACTIQ_LINK_REQUIRED') {
     return tactiqLinkPayloadOf(raw);
@@ -144,6 +150,19 @@ function payloadOf(
     return state === 'installed' || state === 'missing' || state === 'disabled' ? { state } : null;
   }
   return null;
+}
+
+/**
+ * Emenda 077 §5.5: o aviso de presença à coordenação leva SÓ as 5 chaves de id/data do contrato, reconstruídas uma a uma (chave extra gravada por
+ * engano nunca passa). Linha malformada = sem payload (o front cai no texto sem data). Nenhum nome, endereço nem dado clínico — o `patient_id` vai na coluna.
+ */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+function coordinationAlertPayloadOf(raw: Record<string, unknown> | null): CoordinationAlertPayload | null {
+  if (!raw) return null;
+  const { occurrence_id, slot_id, on_date, worker_id, service_id } = raw;
+  const ids = [occurrence_id, slot_id, worker_id, service_id];
+  if (!ids.every((v) => typeof v === 'string' && v !== '') || typeof on_date !== 'string' || !ISO_DATE.test(on_date)) return null;
+  return { occurrence_id, slot_id, on_date, worker_id, service_id } as CoordinationAlertPayload;
 }
 
 /**

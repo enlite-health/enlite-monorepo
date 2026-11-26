@@ -13,7 +13,7 @@
  * `patientDisplayName` nulos) — texto neutro com o nome do ator, deep-link igual ao padrão
  * (navega se houver `patientId`, D-08).
  */
-import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkPayload, AdmissionTactiqLinkReason, ImportBlockedPayload, ItineraryUncoveredShiftsItem, NotificationTypeCode, PedidoIaAplicarPayload, TalentumWebhookAlarmPayload } from '@infrastructure/http/AdminNotificationApiService';
+import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkPayload, AdmissionTactiqLinkReason, ImportBlockedPayload, ItineraryUncoveredShiftsItem, NotificationTypeCode, PedidoIaAplicarPayload, PresenceAlertPayload, TalentumWebhookAlarmPayload } from '@infrastructure/http/AdminNotificationApiService';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { formatMessageDateTime } from '@presentation/components/features/admin/PatientDetail/conversation/messageDateFormat';
@@ -237,6 +237,25 @@ function isTalentumSilencio(n: AdminNotification): boolean {
   return (n.payload as Partial<TalentumWebhookAlarmPayload> | null)?.alarme === 'silencio';
 }
 
+/** Emenda 077 §6: os 2 avisos de presença levam à fila "Revisión de presencia" (sem paciente, sem `focusRequest`). */
+export const PRESENCE_REVIEW_PATH = '/admin/presencia/revision';
+
+/** `YYYY-MM-DD` -> `DD/MM/YYYY`; payload ausente/estranho = null (o texto cai na variante sem data, nunca "undefined"). */
+function presenceDate(n: AdminNotification): string | null {
+  const d = (n.payload as Partial<PresenceAlertPayload> | null | undefined)?.on_date;
+  return typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d.split('-').reverse().join('/') : null;
+}
+
+const presenceHandler = (key: 'presenceOpen4h' | 'checkInRefusedNoEntry'): NotificationTypeHandler => ({
+  buildText: (n, t) => {
+    const fecha = presenceDate(n);
+    return fecha ? t(`admin.notifications.${key}`, { fecha }) : t(`admin.notifications.${key}NoDate`);
+  },
+  getDeepLink: () => ({ path: PRESENCE_REVIEW_PATH }),
+  actorLabel: (_n, t) => t('admin.notifications.presenceActor'),
+  contextLine: (_n, t) => t('admin.notifications.presenceContext'),
+});
+
 const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   CONVERSATION_MENTIONED: {
     buildText: (n, t) => t('admin.notifications.mentioned', { actor: actorOrUid(n), patient: patientOrFallback(n, t) }),
@@ -301,6 +320,8 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
     contextLine: (_n, t) => t('admin.notifications.talentumWebhookContext'),
     detailLine: (n, t) => talentumWebhookParts(n, t).alarme,
   },
+  PRESENCE_OPEN_4H: presenceHandler('presenceOpen4h'),
+  CHECK_IN_REFUSED_NO_ENTRY: presenceHandler('checkInRefusedNoEntry'),
 };
 
 const FALLBACK_HANDLER: NotificationTypeHandler = {

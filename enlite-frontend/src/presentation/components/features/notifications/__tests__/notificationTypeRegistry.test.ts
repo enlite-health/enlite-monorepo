@@ -502,3 +502,43 @@ describe('TALENTUM_WEBHOOK_ALARM (spec 095, T-095-43)', () => {
     }
   });
 });
+
+// Emenda 077 §5.5 (T-806-54): os 2 avisos de presença à coordenação — payload só-ids, texto montado no cliente, link para a fila.
+describe('PRESENCE_OPEN_4H / CHECK_IN_REFUSED_NO_ENTRY (emenda 077 §5.5)', () => {
+  const PAYLOAD = { occurrence_id: 'o1', slot_id: 's1', on_date: '2026-11-25', worker_id: 'w1', service_id: 'sv1' };
+  const aviso = (typeCode: 'PRESENCE_OPEN_4H' | 'CHECK_IN_REFUSED_NO_ENTRY', payload: unknown = PAYLOAD) =>
+    notif({ typeCode, actorUid: 'system:presence-alert', actorDisplayName: null, patientDisplayName: null, messageId: null, payload: payload as never });
+  const realT = async (lng: 'es' | 'pt-BR') => {
+    const json = lng === 'es' ? esJson : ptBRJson;
+    const i18n = i18next.createInstance();
+    await i18n.init({ lng, resources: { [lng]: { translation: { admin: { notifications: json.admin.notifications } } } }, interpolation: { escapeValue: false } });
+    return i18n.t.bind(i18n) as never;
+  };
+
+  it.each(['PRESENCE_OPEN_4H', 'CHECK_IN_REFUSED_NO_ENTRY'] as const)('%s: o deep link abre a fila "Revisión de presencia", sem paciente e sem pedido de foco', (code) => {
+    expect(getNotificationTypeHandler(code).getDeepLink(aviso(code))).toEqual({ path: '/admin/presencia/revision' });
+  });
+
+  it.each([
+    ['PRESENCE_OPEN_4H', 'es', 'Turno sin salida registrada: pasaron más de 4 h del fin previsto (25/11/2026).'],
+    ['PRESENCE_OPEN_4H', 'pt-BR', 'Turno sem saída registrada: passaram mais de 4 h do fim previsto (25/11/2026).'],
+    ['CHECK_IN_REFUSED_NO_ENTRY', 'es', 'Entrada rechazada y sin entrada aceptada: turno del 25/11/2026.'],
+    ['CHECK_IN_REFUSED_NO_ENTRY', 'pt-BR', 'Entrada recusada e sem entrada aceita: turno de 25/11/2026.'],
+  ] as const)('%s em %s: texto renderizado com a data do payload', async (code, lng, esperado) => {
+    expect(getNotificationTypeHandler(code).buildText(aviso(code), await realT(lng))).toBe(esperado);
+  });
+
+  it('payload ausente/estranho: variante sem data, nunca "undefined" nem crash', async () => {
+    for (const payload of [null, {}, { on_date: '25/11/2026' }]) {
+      const es = getNotificationTypeHandler('PRESENCE_OPEN_4H').buildText(aviso('PRESENCE_OPEN_4H', payload), await realT('es'));
+      expect(es).toBe('Turno sin salida registrada: pasaron más de 4 h del fin previsto.');
+    }
+  });
+
+  it('o cartão não mostra nome de ninguém: ator "Enlite", contexto "Revisión de presencia", sem detalhe', () => {
+    const h = getNotificationTypeHandler('PRESENCE_OPEN_4H');
+    expect(h.actorLabel?.(aviso('PRESENCE_OPEN_4H'), t)).toBe('admin.notifications.presenceActor:{}');
+    expect(h.contextLine?.(aviso('PRESENCE_OPEN_4H'), t)).toBe('admin.notifications.presenceContext:{}');
+    expect(h.detailLine).toBeUndefined();
+  });
+});

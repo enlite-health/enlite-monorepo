@@ -420,3 +420,29 @@ describe('GetNotificationsUseCase — alarme do webhook do Talentum (spec 095 §
     }
   });
 });
+
+describe('GetNotificationsUseCase — aviso de presença à coordenação (emenda 077 §5.5, T-806-54): payload só-ids', () => {
+  const ids = { occurrence_id: 'o1', slot_id: 's1', on_date: '2026-11-25', worker_id: 'w1', service_id: 'sv1' };
+  const pa = (typeCode: 'PRESENCE_OPEN_4H' | 'CHECK_IN_REFUSED_NO_ENTRY', payload: Record<string, unknown> | null): NotificationEventRow =>
+    row({ id: 'pa1', typeCode, actorUid: 'system:presence-alert', actorDisplayName: null, conversationId: null, messageId: null, payload });
+
+  it.each(['PRESENCE_OPEN_4H', 'CHECK_IN_REFUSED_NO_ENTRY'] as const)('%s: devolve as 5 chaves de id/data; chave extra (nome, endereço) não é repassada', async (code) => {
+    const [a] = await new GetNotificationsUseCase(repoWith([pa(code, { ...ids, worker_name: 'Fulana', address: 'Calle 1' })])).execute({ recipientUid: 'me', limit: 20 });
+    expect(a.payload).toEqual(ids);
+    expect(JSON.stringify(a)).not.toMatch(/Fulana|Calle 1/);
+  });
+
+  it('payload nulo, id vazio ou data fora do formato viram null (o front cai no texto sem data)', async () => {
+    for (const p of [null, { ...ids, on_date: '25/11/2026' }, { ...ids, worker_id: '' }, { ...ids, slot_id: 7 }]) {
+      const [d] = await new GetNotificationsUseCase(repoWith([pa('PRESENCE_OPEN_4H', p)])).execute({ recipientUid: 'me', limit: 20 });
+      expect(d.payload).toBeNull();
+    }
+  });
+
+  it('o nome do paciente NUNCA é resolvido para o aviso de presença, nem para quem pode ler conversa (o nome só existe na tela da fila, sob a célula dela)', async () => {
+    const repo = repoWith([pa('PRESENCE_OPEN_4H', ids)], 'Ana Silva');
+    const [a] = await new GetNotificationsUseCase(repo, { canReadPatientConversation: jest.fn().mockResolvedValue(true) }).execute({ recipientUid: 'me', limit: 20 });
+    expect(a.patientDisplayName).toBeNull();
+    expect(repo.findPatientDisplayName).not.toHaveBeenCalled();
+  });
+});

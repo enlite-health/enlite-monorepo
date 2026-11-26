@@ -6793,6 +6793,12 @@
       "talentumWebhookTextSilencio": "Webhook do Talentum: sem eventos em 6 h",
       "talentumWebhookActor": "Enlite",
       "talentumWebhookContext": "Webhook do Talentum",
+      "presenceOpen4h": "Turno sem saída registrada: passaram mais de 4 h do fim previsto ({{fecha}}).",
+      "presenceOpen4hNoDate": "Turno sem saída registrada: passaram mais de 4 h do fim previsto.",
+      "checkInRefusedNoEntry": "Entrada recusada e sem entrada aceita: turno de {{fecha}}.",
+      "checkInRefusedNoEntryNoDate": "Entrada recusada e sem entrada aceita em um turno.",
+      "presenceActor": "Enlite",
+      "presenceContext": "Revisão de presença",
       "talentumWebhookAlarm": {
         "inbox_falha": "eventos com erro",
         "inbox_pendente": "eventos sem processar",
