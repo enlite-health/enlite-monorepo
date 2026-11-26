@@ -64,9 +64,23 @@ export interface PtContactsPendingPayload {
  * Payload do aviso "seu usuário não está vinculado ao Tactiq" (spec 049 F4): SÓ o motivo, de um conjunto fechado —
  * nunca e-mail, nome nem token. Construído por `buildAdmissionTactiqLinkPayload`.
  */
-export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account';
+export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account' | 'seat_missing' | 'seat_pending' | 'seat_ready';
+/** Quem lê o aviso: o próprio responsável (`host`, o padrão quando ausente) ou a cópia ao Acesso Master (`master`) — design D11/D12. */
+export type AdmissionTactiqLinkAudience = 'host' | 'master';
+/**
+ * Campos opcionais (change tactiq-vinculo-resiliente, D11): `audience` (obrigatório em `seat_missing`; `master` só em `seat_missing` e `broken`),
+ * `hostName` (nome de FUNCIONÁRIO, só na cópia `master`), `adminNotified` (só `seat_missing` ao `host`) e `autoReactivates` (só `seat_missing`).
+ * F5 (D11/D16): `seat_pending` (licença a confirmar) só vai ao `master`; `seat_ready` (licença confirmada/chegou) só ao `host` e leva `firstLink`
+ * (`true` = 1º vínculo da pessoa; `false` = legado que precisa autorizar de novo).
+ */
 export interface AdmissionTactiqLinkPayload {
   reason: AdmissionTactiqLinkReason;
+  audience?: AdmissionTactiqLinkAudience;
+  hostName?: string;
+  adminNotified?: boolean;
+  autoReactivates?: boolean;
+  /** Só `seat_ready`: `true` = a pessoa nunca vinculou; `false` = já tinha vínculo congelado sem `details` (D0.b). */
+  firstLink?: boolean;
 }
 
 /**
@@ -85,12 +99,13 @@ export interface AdmissionTactiqExtensionPayload {
  */
 export type AdmissionImportBlockedStage = 'blocked' | 'reminder' | 'expired' | 'will_be_lost';
 export type AdmissionImportBlockedKind = 'admission' | 'enquadre';
-export type AdmissionImportBlockedReason = 'no_link' | 'wrong_account';
+/** `not_recorded` (spec tactiq-vinculo-resiliente, D10/D11): reunião que o Tactiq não gravou; SÓ `stage=expired` ao `host`, nunca bloqueio humano. */
+export type AdmissionImportBlockedReason = 'no_link' | 'wrong_account' | 'not_recorded';
 export type AdmissionImportBlockedAudience = 'host' | 'supervisor';
 /** Conjuntos fechados do contrato (fonte única: o publicador valida na escrita e o leitor na leitura). */
 export const IMPORT_STAGES: readonly AdmissionImportBlockedStage[] = ['blocked', 'reminder', 'expired', 'will_be_lost'];
 export const IMPORT_KINDS: readonly AdmissionImportBlockedKind[] = ['admission', 'enquadre'];
-export const IMPORT_REASONS: readonly AdmissionImportBlockedReason[] = ['no_link', 'wrong_account'];
+export const IMPORT_REASONS: readonly AdmissionImportBlockedReason[] = ['no_link', 'wrong_account', 'not_recorded'];
 export const IMPORT_AUDIENCES: readonly AdmissionImportBlockedAudience[] = ['host', 'supervisor'];
 export interface AdmissionImportBlockedPayload {
   stage: AdmissionImportBlockedStage;

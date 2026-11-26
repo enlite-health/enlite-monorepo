@@ -19,6 +19,8 @@ export interface InterviewHost {
   /** O usuário existe mas foi desativado: sai dos dois fluxos sozinho. */
   userInactive: boolean;
   tactiq: InterviewHostTactiqState;
+  /** F5 (D16): o Acesso Master declarou a licença de Tactiq. OPCIONAL (deploy desencontrado): ausente = desmarcado. */
+  tactiqSeatDeclared?: boolean;
 }
 
 /** Usuário staff ativo que pode virar entrevistador. */

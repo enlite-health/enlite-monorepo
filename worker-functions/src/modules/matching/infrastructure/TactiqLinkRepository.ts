@@ -1,6 +1,9 @@
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import type { TactiqLinkState } from '../application/ports/TactiqPorts';
+import type { LastDegrade } from '../domain/tactiqRecheck';
+import { activeMasterUids } from './MasterRecipients';
+import { SEAT_DECLARED_KIND, SEAT_UNDECLARED_KIND } from '../domain/tactiqSeatGate';
 
 type Db = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
 
@@ -51,27 +54,6 @@ export class TactiqLinkRepository {
       [lowered],
     );
     return new Map(rows.map((r) => [r.e, r.status]));
-  }
-
-  /**
-   * Conta CERTA? O responsável já teve reunião importada com sucesso (`import_status = 'done'`, com `import_matched` na trilha) desde o
-   * `created_at` do vínculo (primeiro vínculo; revincular não zera). Cobre as DUAS fontes da importação: admissão e enquadre.
-   */
-  async hasImportedSinceLinked(email: string, ex: Db = this.db): Promise<boolean> {
-    const { rows } = await ex.query<{ imported: boolean }>(
-      `SELECT EXISTS (
-         SELECT 1 FROM tactiq_links l
-          WHERE lower(l.host_email) = lower($1)
-            AND (EXISTS (SELECT 1 FROM admission_appointments a
-                           JOIN admission_events ev ON ev.appointment_id = a.id AND ev.kind = 'import_matched'
-                          WHERE lower(a.host_email) = lower($1) AND a.import_status = 'done' AND ev.at >= l.created_at)
-              OR EXISTS (SELECT 1 FROM enquadre_events e
-                           JOIN enquadre_event_trail t ON t.event_id = e.id AND t.kind = 'import_matched'
-                          WHERE lower(e.host_email) = lower($1) AND e.import_status = 'done' AND t.at >= l.created_at))
-       ) AS imported`,
-      [email],
-    );
-    return rows[0]?.imported === true;
   }
 
   /** `created_at` é do 1º vínculo: `upsertLinked` reaproveita a linha no revínculo e não o toca. */
@@ -127,6 +109,52 @@ export class TactiqLinkRepository {
     return rows[0] ?? null;
   }
 
+  /**
+   * Re-teste diário (F2): linhas `broken`/`wrong_account` com segredo + o evento de queda MAIS NOVO (`lastDegrade`, LATERAL). Quem decide se
+   * re-testa é `isRecheckable` (domínio, dono do conceito); aqui só vai o que a decisão precisa. Os kinds vão por parâmetro (sql-schema-sync).
+   */
+  async listRecheckableWithToken(
+    ex: Db = this.db,
+  ): Promise<Array<{ id: string; host_email: string; status: string; refresh_token_encrypted: string; lastDegrade: LastDegrade | null }>> {
+    const { rows } = await ex.query<{
+      id: string; host_email: string; status: string; refresh_token_encrypted: string;
+      last_kind: string | null; last_reason: string | null; last_source: string | null;
+    }>(
+      `SELECT l.id, l.host_email, l.status, s.refresh_token_encrypted,
+              d.kind AS last_kind, d.reason AS last_reason, d.source AS last_source
+         FROM tactiq_links l
+         JOIN tactiq_link_secrets s ON s.link_id = l.id
+         LEFT JOIN LATERAL (SELECT e.kind, e.reason, e.ref->>'source' AS source
+                              FROM admission_events e
+                             WHERE lower(e.host_email) = lower(l.host_email) AND e.kind = ANY($1::text[])
+                             ORDER BY e.at DESC, e.id DESC LIMIT 1) d ON true
+        WHERE l.status IN ('broken', 'wrong_account')
+        ORDER BY l.host_email`,
+      [['tactiq_link.broken', 'tactiq_link.wrong_account', 'tactiq_link.recheck_dead']],
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      host_email: r.host_email,
+      status: r.status,
+      refresh_token_encrypted: r.refresh_token_encrypted,
+      lastDegrade: r.last_kind ? { kind: r.last_kind, reason: r.last_reason, source: r.last_source } : null,
+    }));
+  }
+
+  /**
+   * `scope` do último vínculo/recusa por assento do e-mail: o evento MAIS NOVO entre `tactiq_link.linked` e `tactiq_link.broken` com
+   * `source='link'` (F1). `null` = nenhum evento ou sem escopo gravado (legado: "não apurado").
+   */
+  async lastLinkScope(email: string, ex: Db = this.db): Promise<string | null> {
+    const { rows } = await ex.query<{ scope: string | null }>(
+      `SELECT e.ref->>'scope' AS scope FROM admission_events e
+        WHERE lower(e.host_email) = lower($1) AND (e.kind = $2 OR (e.kind = $3 AND e.ref->>'source' = 'link'))
+        ORDER BY e.at DESC, e.id DESC LIMIT 1`,
+      [email, 'tactiq_link.linked', 'tactiq_link.broken'],
+    );
+    return rows[0]?.scope ?? null;
+  }
+
   // ── escrita ────────────────────────────────────────────────────────────────────────────────────────
   /** Vincula (ou revincula): estado `linked`, token novo, "já avisei" zerado para `linked`. Nunca devolve o token. */
   async upsertLinked(
@@ -156,6 +184,42 @@ export class TactiqLinkRepository {
     );
   }
 
+  /**
+   * Recusa por falta de assento (F1): guarda o token de quem NÃO ficou `linked`. Linha nova nasce `broken` (`unauthorized`,
+   * `last_notified_status` NULL: o aviso por transição ainda vai disparar). Linha `linked` nunca é tocada. Linha `broken`/`wrong_account`
+   * só tem o segredo trocado quando o ÚLTIMO evento de queda é `recheck_dead` ou `invalid_grant` (token morto); qualquer outra, intocada.
+   * `true` só quando gravou (linha nova ou token substituído). O kind da trilha vai como parâmetro (sql-schema-sync lê literal como tabela.coluna).
+   */
+  async insertBrokenFromRejection(
+    input: { email: string; uid: string; tokenEncrypted: string; clientId: string | null; now: Date },
+    ex: Db = this.db,
+  ): Promise<boolean> {
+    const { rowCount } = await ex.query(
+      `WITH ins AS (
+         INSERT INTO tactiq_links (host_email, firebase_uid, status, client_id, linked_at, last_check_at,
+                                   last_check_outcome, status_changed_at, last_notified_status, missing_since)
+         VALUES ($1, $2, 'broken', $4, NULL, $5, 'unauthorized', $5, NULL, $5)
+         ON CONFLICT (lower(host_email)) DO NOTHING
+         RETURNING id),
+       dead AS (
+         SELECT l.id FROM tactiq_links l
+          WHERE lower(l.host_email) = lower($1) AND l.status IN ('broken', 'wrong_account')
+            AND EXISTS (SELECT 1 FROM (SELECT e.kind, e.reason FROM admission_events e
+                                        WHERE lower(e.host_email) = lower($1) AND e.kind = ANY($6::text[])
+                                        ORDER BY e.at DESC, e.id DESC LIMIT 1) d
+                         WHERE d.kind = $7 OR d.reason = 'invalid_grant')),
+       target AS (SELECT id FROM ins UNION ALL SELECT id FROM dead)
+       INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted, updated_at)
+       SELECT id, $3, $5 FROM target
+       ON CONFLICT (link_id) DO UPDATE SET refresh_token_encrypted = EXCLUDED.refresh_token_encrypted, updated_at = EXCLUDED.updated_at`,
+      [
+        input.email.toLowerCase(), input.uid, input.tokenEncrypted, input.clientId, input.now,
+        ['tactiq_link.broken', 'tactiq_link.wrong_account', 'tactiq_link.recheck_dead'], 'tactiq_link.recheck_dead',
+      ],
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
   /** Rotação: o refresh token novo SUBSTITUI o antigo (grava sempre que o Tactiq devolver um). */
   async rotateToken(email: string, tokenEncrypted: string, ex: Db = this.db): Promise<void> {
     await ex.query(
@@ -166,12 +230,37 @@ export class TactiqLinkRepository {
     );
   }
 
+  /**
+   * Rotação do re-teste (D6): compare-and-swap sobre o segredo lido. `false` = o segredo mudou no meio (revínculo concorrente, F23):
+   * quem chama NÃO reativa. Não filtra por `linked`: a linha re-testada está `broken`/`wrong_account`.
+   */
+  async rotateTokenIfUnchanged(linkId: string, oldEncrypted: string, newEncrypted: string, ex: Db = this.db): Promise<boolean> {
+    const { rowCount } = await ex.query(
+      `UPDATE tactiq_link_secrets SET refresh_token_encrypted = $3, updated_at = now()
+        WHERE link_id = $1 AND refresh_token_encrypted = $2`,
+      [linkId, oldEncrypted, newEncrypted],
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
+  /** `broken | wrong_account → linked` (D6). `status_changed_at` anda: reabre os itens bloqueados da 083 (F14). `true` só quando MUDOU. */
+  async reactivate(linkId: string, now: Date, ex: Db = this.db): Promise<boolean> {
+    const { rowCount } = await ex.query(
+      `UPDATE tactiq_links
+          SET status = 'linked', status_changed_at = $2, missing_since = NULL, last_check_at = $2,
+              last_check_outcome = 'ok', last_notified_status = 'linked'
+        WHERE id = $1 AND status IN ('broken', 'wrong_account')`,
+      [linkId, now],
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
   async recordCheck(email: string, outcome: string, now: Date, ex: Db = this.db): Promise<void> {
     await ex.query(`UPDATE tactiq_links SET last_check_at = $2, last_check_outcome = $3 WHERE lower(host_email) = lower($1)`, [email, now, outcome]);
   }
 
-  /** `linked → broken | wrong_account`. `true` só quando MUDOU de verdade (quem perde a corrida não repete o evento). */
-  async degrade(email: string, to: 'broken' | 'wrong_account', outcome: string, now: Date, ex: Db = this.db): Promise<boolean> {
+  /** `linked → broken`. `true` só quando MUDOU de verdade (quem perde a corrida não repete o evento). */
+  async degrade(email: string, to: 'broken', outcome: string, now: Date, ex: Db = this.db): Promise<boolean> {
     const { rowCount } = await ex.query(
       `UPDATE tactiq_links
           SET status = $2, status_changed_at = $3, missing_since = $3, last_check_at = $3, last_check_outcome = $4
@@ -203,7 +292,7 @@ export class TactiqLinkRepository {
     );
   }
 
-  /** A ÚLTIMA tentativa de vínculo na trilha (`linked` ou `link_rejected`), a mais nova primeiro; sem evento → `null`. */
+  /** A ÚLTIMA tentativa de vínculo na trilha (`linked`, `reactivated` do re-teste, `link_rejected` ou a queda `broken`); sem evento → `null`. */
   async latestLinkAttempt(
     email: string,
     ex: Db = this.db,
@@ -212,7 +301,7 @@ export class TactiqLinkRepository {
       `SELECT kind, outcome, reason, ref, at FROM admission_events
         WHERE lower(host_email) = lower($1) AND kind = ANY($2::text[])
         ORDER BY at DESC, id DESC LIMIT 1`,
-      [email, ['tactiq_link.linked', 'tactiq_link.link_rejected']],
+      [email, ['tactiq_link.linked', 'tactiq_link.link_rejected', 'tactiq_link.reactivated', 'tactiq_link.broken']],
     );
     return rows[0] ?? null;
   }
@@ -234,6 +323,110 @@ export class TactiqLinkRepository {
       [email, kind],
     );
     return rows[0]?.at ?? null;
+  }
+
+  // ── aviso ao Acesso Master (change tactiq-vinculo-resiliente, F3) ──────────────────────────────────
+  /** Membros vivos do Acesso Master (D12): só leitura, a consulta mora em `MasterRecipients`. */
+  activeMasterUids(ex: Db = this.db): Promise<string[]> {
+    return activeMasterUids(ex);
+  }
+
+  /** Nome de FUNCIONÁRIO da operadora (`interview_hosts.display_name`); `null` = fora do roster ou sem nome. Nunca dado de paciente. */
+  async hostDisplayName(email: string, ex: Db = this.db): Promise<string | null> {
+    const { rows } = await ex.query<{ display_name: string | null }>(
+      `SELECT display_name FROM interview_hosts WHERE lower(email) = lower($1) LIMIT 1`,
+      [email],
+    );
+    const name = rows[0]?.display_name?.trim();
+    return name ? name : null;
+  }
+
+  /** A queda MAIS NOVA do e-mail (`broken`, `wrong_account` ou `recheck_dead`), com a origem; `null` = nenhuma. Os kinds vão por parâmetro (sql-schema-sync). */
+  async lastDegrade(email: string, ex: Db = this.db): Promise<LastDegrade | null> {
+    const { rows } = await ex.query<{ kind: string; reason: string | null; source: string | null }>(
+      `SELECT e.kind, e.reason, e.ref->>'source' AS source
+         FROM admission_events e
+        WHERE lower(e.host_email) = lower($1) AND e.kind = ANY($2::text[])
+        ORDER BY e.at DESC, e.id DESC LIMIT 1`,
+      [email, ['tactiq_link.broken', 'tactiq_link.wrong_account', 'tactiq_link.recheck_dead']],
+    );
+    const r = rows[0];
+    return r ? { kind: r.kind, reason: r.reason, source: r.source } : null;
+  }
+
+  /**
+   * O Acesso Master já foi avisado neste EPISÓDIO de falta de assento? Episódio = desde o último `linked`/`reactivated`; "avisado" = o evento
+   * `notified` `seat_missing_master` com `outcome='sent'` mais novo vem depois deles. `no_recipient` não conta (tenta de novo). Só leitura.
+   */
+  async seatEpisodeNotified(email: string, ex: Db = this.db): Promise<boolean> {
+    const { rows } = await ex.query<{ kind: string }>(
+      `SELECT e.kind FROM admission_events e
+        WHERE lower(e.host_email) = lower($1)
+          AND (e.kind = ANY($2::text[]) OR (e.kind = $3 AND e.reason = $4 AND e.outcome = $5))
+        ORDER BY e.at DESC, e.id DESC LIMIT 1`,
+      [email, ['tactiq_link.linked', 'tactiq_link.reactivated'], 'tactiq_link.notified', 'seat_missing_master', 'sent'],
+    );
+    return rows[0]?.kind === 'tactiq_link.notified';
+  }
+
+  /** "Já avisei" por episódio (D12): trava transacional por e-mail + a leitura do episódio (molde `claimMissingNotification`). `true` = pode avisar. */
+  async claimSeatEpisode(email: string, ex: Db): Promise<boolean> {
+    await ex.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`tactiq_seat:${email.toLowerCase()}`]);
+    return !(await this.seatEpisodeNotified(email, ex));
+  }
+
+  // ── licença antes do 1º vínculo (change tactiq-vinculo-resiliente, F5, D16) ─────────────────────────
+  /** A licença está declarada? = o evento MAIS NOVO entre `seat_declared` e `seat_undeclared` é o `declared`. Dono: a trilha (nenhuma coluna). */
+  async seatDeclared(email: string, ex: Db = this.db): Promise<boolean> {
+    const { rows } = await ex.query<{ kind: string }>(
+      `SELECT e.kind FROM admission_events e
+        WHERE lower(e.host_email) = lower($1) AND e.kind = ANY($2::text[])
+        ORDER BY e.at DESC, e.id DESC LIMIT 1`,
+      [email, [SEAT_DECLARED_KIND, SEAT_UNDECLARED_KIND]],
+    );
+    return rows[0]?.kind === SEAT_DECLARED_KIND;
+  }
+
+  /** Quais e-mails (minúsculos) têm a licença declarada — a listagem de Entrevistadores lê DAQUI, nunca recalcula. */
+  async seatDeclaredAmong(emails: string[], ex: Db = this.db): Promise<Set<string>> {
+    const lowered = emails.map((e) => e.toLowerCase());
+    if (lowered.length === 0) return new Set();
+    const { rows } = await ex.query<{ mail: string; kind: string }>(
+      `SELECT DISTINCT ON (lower(e.host_email)) lower(e.host_email) AS mail, e.kind
+         FROM admission_events e
+        WHERE lower(e.host_email) = ANY($1::text[]) AND e.kind = ANY($2::text[])
+        ORDER BY lower(e.host_email), e.at DESC, e.id DESC`,
+      [lowered, [SEAT_DECLARED_KIND, SEAT_UNDECLARED_KIND]],
+    );
+    return new Set(rows.filter((r) => r.kind === SEAT_DECLARED_KIND).map((r) => r.mail));
+  }
+
+  /** Trava transacional por (assunto, e-mail): serializa quem declara/avisa ao mesmo tempo. Dentro da transação do chamador. */
+  async lockSeatTopic(topic: string, email: string, ex: Db): Promise<void> {
+    await ex.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`tactiq_${topic}:${email.toLowerCase()}`]);
+  }
+
+  /** "Já avisei" 1× por PESSOA (o `notified` `sent` com este `reason` já existe?). Chamar DEPOIS de `lockSeatTopic`. Só leitura. */
+  async oneTimeNoticeSent(email: string, reason: string, ex: Db): Promise<boolean> {
+    const { rows } = await ex.query(
+      `SELECT 1 FROM admission_events WHERE lower(host_email) = lower($1) AND kind = $2 AND reason = $3 AND outcome = $4 LIMIT 1`,
+      [email, 'tactiq_link.notified', reason, 'sent'],
+    );
+    return rows.length > 0;
+  }
+
+  /**
+   * O assento já CHEGOU neste episódio? Episódio = desde o último `linked`/`reactivated`; "chegou" = o `seat_arrived` mais novo vem depois deles.
+   * Chamar DEPOIS de `lockSeatTopic('seat_arrived', …)`. Os kinds vão por parâmetro (sql-schema-sync).
+   */
+  async seatArrivedInEpisode(email: string, ex: Db): Promise<boolean> {
+    const { rows } = await ex.query<{ kind: string }>(
+      `SELECT e.kind FROM admission_events e
+        WHERE lower(e.host_email) = lower($1) AND e.kind = ANY($2::text[])
+        ORDER BY e.at DESC, e.id DESC LIMIT 1`,
+      [email, ['tactiq_link.linked', 'tactiq_link.reactivated', 'tactiq_link.seat_arrived']],
+    );
+    return rows[0]?.kind === 'tactiq_link.seat_arrived';
   }
 
   // ── estado do OAuth (508) ──────────────────────────────────────────────────────────────────────────

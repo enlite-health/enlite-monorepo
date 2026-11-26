@@ -35,5 +35,10 @@ export function createAdminInterviewHostRoutes(
     controller.patch(req, res),
   );
 
+  // F5 (D16): "Licencia asignada". Mesma célula de escrita da tela; rota nova NÃO cria célula nem grupo.
+  router.post('/interview-hosts/:id/tactiq-seat', staffOnly, perm.require('interview_host', 'update'), (req: Request, res: Response) =>
+    controller.tactiqSeat(req, res),
+  );
+
   return router;
 }

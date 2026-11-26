@@ -16,6 +16,7 @@ import type { InterviewHostService } from '../../application/InterviewHostServic
  *   GET   /interview-hosts/candidates?q=    interview_host:update   (staff ativo, máx. 20)
  *   POST  /interview-hosts                  interview_host:update   {userUid, countries, doesEnquadre, doesAdmission}
  *   PATCH /interview-hosts/:id              interview_host:update   (qualquer subconjunto; os dois fluxos false = Quitar)
+ *   POST  /interview-hosts/:id/tactiq-seat  interview_host:update   {assigned: boolean} — "Licencia asignada" (F5, D16; só o Acesso Master)
  *
  * Erro de domínio vira resposta com `code` ESTÁVEL; o resto vira 500 genérico, relatado só com ids — nunca e-mail nem nome.
  */
@@ -30,6 +31,8 @@ const patchBody = z
   .object({ countries: countriesSchema.optional(), doesEnquadre: z.boolean().optional(), doesAdmission: z.boolean().optional() })
   .strict()
   .refine((b) => Object.keys(b).length > 0, { message: 'empty patch' });
+
+const seatBody = z.object({ assigned: z.boolean() }).strict();
 
 const DOMAIN_STATUS: ReadonlyArray<readonly [new (...a: never[]) => Error, number]> = [
   [InterviewHostUserNotEligibleError, 400],
@@ -73,6 +76,16 @@ export class InterviewHostController {
     await this.run(res, 'patch', async () => {
       await this.service.update(params.data.id, body.data, actorUid(req));
       res.status(200).json({ success: true, data: { id: params.data.id } });
+    });
+  }
+
+  async tactiqSeat(req: Request, res: Response): Promise<void> {
+    const params = idParams.safeParse(req.params);
+    const body = seatBody.safeParse(req.body);
+    if (!params.success || !body.success) return this.invalid(res);
+    await this.run(res, 'tactiqSeat', async () => {
+      await this.service.setTactiqSeat(params.data.id, body.data.assigned, actorUid(req));
+      res.status(200).json({ success: true, data: { id: params.data.id, assigned: body.data.assigned } });
     });
   }
 

@@ -145,6 +145,9 @@ export interface TactiqMcpPort {
   getTranscriptPage(accessToken: string, meetingId: string, page: number): Promise<TactiqTranscriptPage>;
 }
 
+/** De onde veio a queda do vínculo (`ref.source` do evento `broken`, design D7). Ausente no evento = queda anterior à change. */
+export type BrokenSource = 'import' | 'daily_check' | 'link';
+
 export type TactiqLinkState = 'missing' | 'linked' | 'broken' | 'wrong_account' | 'revoked';
 
 /** Quem agenda pergunta aqui se o responsável tem o vínculo vivo (a trava do servidor). */
@@ -172,14 +175,11 @@ export type HostAccessResult<T> = { ok: true; value: T } | { ok: false; reason: 
 
 /**
  * O que a importação precisa do vínculo: a ÚNICA porta para um token do RESPONSÁVEL (a troca com rotação e todo o uso do token
- * acontecem dentro de `withHostAccess`, uma leitura por vez por responsável) e os dois rebaixamentos de estado.
+ * acontecem dentro de `withHostAccess`, uma leitura por vez por responsável) e o rebaixamento a `broken`.
  */
 export interface TactiqTokenProvider {
   withHostAccess<T>(email: string, fn: (accessToken: string) => Promise<T>): Promise<HostAccessResult<T>>;
-  markBroken(email: string): Promise<boolean>;
-  markWrongAccount(email: string): Promise<boolean>;
-  /** O responsável tem ao menos uma reunião importada com sucesso (`done`), de QUALQUER fonte (admissão ou enquadre), desde que o vínculo foi criado? */
-  hasImportedSinceLinked(email: string): Promise<boolean>;
+  markBroken(email: string, outcome?: 'invalid_grant' | 'unauthorized', source?: BrokenSource): Promise<boolean>;
   /** O PRIMEIRO vínculo da conta (`tactiq_links.created_at`, que o revínculo não muda) é POSTERIOR a `at`? Reunião que terminou antes dele não prova conta errada. */
   linkCreatedAfter(email: string, at: Date): Promise<boolean>;
   /** O responsável tem vínculo `linked` cuja última mudança de estado é MAIS NOVA que `since` (o bloqueio)? É a "causa mudou" da spec 083 (DF-1). */

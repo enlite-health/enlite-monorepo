@@ -284,6 +284,58 @@ describe('GetNotificationsUseCase — aviso do vínculo do Tactiq (spec 049 F4):
     expect(a.payload).toBeNull();
     expect(b.payload).toBeNull();
   });
+
+  const payloadOfRow = async (payload: Record<string, unknown>) =>
+    (await new GetNotificationsUseCase(repoWith([tactiqRow(payload)])).execute({ recipientUid: 'me', limit: 20 }))[0].payload;
+
+  describe('falta de assento (tactiq-vinculo-resiliente, D11): leitura chave a chave', () => {
+    it('seat_missing ao host sai com audience, adminNotified e autoReactivates; chave extra (e-mail, token) não sai', async () => {
+      const p = await payloadOfRow({
+        reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: false, email: 'ana@example.test', token: 'rt-segredo',
+      });
+      expect(p).toEqual({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: false });
+      expect(JSON.stringify(p)).not.toContain('ana@example.test');
+      expect(JSON.stringify(p)).not.toContain('rt-segredo');
+    });
+
+    it('seat_missing ao master leva hostName; `hostName` em audience host NÃO sai', async () => {
+      expect(await payloadOfRow({ reason: 'seat_missing', audience: 'master', hostName: 'Fulana Fake', autoReactivates: true })).toEqual({
+        reason: 'seat_missing', audience: 'master', hostName: 'Fulana Fake', autoReactivates: true,
+      });
+      expect(await payloadOfRow({ reason: 'seat_missing', audience: 'host', hostName: 'Fulana Fake', adminNotified: false, autoReactivates: true })).toEqual({
+        reason: 'seat_missing', audience: 'host', adminNotified: false, autoReactivates: true,
+      });
+    });
+
+    it('broken ao master (token morto) sai com hostName; `master` com missing cai para o responsável (sem audience)', async () => {
+      expect(await payloadOfRow({ reason: 'broken', audience: 'master', hostName: 'Fulana Fake' })).toEqual({
+        reason: 'broken', audience: 'master', hostName: 'Fulana Fake',
+      });
+      expect(await payloadOfRow({ reason: 'missing', audience: 'master', hostName: 'Fulana Fake' })).toEqual({ reason: 'missing' });
+    });
+
+    it('seat_missing sem audience válida, ou com tipos errados nos booleanos, não vaza: sem payload / sem o campo', async () => {
+      expect(await payloadOfRow({ reason: 'seat_missing' })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_missing', audience: 'supervisor' })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_missing', audience: 'host', adminNotified: 'sim', autoReactivates: 1 })).toEqual({
+        reason: 'seat_missing', audience: 'host',
+      });
+    });
+
+    it('F5: seat_ready só ao host com firstLink boolean; seat_pending só ao master; fora disso, sem payload', async () => {
+      expect(await payloadOfRow({ reason: 'seat_ready', audience: 'host', firstLink: false, email: 'ana@example.test' })).toEqual({
+        reason: 'seat_ready', audience: 'host', firstLink: false,
+      });
+      expect(await payloadOfRow({ reason: 'seat_ready', audience: 'master', firstLink: true })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_ready', audience: 'host', firstLink: 'sim' })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_ready', audience: 'host' })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_pending', audience: 'master', hostName: 'Fulana Fake', firstLink: true })).toEqual({
+        reason: 'seat_pending', audience: 'master', hostName: 'Fulana Fake',
+      });
+      expect(await payloadOfRow({ reason: 'seat_pending', audience: 'host' })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_pending' })).toBeNull();
+    });
+  });
 });
 
 describe('GetNotificationsUseCase — aviso diário do itinerário (spec 069 F4): payload só-ids', () => {

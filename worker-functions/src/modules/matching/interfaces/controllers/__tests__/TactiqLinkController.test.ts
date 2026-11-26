@@ -8,7 +8,7 @@ jest.mock('@modules/identity', () => ({ AuthMiddleware: { getAuthContext: jest.f
 import type { Request, Response } from 'express';
 import { logger, reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
-import { TactiqAccessDeniedError, TactiqExchangeFailedError, TactiqStateInvalidError, type TactiqLinkService } from '../../../application/TactiqLinkService';
+import { TactiqAccessDeniedError, TactiqExchangeFailedError, TactiqSeatNotDeclaredError, TactiqStateInvalidError, type TactiqLinkService } from '../../../application/TactiqLinkService';
 import { TactiqNotConfiguredError } from '../../../application/ports/TactiqPorts';
 import { TactiqLinkController } from '../TactiqLinkController';
 
@@ -42,6 +42,16 @@ describe('TactiqLinkController', () => {
     const r2 = res();
     await b.c.getOwn(req({ user: {} }), r2);
     expect(r2.statusCode).toBe(400);
+  });
+
+  it('POST sem licença declarada e sem vínculo anterior → 409 TACTIQ_SEAT_NOT_DECLARED (F5, D16), sem reportar erro', async () => {
+    const b = build();
+    b.service.startLink.mockRejectedValueOnce(new TactiqSeatNotDeclaredError());
+    const r = res();
+    await b.c.start(req(withUser), r);
+    expect(r.statusCode).toBe(409);
+    expect(r.body).toMatchObject({ success: false, code: 'TACTIQ_SEAT_NOT_DECLARED' });
+    expect(reportError).not.toHaveBeenCalled();
   });
 
   it('POST: devolve só a URL; ator e e-mail vêm do token; env faltando → 503; sem ator → 401', async () => {

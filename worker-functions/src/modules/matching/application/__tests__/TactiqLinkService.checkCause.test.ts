@@ -30,6 +30,7 @@ function build() {
     degrade: jest.fn().mockResolvedValue(true),
     rotateToken: jest.fn().mockResolvedValue(undefined),
     appendEvent: jest.fn(async (e: Record<string, unknown>) => void events.push(e)),
+    listRecheckableWithToken: jest.fn().mockResolvedValue([]),
     listActiveRoster: jest.fn().mockResolvedValue([]),
   };
   const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
