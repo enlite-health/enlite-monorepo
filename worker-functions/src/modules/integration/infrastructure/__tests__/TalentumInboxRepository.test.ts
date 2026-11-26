@@ -62,7 +62,8 @@ describe('TalentumInboxRepository', () => {
     expect(r).toEqual({ id: 'inbox-1', duplicate: false });
     expect(kms.encrypt).toHaveBeenCalledWith(JSON.stringify(body));
     const [sql, values] = mockQuery.mock.calls[0];
-    expect(sql).toContain('ON CONFLICT (body_hash) DO NOTHING');
+    expect(sql).toContain('ORDER BY received_at DESC, id DESC LIMIT 1'); // dedup só contra o último da chave
+    expect(sql).not.toContain('ON CONFLICT (body_hash)');
     expect(values[values.length - 1]).toBe(await kms.encrypt.mock.results[0].value);
     expect(JSON.stringify(values)).not.toContain(SENSITIVE);
   });
@@ -74,7 +75,49 @@ describe('TalentumInboxRepository', () => {
     const r = await repo.insertReceived(params(body));
 
     expect(r).toEqual({ id: 'inbox-0', duplicate: true });
-    expect(mockQuery.mock.calls[1][1]).toEqual([computeBodyHash(body)]);
+    expect(mockQuery.mock.calls[1][1]).toEqual([computeBodyHash(body), 'tp-1', 'prof-1']);
+  });
+
+  /**
+   * Pool que EXECUTA a semântica que o SQL declara: com `ON CONFLICT (body_hash)` o dedup é global (comportamento antigo);
+   * com o `ORDER BY received_at DESC ... LIMIT 1` por chave, só o último evento da chave conta.
+   */
+  function statefulPool() {
+    const rows: Array<{ id: string; hash: string; psc: string | null; prof: string | null }> = [];
+    const lastOfKey = (psc: unknown, prof: unknown) => [...rows].reverse().find((r) => r.psc === psc && r.prof === prof);
+    mockQuery.mockImplementation(async (sql: string, v: unknown[]) => {
+      if (sql.startsWith('INSERT')) {
+        const [hash, , , , psc, prof] = v as string[];
+        const dup = sql.includes('ON CONFLICT (body_hash)') ? rows.some((r) => r.hash === hash) : lastOfKey(psc, prof)?.hash === hash;
+        if (dup) return { rows: [] };
+        const id = `i${rows.length + 1}`;
+        rows.push({ id, hash, psc, prof });
+        return { rows: [{ id }] };
+      }
+      const [hash, psc, prof] = v as string[];
+      const found = sql.includes('ORDER BY received_at DESC') ? lastOfKey(psc, prof) : rows.find((r) => r.hash === hash);
+      return { rows: found ? [{ id: found.id }] : [] };
+    });
+    return rows;
+  }
+
+  it('dedup só contra o ÚLTIMO da chave: A, B, A grava 3 linhas; A, A grava 1', async () => {
+    const A = { ...body, n: 'A' };
+    const B = { ...body, n: 'B' };
+    const repo = new TalentumInboxRepository(makeKms() as never);
+
+    const rows = statefulPool();
+    const r1 = await repo.insertReceived(params(A));
+    const r2 = await repo.insertReceived(params(B));
+    const r3 = await repo.insertReceived(params(A));
+    expect([r1.duplicate, r2.duplicate, r3.duplicate]).toEqual([false, false, false]);
+    expect(rows).toHaveLength(3);
+
+    const rows2 = statefulPool();
+    const a1 = await repo.insertReceived(params(A));
+    const a2 = await repo.insertReceived(params(A));
+    expect(a2).toEqual({ id: a1.id, duplicate: true });
+    expect(rows2).toHaveLength(1);
   });
 
   it('lockKey toma pg_advisory_xact_lock no client recebido', async () => {

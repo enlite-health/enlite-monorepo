@@ -72,7 +72,7 @@ ALTER TABLE worker_job_application_stage_history ADD CONSTRAINT wjash_reason_cat
 CREATE TABLE IF NOT EXISTS talentum_webhook_inbox (
   id                       UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   received_at              TIMESTAMPTZ  NOT NULL DEFAULT now(),
-  body_hash                TEXT         NOT NULL UNIQUE,
+  body_hash                TEXT         NOT NULL,
   action                   TEXT         NOT NULL,
   subtype                  TEXT         NULL,
   status_label             TEXT         NULL,
@@ -92,6 +92,9 @@ CREATE TABLE IF NOT EXISTS talentum_webhook_inbox (
 
 CREATE INDEX IF NOT EXISTS idx_talentum_webhook_inbox_key
   ON talentum_webhook_inbox (talentum_prescreening_id, talentum_profile_id, received_at);
+-- body_hash NÃO é único: o dedup do ack é só contra o último evento da mesma chave (A→B→A legítimo grava 3 linhas).
+CREATE INDEX IF NOT EXISTS idx_talentum_webhook_inbox_body_hash
+  ON talentum_webhook_inbox (body_hash);
 CREATE INDEX IF NOT EXISTS idx_talentum_webhook_inbox_pending
   ON talentum_webhook_inbox (received_at) WHERE state <> 'PROCESSED';
 

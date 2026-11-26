@@ -4,7 +4,7 @@
  * Pela borda (HTTP real, banco real, sem mock de rota), só com payload sintético:
  *   T3  o webhook responde 200 `{ received: true }`, guarda a linha RECEIVED na inbox e NÃO toca o espelho
  *       (`talentum_prescreenings`); só o redrive (`/api/internal/talentum/inbox/redrive`) o atualiza.
- *   T4  o mesmo corpo 2× → 1 linha só, as duas respostas 200.
+ *   T4  o mesmo corpo 2× → 1 linha só, as duas respostas 200; A→B→A (reclassificação legítima) → 3 linhas.
  *   T31 as rotas internas: sem `X-Internal-Secret` → 403; `redrive` sem corpo/ambíguo/fora do teto → 400 e nenhuma linha
  *       muda de estado; `process` com push válido de uma linha RECEIVED → 200 e PROCESSED; push inválido → 400.
  *
@@ -140,6 +140,17 @@ describe('Talentum — ack rápido do webhook e rotas internas da inbox (spec 09
       expect(second.status).toBe(200);
       expect(second.data).toEqual({ received: true });
       expect(await inboxRows('t4')).toHaveLength(1);
+    });
+  });
+
+  describe('T4b — dedup só contra o último evento da chave', () => {
+    it('A→B→A grava 3 linhas (o 2º A não é duplicata do 1º); A→A grava 1', async () => {
+      const A = body('t4b', 'INITIATED');
+      const B = body('t4b', 'COMPLETED');
+      for (const p of [A, B, A]) expect((await api.post(WEBHOOK, p)).status).toBe(200);
+      expect(await inboxRows('t4b')).toHaveLength(3);
+      expect((await api.post(WEBHOOK, A)).status).toBe(200);
+      expect(await inboxRows('t4b')).toHaveLength(3); // A de novo logo depois de A: duplicata do último
     });
   });
 

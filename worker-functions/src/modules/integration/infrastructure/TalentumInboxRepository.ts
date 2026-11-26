@@ -57,20 +57,39 @@ export class TalentumInboxRepository implements ITalentumInboxRepository {
     return (this.pool ??= DatabaseConnection.getInstance().getPool());
   }
 
+  /**
+   * Dedup só contra o ÚLTIMO evento da mesma chave (prescreening, profile): reentrega idêntica ao último não grava;
+   * A→B→A grava as 3 (o payload do Talentum não traz carimbo/id de evento, então B→A legítimo tem corpo igual ao 1º A).
+   * Condição de corrida residual: 2 reentregas SIMULTÂNEAS do mesmo corpo podem gravar 2 linhas idênticas; o processador
+   * aplica o mesmo evento 2x (upsert por precedência, idempotente), então o efeito é o mesmo de uma só.
+   */
   async insertReceived(p: InsertReceivedParams): Promise<InsertReceivedResult> {
     const payloadEnc = await this.kms.encrypt(JSON.stringify(p.payload));
     const inserted = await this.getPool().query(
       `INSERT INTO talentum_webhook_inbox
          (body_hash, action, subtype, status_label, talentum_prescreening_id, talentum_profile_id,
           environment, ingress_host, state, payload_enc)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'RECEIVED', $9)
-       ON CONFLICT (body_hash) DO NOTHING
+       SELECT $1::text, $2::text, $3::text, $4::text, $5::text, $6::text, $7::text, $8::text, 'RECEIVED', $9::text
+        WHERE NOT EXISTS (
+          SELECT 1 FROM (
+            SELECT body_hash FROM talentum_webhook_inbox
+             WHERE talentum_prescreening_id IS NOT DISTINCT FROM $5::text
+               AND talentum_profile_id IS NOT DISTINCT FROM $6::text
+             ORDER BY received_at DESC, id DESC LIMIT 1
+          ) last WHERE last.body_hash = $1::text)
        RETURNING id`,
       [p.bodyHash, p.action, p.subtype, p.statusLabel, p.prescreeningId, p.profileId, p.environment, p.ingressHost, payloadEnc],
     );
     if (inserted.rows.length > 0) return { id: inserted.rows[0].id, duplicate: false };
 
-    const existing = await this.getPool().query(`SELECT id FROM talentum_webhook_inbox WHERE body_hash = $1`, [p.bodyHash]);
+    const existing = await this.getPool().query(
+      `SELECT id FROM talentum_webhook_inbox
+        WHERE body_hash = $1
+          AND talentum_prescreening_id IS NOT DISTINCT FROM $2::text
+          AND talentum_profile_id IS NOT DISTINCT FROM $3::text
+        ORDER BY received_at DESC, id DESC LIMIT 1`,
+      [p.bodyHash, p.prescreeningId, p.profileId],
+    );
     return { id: existing.rows[0].id, duplicate: true };
   }
 
