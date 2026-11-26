@@ -527,7 +527,7 @@ export class ProcessTalentumPrescreening {
   // ── Funnel stage sync + encuadre ─────────────────────────────────
 
   private async syncFunnelAndEncuadre(
-    prescreening: { id: string; workerId: string | null; jobPostingId: string | null; talentumPrescreeningId: string },
+    prescreening: { id: string; workerId: string | null; jobPostingId: string | null; talentumPrescreeningId: string; status?: string | null },
     payload: TalentumPrescreeningResponseParsed,
     manual: boolean,
   ): Promise<void> {
@@ -541,6 +541,13 @@ export class ProcessTalentumPrescreening {
     }
 
     const funnelStage = this.deriveFunnelStage(payload);
+
+    // EXPIRED atrasado depois de um veredito (spec 095 §3.1/§3.4, T-095-11): a trava de ordem segurou o espelho no veredito
+    // (`prescreening.status` é o FINAL gravado), então a candidatura também não é rejeitada por expiração.
+    if (funnelStage === 'EXPIRED' && prescreening.status != null && prescreening.status !== 'EXPIRED') {
+      console.log(`${TAG} syncFunnel SKIPPED — EXPIRED atrasado, o espelho manteve ${prescreening.status}: WJA/encuadre intactos | prescreeningId=${prescreening.id}`);
+      return;
+    }
 
     // A última movimentação da candidatura decide se WJA/encuadre podem mudar (decisão 6; "manual não é revertido";
     // expiração não desfaz movimento humano nosso).

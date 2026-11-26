@@ -30,16 +30,16 @@ AS $$
     WHEN 'COMPLETED'     THEN 2
     WHEN 'ANALYZED'      THEN 3
     WHEN 'PENDING'       THEN 3
-    WHEN 'QUALIFIED'     THEN 4
-    WHEN 'NOT_QUALIFIED' THEN 4
-    WHEN 'IN_DOUBT'      THEN 4
     WHEN 'EXPIRED'       THEN 4
+    WHEN 'QUALIFIED'     THEN 5
+    WHEN 'NOT_QUALIFIED' THEN 5
+    WHEN 'IN_DOUBT'      THEN 5
     ELSE -1
   END;
 $$;
 
 COMMENT ON FUNCTION talentum_status_precedence(text) IS
-  'Ordem do status de talentum_prescreenings (spec 095 §3.1): o status nunca regride. Desconhecido = -1. Empate grava o novo (veredito -> veredito).';
+  'Ordem do status de talentum_prescreenings (spec 095 §3.1): o status nunca regride. Desconhecido = -1. Empate grava o novo (veredito -> veredito). EXPIRED (4) fica abaixo dos vereditos (5): veredito depois de EXPIRED vence, EXPIRED atrasado depois de veredito NAO sobrescreve; acima de ANALYZED/PENDING (3).';
 
 -- ── 2. CHECKs: só o valor novo entra (lista atual copiada da última migration que a define) ──────────────
 -- talentum_prescreenings_status_check (última: 129) + EXPIRED

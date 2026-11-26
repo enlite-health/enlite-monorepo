@@ -1600,6 +1600,25 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
       expect(r2[0].status).toBe('QUALIFIED');
     });
 
+    // T3 (T-095-11): EXPIRED fica abaixo do veredito; o EXPIRED atrasado não o sobrescreve (veredito depois de EXPIRED vence: T12 do processador).
+    it('status não regride: QUALIFIED → EXPIRED atrasado mantém o veredito (T3)', async () => {
+      const pscExtId = 'http-psc-regression-expired-001';
+      const res1 = await post(envelope({
+        subtype: 'ANALYZED',
+        prescreening: { id: pscExtId },
+        response: { id: 'http-resp-expired-001', state: [], score: 80, statusLabel: 'QUALIFIED' } as any,
+      }));
+      expect(res1.status).toBe(200);
+      const res2 = await post(envelope({
+        subtype: 'ANALYZED',
+        prescreening: { id: pscExtId },
+        response: { id: 'http-resp-expired-001', state: [], statusLabel: 'EXPIRED' } as any,
+      }));
+      expect(res2.status).toBe(200);
+      const { rows } = await pool.query(`SELECT status FROM talentum_prescreenings WHERE id = $1`, [res1.data.prescreeningId]);
+      expect(rows[0].status).toBe('QUALIFIED');
+    });
+
     it('query analytics: filtro por status ANALYZED retorna apenas prescreenings analisados', async () => {
       // Cria prescreenings em diferentes status
       await post(envelope({

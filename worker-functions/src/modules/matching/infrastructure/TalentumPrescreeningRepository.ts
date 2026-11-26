@@ -27,8 +27,8 @@ export class TalentumPrescreeningRepository {
   //   ON CONFLICT (talentum_prescreening_id, talentum_profile_id):
   //     prescreening_id = fila (processo seletivo), profile_id = candidato
   //     status         → nunca regride (spec 095 §3.1): grava o novo só se talentum_status_precedence(novo) >=
-  //                      a do gravado (INITIATED 0 → IN_PROGRESS 1 → COMPLETED 2 → ANALYZED/PENDING 3 → veredito/EXPIRED 4);
-  //                      empate grava o novo (veredito → veredito = reclassificação)
+  //                      a do gravado (INITIATED 0 → IN_PROGRESS 1 → COMPLETED 2 → ANALYZED/PENDING 3 → EXPIRED 4 → veredito 5);
+  //                      empate grava o novo (veredito → veredito = reclassificação); EXPIRED atrasado NÃO sobrescreve veredito
   //     worker_id      → COALESCE: preenche se era null; não regride para null em POSTs posteriores
   //     job_posting_id → a vaga DONA (resolvida pelo talentum_prescreening_id, `jobPostingResolvedById`)
   //                      vence a gravada; resolução por título/null mantém o COALESCE (título nunca

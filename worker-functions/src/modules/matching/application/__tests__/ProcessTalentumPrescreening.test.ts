@@ -2096,6 +2096,20 @@ describe('ProcessTalentumPrescreening', () => {
       expect(sqlsOf().some((q) => /set_config\('app.move_reason'/.test(q))).toBe(false);
     });
 
+    it('EXPIRED atrasado depois de veredito (o upsert devolve QUALIFIED): WJA e encuadre NÃO são tocados', async () => {
+      mockPrescreeningRepo.upsertPrescreening.mockResolvedValueOnce({
+        prescreening: { id: 'ps-1', talentumPrescreeningId: 'tp-1', workerId: 'w-1', jobPostingId: 'jp-1', status: 'QUALIFIED' },
+        created: false,
+      });
+
+      await useCase.execute(expiredPayload('subtype'));
+
+      expect(mockPrescreeningRepo.upsertPrescreening.mock.calls[0][0].status).toBe('EXPIRED');
+      expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).not.toHaveBeenCalled();
+      expect(sqlsOf().some((q) => q.includes("'TALENTUM_EXPIRED'") && q.includes('UPDATE encuadres'))).toBe(false);
+      expect(sqlsOf().some((q) => q.includes("'funnel_stage.rejected'"))).toBe(false);
+    });
+
     it('expiração sobre etapa acima de QUALIFIED (SELECTED): o espelho vira EXPIRED, mas encuadre e evento não mudam', async () => {
       mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mockResolvedValue({ previousStage: 'SELECTED' });
       mockPoolClient.query.mockImplementation((sql: string) => {

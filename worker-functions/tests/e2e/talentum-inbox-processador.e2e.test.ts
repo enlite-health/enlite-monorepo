@@ -13,6 +13,7 @@
  *  T11  manual contra a última linha da trilha de uid humano NOSSO → só o espelho muda + aviso CONFLITO_HUMANO
  *  T12  expiração → EXPIRED / REJECTED / TALENTUM_EXPIRED / auto_expired; depois ANALYZED/QUALIFIED automático reverte
  *  T17  a mais antiga da chave em FAILED + push da mais nova → a antiga é aplicada ANTES (a mais nova não passa na frente)
+ *  T18  EXPIRED atrasado depois de veredito NÃO sobrescreve: espelho QUALIFIED e WJA/encuadre intactos (T-095-11)
  *  T16  os `domain_events` pendentes de COMPLETED → QUALIFIED pela inbox são só `funnel_stage.qualified`
  *
  * Canal real: nenhum. `PubSubClient` é mock em NODE_ENV=test (o ack não dispara o processador; quem processa é a rota interna
@@ -50,7 +51,7 @@ describe('Talentum — processador da inbox (spec 095 §3.2/§3.4)', () => {
   let pool: Pool;
 
   // Cada caso tem a sua chave (prescreening + profile), seu worker e sua vaga: nada é compartilhado entre casos.
-  const CASES = ['T6', 'T7', 'T8', 'T9', 'T10A', 'T10C', 'T11', 'T12', 'T16', 'T17'] as const;
+  const CASES = ['T6', 'T7', 'T8', 'T9', 'T10A', 'T10C', 'T11', 'T12', 'T16', 'T17', 'T18'] as const;
   type Case = (typeof CASES)[number];
   const PSC = (c: Case) => `proc95-${RUN}-psc-${c}`;
   const PROF = (c: Case) => `proc95-${RUN}-prof-${c}`;
@@ -321,14 +322,14 @@ describe('Talentum — processador da inbox (spec 095 §3.2/§3.4)', () => {
       expect(t[t.length - 1]).toMatchObject({ new_value: 'QUALIFIED', changed_by: 'talentum:manual' });
     });
 
-    it('T10b: depois do T10a, uma EXPIRAÇÃO automática muda o espelho mas NÃO rejeita o WJA nem o encuadre (AFTER_MANUAL)', async () => {
+    it('T10b: depois do T10a, uma EXPIRAÇÃO automática NÃO sobrescreve o veredito e NÃO rejeita o WJA nem o encuadre', async () => {
       const before = await trail('T10A');
       expect(before[before.length - 1].changed_by).toBe('talentum:manual');
 
       // Forma por `statusLabel` (a outra, por subtype, é o T12): as duas são aceitas pelo schema (T-095-34).
       await send('T10A', analyzed('T10A', 'EXPIRED'));
 
-      expect((await mirror('T10A')).map((r) => r.status)).toEqual(['EXPIRED']);
+      expect((await mirror('T10A')).map((r) => r.status)).toEqual(['QUALIFIED']); // EXPIRED (4) < veredito (5): a trava segura
       expect(await stage('T10A')).toBe('QUALIFIED');
       expect(await encuadre('T10A')).toEqual({ resultado: null, cat: null });
       expect(await trail('T10A')).toEqual(before); // nenhuma linha nova na trilha
@@ -412,6 +413,20 @@ describe('Talentum — processador da inbox (spec 095 §3.2/§3.4)', () => {
     expect(await events('T12', 'funnel_stage.rejection_reverted')).toHaveLength(1);
     const after = await trail('T12');
     expect(after[after.length - 1].changed_by ?? '').not.toBe('talentum:manual'); // foi reversão AUTOMÁTICA
+  });
+
+  // ── T18 ───────────────────────────────────────────────────────────────────────────────────────────────
+  it('T18: QUALIFIED e depois EXPIRED atrasado → espelho fica QUALIFIED e o WJA/encuadre não são rejeitados; novo QUALIFIED depois de EXPIRED real volta (T12)', async () => {
+    await send('T18', body('T18', 'COMPLETED'));
+    await send('T18', analyzed('T18', 'QUALIFIED'));
+    expect(await stage('T18')).toBe('QUALIFIED');
+
+    await send('T18', body('T18', 'EXPIRED')); // chega atrasado, depois do veredito
+
+    expect((await mirror('T18')).map((r) => r.status)).toEqual(['QUALIFIED']);
+    expect(await stage('T18')).toBe('QUALIFIED');
+    expect(await encuadre('T18')).toEqual({ resultado: null, cat: null });
+    expect(await events('T18', 'funnel_stage.rejected')).toHaveLength(0);
   });
 
   // ── T16 ───────────────────────────────────────────────────────────────────────────────────────────────
