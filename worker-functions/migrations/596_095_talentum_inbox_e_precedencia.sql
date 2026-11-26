@@ -1,4 +1,4 @@
--- 595 — spec 095: o webhook do Talentum como fonte única (T-095-10).
+-- 596 — spec 095: o webhook do Talentum como fonte única (T-095-10).
 --   1. talentum_status_precedence(text): a ordem do status do espelho (spec §3.1), fonte única; o upsert (T-095-11) só
 --      grava o novo status se precedência(novo) >= precedência(atual).
 --   2. EXPIRED no CHECK de talentum_prescreenings.status; TALENTUM_EXPIRED nos CHECKs de
