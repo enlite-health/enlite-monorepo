@@ -55,20 +55,12 @@ export async function runActivateRecruitmentClick(deps: ActivateRecruitmentClick
         return;
       }
     }
-    const result = await AdminContractedServicesApiService.activateRecruitment(
+    await AdminContractedServicesApiService.activateRecruitment(
       deps.patientId,
       deps.serviceId,
       deps.createNewVacancy ? { createNewVacancy: true } : undefined,
     );
-    if (result?.patientNotMoved) {
-      // D469: a vaga nasceu, mas o paciente segue em Admisión — AVISO (não sucesso) com o que falta.
-      const items = result.patientNotMoved.missing
-        .map((code) => deps.t(`admin.patients.detail.completeness.items.${code}`, code))
-        .join(', ');
-      deps.showToast(deps.tc('activateRecruitmentPatientNotMoved', { items }), 'warning');
-    } else {
-      deps.showToast(deps.tc('activateRecruitmentToast'), 'success');
-    }
+    deps.showToast(deps.tc('activateRecruitmentToast'), 'success');
     deps.onActivated();
   } catch (err) {
     if (err instanceof ContractedServiceApiError && err.code === 'LINKABLE_VACANCY_EXISTS') {

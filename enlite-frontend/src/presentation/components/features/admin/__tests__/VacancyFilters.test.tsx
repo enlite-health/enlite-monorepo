@@ -9,12 +9,14 @@
  * - Botão Limpiar filtros
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { VacancyFilters, type VacancyAdvancedFilters } from '../VacancyFilters';
 import type { ComboboxOption } from '@presentation/components/atoms/Combobox';
 import { selectCombo, comboLabels } from '@presentation/components/atoms/Combobox/testUtils';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 
 vi.mock('react-i18next', () => ({
@@ -25,15 +27,18 @@ vi.mock('react-i18next', () => ({
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-const STATUS_OPTIONS: ComboboxOption[] = [
-  { value: 'SEARCHING',             label: 'Buscando AT' },
-  { value: 'SEARCHING_REPLACEMENT', label: 'Buscando Sustituto' },
-  { value: 'RAPID_RESPONSE',        label: 'Respuesta Rápida' },
-  { value: 'PENDING_ACTIVATION',    label: 'Esperando Activación' },
-  { value: 'ACTIVE',                label: 'Activo' },
-  { value: 'ON_HOLD',               label: 'En Espera' },
-  { value: 'SUSPENDED',             label: 'Suspendido' },
-  { value: 'CLOSED',                label: 'Cerrado' },
+const LIFECYCLE_OPTIONS: ComboboxOption[] = [
+  { value: 'rascunho', label: 'Borrador' },
+  { value: 'aberta', label: 'Abierta' },
+  { value: 'pausada', label: 'En espera' },
+  { value: 'cerrada', label: 'Cerrada' },
+  { value: 'baja', label: 'Dada de baja' },
+];
+
+const PATIENT_STATUS_OPTIONS: ComboboxOption[] = [
+  { value: 'SEARCHING', label: 'Búsqueda' },
+  { value: 'REPLACEMENT', label: 'Reemplazos' },
+  { value: 'ACTIVE', label: 'Activo' },
 ];
 
 const INITIAL_ADVANCED: VacancyAdvancedFilters = {
@@ -50,9 +55,12 @@ function defaultProps(overrides: Partial<Parameters<typeof VacancyFilters>[0]> =
   return {
     searchQuery: '',
     onSearchChange: vi.fn(),
-    selectedStatus: '',
-    onStatusChange: vi.fn(),
-    statusOptions: STATUS_OPTIONS,
+    selectedLifecycle: '',
+    onLifecycleChange: vi.fn(),
+    lifecycleOptions: LIFECYCLE_OPTIONS,
+    selectedPatientStatus: '',
+    onPatientStatusChange: vi.fn(),
+    patientStatusOptions: PATIENT_STATUS_OPTIONS,
     advancedFilters: INITIAL_ADVANCED,
     onAdvancedChange: vi.fn(),
     stateOptions: [],
@@ -69,9 +77,11 @@ describe('VacancyFilters — renderização', () => {
     expect(screen.getByRole('textbox')).toBeInTheDocument();
   });
 
-  it('exibe o label de Status', () => {
+  it('exibe os labels dos DOIS filtros de estado (E7): Ciclo de vida e Estado del paciente', () => {
     render(<VacancyFilters {...defaultProps()} />);
-    expect(screen.getByText('admin.vacancies.statusLabel')).toBeInTheDocument();
+    expect(screen.getByText('admin.vacancies.filters.lifecycle.label')).toBeInTheDocument();
+    expect(screen.getByText('admin.vacancies.filters.patientStatus.label')).toBeInTheDocument();
+    expect(screen.queryByText('admin.vacancies.statusLabel')).not.toBeInTheDocument(); // o "Estado" de valores do banco saiu
   });
 
   it('A4 (spec 046 F1): NÃO exibe filtro de Prioridad', () => {
@@ -101,7 +111,7 @@ describe('VacancyFilters — renderização', () => {
   });
 
   it('exibe botão Limpiar quando há filtro ativo', () => {
-    render(<VacancyFilters {...defaultProps({ selectedStatus: 'ACTIVE' })} />);
+    render(<VacancyFilters {...defaultProps({ selectedLifecycle: 'aberta' })} />);
     expect(screen.getByText('admin.vacancies.filters.clear')).toBeInTheDocument();
   });
 });
@@ -109,19 +119,15 @@ describe('VacancyFilters — renderização', () => {
 // ── Opções dos selects ────────────────────────────────────────────────────────
 
 describe('VacancyFilters — opções', () => {
-  it('select de status renderiza os 8 valores canônicos do banco', () => {
+  it('Ciclo de vida oferece os 5 valores do dono; nenhum valor de banco legado (E7)', () => {
     render(<VacancyFilters {...defaultProps()} />);
-    // o painel só existe aberto: abre o gatilho do Status (o 1º combobox) e lê as linhas
-    expect(comboLabels(screen.getAllByRole('combobox')[0])).toEqual([
-      'Buscando AT',
-      'Buscando Sustituto',
-      'Respuesta Rápida',
-      'Esperando Activación',
-      'Activo',
-      'En Espera',
-      'Suspendido',
-      'Cerrado',
-    ]);
+    // o painel só existe aberto: abre o gatilho do Ciclo de vida (o 1º combobox) e lê as linhas
+    expect(comboLabels(screen.getAllByRole('combobox')[0])).toEqual(['Borrador', 'Abierta', 'En espera', 'Cerrada', 'Dada de baja']);
+  });
+
+  it('Estado del paciente é o 2º combobox e oferece o que a tela recebeu', () => {
+    render(<VacancyFilters {...defaultProps()} />);
+    expect(comboLabels(screen.getAllByRole('combobox')[1])).toEqual(['Búsqueda', 'Reemplazos', 'Activo']);
   });
 
   it('Provincia é um combobox com busca e popula com stateOptions recebidas (REQ-06)', async () => {
@@ -154,14 +160,18 @@ describe('VacancyFilters — opções', () => {
 // ── Callbacks ─────────────────────────────────────────────────────────────────
 
 describe('VacancyFilters — callbacks', () => {
-  it('onStatusChange é chamado com o valor canônico ao selecionar um status', async () => {
-    const onStatusChange = vi.fn();
-    render(<VacancyFilters {...defaultProps({ onStatusChange })} />);
+  it('onLifecycleChange é chamado com o valor do ciclo ao selecionar', async () => {
+    const onLifecycleChange = vi.fn();
+    render(<VacancyFilters {...defaultProps({ onLifecycleChange })} />);
+    await selectCombo(screen.getAllByRole('combobox')[0], 'En espera');
+    expect(onLifecycleChange).toHaveBeenCalledWith('pausada');
+  });
 
-    const selects = screen.getAllByRole('combobox');
-    await selectCombo(selects[0], 'Activo'); // ACTIVE = Activo
-
-    expect(onStatusChange).toHaveBeenCalledWith('ACTIVE');
+  it('onPatientStatusChange é chamado com o estado do paciente ao selecionar', async () => {
+    const onPatientStatusChange = vi.fn();
+    render(<VacancyFilters {...defaultProps({ onPatientStatusChange })} />);
+    await selectCombo(screen.getAllByRole('combobox')[1], 'Reemplazos');
+    expect(onPatientStatusChange).toHaveBeenCalledWith('REPLACEMENT');
   });
 
   it('onSearchChange é chamado ao digitar na busca', async () => {
@@ -177,9 +187,9 @@ describe('VacancyFilters — callbacks', () => {
     const onAdvancedChange = vi.fn();
     render(<VacancyFilters {...defaultProps({ onAdvancedChange })} />);
 
-    // Tipo é o 2º combobox (0=status, 1=type)
+    // Tipo é o 3º combobox (0=ciclo de vida, 1=estado do paciente, 2=type)
     const selects = screen.getAllByRole('combobox');
-    await selectCombo(selects[1], 'admin.vacancies.filters.type.at'); // AT (o mock de i18n devolve a chave)
+    await selectCombo(selects[2], 'admin.vacancies.filters.type.at'); // AT (o mock de i18n devolve a chave)
 
     expect(onAdvancedChange).toHaveBeenCalledWith({ workerType: 'AT' });
   });
@@ -188,29 +198,32 @@ describe('VacancyFilters — callbacks', () => {
     const onAdvancedChange = vi.fn();
     render(<VacancyFilters {...defaultProps({ onAdvancedChange })} />);
 
-    // Ordem dos combobox: status(0), type(1), província(2), localidade(3), sex(4), dias(5).
+    // Ordem dos combobox: ciclo(0), estado do paciente(1), type(2), província(3), localidade(4), sex(5), dias(6).
     const selects = screen.getAllByRole('combobox');
-    await selectCombo(selects[4], 'admin.vacancies.filters.sex.f'); // F
+    await selectCombo(selects[5], 'admin.vacancies.filters.sex.f'); // F
 
     expect(onAdvancedChange).toHaveBeenCalledWith({ requiredSex: 'F' });
   });
 
   it('botão Limpiar chama todos os handlers para reset', () => {
     const onSearchChange = vi.fn();
-    const onStatusChange = vi.fn();
+    const onLifecycleChange = vi.fn();
+    const onPatientStatusChange = vi.fn();
     const onAdvancedChange = vi.fn();
 
     render(
       <VacancyFilters
-        {...defaultProps({ onSearchChange, onStatusChange, onAdvancedChange })}
-        selectedStatus="ACTIVE"
+        {...defaultProps({ onSearchChange, onLifecycleChange, onPatientStatusChange, onAdvancedChange })}
+        selectedLifecycle="aberta"
+        selectedPatientStatus="SEARCHING"
       />,
     );
 
     fireEvent.click(screen.getByText('admin.vacancies.filters.clear'));
 
     expect(onSearchChange).toHaveBeenCalledWith('');
-    expect(onStatusChange).toHaveBeenCalledWith('');
+    expect(onLifecycleChange).toHaveBeenCalledWith('');
+    expect(onPatientStatusChange).toHaveBeenCalledWith('');
     expect(onAdvancedChange).toHaveBeenCalledWith({
       workerType: '',
       state: '',
@@ -226,10 +239,14 @@ describe('VacancyFilters — callbacks', () => {
 // ── Estado refletido ──────────────────────────────────────────────────────────
 
 describe('VacancyFilters — estado refletido nos selects', () => {
-  it('selectedStatus="ON_HOLD" é refletido no select de status', () => {
-    render(<VacancyFilters {...defaultProps({ selectedStatus: 'ON_HOLD' })} />);
-    const selects = screen.getAllByRole('combobox');
-    expect(selects[0]).toHaveTextContent('En Espera'); // ON_HOLD = En Espera
+  it('selectedLifecycle="pausada" é refletido no select de Ciclo de vida', () => {
+    render(<VacancyFilters {...defaultProps({ selectedLifecycle: 'pausada' })} />);
+    expect(screen.getAllByRole('combobox')[0]).toHaveTextContent('En espera');
+  });
+
+  it('selectedPatientStatus="REPLACEMENT" é refletido no select de Estado del paciente', () => {
+    render(<VacancyFilters {...defaultProps({ selectedPatientStatus: 'REPLACEMENT' })} />);
+    expect(screen.getAllByRole('combobox')[1]).toHaveTextContent('Reemplazos');
   });
 
   it('advancedFilters.workerType="AT" é refletido no select de Tipo', () => {
@@ -239,7 +256,7 @@ describe('VacancyFilters — estado refletido nos selects', () => {
       />,
     );
     const selects = screen.getAllByRole('combobox');
-    expect(selects[1]).toHaveTextContent('admin.vacancies.filters.type.at'); // AT
+    expect(selects[2]).toHaveTextContent('admin.vacancies.filters.type.at'); // AT
   });
 
   it('advancedFilters.days com valores mostra count no Combobox', () => {
@@ -250,5 +267,29 @@ describe('VacancyFilters — estado refletido nos selects', () => {
     );
     // With 2 days selected, the Combobox button should show the count key
     expect(screen.getByText('common.multiSelect.selectedCount')).toBeInTheDocument();
+  });
+});
+
+
+// ── E7: o filtro por estado do paciente segue o container `patient` ────────────────────────────────────────
+describe('VacancyFilters — "Estado del paciente" só existe para quem lê o container `patient` (lex P5)', () => {
+  const comEnforcement = (permissions: string[]) =>
+    useAdminAuthStore.setState({
+      authzStatus: 'ready',
+      authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement: 'on' } as AuthzContract,
+    });
+  afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
+
+  it('sem patient:read (enforcement on) o filtro SOME; o de ciclo de vida continua', () => {
+    comEnforcement(['vacancy:read']);
+    render(<VacancyFilters {...defaultProps()} />);
+    expect(screen.queryByTestId('vacancy-filter-patient-status')).not.toBeInTheDocument();
+    expect(screen.getByTestId('vacancy-filter-lifecycle')).toBeInTheDocument();
+  });
+
+  it('com patient:read o filtro aparece', () => {
+    comEnforcement(['vacancy:read', 'patient:read']);
+    render(<VacancyFilters {...defaultProps()} />);
+    expect(screen.getByTestId('vacancy-filter-patient-status')).toBeInTheDocument();
   });
 });

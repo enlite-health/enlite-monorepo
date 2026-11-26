@@ -7,6 +7,7 @@ import {
   authorizeVacancyUpdate,
   buildInsertQuery,
   buildInsertParams,
+  clientStatusRefusal,
   FULL_ALLOWED_UPDATE_FIELDS,
   OPERATIONAL_EDITABLE_FIELDS,
   withEffectiveFields,
@@ -127,6 +128,14 @@ export class VacancyCrudController {
         status: bodyStatus, published_at, closes_at, updatePatient,
         is_test: bodyIsTest, is_draft: bodyIsDraft,
       } = req.body;
+
+      // D3/E5: o cliente só grava o ciclo de vida; o default de criação (PENDING_ACTIVATION) é escrita de sistema e não muda.
+      const recusaDeStatus = clientStatusRefusal(bodyStatus || undefined);
+      if (recusaDeStatus) {
+        const { status: httpStatus, ...corpo } = recusaDeStatus;
+        res.status(httpStatus).json({ success: false, ...corpo });
+        return;
+      }
 
       const isTestParse = OptionalBooleanSchema.safeParse(bodyIsTest);
       if (!isTestParse.success) {

@@ -129,7 +129,7 @@ describe('PreviewAiPromptUseCase — FR-026 sem Talentum', () => {
     mockPoolConnect.mockResolvedValue({ query: jest.fn().mockResolvedValue({ rows: [] }), release: jest.fn() });
 
     expect(talentumCalls()).toBe(0);
-    await new PublishVacancyToTalentumUseCase(jest.fn().mockResolvedValue({})).publish({ jobPostingId: JOB_ID });
+    await new PublishVacancyToTalentumUseCase().publish({ jobPostingId: JOB_ID });
 
     expect(createSpy).toHaveBeenCalledTimes(1);
     expect(talentumCalls()).toBeGreaterThanOrEqual(1);

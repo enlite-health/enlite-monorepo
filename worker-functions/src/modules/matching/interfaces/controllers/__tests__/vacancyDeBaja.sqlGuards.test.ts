@@ -19,6 +19,7 @@ describe('pontos que deixavam vaga DE_BAJA aparecer', () => {
     const t = read('modules/matching/interfaces/controllers/VacanciesAuxController.ts');
     expect(t).toContain("jp.status NOT IN ('CLOSED', 'DE_BAJA')");
     expect(t).not.toMatch(/jp\.status <> 'CLOSED'/);
+    expect(t).toContain("cicloDeVidaSql('jp')} AS lifecycle");
   });
 
   it('Luz: worker.vacancies.list (WorkerApplicationRepository) exclui DE_BAJA da lista do prestador', () => {

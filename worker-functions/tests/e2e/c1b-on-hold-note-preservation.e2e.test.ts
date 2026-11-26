@@ -127,6 +127,7 @@ describe('C1 — a nota clínica de ON_HOLD sobrevive a quem não pode lê-la (P
   });
 
   it('C5. DEMOÇÃO de estado clínico para a coluna de admissão → 422, e motivo e nota SOBREVIVEM', async () => {
+    // (F5: o arrasto do Kanban já é NOT_MANUAL; a demoção chega pelo painel — origem admin_panel.)
     // A checagem de transição só rodava quando o ALVO era clínico. Arrastar o card de ACTIVE/
     // ON_HOLD para a coluna de admissão passava sem 422 e o mesmo UPDATE limpava motivo e nota.
     // O seed da migration 315 não tem NENHUMA transição de estado clínico para o funil.
@@ -135,7 +136,7 @@ describe('C1 — a nota clínica de ON_HOLD sobrevive a quem não pode lê-la (P
     );
     expect(rows).toHaveLength(0); // controle positivo: a tabela realmente não permite
 
-    const [req, res, out] = reqRes(patientId, { status: 'ADMISSION', changeSource: 'kanban' }, ['patient_clinical:read']);
+    const [req, res, out] = reqRes(patientId, { status: 'ADMISSION' }, ['patient_clinical:read']);
     await controller.updatePatientStatus(req, res);
 
     expect(out.status).toBe(422);
@@ -150,14 +151,21 @@ describe('C1 — a nota clínica de ON_HOLD sobrevive a quem não pode lê-la (P
       `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
        VALUES ('C1B-on-hold-note-2', 'C1B', 'Lead QA', 'AR', 'SOLICITANTE') RETURNING id`,
     )).rows[0].id;
-    const [req, res, out] = reqRes(lead, { status: 'ADMISSION', changeSource: 'kanban' }, ['patient_clinical:read']);
+    const [req, res, out] = reqRes(lead, { status: 'ADMISSION' }, ['patient_clinical:read']);
     await controller.updatePatientStatus(req, res);
     expect(out.status).toBe(200);
     expect((await pool.query('SELECT status FROM patients WHERE id = $1', [lead])).rows[0].status).toBe('ADMISSION');
   });
 
-  it('e. sair de ON_HOLD continua limpando motivo e nota (lex C7.1-e: nenhuma segunda cópia)', async () => {
-    const [req, res, out] = reqRes(patientId, { status: 'ACTIVE' }, ['patient_clinical:read']);
+  it('e. sair de ON_HOLD continua limpando motivo e nota (lex C7.1-e): ON_HOLD → ALTA limpa; ON_HOLD → ACTIVE pelo PUT é NOT_MANUAL e a nota sobrevive', async () => {
+    const [reqA, resA, outA] = reqRes(patientId, { status: 'ACTIVE' }, ['patient_clinical:read']);
+    await controller.updatePatientStatus(reqA, resA);
+    expect(outA.status).toBe(422);
+    expect(outA.body).toMatchObject({ code: 'PATIENT_STATUS_NOT_MANUAL', details: { to: 'ACTIVE', changeSource: 'admin_panel' } });
+    expect(await noteInDb()).toBe(NOTE); // a recusa vem antes de qualquer escrita
+    expect(await reasonInDb()).toBe('INSURER');
+
+    const [req, res, out] = reqRes(patientId, { status: 'ALTA' }, ['patient_clinical:read']);
     await controller.updatePatientStatus(req, res);
 
     expect(out.status).toBe(200);

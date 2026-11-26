@@ -94,7 +94,26 @@ describe('loadPatientCompleteness', () => {
     await loadPatientCompleteness(client, PID);
     expect(sqls[0]).toMatch(/WHERE p\.id = \$1 AND p\.deleted_at IS NULL/);
     expect(sqls[0]).not.toContain(PID); // id vai por parâmetro, não concatenado
-    expect((client.query as jest.Mock).mock.calls[0][1]).toEqual([PID]);
+    expect((client.query as jest.Mock).mock.calls[0][1]).toEqual([PID, null, false]); // sem serviceId = o paciente inteiro; sem escopo de vaga viva
+  });
+
+  it('D2 — com serviceId, só ele entra na contagem de "sem horário" (pcs.id = $2, por parâmetro)', async () => {
+    const SID = '22222222-2222-4222-8222-222222222222';
+    const { client, sqls } = clientQueDevolve([FICHA_COMPLETA]);
+    await loadPatientCompleteness(client, PID, SID);
+    expect(sqls[0]).toMatch(/pcs\.id = \$2::uuid/);
+    expect(sqls[0]).not.toContain(SID);
+    expect((client.query as jest.Mock).mock.calls[0][1]).toEqual([PID, SID, false]);
+  });
+
+  it('item 19 — soComVagaViva: endereço e horário só contam nos serviços com vaga viva (liveVacancySelect, $3 por parâmetro)', async () => {
+    const { client, sqls } = clientQueDevolve([FICHA_COMPLETA]);
+    await loadPatientCompleteness(client, PID, undefined, true);
+    expect(sqls[0]).toMatch(/\$3::boolean IS NOT TRUE OR pcs\.id IN \(SELECT live\.contracted_service_id FROM \(SELECT DISTINCT ON \(jp\.contracted_service_id\)/);
+    expect(sqls[0]).toMatch(/jp\.deleted_at IS NULL AND jp\.contracted_service_id IN \(SELECT id FROM patient_contracted_services WHERE patient_id = \$1 AND active\)/);
+    // nos dois contadores por serviço (sem endereço e sem horário)
+    expect((sqls[0].match(/\$3::boolean IS NOT TRUE/g) ?? []).length).toBe(2);
+    expect((client.query as jest.Mock).mock.calls[0][1]).toEqual([PID, null, true]);
   });
 
   it('a REGRA é do domínio, não daqui: o mesmo insumo dá o mesmo veredito de computePatientCompleteness', async () => {

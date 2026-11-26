@@ -1,5 +1,5 @@
 /** Spec 084 F2: a lista esconde as dadas de baja por padrão; "Mostrar dadas de baja" e o filtro de status as mostram (só consulta). */
-import { buildListVacanciesQuery, mapStatus, mapVacancyListRow, type VacancyListRow } from '../vacancyListHelpers';
+import { buildListVacanciesQuery, mapVacancyListRow, type VacancyListRow } from '../vacancyListHelpers';
 
 const base = { countries: ['AR'], limit: '20', offset: '0' };
 
@@ -33,9 +33,9 @@ describe('lista de vacantes — dadas de baja (spec 084 F2)', () => {
     expect(buildListVacanciesQuery({ ...base, talentumManual: 'false' }).baseQuery).toContain("jp.status != 'DE_BAJA'");
   });
 
-  it('a linha traz o motivo, se tem serviço e o estado do Talentum; DE_BAJA tem rótulo (não "Desconocido")', () => {
-    expect(mapStatus('DE_BAJA')).toBe('Dada de baja');
+  it('a linha traz o motivo, se tem serviço e o estado do Talentum; o rótulo sai do i18n do front, não do back', () => {
     const row = { id: 'v', status: 'DE_BAJA', baja_reason: 'MANUAL', has_service: false, talentum_pause_state: 'MANUAL_PAUSE', vacancy_number: 1 } as unknown as VacancyListRow;
+    expect(mapVacancyListRow(row)).not.toHaveProperty('status'); // `mapStatus` (texto fixo em es) saiu
     expect(mapVacancyListRow(row)).toMatchObject({ statusRaw: 'DE_BAJA', bajaReason: 'MANUAL', hasService: false, talentumPauseState: 'MANUAL_PAUSE' });
   });
 });

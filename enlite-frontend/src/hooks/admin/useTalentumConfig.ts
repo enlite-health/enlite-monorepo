@@ -65,7 +65,7 @@ function mapVacancyToSummary(raw: any): VacancySummaryData {
     vacancyNumber: raw.vacancy_number ?? null,
     patientFirstName: raw.patient_first_name ?? null,
     patientLastName: raw.patient_last_name ?? null,
-    status: raw.status ?? null,
+    lifecycle: raw.lifecycle ?? null,
     publishedAt: raw.talentum_published_at ?? null,
     closedAt: raw.closed_at ?? null,
   };

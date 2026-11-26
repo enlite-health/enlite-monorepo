@@ -2,7 +2,9 @@ import { useTranslation } from 'react-i18next';
 import { MapPin } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { VacancyStatusBadge } from '@presentation/components/atoms/VacancyStatusBadge';
+import { VacancyLifecycleBadge } from '@presentation/components/atoms/VacancyLifecycleBadge';
+import { PatientStatusPill } from '@presentation/components/atoms/PatientStatusPill';
+import type { CicloDeVida, StatusGravavel } from '@domain/value-objects/vacancyLifecycle';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import {
@@ -12,7 +14,14 @@ import {
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface VacancyCaseCardProps {
+  /** Valor gravado (só para o editor marcar a opção atual); a tela mostra `lifecycle` e `patientStatus`. */
   status: string;
+  /** Ciclo de vida calculado pelo back (D3). */
+  lifecycle?: CicloDeVida | null;
+  /** `patients.status` por join na resposta (D3/E6); `null`/ausente = sem a célula do container `patient`, ou vaga sem paciente → "—". */
+  patientStatus?: string | null;
+  /** E8: o valor que "Reanudar" envia, calculado pelo back. */
+  resumeStatus?: StatusGravavel;
   caseNumber: number | null;
   dependencyLevel: string | null;
   profession: string | null;
@@ -30,7 +39,6 @@ interface VacancyCaseCardProps {
   isStatusSaving?: boolean;
   /** Spec 084 F5: vaga de serviço contratado → o seletor não oferece "Cerrado" (só pausar). */
   hasService?: boolean;
-  statusBeforeHold?: string | null;
 }
 
 function formatDateAR(dateStr: string | null): string {
@@ -78,6 +86,9 @@ function DateRow({
 
 export function VacancyCaseCard({
   status,
+  lifecycle,
+  patientStatus,
+  resumeStatus,
   caseNumber,
   dependencyLevel,
   profession,
@@ -94,7 +105,6 @@ export function VacancyCaseCard({
   onStatusChange,
   isStatusSaving,
   hasService,
-  statusBeforeHold,
 }: VacancyCaseCardProps) {
   const { t } = useTranslation();
   // PUT /vacancies/:id → updateVacancy → vacancy:write. O dropdown de status
@@ -137,17 +147,21 @@ export function VacancyCaseCard({
         </Heading>
         {/* D269 — sem vacancy:write o valor vira TEXTO (o badge), sem os
             controles do editor (nem dropdown, nem gatilho clicável). */}
-        {onStatusChange && !vacancyWriteGate.denied ? (
-          <VacancyStatusEditor
-            status={status}
-            hasService={hasService}
-            statusBeforeHold={statusBeforeHold}
-            isSaving={isStatusSaving}
-            onChange={onStatusChange}
-          />
-        ) : (
-          <VacancyStatusBadge status={status} />
-        )}
+        <div className="flex items-center gap-3">
+          <PatientStatusPill status={patientStatus} />
+          {onStatusChange && !vacancyWriteGate.denied ? (
+            <VacancyStatusEditor
+              status={status}
+              lifecycle={lifecycle}
+              hasService={hasService}
+              resumeStatus={resumeStatus}
+              isSaving={isStatusSaving}
+              onChange={onStatusChange}
+            />
+          ) : (
+            <VacancyLifecycleBadge lifecycle={lifecycle} />
+          )}
+        </div>
       </div>
 
       {/* Dependency level pill */}

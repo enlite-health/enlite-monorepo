@@ -29,6 +29,8 @@ export interface VacancyByAddressSummary {
   vacancy_number: number;
   title: string;
   status: string;
+  /** Ciclo de vida calculado pelo back (rascunho/aberta/pausada/cerrada/baja); é ele que a tela mostra, nunca `status`. */
+  lifecycle?: import('../value-objects/vacancyLifecycle').CicloDeVida | null;
   is_draft: boolean;
   talentum_published_at: string | null;
   created_at: string;

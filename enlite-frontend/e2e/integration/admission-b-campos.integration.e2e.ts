@@ -4,9 +4,9 @@
  * Front real (Vite 5173) + API real (docker enlite-api, rebuildada desta worktree) + Postgres real
  * (migrations 311-317). Auth REAL pelo emulador do Firebase. Zero mock de dado. Só dado sintético.
  *
- *  B7  — mudar o estado pela ficha com motivo (ACTIVE → ON_HOLD) e ver no Historial;
- *        transição proibida (ON_HOLD → REPLACEMENT) → mensagem traduzida (422 com código)
- *  B2  — criar domicílio NA FICHA (drawer com mapa + zona/corredor/acesso) e ativar sem sair dela
+ *  B7  — mudar o estado pela ficha com a ação "Pausar" (motivo, ACTIVE → ON_HOLD) e ver no Historial; sem select livre (F5);
+ *        depois de pausar só as ações do servidor (Retomar…) — Búsqueda/Reemplazo/Activo não se escolhem à mão
+ *  B2  — criar domicílio NA FICHA (drawer com mapa + zona/corredor/acesso) e lançar o foguete sem sair dela (fica em Búsqueda; sem select)
  *  B3  — gravar 2 coberturas verificadas por CÓDIGO do catálogo
  *  B4  — dispositivo HOME+SCHOOL pelo multi-select (escalar derivado pela 310)
  *  B5  — parentesco por select (enum da 139)
@@ -105,7 +105,7 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     runSQL(`DELETE FROM users WHERE email = '${STAFF_EMAIL}'`);
   });
 
-  test('B7 — mudar o estado pela ficha com motivo, ver no Historial; transição proibida → mensagem', async ({ page }, testInfo) => {
+  test('B7 — pausar pela ficha com motivo, ver no Historial; sem select livre', async ({ page }, testInfo) => {
     await loginAsRealStaff(page);
     const data = await openDetail(page, active.patientId);
     expect(data.admissionStatus).toBe('DONE');
@@ -113,13 +113,16 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
 
     const control = page.getByTestId('patient-status-control');
     await expect(control).toBeVisible({ timeout: 30_000 });
-    await page.getByTestId('patient-status-select').selectOption('ON_HOLD');
-    await escolherNoCombo(page, page.getByTestId('patient-status-reason'), 'Obra social'); // INSURER
-    const note = page.getByTestId('patient-status-note');
+    // F5: o select livre saiu — o estado humano muda pela AÇÃO "Pausar" (motivo obrigatório + nota).
+    await expect(page.getByTestId('patient-status-select')).toHaveCount(0);
+    await page.getByTestId('patient-status-action-pausar').click();
+    await escolherNoCombo(page, page.getByTestId('patient-status-action-reason'), 'Obra social'); // INSURER
+    const note = page.getByTestId('patient-status-action-note');
     expect(await note.evaluate((el) => el.closest('[data-clarity-mask="True"]') !== null)).toBe(true);
-    await note.fill(NOTE);
-    await expect(control).toHaveScreenshot('bloco-b-estado-en-espera.png', { maxDiffPixelRatio: 0.05 });
-    await page.getByTestId('patient-status-save').click();
+    await note.click();
+    await page.keyboard.type(NOTE);
+    await expect(note).toHaveValue(NOTE);
+    await page.getByTestId('patient-status-action-confirm').click();
     await expect(page.getByTestId('patient-status-badge')).toHaveText('En espera', { timeout: 20_000 });
     await expect(page.getByTestId('patient-on-hold-reason')).toHaveText('Obra social');
 
@@ -139,14 +142,10 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     expect(await history.textContent()).not.toContain(NOTE);
     await expect(history).toHaveScreenshot('bloco-b-historial.png', { maxDiffPixelRatio: 0.05 });
 
-    // Transição PROIBIDA (ON_HOLD → REPLACEMENT não está na 315): desde a spec 051 o select oferece SÓ o que o
-    // servidor devolve (GET status-options) — o destino proibido nem aparece, em vez de falhar no clique. O 422
-    // continua sendo a rede de segurança no servidor (coberto no unit e no e2e de API).
-    const select = page.getByTestId('patient-status-select');
-    await expect(select).toBeEnabled({ timeout: 20_000 });
-    await expect(select.locator('option[value="ON_HOLD"]')).toHaveCount(1); // controle positivo: o select tem opções
-    await expect(select.locator('option[value="ACTIVE"]')).toHaveCount(1); // ON_HOLD → ACTIVE está na FSM
-    await expect(select.locator('option[value="REPLACEMENT"]')).toHaveCount(0);
+    // Transição PROIBIDA: depois de pausar, a ficha só oferece o que o servidor devolve em `status-actions` (Retomar, Dar de alta, Dar de baja…) —
+    // não há select, e Búsqueda, Reemplazo e Activo não são escolhidos por ninguém (o 422 NOT_MANUAL é a rede no servidor, e2e de API).
+    await expect(page.getByTestId('patient-status-action-retomar')).toBeVisible({ timeout: 20_000 }); // controle positivo: a ação existe
+    await expect(page.getByTestId('patient-status-select')).toHaveCount(0);
     expect(readPatientStatus(active.patientId).status).toBe('ON_HOLD');
   });
 
@@ -227,14 +226,12 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     await expect(page.getByTestId(`contracted-service-vacancy-link-${serviceId}`)).toBeVisible({ timeout: 15_000 });
     expect(readPatientStatus(admission.patientId).status).toBe('SEARCHING');
 
+    // F5: Búsqueda → Activo não se escolhe à mão (sem select); só o itinerário cobre as horas e o fluxo automático deriva. O paciente fica em Búsqueda.
     await expect(page.getByTestId('patient-status-control')).toBeVisible({ timeout: 15_000 });
-    await page.getByTestId('patient-status-select').selectOption('ACTIVE');
-    const putActive = page.waitForResponse((r) => r.request().method() === 'PUT' && /\/status$/.test(r.url()));
-    await page.getByTestId('patient-status-save').click();
-    expect((await putActive).status()).toBe(200);
-    await expect(page.getByTestId('patient-status-badge')).toHaveText('Activo', { timeout: 20_000 });
+    await expect(page.getByTestId('patient-status-select')).toHaveCount(0);
+    await expect(page.getByTestId('patient-status-badge')).toHaveText('Búsqueda', { timeout: 20_000 });
     const st = readPatientStatus(admission.patientId);
-    expect(st).toMatchObject({ status: 'ACTIVE', admissionStatus: 'DONE' });
+    expect(st).toMatchObject({ status: 'SEARCHING', admissionStatus: 'DONE' });
     expect(countVacancies(admission.patientId)).toBe(1);
   });
 

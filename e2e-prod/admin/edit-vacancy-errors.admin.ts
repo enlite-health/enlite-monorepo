@@ -5,10 +5,9 @@
  *   1. `if (updates.status !== undefined && !CANONICAL_STATUSES.has(status))` → 400 ANTES de
  *      qualquer SELECT — status inválido barra mesmo com id inexistente (nenhum UPDATE roda).
  *   2. `SELECT status,is_draft,patient_id FROM job_postings WHERE id=$1` → 0 linhas → 404
- *      "Vacancy not found" ANTES do UPDATE. status canônico ('ACTIVE') passa o (1) e cai aqui.
+ *      "Vacancy not found" ANTES do UPDATE. status gravável ('SEARCHING') passa o (1) e cai aqui.
  *
- * CANONICAL_STATUSES = SEARCHING, SEARCHING_REPLACEMENT, RAPID_RESPONSE, PENDING_ACTIVATION,
- * ACTIVE, SUSPENDED, CLOSED. Usamos UUID bem-formado inexistente pra não arriscar 500 de cast.
+ * STATUS_GRAVAVEIS (estado-automatico-do-paciente F2) = SEARCHING, ON_HOLD, SUSPENDED, CLOSED. Usamos UUID bem-formado inexistente pra não arriscar 500 de cast.
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { newAdminApiContext } from '../src/support/adminApi';
@@ -39,7 +38,7 @@ test('[@route:PUT /api/admin/vacancies/:id @depth:error] status inválido → 40
 });
 
 test('[@route:PUT /api/admin/vacancies/:id @depth:error] status válido + id inexistente → 404 antes do UPDATE', async () => {
-  const res = await api.put(`/api/admin/vacancies/${BOGUS_UUID}`, { data: { status: 'ACTIVE' } });
+  const res = await api.put(`/api/admin/vacancies/${BOGUS_UUID}`, { data: { status: 'SEARCHING' } }); // valor do ciclo de vida (D3): 'ACTIVE' agora é 400 antes do 404
   const status = res.status();
   const body = await res.json().catch(() => ({}));
   test.info().annotations.push({

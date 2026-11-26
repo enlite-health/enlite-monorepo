@@ -10,7 +10,8 @@ type Json = { [k: string]: Json | string };
 const dig = (o: Json, path: string): string | undefined =>
   path.split('.').reduce<Json | string | undefined>((acc, k) => (acc && typeof acc === 'object' ? (acc as Json)[k] : undefined), o) as string | undefined;
 
-const EDITABLE = ['SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'ACTIVE', 'ON_HOLD', 'SUSPENDED', 'CLOSED'];
+// `statusBadge` segue existindo (LinkExistingVacancyModal); o editor agora usa `statusEditor.options` (testado em NEW_KEYS).
+const EDITABLE = ['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED'];
 
 describe('seletor de status da vaga — i18n es + pt-BR (spec 084)', () => {
   it.each(EDITABLE)('o rótulo de %s existe em es e em pt-BR', (status) => {
@@ -45,7 +46,12 @@ describe('seletor de status da vaga — i18n es + pt-BR (spec 084)', () => {
     'admin.vacancyDetail.baja.talentumManualResume',
     'admin.vacancyDetail.baja.talentumPending',
     'admin.vacancies.baja.talentumPendingBadge',
-    'admin.vacancies.statusOptions.deBaja',
+    'admin.vacancyDetail.statusEditor.errors.VACANCY_STATUS_NOT_LIFECYCLE',
+    'admin.vacancies.filters.lifecycle.label',
+    'admin.vacancies.filters.patientStatus.label',
+    ...['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED'].map((s) => `admin.vacancyDetail.statusEditor.options.${s}`),
+    ...['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED'].map((s) => `admin.vacancyDetail.vacancyForm.statusOptions.${s}`),
+    ...['rascunho', 'aberta', 'pausada', 'cerrada', 'baja'].map((c) => `admin.vacancyDetail.lifecycle.${c}`),
     'admin.vacancies.baja.showToggle',
     'admin.vacancies.baja.talentumManualToggle',
     'admin.vacancies.baja.badge',

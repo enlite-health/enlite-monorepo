@@ -29,6 +29,7 @@ const base: PublicVacancyDetail = {
   vacancy_number: 1,
   title: 'CASO 502-1',
   status: 'SEARCHING',
+  lifecycle: 'aberta',
   is_disabled: false,
   required_professions: ['AT'],
   required_sex: null,

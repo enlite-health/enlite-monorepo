@@ -8,6 +8,7 @@
 import type { Pool } from 'pg';
 import { caseOrdinalFromServiceSql } from '@shared/sql/caseOrdinalSql';
 import { captureEntityDiff } from '@shared/audit/captureEntityDiff';
+import { isStatusGravavel, STATUS_GRAVAVEIS } from '../../domain/vacancyLifecycle';
 import type { EntityFieldDiff } from '@shared/audit/types';
 import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
 import {
@@ -76,18 +77,34 @@ export interface VacancyInsertParams {
   contracted_service_id?: string | null;
 }
 
-export const CANONICAL_STATUSES = new Set([
-  'SEARCHING',
-  'SEARCHING_REPLACEMENT',
-  'RAPID_RESPONSE',
-  'PENDING_ACTIVATION',
-  'ACTIVE',
-  // Spec 084 F5 (R18): "En espera" — a pausa da vaga de serviço ativo. DE_BAJA fica FORA de propósito (R17): ninguém
-  // põe vaga em baixa nem a tira dela por este endpoint.
-  'ON_HOLD',
-  'SUSPENDED',
-  'CLOSED',
-]);
+/**
+ * O que o CLIENTE pode gravar em `job_postings.status` é só o ciclo de vida (`STATUS_GRAVAVEIS`, dono em
+ * `matching/domain/vacancyLifecycle.ts`). Recusa com 400 `VACANCY_STATUS_NOT_LIFECYCLE`, es + pt-BR. Escritores de sistema
+ * (default de criação, baja por serviço, corte legado) não passam por aqui e não mudam (E10). DE_BAJA fica FORA (spec 084 R17).
+ */
+export const VACANCY_STATUS_NOT_LIFECYCLE_MESSAGES = {
+  es: 'El estado de la vacante solo admite: Abierta, En espera, Suspendida o Cerrada. El estado del paciente lo define el flujo automático.',
+  'pt-BR': 'O estado da vaga só aceita: Aberta, Em espera, Suspensa ou Encerrada. O estado do paciente é definido pelo fluxo automático.',
+} as const;
+
+export interface ClientStatusRefusal {
+  status: 400;
+  code: 'VACANCY_STATUS_NOT_LIFECYCLE';
+  error: string;
+  messages: typeof VACANCY_STATUS_NOT_LIFECYCLE_MESSAGES;
+}
+
+/** `undefined` = o cliente não mandou status (nada a validar). Valor fora de `STATUS_GRAVAVEIS` = recusa. */
+export function clientStatusRefusal(status: unknown): ClientStatusRefusal | null {
+  return status === undefined || isStatusGravavel(status)
+    ? null
+    : {
+        status: 400,
+        code: 'VACANCY_STATUS_NOT_LIFECYCLE',
+        error: `Invalid status value "${String(status)}". Must be one of: ${STATUS_GRAVAVEIS.join(', ')}`,
+        messages: VACANCY_STATUS_NOT_LIFECYCLE_MESSAGES,
+      };
+}
 
 export const OPERATIONAL_EDITABLE_FIELDS = new Set(['schedule', 'status']);
 
@@ -188,13 +205,8 @@ export async function authorizeVacancyUpdate(
   vacancyId: string,
   updates: Record<string, unknown>,
 ): Promise<UpdateAuthorizationResult> {
-  if (updates.status !== undefined && !CANONICAL_STATUSES.has(updates.status as string)) {
-    return {
-      kind: 'error',
-      status: 400,
-      error: `Invalid status value "${updates.status}". Must be one of: ${[...CANONICAL_STATUSES].join(', ')}`,
-    };
-  }
+  const recusa = clientStatusRefusal(updates.status);
+  if (recusa) return { kind: 'error', ...recusa };
 
   const currentRow = await db.query<{
     status: string | null;
@@ -435,8 +447,7 @@ export function captureVacancyDiff(
 }
 
 export function buildInsertParams(p: VacancyInsertParams): unknown[] {
-  const status =
-    p.status && CANONICAL_STATUSES.has(p.status) ? p.status : 'PENDING_ACTIVATION';
+  const status = isStatusGravavel(p.status) ? p.status : 'PENDING_ACTIVATION';
 
   // Vaga real SEMPRE nasce is_draft=true (mesmo comportamento de sempre — só
   // o publish no Talentum destrava). A exceção é restrita a is_test=true:

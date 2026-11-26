@@ -42,14 +42,12 @@ export const MANUAIS: readonly PatientStatus[] = ['ON_HOLD', 'SUSPENDED', 'ALTA'
 /** Coluna "admisión": sai dela só no lançamento (Fase 5, invariante 7). */
 export const FUNIL = ADMISSION_FUNNEL_STATUSES;
 
-export function derivarEstadoPaciente(e: EntradaDerivacao): PatientStatus | null {
-  const { status } = e;
-  // (1) fora do vocabulário (inclui `null` e `DISCONTINUED`)
-  if (!isPatientStatus(status)) return null;
-  // (2) estado manual
-  if (MANUAIS.includes(status)) return null;
-  // (3) funil de admissão
-  if ((FUNIL as readonly string[]).includes(status)) return null;
+/**
+ * A regra de HORAS pura (guardas 4-9, na ordem original): independe do estado atual. É o que `derivarEstadoPaciente` usa depois das
+ * guardas de estado (1-3) e o que `resolverRetomada` (retomar/reativar, F3) usa direto — o estado de partida é humano
+ * (`ON_HOLD`/`SUSPENDED`/`DISCHARGED`) e as guardas (2) e (3) o recusariam. `null` = a regra não decide.
+ */
+export function derivarPelasHoras(e: EntradaDerivacao): PatientStatus | null {
   // (4) itinerário não montado (D429)
   if (!e.montado) return null;
   // (5) só serviço com vacante viva conta
@@ -64,4 +62,16 @@ export function derivarEstadoPaciente(e: EntradaDerivacao): PatientStatus | null
   if (vivos.every((s) => s.cobertas >= s.total)) return 'ACTIVE';
   // (9) por paciente
   return 'REPLACEMENT';
+}
+
+export function derivarEstadoPaciente(e: EntradaDerivacao): PatientStatus | null {
+  const { status } = e;
+  // (1) fora do vocabulário (inclui `null` e `DISCONTINUED`)
+  if (!isPatientStatus(status)) return null;
+  // (2) estado manual
+  if (MANUAIS.includes(status)) return null;
+  // (3) funil de admissão
+  if ((FUNIL as readonly string[]).includes(status)) return null;
+  // (4)-(9) as horas
+  return derivarPelasHoras(e);
 }

@@ -3,53 +3,14 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import type { PatientVacancySummary } from '@domain/entities/PatientDetail';
 import { formatVacancyCase } from '@domain/value-objects/caseNumberFormat';
+import { VacancyLifecycleBadge } from '@presentation/components/atoms/VacancyLifecycleBadge';
+import { PatientStatusPill } from '@presentation/components/atoms/PatientStatusPill';
 
 interface PatientVacanciesCardProps {
   patientId: string;
   vacancies: PatientVacancySummary[];
   isLoading: boolean;
   error: string | null;
-}
-
-function VacancyStatusBadgeInline({ status }: { status: string | null }) {
-  const { t } = useTranslation();
-  if (!status) return null;
-  const label = t(`admin.vacancyDetail.statusBadge.${status}`, { defaultValue: status });
-
-  const COLOR_MAP: Record<string, string> = {
-    SEARCHING: 'bg-blue-100 text-blue-700',
-    SEARCHING_REPLACEMENT: 'bg-amber-100 text-amber-700',
-    RAPID_RESPONSE: 'bg-amber-100 text-amber-700',
-    PENDING_ACTIVATION: 'bg-cyan-100 text-cyan-700',
-    ACTIVE: 'bg-green-100 text-green-700',
-    ON_HOLD: 'bg-amber-100 text-amber-700',
-    SUSPENDED: 'bg-gray-100 text-gray-600',
-    CLOSED: 'bg-gray-100 text-gray-600',
-    DE_BAJA: 'bg-gray-100 text-gray-600',
-    ADMISSION: 'bg-cyan-100 text-cyan-700',
-  };
-  const colorClass = COLOR_MAP[status.toUpperCase()] ?? 'bg-gray-100 text-gray-600';
-
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full ${colorClass}`}
-      data-testid={status === 'DE_BAJA' ? 'patient-vacancy-baja-badge' : undefined}
-      title={status === 'DE_BAJA' ? t('admin.vacancies.baja.readOnlyHint') : undefined}
-    >
-      <Text as="span" size="xs" weight="medium" color="inherit">{label}</Text>
-    </span>
-  );
-}
-
-function DraftBadge() {
-  const { t } = useTranslation();
-  return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
-      <Text as="span" size="xs" weight="medium" color="inherit">
-        {t('admin.vacancies.table.draftBadge')}
-      </Text>
-    </span>
-  );
 }
 
 /** Spec 047 (F4): o código é `formatVacancyCase` — o MESMO dono da coluna "Código de la vacante" da tabela de serviços. */
@@ -115,8 +76,8 @@ export function PatientVacanciesCard({
                 })()}
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {v.isDraft && <DraftBadge />}
-                <VacancyStatusBadgeInline status={v.status} />
+                <PatientStatusPill status={v.patientStatus} />
+                <VacancyLifecycleBadge lifecycle={v.lifecycle} />
               </div>
             </li>
           ))}

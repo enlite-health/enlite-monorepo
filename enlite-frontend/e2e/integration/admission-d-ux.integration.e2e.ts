@@ -237,11 +237,12 @@ test.describe('Spec 014 bloco D — o fluxo se entende sem documentação @integ
     cleanupPatientDeep(newId);
   });
 
-  test('5. kanban — dica de arraste visível; ficha ganha botão "Ver en Kanban"', async ({ page }) => {
+  test('5. kanban — dica de solo lectura visível (F5: não há arrasto); ficha ganha botão "Ver en Kanban"', async ({ page }) => {
     await loginAsRealStaff(page);
     await page.goto('/admin/patients/kanban');
-    await expect(page.getByTestId('kanban-drag-hint')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId('kanban-drag-hint')).toContainText('Arrastrá');
+    await expect(page.getByTestId('kanban-readonly-hint')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('kanban-readonly-hint')).toContainText('solo lectura');
+    await expect(page.getByTestId('kanban-drag-hint')).toHaveCount(0);
     await expect(page).toHaveScreenshot('admission-d-kanban.png', { maxDiffPixelRatio: 0.08 });
 
     await openDetail(page, phoneMatch.patientId);

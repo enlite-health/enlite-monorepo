@@ -180,17 +180,12 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
 
   // ── Os dois caminhos que o Gabriel pediu para ver EM TELA, e que só tinham unit + e2e de API ──
 
-  // Spec 018, PR-6, ADR-5 (migration 428 + `usePatientKanban.ts`): soltar em "Activo" não é
-  // mais um alvo de drop, SEJA QUAL FOR o motivo (antes desta rodada de mudanças, faltar
-  // horário fazia o backend recusar com 422 e o toast nomeava o horário; a 428 tirou
-  // funil→ACTIVE do catálogo por completo, então o Kanban intercepta ANTES de qualquer request
-  // — `usePatientKanban.ts` devolve `KANBAN_ACTIVATION_MOVED_TO_SERVICE` sem chamar
-  // `PUT /status`). Esta prova também cobre a task 6.9 (Kanban não manda ACTIVE direto): o
-  // teste de rede abaixo mostra que NENHUM `PUT /status` sai do navegador.
-  test('arrastar o card para "Activo" no Kanban NÃO ativa mais — o toast aponta o caminho novo, sem chamar a API', async ({ page }) => {
+  // F5 (estado-automatico-do-paciente): o Kanban de pacientes não tem arrasto. Antes (spec 018, PR-6, ADR-5) soltar o card em "Activo" era interceptado
+  // no cliente com um toast que apontava o foguete; agora o gesto simplesmente não faz nada — nenhuma escrita sai e nenhum toast aparece.
+  test('arrastar o card para "Activo" no Kanban NÃO ativa — o card nem é arrastável, nenhuma escrita sai da página', async ({ page }) => {
     const s3 = seedActivatablePatient(720000);
     try {
-      // serviço com endereço e SEM horário — irrelevante agora: o drop nem chega a testar isso.
+      // serviço com endereço e SEM horário — irrelevante agora: o gesto nem chega a testar isso.
       runSQL(
         `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
          VALUES ('${s3.patientId}', 'AT', true, 'AR', 'e2e-horario', 'e2e-horario', '${s3.addressId}', NULL)`,
@@ -198,23 +193,23 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
       await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
       await page.goto('/admin/patients/kanban');
 
-      const card = page.locator(`[data-testid="kanban-draggable-${s3.patientId}"]`);
+      const card = page.locator(`[data-testid="kanban-card-${s3.patientId}"]`);
       await expect(card).toBeVisible({ timeout: 30_000 });
+      await expect(card).not.toHaveAttribute('aria-roledescription', /.+/); // nenhum atributo de arrasto do dnd-kit
       const destino = page.locator('[data-testid="kanban-column-ACTIVE"]'); // coluna "Activo"
       await expect(destino).toBeVisible();
 
       const cardBB = await card.boundingBox();
       const destinoBB = await destino.boundingBox();
-      if (!cardBB || !destinoBB) throw new Error('bounding boxes nulas para o drag');
+      if (!cardBB || !destinoBB) throw new Error('bounding boxes nulas para o gesto');
 
-      // Nenhum PUT /status pode sair do navegador — a prova de que o Kanban intercepta ANTES
-      // de qualquer chamada de rede, não que a API recusou.
-      let putStatusChamado = false;
+      // Nenhuma escrita pode sair do navegador: o card não tem arrasto, não que a API recusou.
+      const escritas: string[] = [];
       page.on('request', (req) => {
-        if (req.method() === 'PUT' && /\/status$/.test(req.url())) putStatusChamado = true;
+        if (['PUT', 'POST', 'PATCH', 'DELETE'].includes(req.method()) && /\/api\/admin\/patients\//.test(req.url())) escritas.push(`${req.method()} ${req.url()}`);
       });
 
-      // Arraste de MOUSE de verdade (dnd-kit: o PointerSensor tem constraint de 8px)
+      // Gesto de MOUSE de verdade (o mesmo que arrastaria no dnd-kit: PointerSensor com 8px de constraint)
       const x = cardBB.x + cardBB.width / 2;
       const y = cardBB.y + cardBB.height / 2;
       await page.mouse.move(x, y);
@@ -223,14 +218,10 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
       await page.mouse.move(x + 15, y + 5, { steps: 8 });
       await page.mouse.move(destinoBB.x + 50, destinoBB.y + destinoBB.height / 2, { steps: 30 });
       await page.mouse.up();
+      await page.waitForTimeout(500);
 
-      // O toast aponta o caminho novo — "Activar reclutamiento" no serviço contratado da ficha.
-      const toast = page.getByRole('status').filter({ hasText: 'Activar reclutamiento' });
-      await expect(toast).toBeVisible({ timeout: 20_000 });
-      await expect(toast).toContainText('servicio contratado');
-      await expect(toast).toHaveScreenshot('toast-kanban-recusado.png');
-
-      expect(putStatusChamado).toBe(false);
+      await expect(page.getByRole('status').filter({ hasText: 'Activar reclutamiento' })).toHaveCount(0);
+      expect(escritas).toEqual([]);
 
       // E o banco NÃO mudou — o card nunca saiu do funil
       const status = runSQL(`SELECT status FROM patients WHERE id = '${s3.patientId}'`).trim();
@@ -240,10 +231,10 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
     }
   });
 
-  test('no select de estado da ficha, ir para "Reemplazo" é RECUSADO nomeando o que falta', async ({ page }) => {
+  test('na ficha de um paciente ACTIVE com serviço sem horário não há select de estado: Reemplazo não se escolhe à mão', async ({ page }) => {
     const s4 = seedActivatablePatient(725000);
     try {
-      // paciente JÁ ativo (o select clínico só aparece com status ACTIVE), com serviço sem horário
+      // paciente JÁ ativo (o controle de estado só aparece com status clínico), com serviço sem horário
       runSQL(`UPDATE patients SET status = 'ACTIVE' WHERE id = '${s4.patientId}'`);
       runSQL(
         `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
@@ -252,15 +243,13 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
       await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
       await page.goto(`/admin/patients/${s4.patientId}`);
 
-      const select = page.getByTestId('patient-status-select');
-      await expect(select).toBeVisible({ timeout: 30_000 });
-      // REPLACEMENT (reemplazo), não SEARCHING: a FSM não tem `ACTIVE → SEARCHING` (seed da 315).
-      // Spec 051: o servidor devolve REPLACEMENT com `blockedBy: [SERVICE_SCHEDULE]` e a ficha o mostra
-      // DESABILITADO com o motivo — o operador não chega a clicar para ser recusado (o 422 segue no servidor).
-      const opcao = select.locator('option[value="REPLACEMENT"]');
-      await expect(opcao).toHaveCount(1, { timeout: 20_000 });
-      await expect(opcao).toBeDisabled();
-      await expect(opcao).toHaveText(/horario del servicio/);
+      await expect(page.getByTestId('patient-status-control')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('patient-status-actions')).toBeVisible({ timeout: 20_000 }); // a lista vem do SERVIDOR
+      await expect(page.getByTestId('patient-status-select')).toHaveCount(0);
+      // controle positivo: as ações humanas existem; nenhuma delas leva a Reemplazo (nem Búsqueda/Activo)
+      await expect(page.getByTestId('patient-status-action-pausar')).toBeVisible();
+      await expect(page.getByTestId('patient-status-action-retomar')).toHaveCount(0);
+      await expect(page.getByTestId('patient-status-control').getByRole('button', { name: /Reemplazo/ })).toHaveCount(0);
 
       // o banco não mudou
       const status = runSQL(`SELECT status FROM patients WHERE id = '${s4.patientId}'`).trim();

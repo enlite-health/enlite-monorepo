@@ -5,6 +5,7 @@ import {
   buildListVacanciesQuery,
   loadStageCounts,
   loadVacancyActivity,
+  PatientStatusFilterForbiddenError,
   VacancyListRow,
 } from './vacancyListHelpers';
 import { buildVacancyListItem, parseVacancySort, sortVacancyItems } from './vacancyListSort';
@@ -18,7 +19,8 @@ import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { sameRealmAsVacancySql, excludeTestVacancySql } from '@shared/database/testRealmSql';
 import { resolveCountriesOrRespond } from '@modules/identity';
 import { cellsOfRequest, projectWorkerFields, ProjecaoSemDecryptorError } from '@modules/identity/permissions';
-import { canSearchVacanciesByPatientName, projectPatientInVacancy } from '../../application/patientInVacancyProjection';
+import { canReadPatientStatus, canSearchVacanciesByPatientName, projectPatientInVacancy } from '../../application/patientInVacancyProjection';
+import { cicloDeVidaSql, statusDeRetomada } from '../../domain/vacancyLifecycle';
 import { loadVacancyPatientDiagnoses } from '../../application/vacancyPatientDiagnoses';
 import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
 import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
@@ -86,7 +88,7 @@ export class VacanciesController {
     if (!countries) return;
     try {
       const {
-        search, status, include_baja, talentum_manual,
+        search, status, lifecycle, patient_status: patientStatus, include_baja, talentum_manual,
         worker_type, state, city, required_sex,
         days, time_from, time_to,
         limit = '20', offset = '0',
@@ -97,7 +99,7 @@ export class VacanciesController {
       const cellsDaLista = cellsOfRequest(req);
       const { baseQuery, params, paramIndex } = buildListVacanciesQuery({
         countries,
-        search, status,
+        search, status, lifecycle, patientStatus,
         includeBaja: include_baja,
         talentumManual: talentum_manual,
         workerType: worker_type,
@@ -109,7 +111,7 @@ export class VacanciesController {
         timeTo: time_to,
         limit: limit as string,
         offset: offset as string,
-      }, { searchByPatientName: canSearchVacanciesByPatientName(cellsDaLista) });
+      }, { searchByPatientName: canSearchVacanciesByPatientName(cellsDaLista), canFilterByPatientStatus: canReadPatientStatus(cellsDaLista) });
 
       const countQuery = `SELECT COUNT(*) as total FROM (${baseQuery}) as count_query`;
       const countResult = await this.db.query(countQuery, params);
@@ -150,6 +152,10 @@ export class VacanciesController {
     } catch (error: unknown) {
       if (error instanceof SortParamError) {
         res.status(400).json({ success: false, error: error.message });
+        return;
+      }
+      if (error instanceof PatientStatusFilterForbiddenError) {
+        res.status(403).json({ success: false, error: 'Forbidden', details: { field: error.field, cell: error.cell } });
         return;
       }
       const msg = error instanceof Error ? error.message : String(error);
@@ -248,6 +254,10 @@ export class VacanciesController {
           jp.closes_at as closed_at,
           p.first_name as patient_first_name,
           p.last_name as patient_last_name,
+          -- estado-automatico-do-paciente F2 (D3/E6): estado do paciente por JOIN, na hora (nunca coluna cópia); projetado
+          -- sob o container patient. O ciclo de vida sai da tabela do dono, em SQL gerado dela.
+          p.status as patient_status,
+          ${cicloDeVidaSql('jp')} as lifecycle,
           COALESCE(pa.neighborhood, p.zone_neighborhood) as patient_zone,
           p.dependency_level as dependency_level,
           -- ATENCAO: a coluna clinica livre de patients NAO entra neste SELECT
@@ -369,6 +379,8 @@ export class VacanciesController {
       const normalized = projectPatientInVacancy({
         ...rowWithoutAuthorizedPeriod,
         weekly_hours: weeklyHours,
+        // E8: o valor de ESCRITA que "Reanudar" envia (calculado aqui, no dono do ciclo; o editor só o repete).
+        resumeStatus: statusDeRetomada(row.status_before_hold as string | null | undefined),
         encuadres,
         schedule: normalizeSchedule(row.schedule),
         locked_fields: lockedFields,

@@ -913,7 +913,7 @@ describe('VacancyCrudController', () => {
           salary_text: '1000',
           payment_day: 'Dia 5',
           daily_obs: 'obs',
-          status: 'ACTIVE',
+          status: 'SEARCHING',
           patient_id: PATIENT_ID,
           worker_profile_sought: 'algo',
         };
@@ -942,7 +942,7 @@ describe('VacancyCrudController', () => {
       it('does NOT include state, city, pathology_types, dependency_level, service_device_types in UPDATE', async () => {
         const updates = {
           title: 'CASO 200',
-          status: 'ACTIVE',
+          status: 'SEARCHING',
           state: 'CABA',
           city: 'Palermo',
           pathology_types: 'TEA',
@@ -1024,8 +1024,8 @@ describe('VacancyCrudController', () => {
         async (currentStatus) => {
           const schedule = [{ dayOfWeek: 2, startTime: '09:00', endTime: '17:00' }];
           mockOperationalSelect(currentStatus);
-          mockClientForUpdate({ id: 'uuid-123', schedule, status: 'ACTIVE' });
-          const req = mockReq({ schedule, status: 'ACTIVE' }, { id: 'uuid-123' });
+          mockClientForUpdate({ id: 'uuid-123', schedule, status: 'SEARCHING' });
+          const req = mockReq({ schedule, status: 'SEARCHING' }, { id: 'uuid-123' });
           const res = mockRes();
 
           await controller.updateVacancy(req as never, res as never);
@@ -1121,15 +1121,9 @@ describe('VacancyCrudController', () => {
     });
 
     describe('status validation', () => {
-      const CANONICAL_STATUSES = [
-        'SEARCHING',
-        'SEARCHING_REPLACEMENT',
-        'RAPID_RESPONSE',
-        'PENDING_ACTIVATION',
-        'ACTIVE',
-        'SUSPENDED',
-        'CLOSED',
-      ];
+      // estado-automatico F5 (E5): o cliente só grava o ciclo de vida; os de sistema voltam 400 VACANCY_STATUS_NOT_LIFECYCLE.
+      const CANONICAL_STATUSES = ['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED'];
+      const STATUS_DE_SISTEMA = ['SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'PENDING_ACTIVATION', 'ACTIVE', 'DE_BAJA'];
 
       it.each(CANONICAL_STATUSES)('accepts canonical status "%s" → 200', async (status) => {
         mockOperationalSelect('SEARCHING');
@@ -1140,6 +1134,17 @@ describe('VacancyCrudController', () => {
         await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(200);
+      });
+
+      it.each(STATUS_DE_SISTEMA)('rejects system status "%s" → 400 VACANCY_STATUS_NOT_LIFECYCLE, no query executed', async (status) => {
+        const req = mockReq({ status }, { id: 'uuid-123' });
+        const res = mockRes();
+
+        await controller.updateVacancy(req as never, res as never);
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, code: 'VACANCY_STATUS_NOT_LIFECYCLE' }));
+        expect(mockQuery).not.toHaveBeenCalled();
       });
 
       it.each([

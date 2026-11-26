@@ -14,16 +14,16 @@ export const SERVER_STATUS_REFUSAL = {
   SUSPENSION_EXIT_REASON_REQUIRED: 'SUSPENSION_EXIT_REASON_REQUIRED',
   TRANSITION_NOT_ALLOWED: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
   LOCKED_BY_ALLOCATION: 'PATIENT_STATUS_LOCKED_BY_ALLOCATION',
+  /** F3: a ação não existe para o estado atual (retomar fora de En espera/Suspendido, reativar fora de Baja). */
+  ACTION_NOT_AVAILABLE: 'PATIENT_STATUS_ACTION_NOT_AVAILABLE',
+  /** F5: o estado pedido é do fluxo automático (Búsqueda, Reemplazo, Activo) — ninguém o escolhe. */
+  NOT_MANUAL: 'PATIENT_STATUS_NOT_MANUAL',
 } as const;
 
-/** `blockedBy` de um destino de status-options quando há alocação viva no itinerário (D489/D530). */
+/** `blockedBy` de uma ação quando há alocação viva no itinerário (D489/D530). */
 export const ACTIVE_ALLOCATION_BLOCK = 'ACTIVE_ALLOCATION';
 
-/** Recusas LOCAIS (a tela nem chegou a chamar o PUT). */
-export const STATUS_NOT_OFFERED = 'STATUS_NOT_OFFERED';
-export const STATUS_OPTIONS_UNAVAILABLE = 'STATUS_OPTIONS_UNAVAILABLE';
-
-/** Recusa de troca de estado, como a tela a recebe (do servidor ou da lista local). */
+/** Recusa de troca de estado, como a tela a recebe (do servidor). */
 export interface StatusRefusal {
   code?: string;
   /** Estado de destino que o operador pediu. */

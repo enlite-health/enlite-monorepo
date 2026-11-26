@@ -142,6 +142,22 @@ describe('KanbanBoardShell — colunas e cards', () => {
   });
 });
 
+describe('KanbanBoardShell — sem onDrop o board é só de leitura (F5: Kanban de pacientes)', () => {
+  it('o card vira um wrapper simples `kanban-card-<id>` — nenhum card registrado para arrasto e nenhum atributo de arrasto', () => {
+    renderShell({ onDrop: undefined, isDragDisabled: undefined });
+    expect(draggableIds).toEqual([]);
+    expect(screen.getByTestId('kanban-card-c1')).toBeInTheDocument();
+    expect(screen.queryByTestId('kanban-draggable-c1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('kanban-card-c1')).not.toHaveAttribute('aria-roledescription');
+    expect(screen.getByTestId('card-c1')).toHaveTextContent('Card 1');
+  });
+
+  it('um drop forçado no DndContext não chama nada (nenhum onDrop para chamar)', () => {
+    renderShell({ onDrop: undefined });
+    expect(() => drag('c1', 'DONE')).not.toThrow();
+  });
+});
+
 describe('KanbanBoardShell — drop', () => {
   it('entrega item, coluna de origem e coluna de destino', () => {
     const { onDrop } = renderShell();

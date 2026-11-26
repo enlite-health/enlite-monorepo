@@ -174,7 +174,7 @@ describe('R17 — todo UPDATE que escreve job_postings.status está numa allowli
 describe('R17 — PUT /vacancies/:id em vaga DE_BAJA', () => {
   const dbCom = (row: Record<string, unknown>) => ({ query: jest.fn(async () => ({ rows: [row] })) }) as never;
 
-  it.each(['SEARCHING', 'ON_HOLD', 'ACTIVE', 'CLOSED'])('mudar status para %s → 409 e a vaga segue baixada', async (status) => {
+  it.each(['SEARCHING', 'ON_HOLD', 'CLOSED'])('mudar status para %s → 409 e a vaga segue baixada', async (status) => {
     const out = await authorizeVacancyUpdate(
       dbCom({ status: 'DE_BAJA', is_draft: false, patient_id: 'p', contracted_service_id: null, service_active: null }),
       'v1',
@@ -183,6 +183,15 @@ describe('R17 — PUT /vacancies/:id em vaga DE_BAJA', () => {
     expect(out).toMatchObject({ kind: 'error', status: 409, code: 'VACANCY_DE_BAJA_NO_REACTIVATION' });
     expect((out as { messages: { es: string; 'pt-BR': string } }).messages.es).toMatch(/no se reactiva/);
     expect((out as { messages: { es: string; 'pt-BR': string } }).messages['pt-BR']).toMatch(/não é reativada/);
+  });
+
+  it('um status legado (ACTIVE) numa vaga baixada → 400 do estreitamento da escrita: a recusa vem antes e a vaga segue baixada', async () => {
+    const out = await authorizeVacancyUpdate(
+      dbCom({ status: 'DE_BAJA', is_draft: false, patient_id: 'p', contracted_service_id: null, service_active: null }),
+      'v1',
+      { status: 'ACTIVE' },
+    );
+    expect(out).toMatchObject({ kind: 'error', status: 400, code: 'VACANCY_STATUS_NOT_LIFECYCLE' });
   });
 
   it('nem outros campos mudam numa vaga baixada (só consulta)', async () => {

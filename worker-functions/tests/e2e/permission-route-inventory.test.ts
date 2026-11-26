@@ -196,6 +196,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PUT /api/admin/patients/:id/chat-ids → patient_chat:update',
         'PUT /api/admin/patients/:id/emergency-contact → patient_family:update',
         'PUT /api/admin/patients/:id/status → patient:update',
+        'POST /api/admin/patients/:id/status-actions → patient:update',
         // ── admin.workers (31) — a 3ª, espalhada em 4 arquivos
         // Spec 024 (D1/D401, 21/09): as 4 rotas de catálogo (`/worker-tags`) migram para `tag:*` —
         // dado diferente do perfil do prestador. `:tags/:tagId` (atribuir/remover DE UM prestador)
@@ -347,8 +348,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/patients/:id/contracted-services → patient_services:read',
         'GET /api/admin/patients/:id/diagnoses → patient_clinical:read',
         'GET /api/admin/patients/:id/status-history → patient:read',
-        // Spec 051 (F3): a lista de destinos de estado — a MESMA célula do PUT /status.
-        'GET /api/admin/patients/:id/status-options → patient:update',
+        // F3 (estado-automatico-do-paciente): as ações dos estados humanos — a MESMA célula do PUT /status.
+        'GET /api/admin/patients/:id/status-actions → patient:update',
         'GET /api/admin/presentation-invite/last → messaging:read',
         'GET /api/admin/presentation-invite/settings → messaging:read',
         'GET /api/admin/presentation-invite/stats → messaging:read',

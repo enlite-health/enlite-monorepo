@@ -18,9 +18,14 @@ export interface VacancyAdvancedFilters {
 interface VacancyFiltersProps {
   searchQuery: string;
   onSearchChange: (value: string) => void;
-  selectedStatus: string;
-  onStatusChange: (value: string) => void;
-  statusOptions: ComboboxOption[];
+  /** E7: ciclo de vida da vaga (os 5 valores do dono). */
+  selectedLifecycle: string;
+  onLifecycleChange: (value: string) => void;
+  lifecycleOptions: ComboboxOption[];
+  /** E7: estado do paciente (`p.status`) — o filtro só existe para quem lê o container `patient` (sem a célula o servidor recusa, 403). */
+  selectedPatientStatus: string;
+  onPatientStatusChange: (value: string) => void;
+  patientStatusOptions: ComboboxOption[];
   // advanced filters
   advancedFilters: VacancyAdvancedFilters;
   onAdvancedChange: (updates: Partial<VacancyAdvancedFilters>) => void;
@@ -31,9 +36,12 @@ interface VacancyFiltersProps {
 export function VacancyFilters({
   searchQuery,
   onSearchChange,
-  selectedStatus,
-  onStatusChange,
-  statusOptions,
+  selectedLifecycle,
+  onLifecycleChange,
+  lifecycleOptions,
+  selectedPatientStatus,
+  onPatientStatusChange,
+  patientStatusOptions,
   advancedFilters,
   onAdvancedChange,
   stateOptions,
@@ -41,6 +49,8 @@ export function VacancyFilters({
 }: VacancyFiltersProps): JSX.Element {
   const { t } = useTranslation();
   const podeBuscarPorNome = useContainerAccess('patient_identity').visible;
+  // Sem `patient:read` o filtro por estado do paciente seria oráculo (lex P5): a tela o esconde e o servidor recusa com 403.
+  const podeFiltrarPorEstadoDoPaciente = useContainerAccess('patient').visible;
 
   const typeOptions: ComboboxOption[] = [
     { value: 'AT', label: t('admin.vacancies.filters.type.at') },
@@ -66,7 +76,8 @@ export function VacancyFilters({
 
   const hasAnyFilter =
     searchQuery !== '' ||
-    selectedStatus !== '' ||
+    selectedLifecycle !== '' ||
+    selectedPatientStatus !== '' ||
     advancedFilters.workerType !== '' ||
     advancedFilters.state !== '' ||
     advancedFilters.city !== '' ||
@@ -77,7 +88,8 @@ export function VacancyFilters({
 
   const handleClearAll = () => {
     onSearchChange('');
-    onStatusChange('');
+    onLifecycleChange('');
+    onPatientStatusChange('');
     onAdvancedChange({
       workerType: '',
       state: '',
@@ -102,18 +114,32 @@ export function VacancyFilters({
           className="w-full sm:w-[400px]"
         />
         <div className="flex items-end gap-4 flex-wrap ml-auto">
-          <div className="w-full sm:w-[200px]">
+          <div className="w-full sm:w-[200px]" data-testid="vacancy-filter-lifecycle">
             <Text size="sm" weight="semibold" color="secondary" className="mb-1">
-              {t('admin.vacancies.statusLabel')}
+              {t('admin.vacancies.filters.lifecycle.label')}
             </Text>
             <Combobox
               inputSize="compact"
-              options={statusOptions}
-              value={selectedStatus}
-              onChange={onStatusChange}
-              placeholder={t('admin.vacancies.statusOptions.all')}
+              options={lifecycleOptions}
+              value={selectedLifecycle}
+              onChange={onLifecycleChange}
+              placeholder={t('admin.vacancies.filters.allOption')}
             />
           </div>
+          {podeFiltrarPorEstadoDoPaciente && (
+            <div className="w-full sm:w-[200px]" data-testid="vacancy-filter-patient-status">
+              <Text size="sm" weight="semibold" color="secondary" className="mb-1">
+                {t('admin.vacancies.filters.patientStatus.label')}
+              </Text>
+              <Combobox
+                inputSize="compact"
+                options={patientStatusOptions}
+                value={selectedPatientStatus}
+                onChange={onPatientStatusChange}
+                placeholder={t('admin.vacancies.filters.allOption')}
+              />
+            </div>
+          )}
         </div>
       </div>
 

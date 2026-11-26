@@ -285,13 +285,14 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
     await expect(page.getByTestId('new-service-btn')).toHaveCount(0);
     await expect(page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`)).toHaveCount(0);
 
-    // Kanban — o card existe (leitura), mas o arrasto está bloqueado.
+    // Kanban — o card existe (leitura) e NÃO tem arrasto (F5: o board é só de leitura para todo mundo, com ou sem célula).
     await page.goto('/admin/patients/kanban');
     await expect(page.getByTestId(`patient-kanban-card-${patientId}`)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId(`kanban-draggable-${patientId}`)).toHaveAttribute('data-drag-disabled', 'true');
+    await expect(page.getByTestId(`kanban-draggable-${patientId}`)).toHaveCount(0);
+    await expect(page.getByTestId(`kanban-card-${patientId}`)).toHaveCount(1);
   });
 
-  test('2. a conta ganha patient:create+update E os :create/:update de container (PR-8b): os mesmos elementos passam a EXISTIR e o arrasto libera', async ({ page, request }) => {
+  test('2. a conta ganha patient:create+update E os :create/:update de container (PR-8b): os mesmos elementos passam a EXISTIR (o Kanban segue sem arrasto)', async ({ page, request }) => {
     grantCell(groupId, 'patient', 'create');
     grantCell(groupId, 'patient', 'update');
     for (const c of CONTAINERS) {
@@ -329,7 +330,9 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
 
     await page.goto('/admin/patients/kanban');
     await expect(page.getByTestId(`patient-kanban-card-${patientId}`)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId(`kanban-draggable-${patientId}`)).not.toHaveAttribute('data-drag-disabled', 'true');
+    // F5: nem com a célula o card ganha arrasto — o estado muda pela ficha (ações) e pelo fluxo automático.
+    await expect(page.getByTestId(`kanban-draggable-${patientId}`)).toHaveCount(0);
+    await expect(page.getByTestId(`kanban-card-${patientId}`)).toHaveCount(1);
   });
 
   test('3. sem grupo nenhum: tela de boas-vindas — nenhuma regressão', async ({ page }) => {

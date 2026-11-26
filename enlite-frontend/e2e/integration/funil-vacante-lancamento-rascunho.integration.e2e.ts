@@ -1,16 +1,18 @@
 /**
  * funil-vacante-lancamento-rascunho.integration.e2e.ts @integration
  *
- * P11 (Fase 6, cadeia-paciente-vacante-itinerario), reescrito pela D469 (Gabriel, 02/10/2026) —
- * 2 testes independentes, sem `describe.serial` (DX-6.9):
+ * P11 (Fase 6, cadeia-paciente-vacante-itinerario), reescrito pela D469 (Gabriel, 02/10/2026) e pela D1/D2 do
+ * estado-automatico-do-paciente (26/11/2026) — 3 testes independentes, sem `describe.serial` (DX-6.9):
  *
  * (1) `foguete-move-para-busqueda`: o foguete (`activate-recruitment`) cria a vaga em RASCUNHO
  *     (`is_draft = true`) E move o paciente do funil para Búsqueda — na API, na coluna do Kanban
  *     do paciente e na trilha (`patient_status_history.change_source = 'recruitment_activation'`);
  *     sem chamar a Talentum (o stub fica em 0 chamadas) e sem gerar match.
- * (2) `kanban-arrasto-admision-busqueda-funciona`: arrastar o card de Admisión para Búsqueda
- *     passa (200) e grava `change_source = 'kanban'`. Controle negativo: o PUT /status do select
- *     da ficha (`changeSource: 'admin_panel'`) continua 422 para o mesmo par.
+ * (2) `kanban-sem-arrasto-admision-busqueda-recusado` (F5): o card não é arrastável, o gesto de arrastar para Búsqueda não manda
+ *     PUT nenhum e, depois de recarregar, o card segue em Admisión; o PUT /status do mesmo par, pelas origens `kanban` e
+ *     `admin_panel`, é 422 PATIENT_STATUS_NOT_MANUAL (o foguete é o único gatilho).
+ * (3) `foguete-com-outro-servico-sem-horario-move`: o paciente tem um 2º serviço ATIVO sem horário; o foguete do serviço
+ *     COMPLETO cria a vaga e MOVE o paciente (D2: a completude é medida no serviço clicado) — toast de SUCESSO, nenhum aviso.
  */
 
 import { test, expect } from '@playwright/test';
@@ -116,12 +118,11 @@ test.describe('funil-vacante lancamento rascunho @integration', () => {
     }
   });
 
-  // ── (2) arrasto Admisión → Búsqueda funciona (D469) ─────────────────────────────
-  test('kanban-arrasto-admision-busqueda-funciona', async ({ page, request }) => {
+  // ── (2) F5: NÃO existe arrasto Admisión → Búsqueda (o foguete é o único gatilho) ───────────────────────────
+  test('kanban-sem-arrasto-admision-busqueda-recusado', async ({ page, request }) => {
     const token = tokenFor(MOCK_ADMIN_USER);
     const lastName = `LancamentoKanban-${Date.now()}`;
     const { patientId } = insertTestPatient({ status: 'ADMISSION', firstName: 'E2E', lastName });
-    const { patientId: controlId } = insertTestPatient({ status: 'ADMISSION', firstName: 'E2E', lastName: `${lastName}-ctl` });
 
     try {
       await loginAs(page, MOCK_ADMIN_USER);
@@ -131,52 +132,45 @@ test.describe('funil-vacante lancamento rascunho @integration', () => {
       const card = page.getByTestId(`patient-kanban-card-${patientId}`);
       await expect(card).toBeVisible({ timeout: 15_000 });
       await card.scrollIntoViewIfNeeded();
+      // O wrapper do card não tem nenhum atributo de arrasto (aria-roledescription / tabindex do dnd-kit).
+      const wrapper = page.getByTestId(`kanban-card-${patientId}`);
+      await expect(wrapper).toHaveCount(1);
+      await expect(wrapper).not.toHaveAttribute('aria-roledescription', /.+/);
 
-      const searchingColumn = page.locator('[data-testid="kanban-column-SEARCHING"]');
-      const [movedResp] = await Promise.all([
-        page.waitForResponse((r) => r.request().method() === 'PUT' && /\/status$/.test(r.url())),
-        dndKitDrag(page, card, searchingColumn),
-      ]);
-      expect(movedResp.status(), 'PUT /status arrasto Admisión→Búsqueda').toBe(200);
+      // Gesto humano de arrastar para "Búsqueda": nenhum PUT sai da página.
+      const puts: string[] = [];
+      page.on('request', (r) => { if (r.method() === 'PUT' && /\/status$/.test(r.url())) puts.push(r.url()); });
+      await dndKitDrag(page, card, page.locator('[data-testid="kanban-column-SEARCHING"]'));
+      expect(puts, 'nenhum PUT /status sai do arrasto').toEqual([]);
 
-      const columnAfter = await readPatientKanbanColumn(page, patientId);
-      expect(columnAfter, 'coluna depois do arrasto').toBe('SEARCHING');
-      const statusAfter = await readPatientStatusApi(request, backendUrl(), token, patientId);
-      expect(statusAfter, 'status depois do arrasto').toBe('SEARCHING');
-      expect(lastStatusChangeSource(patientId), 'change_source do arrasto').toBe('kanban');
+      const columnAfter = await readPatientKanbanColumn(page, patientId); // recarrega o board
+      expect(columnAfter, 'coluna depois do arrasto').toBe('ADMISSION');
+      expect(await readPatientStatusApi(request, backendUrl(), token, patientId), 'status depois do arrasto').toBe('ADMISSION');
 
-      // Controle negativo: o MESMO par pelo select da ficha (`admin_panel`) continua recusado.
-      const refused = await request.put(`${backendUrl()}/api/admin/patients/${controlId}/status`, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        data: { status: 'SEARCHING', changeSource: 'admin_panel' },
-      });
-      expect(refused.status(), 'PUT /status admin_panel Admisión→Búsqueda').toBe(422);
-      const statusControl = await readPatientStatusApi(request, backendUrl(), token, controlId);
-      expect(statusControl, 'paciente de controle continua em Admisión').toBe('ADMISSION');
-
-      console.log('[d469] kanban-arrasto-admision-busqueda-funciona', {
-        patientId,
-        movedStatus: movedResp.status(),
-        columnAfter,
-        statusAfter,
-        refusedStatus: refused.status(),
-      });
+      // O servidor também recusa, pelas duas origens: a mesma frase, sem escrever nada.
+      for (const changeSource of ['kanban', 'admin_panel']) {
+        const refused = await request.put(`${backendUrl()}/api/admin/patients/${patientId}/status`, {
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          data: { status: 'SEARCHING', changeSource },
+        });
+        expect(refused.status(), `PUT /status ${changeSource} Admisión→Búsqueda`).toBe(422);
+        expect((await refused.json()).code).toBe('PATIENT_STATUS_NOT_MANUAL');
+      }
+      expect(await readPatientStatusApi(request, backendUrl(), token, patientId), 'continua em Admisión').toBe('ADMISSION');
     } finally {
       cleanupTestPatient(patientId);
-      cleanupTestPatient(controlId);
     }
   });
 
-  // ── (3) foguete com outro serviço sem horário: vaga nasce, paciente NÃO move, a tela AVISA ──
-  test('foguete-sem-completude-avisa-e-nao-move', async ({ page, request }) => {
+  // ── (3) foguete com outro serviço sem horário: vaga nasce E o paciente MOVE, a tela mostra sucesso (D2) ──
+  test('foguete-com-outro-servico-sem-horario-move', async ({ page, request }) => {
     const LAT = -53.83;
     const LNG = -67.71;
     const token = tokenFor(MOCK_ADMIN_USER);
     const patient = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: LAT, lng: LNG });
 
     try {
-      // 2º serviço ATIVO sem horário: o foguete do serviço 1 passa no gate (que olha só o serviço
-      // dele), mas o SEARCHING exige horário de TODO serviço ativo — o paciente não pode mover.
+      // 2º serviço ATIVO sem horário: o foguete do serviço 1 mede só o serviço clicado (gate e escritor) — o outro não trava.
       await postContractedServiceViaApi(request, token, patient.patientId, {
         serviceCode: 'AT', providersNeeded: 1, careLocation: 'HOME', addressId: patient.addressId,
       });
@@ -184,16 +178,16 @@ test.describe('funil-vacante lancamento rascunho @integration', () => {
       await loginAs(page, MOCK_ADMIN_USER);
       const vacancyId = await clickFoguete(page, patient.patientId, patient.serviceId);
 
-      await expect(page.getByTestId('toast-warning'), 'toast de AVISO (não o de sucesso)').toBeVisible({ timeout: 8_000 });
-      await expect(page.getByTestId('toast-warning')).toContainText('El paciente sigue en Admisión');
-      await expect(page.getByTestId('toast-success')).toHaveCount(0);
+      await expect(page.getByTestId('toast-success'), 'toast de sucesso').toBeVisible({ timeout: 8_000 });
+      await expect(page.getByTestId('toast-warning'), 'nenhum aviso de "paciente não moveu"').toHaveCount(0);
 
       const isDraft = runSQL(`SELECT is_draft FROM job_postings WHERE id = '${vacancyId}'`).trim();
       expect(isDraft, 'a vaga nasceu em rascunho').toBe('t');
       const statusAfter = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
-      expect(statusAfter, 'paciente segue em Admisión').toBe('ADMISSION');
+      expect(statusAfter, 'paciente foi para Búsqueda').toBe('SEARCHING');
       const columnAfter = await readPatientKanbanColumn(page, patient.patientId);
-      expect(columnAfter, 'card segue na coluna Admisión').toBe('ADMISSION');
+      expect(columnAfter, 'card está na coluna Búsqueda').toBe('SEARCHING');
+      expect(lastStatusChangeSource(patient.patientId), 'trilha do foguete').toBe('recruitment_activation');
     } finally {
       patient.cleanup();
     }

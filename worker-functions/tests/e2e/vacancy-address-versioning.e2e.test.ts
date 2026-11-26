@@ -178,7 +178,6 @@ describe('Vacancy address versioning — full flow (ClickUp → vacancy 1 → up
         required_professions: ['AT'],
         providers_needed:    1,
         schedule: [{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }],
-        status: 'PENDING_ACTIVATION',
       },
       auth(),
     );
@@ -243,7 +242,6 @@ describe('Vacancy address versioning — full flow (ClickUp → vacancy 1 → up
         required_professions: ['AT'],
         providers_needed:    1,
         schedule: [{ dayOfWeek: 1, startTime: '14:00', endTime: '18:00' }],
-        status: 'PENDING_ACTIVATION',
       },
       auth(),
     );
@@ -274,7 +272,6 @@ describe('Vacancy address versioning — full flow (ClickUp → vacancy 1 → up
           required_professions: ['AT'],
           providers_needed:    1,
           schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
-          status: 'PENDING_ACTIVATION',
         },
         auth(),
       )
@@ -361,7 +358,6 @@ describe('Vacancy address versioning — full flow (ClickUp → vacancy 1 → up
         required_professions: ['AT'],
         providers_needed:    1,
         schedule: [{ dayOfWeek: 2, startTime: '09:00', endTime: '17:00' }],
-        status: 'PENDING_ACTIVATION',
       },
       auth(),
     );

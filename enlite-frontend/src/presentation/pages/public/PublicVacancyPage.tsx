@@ -5,7 +5,7 @@ import { MapPin, CheckCircle2 } from 'lucide-react';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { VacancyStatusBadge } from '@presentation/components/atoms/VacancyStatusBadge';
+import { VacancyLifecycleBadge } from '@presentation/components/atoms/VacancyLifecycleBadge';
 import { Logo } from '@presentation/components/shared/Logo';
 import { PublicApiService, VacancyNotFoundError } from '@infrastructure/http/PublicApiService';
 import { usePostularseAction } from '@presentation/hooks/usePostularseAction';
@@ -73,7 +73,7 @@ function VacancyCaseCard({
               ? `CASO ${formatCaseNumber(vacancy.case_number)}-${vacancy.vacancy_number}`
               : `CASO ${vacancy.vacancy_number}`}
           </Heading>
-          <VacancyStatusBadge status={vacancy.status} className="shrink-0" />
+          <VacancyLifecycleBadge lifecycle={vacancy.lifecycle} className="shrink-0" />
         </div>
 
         {/* Endereço */}

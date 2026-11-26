@@ -4,7 +4,7 @@ import { VacanciesTable, type VacancyRow } from '../VacanciesTable';
 import { isBajaSelectable } from '../bajaSelectable';
 
 const base = (o: Partial<VacancyRow>): VacancyRow => ({
-  id: 'v', caseNumber: 817, caseOrdinal: null, status: 'Buscando AT', diasAberto: '01', stageCounts: {},
+  id: 'v', caseNumber: 817, caseOrdinal: null, lifecycle: 'aberta', diasAberto: '01', stageCounts: {},
   postulados: '00', faltantes: '00', isDraft: false, lastActionAt: null, statusRaw: 'SEARCHING', hasService: false,
   talentumPauseState: null, ...o,
 });
@@ -12,7 +12,7 @@ const base = (o: Partial<VacancyRow>): VacancyRow => ({
 const ROWS: VacancyRow[] = [
   base({ id: 'sem-servico' }),
   base({ id: 'com-servico', hasService: true, caseOrdinal: 1 }),
-  base({ id: 'baixada', status: 'Dada de baja', statusRaw: 'DE_BAJA' }),
+  base({ id: 'baixada', lifecycle: 'baja', statusRaw: 'DE_BAJA' }),
   base({ id: 'manual', talentumPauseState: 'MANUAL_PAUSE' }),
 ];
 

@@ -5,7 +5,7 @@
  *   1. transição PERMITIDA (ACTIVE → ON_HOLD com motivo) → 200; banco com on_hold_reason/note;
  *      patient_status_history ganha a linha com change_source='admin_panel' (trigger 254 + set_config);
  *      admission_status continua DONE (trigger 313);
- *   2. transição PROIBIDA (ON_HOLD → REPLACEMENT, fora do seed da 315) → 422 com código de enum;
+ *   2. F5 (estado-automatico-do-paciente): destino DERIVADO (ON_HOLD → REPLACEMENT) pelo PUT → 422 PATIENT_STATUS_NOT_MANUAL;
  *   3. ON_HOLD sem motivo → 422 ON_HOLD_REASON_REQUIRED;
  *   4. GET /status-history: quando / de→para / origem / motivo / autor (migration 486, decisão do
  *      Gabriel 29/09/2026), SEM on_hold_note (C7.3);
@@ -29,6 +29,7 @@ import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
 import { semearFaixas } from './helpers/seedFaixaDoServico';
 import { seedPatientDiagnosis } from './helpers/seedPatientDiagnosis';
+import { seedPatientStatus } from './helpers/seedPatientStatus';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const UID = 'ps-v2-admin-uid';
@@ -110,11 +111,14 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     expect(hist[0]).toEqual({ old_value: 'ACTIVE', new_value: 'ON_HOLD', change_source: 'admin_panel' });
   });
 
-  it('2. transição PROIBIDA (ON_HOLD → REPLACEMENT) → 422 PATIENT_STATUS_TRANSITION_NOT_ALLOWED, nada muda', async () => {
+  it('2. F5: destino derivado pelo PUT (ON_HOLD → REPLACEMENT) → 422 PATIENT_STATUS_NOT_MANUAL; status e trilha não mudam', async () => {
+    const trilha = async () => Number((await pool.query(`SELECT count(*) AS n FROM patient_status_history WHERE patient_id = $1`, [active])).rows[0].n);
+    const antes = await trilha();
     const r = await api.put(`/api/admin/patients/${active}/status`, { status: 'REPLACEMENT' }, asAdmin);
     expect(r.status).toBe(422);
-    expect(r.data).toMatchObject({ success: false, code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED', details: { from: 'ON_HOLD', to: 'REPLACEMENT' } });
+    expect(r.data).toMatchObject({ success: false, code: 'PATIENT_STATUS_NOT_MANUAL', details: { to: 'REPLACEMENT', changeSource: 'admin_panel' } });
     expect((await pool.query(`SELECT status FROM patients WHERE id = $1`, [active])).rows[0].status).toBe('ON_HOLD');
+    expect(await trilha()).toBe(antes);
   });
 
   it('3. ON_HOLD sem motivo → 422 ON_HOLD_REASON_REQUIRED; motivo fora do enum → 400', async () => {
@@ -138,66 +142,63 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     expect(raw).not.toContain(NOTE);
   });
 
-  it('5. ON_HOLD → ACTIVE limpa motivo e nota; ficha devolve os campos v2', async () => {
-    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'ACTIVE' }, asAdmin)).status).toBe(200);
+  it('5. ON_HOLD → ALTA limpa motivo e nota (nenhuma segunda cópia); ON_HOLD → ACTIVE pelo PUT é recusado (NOT_MANUAL); ficha devolve os campos v2', async () => {
+    const refused = await api.put(`/api/admin/patients/${active}/status`, { status: 'ACTIVE' }, asAdmin);
+    expect(refused.status).toBe(422);
+    expect(refused.data.code).toBe('PATIENT_STATUS_NOT_MANUAL');
+    // recusa antes de tudo: motivo e nota continuam lá (controle positivo da limpeza abaixo)
+    expect((await pool.query(`SELECT status, on_hold_reason FROM patients WHERE id = $1`, [active])).rows[0]).toEqual({ status: 'ON_HOLD', on_hold_reason: 'INSURER' });
+
+    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'ALTA' }, asAdmin)).status).toBe(200);
     const { rows: [row] } = await pool.query(`SELECT status, on_hold_reason, on_hold_note FROM patients WHERE id = $1`, [active]);
-    expect(row).toEqual({ status: 'ACTIVE', on_hold_reason: null, on_hold_note: null });
+    expect(row).toEqual({ status: 'ALTA', on_hold_reason: null, on_hold_note: null });
+
+    // volta a ACTIVE por SQL (estado derivado não se monta pelo PUT depois da F5)
+    await seedPatientStatus(pool, active, 'ACTIVE');
     const g = await api.get(`/api/admin/patients/${active}`, asAdmin);
     expect(g.status).toBe(200);
     expect(g.data.data).toMatchObject({ status: 'ACTIVE', admissionStatus: 'DONE', onHoldReason: null, onHoldNote: null, serviceStartDate: null });
   });
 
-  it('6. Migration 428: funil→ACTIVE direto é 422 nas TRÊS origens; dentro do funil continua livre; ACTIVE de verdade só via SEARCHING (lançamento da vaga)', async () => {
-    // 6a. SOLICITANTE → ACTIVE direto (lead2, nunca tocado por outro teste) — bloqueado.
-    let r = await api.put(`/api/admin/patients/${lead2}/status`, { status: 'ACTIVE', changeSource: 'kanban' }, asAdmin);
-    expect(r.status).toBe(422);
-    expect(r.data).toMatchObject({
-      success: false,
-      code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
-      details: { from: 'SOLICITANTE', to: 'ACTIVE' },
-    });
-    expect((await pool.query(`SELECT status FROM patients WHERE id = $1`, [lead2])).rows[0].status).toBe('SOLICITANTE');
+  it('6. F5: kanban pede QUALQUER destino → 422 NOT_MANUAL; funil→ACTIVE direto idem; dentro do funil só admin_panel; ACTIVE de verdade só via activate-recruitment (SEARCHING) e a troca daí em diante é derivada', async () => {
+    const trilha = async (id: string) => Number((await pool.query(`SELECT count(*) AS n FROM patient_status_history WHERE patient_id = $1`, [id])).rows[0].n);
+    const notManual = (r: { status: number; data: any }, to: string, changeSource: string) => {
+      expect(r.status).toBe(422);
+      expect(r.data).toMatchObject({ success: false, code: 'PATIENT_STATUS_NOT_MANUAL', details: { to, changeSource } });
+    };
 
-    // 6b. lead: SOLICITANTE → ADMISSION continua livre (movimento DENTRO do funil).
-    expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'ADMISSION', changeSource: 'kanban' }, asAdmin)).status).toBe(200);
+    // 6a. kanban: SOLICITANTE → ACTIVE (destino derivado) e SOLICITANTE → ADMISSION (destino do funil) — ambos recusados.
+    const t0 = await trilha(lead2);
+    notManual(await api.put(`/api/admin/patients/${lead2}/status`, { status: 'ACTIVE', changeSource: 'kanban' }, asAdmin), 'ACTIVE', 'kanban');
+    notManual(await api.put(`/api/admin/patients/${lead2}/status`, { status: 'ADMISSION', changeSource: 'kanban' }, asAdmin), 'ADMISSION', 'kanban');
+    expect((await pool.query(`SELECT status FROM patients WHERE id = $1`, [lead2])).rows[0].status).toBe('SOLICITANTE');
+    expect(await trilha(lead2)).toBe(t0);
+
+    // 6b. lead: SOLICITANTE → ADMISSION pelo admin_panel continua livre (movimento DENTRO do funil).
+    expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'ADMISSION' }, asAdmin)).status).toBe(200);
     let row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
     expect(row).toEqual({ status: 'ADMISSION', admission_status: 'ADMISSION' });
 
-    // 6c. ADMISSION → ACTIVE direto — bloqueado (era a linha removida pela 428).
-    r = await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE', changeSource: 'kanban' }, asAdmin);
-    expect(r.status).toBe(422);
-    expect(r.data).toMatchObject({
-      success: false,
-      code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
-      details: { from: 'ADMISSION', to: 'ACTIVE' },
-    });
+    // 6c. ADMISSION → ACTIVE direto (admin_panel e kanban) — recusado e o estado fica.
+    notManual(await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE' }, asAdmin), 'ACTIVE', 'admin_panel');
+    notManual(await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE', changeSource: 'kanban' }, asAdmin), 'ACTIVE', 'kanban');
     row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
     expect(row).toEqual({ status: 'ADMISSION', admission_status: 'ADMISSION' });
 
-    // 6d. ADMISSION → PENDING_ADMISSION continua livre (ainda dentro do funil).
-    expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'PENDING_ADMISSION', changeSource: 'kanban' }, asAdmin)).status).toBe(200);
+    // 6d. ADMISSION → PENDING_ADMISSION pelo admin_panel continua livre (ainda dentro do funil).
+    expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'PENDING_ADMISSION' }, asAdmin)).status).toBe(200);
     row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
     expect(row).toEqual({ status: 'PENDING_ADMISSION', admission_status: 'PENDING_ADMISSION' });
 
-    // 6e. PENDING_ADMISSION → ACTIVE direto — bloqueado (a 3ª linha que a 428 removeu).
-    r = await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE', changeSource: 'kanban' }, asAdmin);
-    expect(r.status).toBe(422);
-    expect(r.data).toMatchObject({
-      success: false,
-      code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
-      details: { from: 'PENDING_ADMISSION', to: 'ACTIVE' },
-    });
+    // 6e. PENDING_ADMISSION → ACTIVE e → SEARCHING pelo PUT: recusados (SEARCHING só pelo foguete).
+    notManual(await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE' }, asAdmin), 'ACTIVE', 'admin_panel');
+    notManual(await api.put(`/api/admin/patients/${lead}/status`, { status: 'SEARCHING' }, asAdmin), 'SEARCHING', 'admin_panel');
     row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
     expect(row).toEqual({ status: 'PENDING_ADMISSION', admission_status: 'PENDING_ADMISSION' });
 
-    // 6f. Caminho real: COVERAGE informada (endereço/horário do serviço já vêm do beforeAll) →
-    // activate-recruitment cria a vaga em rascunho E move o paciente do funil para SEARCHING
-    // (D469, 02/10/2026; changeSource 'recruitment_activation'). Daí SEARCHING → ACTIVE segue
-    // pelo catálogo 315 (a 428 nunca tocou essa linha). Funil → SEARCHING pelo Kanban também é
-    // permitido (D469) e `admin_panel` recusado — coberto pelo unit `PatientService.moveStatus.v2`
-    // e pelo e2e de tela `funil-vacante-lancamento-rascunho`.
+    // 6f. Caminho real: activate-recruitment (foguete) cria a vaga em rascunho E move para SEARCHING
+    // (changeSource 'recruitment_activation'). Daí em diante SEARCHING → ACTIVE NÃO é troca manual.
     await pool.query(`UPDATE patients SET insurance_informed = 'Particular' WHERE id = $1`, [lead]);
-    // Pedido do Javier: o foguete com o paciente pré-atendimento (PENDING_ADMISSION) exige ≥1 diagnóstico ATIVO. Andar no funil (6b/6d) segue livre sem ele.
     await seedPatientDiagnosis(pool, lead);
     const activated = await api.post(`/api/admin/patients/${lead}/contracted-services/${leadServiceId}/activate-recruitment`, {}, asAdmin);
     expect(activated.status).toBe(201);
@@ -205,12 +206,18 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     expect(activated.data.data.statusChanged).toBe(true);
     row = (await pool.query(`SELECT status FROM patients WHERE id = $1`, [lead])).rows[0];
     expect(row).toEqual({ status: 'SEARCHING' });
-
-    expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE', changeSource: 'kanban' }, asAdmin)).status).toBe(200);
-    row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
-    expect(row).toEqual({ status: 'ACTIVE', admission_status: 'DONE' });
     const hist = (await api.get(`/api/admin/patients/${lead}/status-history`, asAdmin)).data.data.history as Array<Record<string, unknown>>;
-    expect(hist[0]).toMatchObject({ from: 'SEARCHING', to: 'ACTIVE', source: 'kanban' });
+    expect(hist[0]).toMatchObject({ to: 'SEARCHING', source: 'recruitment_activation' });
+
+    const t1 = await trilha(lead);
+    notManual(await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE', changeSource: 'kanban' }, asAdmin), 'ACTIVE', 'kanban');
+    notManual(await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE' }, asAdmin), 'ACTIVE', 'admin_panel');
+    expect((await pool.query(`SELECT status FROM patients WHERE id = $1`, [lead])).rows[0].status).toBe('SEARCHING');
+    expect(await trilha(lead)).toBe(t1);
+
+    // seed para o teste 7: ACTIVE por SQL (o estado derivado não é montado pelo PUT)
+    await seedPatientStatus(pool, lead, 'ACTIVE');
+    expect((await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0]).toEqual({ status: 'ACTIVE', admission_status: 'DONE' });
   });
 
   it('7. DISCHARGED e SUSPENDED não apagam linha nenhuma (lex C7.4)', async () => {
@@ -223,8 +230,12 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'DISCHARGED', suspensionExitReason: 'WRONG_STATUS' }, asAdmin)).status).toBe(200);
     expect(await count()).toBe(before);
     expect((await pool.query(`SELECT deleted_at FROM patients WHERE id = $1`, [lead])).rows[0].deleted_at).toBeNull();
-    // resgate (#REGRA-07): DISCHARGED → ACTIVE está no seed
-    expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE' }, asAdmin)).status).toBe(200);
+    // F5: o resgate DISCHARGED → ACTIVE não é mais troca manual (vira ação `reactivate`, coberta em patient-status-acoes)
+    const r = await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE' }, asAdmin);
+    expect(r.status).toBe(422);
+    expect(r.data.code).toBe('PATIENT_STATUS_NOT_MANUAL');
+    expect((await pool.query(`SELECT status FROM patients WHERE id = $1`, [lead])).rows[0].status).toBe('DISCHARGED');
+    await seedPatientStatus(pool, lead, 'ACTIVE'); // o teste 8 lê admissionStatus DONE dos dois
   });
 
   it('8. listagem devolve admissionStatus (o que o Kanban lê)', async () => {
@@ -235,48 +246,42 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
   });
 
   // ── 9. Saída de SUSPENDED com motivo (migration 486, decisão do Gabriel 29/09/2026) ────────────
-  it('9. SUSPENDED → SEARCHING sem motivo: 422; com motivo: 200 + history com reason/actor_uid; REPLACEMENT e ON_HOLD também aceitos', async () => {
-    // `active` está em ACTIVE (teste 5 devolveu) — leva a SUSPENDED primeiro.
+  it('9. F5: SUSPENDED → SEARCHING/REPLACEMENT pelo PUT é NOT_MANUAL (com ou sem motivo); SUSPENDED → ON_HOLD exige os DOIS motivos e grava reason + actor_uid', async () => {
+    // `active` está em ACTIVE (teste 5 devolveu por SQL) — ACTIVE → SUSPENDED é manual e livre.
     expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'SUSPENDED' }, asAdmin)).status).toBe(200);
+    const trilha = async () => Number((await pool.query(`SELECT count(*) AS n FROM patient_status_history WHERE patient_id = $1`, [active])).rows[0].n);
+    const antes = await trilha();
 
-    // 9a. sem motivo → 422, nada muda.
-    let r = await api.put(`/api/admin/patients/${active}/status`, { status: 'SEARCHING' }, asAdmin);
-    expect(r.status).toBe(422);
-    expect(r.data.code).toBe('SUSPENSION_EXIT_REASON_REQUIRED');
+    // 9a. destino derivado: recusa ANTES da régua do motivo — mesmo sem suspensionExitReason o código é NOT_MANUAL.
+    for (const body of [
+      { status: 'SEARCHING' },
+      { status: 'SEARCHING', suspensionExitReason: 'RESUMED_SERVICE' },
+      { status: 'REPLACEMENT', suspensionExitReason: 'NEEDS_NEW_WORKER' },
+    ]) {
+      const r = await api.put(`/api/admin/patients/${active}/status`, body, asAdmin);
+      expect(r.status).toBe(422);
+      expect(r.data.code).toBe('PATIENT_STATUS_NOT_MANUAL');
+    }
     expect((await pool.query(`SELECT status FROM patients WHERE id = $1`, [active])).rows[0].status).toBe('SUSPENDED');
+    expect(await trilha()).toBe(antes);
 
-    // 9b. motivo fora do enum → 400 (zod).
-    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'SEARCHING', suspensionExitReason: 'PORQUE_SI' }, asAdmin)).status).toBe(400);
-
-    // 9c. com motivo → 200; banco e history com reason + actor_uid.
-    r = await api.put(`/api/admin/patients/${active}/status`, { status: 'SEARCHING', suspensionExitReason: 'RESUMED_SERVICE' }, asAdmin);
-    expect(r.status).toBe(200);
-    const hist = (await api.get(`/api/admin/patients/${active}/status-history`, asAdmin)).data.data.history as Array<Record<string, unknown>>;
-    expect(hist[0]).toMatchObject({
-      from: 'SUSPENDED', to: 'SEARCHING', source: 'admin_panel', reason: 'RESUMED_SERVICE', actorUid: asAdmin.uid,
-    });
-
-    // 9d. SUSPENDED → REPLACEMENT com motivo. `active` está em SEARCHING (9c) e o catálogo (315)
-    // não tem `SEARCHING → SUSPENDED` direto (só ACTIVE/REPLACEMENT entram em SUSPENDED) —
-    // detour por ACTIVE (catálogo 315 + checklist já satisfeito desde o beforeAll) para voltar
-    // a SUSPENDED sem inventar uma transição que a 315/473/485 nunca abriram.
-    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'ACTIVE' }, asAdmin)).status).toBe(200);
-    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'SUSPENDED' }, asAdmin)).status).toBe(200);
-    r = await api.put(`/api/admin/patients/${active}/status`, { status: 'REPLACEMENT', suspensionExitReason: 'NEEDS_NEW_WORKER' }, asAdmin);
-    expect(r.status).toBe(200);
-
-    // 9e. SUSPENDED → ON_HOLD exige OS DOIS motivos (onHoldReason continua obrigatório).
-    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'SUSPENDED' }, asAdmin)).status).toBe(200);
-    r = await api.put(`/api/admin/patients/${active}/status`, { status: 'ON_HOLD', suspensionExitReason: 'OTHER' }, asAdmin);
+    // 9b. SUSPENDED → ON_HOLD exige OS DOIS motivos; motivo fora do enum → 400 (zod).
+    let r = await api.put(`/api/admin/patients/${active}/status`, { status: 'ON_HOLD', suspensionExitReason: 'OTHER' }, asAdmin);
     expect(r.status).toBe(422);
     expect(r.data.code).toBe('ON_HOLD_REASON_REQUIRED');
     r = await api.put(`/api/admin/patients/${active}/status`, { status: 'ON_HOLD', onHoldReason: 'SCHOOL' }, asAdmin);
     expect(r.status).toBe(422);
     expect(r.data.code).toBe('SUSPENSION_EXIT_REASON_REQUIRED');
+    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'ON_HOLD', onHoldReason: 'SCHOOL', suspensionExitReason: 'PORQUE_SI' }, asAdmin)).status).toBe(400);
+    expect((await pool.query(`SELECT status FROM patients WHERE id = $1`, [active])).rows[0].status).toBe('SUSPENDED');
+
+    // 9c. com os dois → 200; history com reason + actor_uid (migration 486).
     r = await api.put(`/api/admin/patients/${active}/status`, { status: 'ON_HOLD', onHoldReason: 'SCHOOL', suspensionExitReason: 'OTHER' }, asAdmin);
     expect(r.status).toBe(200);
+    const hist = (await api.get(`/api/admin/patients/${active}/status-history`, asAdmin)).data.data.history as Array<Record<string, unknown>>;
+    expect(hist[0]).toMatchObject({ from: 'SUSPENDED', to: 'ON_HOLD', source: 'admin_panel', reason: 'OTHER', actorUid: asAdmin.uid });
 
-    // resgate: devolve `active` para ACTIVE (não afeta outro teste — este é o último do arquivo).
-    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'ACTIVE' }, asAdmin)).status).toBe(200);
+    // resgate por SQL (derivado não se monta pelo PUT) — este é o último teste do arquivo.
+    await seedPatientStatus(pool, active, 'ACTIVE');
   });
 });

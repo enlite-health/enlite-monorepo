@@ -12,7 +12,7 @@
  *
  *  T1 FELIZ         ADMISSION COM diagnóstico → o foguete cria a vaga e o paciente sai para Búsqueda.
  *  T2 ALTERNATIVO 1 ADMISSION SEM diagnóstico → checklist acusa "Diagnóstico" (bloqueante), o rótulo do
- *                   card leva `*`, o foguete fica desabilitado nomeando o item, e a API recusa (422).
+ *                   card leva `*`, o foguete fica desabilitado nomeando o item, e a API recusa (422): o foguete direto (DIAGNOSIS) e o PUT de estado (NOT_MANUAL).
  *  T3 ALTERNATIVO 2 o mesmo paciente: o operador ADICIONA o diagnóstico pelo drawer (busca CID-11, clique)
  *                   → o item some do checklist, o foguete libera e o paciente sai para Búsqueda.
  */
@@ -97,16 +97,26 @@ test.describe('Diagnóstico obrigatório na saída da admissão @integration', (
       await expect(foguete).toBeDisabled();
       await expect(foguete).toHaveAttribute('title', /Diagnóstico/);
 
-      // 4. A trava é do SERVIDOR: pular a tela não escapa dela.
-      const res = await request.put(`${backendUrl()}/api/admin/patients/${patient.patientId}/status`, {
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        data: { status: 'SEARCHING', changeSource: 'kanban' },
-      });
-      expect(res.status()).toBe(422);
-      const corpo = (await res.json()) as { code: string; details: { missing: string[] } };
-      expect(corpo.code).toBe('PATIENT_STATUS_NOT_READY');
+      // 4. A trava é do SERVIDOR: pular a tela não escapa dela — nem pelo foguete chamado direto à API...
+      const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      const direto = await request.post(
+        `${backendUrl()}/api/admin/patients/${patient.patientId}/contracted-services/${patient.serviceId}/activate-recruitment`,
+        { headers, data: {} },
+      );
+      expect(direto.status()).toBe(422);
+      const corpo = (await direto.json()) as { code: string; details: { missing: string[] } };
+      expect(corpo.code).toBe('PATIENT_NOT_READY');
       expect(corpo.details.missing).toContain('DIAGNOSIS');
+      // ...nem pelo PUT de estado: Búsqueda não se escolhe à mão (F5), pela origem que for.
+      for (const changeSource of ['kanban', 'admin_panel']) {
+        const res = await request.put(`${backendUrl()}/api/admin/patients/${patient.patientId}/status`, {
+          headers, data: { status: 'SEARCHING', changeSource },
+        });
+        expect(res.status()).toBe(422);
+        expect(((await res.json()) as { code: string }).code).toBe('PATIENT_STATUS_NOT_MANUAL');
+      }
       expect(runSQL(`SELECT status FROM patients WHERE id = '${patient.patientId}'`).trim()).toBe('ADMISSION');
+      expect(runSQL(`SELECT count(*) FROM job_postings WHERE patient_id = '${patient.patientId}'`).trim()).toBe('0');
     } finally {
       patient.cleanup();
     }

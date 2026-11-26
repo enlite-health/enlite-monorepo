@@ -6,7 +6,7 @@
  * `lancamento-talentum-recusa-nao-move`:
  *   7. quando a Talentum RECUSA o `POST /projects` (502, `stub.mode = 'reject'`),
  *      o publish falha ANTES do commit (`PublishVacancyToTalentumUseCase.ts:159-179` roda antes
- *      da UPDATE de `:195-207` e do gancho pós-commit `:235-240`) — a vaga continua rascunho
+ *      da UPDATE de `:195-207`) — a vaga continua rascunho
  *      (`is_draft = true`, `talentum_project_id` nulo), o paciente continua `ADMISSION`, a
  *      trilha `vacancy_launch` fica em 0. A tela mostra o
  *      erro (`publishError`, `TalentumConfigPage.tsx:134-138`) sem sair de `/talentum`. Controle:
@@ -14,8 +14,8 @@
  *      recusa é do stub, no mesmo processo do teste, nunca de rede).
  *
  *   Alternativo, no MESMO teste: `stub.mode = 'accept'` e publicar de novo — mesmo botão, mesma
- *      tela, sem reload — → 200 → `SEARCHING`, trilha 1 (a recusa não deixa
- *      estado que impeça o lançamento seguinte).
+ *      tela, sem reload — → 200 e o paciente continua `ADMISSION`, trilha 0 (estado-automatico-do-paciente, D1: o
+ *      envio aceito também NÃO move o paciente; a recusa não deixa estado que impeça o envio seguinte).
  *
  * Compatíveis (`stages.COMPATIBLE`) é da Fase 4, fora da rota (b) (D455): a asserção sai daqui e
  * volta na rota (a).
@@ -88,7 +88,7 @@ test.describe('funil-vacante lancamento recusa @integration', () => {
 
       // (1) Foguete pela ficha.
       const vacancyId = await clickFoguete(page, patient.patientId, patient.serviceId);
-      // D469: o foguete já moveu o paciente; devolve ao funil para provar o gancho do ENVIO (vacancy_launch).
+      // D469: o foguete já moveu o paciente; devolve ao funil por SQL para provar que nem o envio recusado nem o aceito o move (D1).
       devolverPacienteAoFunil(patient.patientId);
 
       // (2) Borrador → wizard (profissão AT, salário, meet) → /talentum.
@@ -149,12 +149,12 @@ test.describe('funil-vacante lancamento recusa @integration', () => {
       await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyId}$`), { timeout: 15_000 });
 
       const statusAfterAccept = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
-      expect(statusAfterAccept, 'paciente SEARCHING depois do lançamento aceito').toBe('SEARCHING');
+      expect(statusAfterAccept, 'paciente continua ADMISSION depois do lançamento aceito (o envio não move — D1)').toBe('ADMISSION');
 
       const trailAfterAccept = countLaunchTrail(patient.patientId);
-      expect(trailAfterAccept, 'trilha vacancy_launch = 1 depois do lançamento aceito').toBe(1);
+      expect(trailAfterAccept, 'trilha vacancy_launch = 0 depois do lançamento aceito').toBe(0);
 
-      // D466: nesta rota o lançamento só move o paciente — o match NÃO roda, então a vaga não
+      // D466: nesta rota o match NÃO roda no lançamento, então a vaga não
       // ganha nenhuma linha INVITED/system (o convite automático pularia quem já tem linha).
       // `w` foi semeado perto da coordenada: com o match religado ele seria gravado aqui.
       const systemInvitedAfterAccept = countSystemInvitedApplications(vacancyId);

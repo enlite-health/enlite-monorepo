@@ -26,23 +26,41 @@ export interface UpdatePatientStatusPayload {
   suspensionExitReason?: string | null;
 }
 
-/**
- * Um destino de GET /api/admin/patients/:id/status-options (spec 051). A lista é do SERVIDOR: a
- * tela não decide permissão nem FSM. `via` só informa (fluxo normal × liberado por permissão) —
- * não é motivo de aviso. `blockedBy` = códigos de completude (os mesmos do checklist da ficha).
- */
-export interface PatientStatusOption {
-  status: PatientStatus;
+/** As ações humanas sobre o estado (F3, D5/D9) — o servidor decide o que existe e para onde vai; a tela só lista e pede. */
+export const PATIENT_STATUS_ACTIONS = ['pausar', 'suspender', 'dar_alta', 'dar_baja', 'retomar', 'reativar'] as const;
+export type PatientStatusActionName = (typeof PATIENT_STATUS_ACTIONS)[number];
+
+/** O que a tela coleta antes de pedir a ação (motivo fechado; nunca texto clínico). */
+export type PatientStatusActionRequirement = 'onHoldReason' | 'suspensionExitReason';
+
+/** Uma ação de GET /api/admin/patients/:id/status-actions. `destino` de retomar/reativar é o RE-DERIVADO: a tela o mostra, nunca o envia. */
+export interface PatientStatusActionOption {
+  acao: PatientStatusActionName;
+  destino: PatientStatus;
   via: 'fluxo' | 'permissao';
-  /** + `ACTIVE_ALLOCATION` (D489/D530): alocação viva no itinerário bloqueia TODO destino. */
+  exige: PatientStatusActionRequirement[];
   blockedBy?: Array<PatientCompletenessCode | 'ACTIVE_ALLOCATION'>;
 }
 
-export interface PatientStatusOptions {
+export interface PatientStatusActions {
   current: PatientStatus | null;
-  /** Origem com que o servidor calculou a lista: tem de ser a pedida (e a do PUT que vai sair). */
-  changeSource: PatientStatusChangeSource;
-  options: PatientStatusOption[];
+  actions: PatientStatusActionOption[];
+}
+
+/** Body de POST /api/admin/patients/:id/status-actions — sem destino, de propósito (o servidor o calcula). */
+export interface PatientStatusActionPayload {
+  action: PatientStatusActionName;
+  onHoldReason?: string | null;
+  /** Texto clínico restrito (pacote D211.2) — nunca logado. */
+  onHoldNote?: string | null;
+  suspensionExitReason?: string | null;
+}
+
+export interface PatientStatusActionResult {
+  id: string;
+  action: PatientStatusActionName;
+  from: PatientStatus | null;
+  status: PatientStatus;
 }
 
 /** Uma linha de GET /api/admin/patients/:id/status-history — sem nota clínica (C7.3). */

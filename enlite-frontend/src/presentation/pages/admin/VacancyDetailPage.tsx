@@ -255,6 +255,9 @@ export default function VacancyDetailPage() {
         <div className="flex flex-col gap-5">
           <VacancyCaseCard
             status={vacancy.status ?? '—'}
+            lifecycle={vacancy.lifecycle ?? null}
+            patientStatus={vacancy.patient_status ?? null}
+            resumeStatus={vacancy.resumeStatus}
             caseNumber={vacancy.case_number ?? null}
             dependencyLevel={vacancy.dependency_level ?? null}
             profession={
@@ -275,7 +278,6 @@ export default function VacancyDetailPage() {
             onStatusChange={isDeBaja ? undefined : handleStatusChange}
             isStatusSaving={statusSaving}
             hasService={hasService}
-            statusBeforeHold={vacancy.status_before_hold ?? null}
           />
           {showBajaButton && (
             <div>

@@ -6,16 +6,18 @@
  * REAL) + Postgres REAL + tabelas `iam.*` reais. SEM MOCK: nem de banco, nem de writer, nem de controller.
  * Sem canal real (nada aqui fala com Twilio/Periskope/ClickUp). Dados sintéticos (`fora-fluxo-051-*`).
  *
- * O que só este nível prova (o unit usa banco de mentira):
- *   A9  — as 7 células `patient_status:move_to_*` entram no catálogo PELO SYNC e o Acesso Master as
- *         recebe sem migration por célula (D338); nenhum outro grupo as tem;
- *   A2  — conta com `patient:update` + a célula do destino faz a troca fora do fluxo → 200; lido de
- *         volta: `patients.status` e a linha de `patient_status_history` com
- *         `change_source='admin_panel_override'` e `actor_uid`; serviço contratado intacto;
+ * O que só este nível prova (o unit usa banco de mentira). F5 (estado-automatico-do-paciente): só os 4 destinos HUMANOS
+ * (ON_HOLD, SUSPENDED, ALTA, DISCHARGED) têm célula `patient_status:move_to_*`; SEARCHING/REPLACEMENT/ACTIVE saíram do catálogo e o
+ * PUT para eles é 422 PATIENT_STATUS_NOT_MANUAL (o ator que tem as 3 células antigas é provado na suíte de ataque, não aqui):
+ *   A9  — as 4 células entram no catálogo PELO SYNC e o Acesso Master as recebe sem migration por célula (D338); as 3 antigas NÃO
+ *         existem vivas; nenhum outro grupo as tem;
+ *   A2  — conta com `patient:update` + a célula do destino faz a troca fora do fluxo (ON_HOLD → SUSPENDED, par fora da FSM) → 200;
+ *         lido de volta: `patients.status` e a linha de `patient_status_history` com `change_source='admin_panel_override'` e
+ *         `actor_uid`; serviço contratado intacto;
  *   A3  — a mesma conta SEM a célula → 403 com `details.cell`; status e histórico inalterados;
- *   A4  — a integridade vale COM a célula (SEARCHING sem horário / sem serviço → 422, nada gravado);
+ *   A4  — destino derivado pelo PUT é NOT_MANUAL mesmo para a conta com células (nunca 403, nunca 200), nada gravado;
  *   A5  — troca dentro do fluxo grava `admin_panel` (sem override); corpo com `*_override` → 400;
- *   F3  — `GET /status-options` coerente com as duas contas e exige `patient:update`.
+ *   F3  — a rota `GET /status-options` foi REMOVIDA (404 para todas as contas); as ações vivem em `status-actions`.
  * Roda no job `backend-e2e` do CI (`npm run test:e2e`, mesma convenção dos irmãos: URL do banco lida
  * dentro da função, nunca `throw` no import).
  */
@@ -40,14 +42,14 @@ const DATABASE_URL =
 
 const MASTER_GROUP = 'a0000000-0000-0000-0000-000000000001';
 const CELULAS = [
-  'searching', 'active', 'replacement', 'on_hold', 'suspended', 'alta', 'discharged',
+  'on_hold', 'suspended', 'alta', 'discharged',
 ].map((d) => ['patient_status', `move_to_${d}`] as [string, string]);
 const TAG = 'fora-fluxo-051-';
 // spec 056: o horário do serviço = faixas em patient_itinerary_slot (08:00 + 240 min = 12:00)
 const HORARIO = [{ dayOfWeek: 1, startTime: '08:00', durationMinutes: 240 }];
 
 const U = {
-  operadora: 'ff051-operadora', // patient:read+update + a célula move_to_searching (e move_to_on_hold)
+  operadora: 'ff051-operadora', // patient:read+update + as células move_to_suspended e move_to_on_hold
   semCelula: 'ff051-sem-celula', // patient:read+update, NENHUMA patient_status:*
   leitora: 'ff051-leitora', // só patient:read
 };
@@ -73,9 +75,9 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
 
   async function paciente(sufixo: string, status: string, servico: 'completo' | 'sem_horario' | 'nenhum'): Promise<string> {
     const id = (await admin.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status)
-       VALUES ($1, 'Fora', 'Fluxo', 'AR', $2) RETURNING id`,
-      [`${TAG}${sufixo}`, status],
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, on_hold_reason)
+       VALUES ($1, 'Fora', 'Fluxo', 'AR', $2, $3) RETURNING id`,
+      [`${TAG}${sufixo}`, status, status === 'ON_HOLD' ? 'OTHER' : null],
     )).rows[0].id;
     // Pedido do Javier: sair de ADMISSION exige ≥1 diagnóstico CID-11 ATIVO (o d469 move ADMISSION → SEARCHING).
     if (status === 'ADMISSION') await seedPatientDiagnosis(admin, id);
@@ -146,7 +148,7 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
       },
     });
 
-    // ── A9: o SYNC do catálogo declara as 7 células e o Master as recebe, sem migration por célula.
+    // ── A9: o SYNC do catálogo declara as 4 células e o Master as recebe, sem migration por célula.
     const antes = await admin.query(`SELECT 1 FROM iam.permissions WHERE resource = 'patient_status'`);
     criadasPelaSuite = antes.rowCount === 0;
     const vivas = await admin.query<{ resource: string; action: string }>(
@@ -167,7 +169,7 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
     );
     await grupoComCelulas(admin, {
       nome: GRUPOS.operadora, uid: U.operadora,
-      celulas: [['patient', 'read'], ['patient', 'update'], ['patient_status', 'move_to_searching'], ['patient_status', 'move_to_on_hold']],
+      celulas: [['patient', 'read'], ['patient', 'update'], ['patient_status', 'move_to_suspended'], ['patient_status', 'move_to_on_hold']],
     });
     await grupoComCelulas(admin, { nome: GRUPOS.semCelula, uid: U.semCelula, celulas: [['patient', 'read'], ['patient', 'update']] });
     await grupoComCelulas(admin, { nome: GRUPOS.leitora, uid: U.leitora, celulas: [['patient', 'read']] });
@@ -184,19 +186,25 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
     await admin.end();
   });
 
-  it('A9. o sync põe as 7 células ativas e com descrição no catálogo; o Acesso Master as recebe; nenhum outro grupo (fora os da suíte)', async () => {
+  it('A9. o sync põe as 4 células ativas e com descrição no catálogo (e as 3 antigas NÃO existem vivas); o Acesso Master as recebe; nenhum outro grupo (fora os da suíte)', async () => {
     const cat = await admin.query(
       `SELECT action, description FROM iam.permissions WHERE resource = 'patient_status' AND deprecated_at IS NULL ORDER BY action`,
     );
     expect(cat.rows.map((r) => r.action)).toEqual(CELULAS.map(([, a]) => a).sort());
     expect(cat.rows.every((r) => typeof r.description === 'string' && r.description.length > 0)).toBe(true);
+    const antigas = await admin.query(
+      `SELECT action FROM iam.permissions WHERE resource = 'patient_status' AND deprecated_at IS NULL
+          AND action = ANY($1)`,
+      [['searching', 'active', 'replacement'].map((d) => `move_to_${d}`)], // os 3 destinos derivados (nomes montados: a varredura literal da F5 dá 0)
+    );
+    expect(antigas.rows).toEqual([]);
 
     const master = await admin.query(
       `SELECT count(*)::int AS n FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
-        WHERE gp.group_id = $1 AND p.resource = 'patient_status'`,
+        WHERE gp.group_id = $1 AND p.resource = 'patient_status' AND p.deprecated_at IS NULL`,
       [MASTER_GROUP],
     );
-    expect(master.rows[0].n).toBe(7);
+    expect(master.rows[0].n).toBe(4);
     // controle positivo: a mesma consulta acha as células `patient:*` do Master (prova que ela enxergaria)
     const controle = await admin.query(
       `SELECT count(*)::int AS n FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
@@ -208,38 +216,37 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
     const outros = await admin.query(
       `SELECT DISTINCT g.name FROM iam.group_permissions gp
          JOIN iam.permissions p ON p.id = gp.permission_id JOIN iam.permission_groups g ON g.id = gp.group_id
-        WHERE p.resource = 'patient_status' AND gp.group_id <> $1 AND g.name <> ALL($2)`,
+        WHERE p.resource = 'patient_status' AND p.deprecated_at IS NULL AND gp.group_id <> $1 AND g.name <> ALL($2)`,
       [MASTER_GROUP, Object.values(GRUPOS)],
     );
     expect(outros.rows).toEqual([]);
   });
 
-  // Par de exemplo trocado no sync main→stage (16/10): a migration 485 da stage pôs ACTIVE→SEARCHING no fluxo;
-  // DISCHARGED→SEARCHING está fora do fluxo nos dois lados.
-  it('A2. patient:update + move_to_searching: DISCHARGED → SEARCHING (fora do fluxo) = 200; banco e histórico lidos de volta; serviço intacto', async () => {
-    const id = await paciente('a2', 'DISCHARGED', 'completo');
+  // ON_HOLD → SUSPENDED não está na FSM (a 315 só leva ACTIVE/REPLACEMENT a SUSPENDED): par fora do fluxo, destino humano.
+  it('A2. patient:update + move_to_suspended: ON_HOLD → SUSPENDED (fora do fluxo) = 200; banco e histórico lidos de volta; serviço intacto', async () => {
+    const id = await paciente('a2', 'ON_HOLD', 'completo');
     const servicoAntes = (await admin.query(`SELECT updated_at FROM patient_contracted_services WHERE patient_id = $1`, [id])).rows;
-    const fsm = await admin.query(`SELECT 1 FROM patient_status_transitions WHERE from_status = 'DISCHARGED' AND to_status = 'SEARCHING'`);
+    const fsm = await admin.query(`SELECT 1 FROM patient_status_transitions WHERE from_status = 'ON_HOLD' AND to_status = 'SUSPENDED'`);
     expect(fsm.rowCount).toBe(0); // premissa: o par está FORA do fluxo nesta base
 
-    const r = await http('PUT', `/api/admin/patients/${id}/status`, U.operadora, { status: 'SEARCHING' });
+    const r = await http('PUT', `/api/admin/patients/${id}/status`, U.operadora, { status: 'SUSPENDED' });
     expect(r.status).toBe(200);
-    expect(r.body.data).toEqual({ id, status: 'SEARCHING' });
-    expect(await estado(id)).toBe('SEARCHING');
+    expect(r.body.data).toEqual({ id, status: 'SUSPENDED' });
+    expect(await estado(id)).toBe('SUSPENDED');
     expect(await historico(id)).toEqual([
-      { old_value: 'DISCHARGED', new_value: 'SEARCHING', change_source: 'admin_panel_override', actor_uid: U.operadora },
+      { old_value: 'ON_HOLD', new_value: 'SUSPENDED', change_source: 'admin_panel_override', actor_uid: U.operadora },
     ]);
     const servicoDepois = (await admin.query(`SELECT updated_at FROM patient_contracted_services WHERE patient_id = $1`, [id])).rows;
     expect(servicoDepois).toEqual(servicoAntes);
   });
 
   it('A3. a conta SEM a célula: 403 com details.cell; status e histórico inalterados', async () => {
-    const id = await paciente('a3', 'DISCHARGED', 'completo');
-    const r = await http('PUT', `/api/admin/patients/${id}/status`, U.semCelula, { status: 'SEARCHING' });
+    const id = await paciente('a3', 'ON_HOLD', 'completo');
+    const r = await http('PUT', `/api/admin/patients/${id}/status`, U.semCelula, { status: 'SUSPENDED' });
     expect(r.status).toBe(403);
     expect(r.body.code).toBe('PATIENT_STATUS_MOVE_NOT_PERMITTED');
-    expect(r.body.details).toEqual({ from: 'DISCHARGED', to: 'SEARCHING', cell: 'patient_status:move_to_searching' });
-    expect(await estado(id)).toBe('DISCHARGED');
+    expect(r.body.details).toEqual({ from: 'ON_HOLD', to: 'SUSPENDED', cell: 'patient_status:move_to_suspended' });
+    expect(await estado(id)).toBe('ON_HOLD');
     expect(await historico(id)).toEqual([]);
   });
 
@@ -254,78 +261,44 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
     expect(await estado(id)).toBe('ON_HOLD');
   });
 
-  it('A4. a integridade vale COM a célula: SEARCHING sem horário e sem serviço → 422, nada gravado', async () => {
+  it('A4. destino DERIVADO pelo PUT é NOT_MANUAL até para a conta com células (nunca 403/200), com ficha completa ou não; nada gravado', async () => {
+    const completo = await paciente('a4c', 'DISCHARGED', 'completo');
     const semHorario = await paciente('a4h', 'DISCHARGED', 'sem_horario');
-    const r1 = await http('PUT', `/api/admin/patients/${semHorario}/status`, U.operadora, { status: 'SEARCHING' });
-    expect(r1.status).toBe(422);
-    expect(r1.body.code).toBe('PATIENT_STATUS_NOT_READY');
-    expect(r1.body.details.missing).toEqual(['SERVICE_SCHEDULE']);
-    expect(await estado(semHorario)).toBe('DISCHARGED');
-    expect(await historico(semHorario)).toEqual([]);
-
     const semServico = await paciente('a4s', 'DISCHARGED', 'nenhum');
-    const r2 = await http('PUT', `/api/admin/patients/${semServico}/status`, U.operadora, { status: 'SEARCHING' });
-    expect(r2.status).toBe(422);
-    expect(r2.body.details.missing).toContain('CONTRACTED_SERVICE');
-    expect(await estado(semServico)).toBe('DISCHARGED');
-  });
-
-  it('F3. status-options: coerente com as duas contas; blockedBy nos destinos que o PUT recusaria; exige patient:update', async () => {
-    const id = await paciente('f3', 'DISCHARGED', 'completo');
-    const fsmDeDischarged = (await admin.query<{ to_status: string }>(
-      `SELECT to_status FROM patient_status_transitions WHERE from_status = 'DISCHARGED'`,
-    )).rows.map((r) => r.to_status).sort();
-
-    const com = await http('GET', `/api/admin/patients/${id}/status-options`, U.operadora);
-    expect(com.status).toBe(200);
-    expect(com.body.data.current).toBe('DISCHARGED');
-    const viaPermissao = (com.body.data.options as Array<{ status: string; via: string }>).filter((o) => o.via === 'permissao').map((o) => o.status).sort();
-    // as duas células da operadora (move_to_searching, move_to_on_hold) dão destinos que o fluxo de DISCHARGED não dá
-    expect(viaPermissao).toEqual(['ON_HOLD', 'SEARCHING'].filter((s) => !fsmDeDischarged.includes(s)));
-    expect(com.body.data.options.map((o: { status: string }) => o.status)).not.toContain('DISCHARGED');
-
-    const sem = await http('GET', `/api/admin/patients/${id}/status-options`, U.semCelula);
-    expect(sem.status).toBe(200);
-    expect((sem.body.data.options as Array<{ status: string }>).map((o) => o.status).sort()).toEqual(fsmDeDischarged);
-    expect((sem.body.data.options as Array<{ via: string }>).every((o) => o.via === 'fluxo')).toBe(true);
-
-    // o que a lista oferece o PUT aceita; o que não oferece o PUT recusa (A6, no nível do HTTP)
-    expect((await http('PUT', `/api/admin/patients/${id}/status`, U.semCelula, { status: 'SEARCHING' })).status).toBe(403);
-
-    const incompleto = await paciente('f3b', 'DISCHARGED', 'sem_horario');
-    const blk = await http('GET', `/api/admin/patients/${incompleto}/status-options`, U.operadora);
-    expect((blk.body.data.options as Array<{ status: string; blockedBy?: string[] }>).find((o) => o.status === 'SEARCHING'))
-      .toEqual({ status: 'SEARCHING', via: 'permissao', blockedBy: ['SERVICE_SCHEDULE'] });
-
-    const leitora = await http('GET', `/api/admin/patients/${id}/status-options`, U.leitora);
-    expect(leitora.status).toBe(403);
-  });
-
-  it('F3/D469. paciente do FUNIL: a lista depende da origem — kanban oferece SEARCHING e o PUT kanban é aceito; admin_panel não oferece e o PUT admin_panel é recusado; system → 400', async () => {
-    const id = await paciente('d469', 'ADMISSION', 'completo');
-    const opcoes = async (qs: string) => (await http('GET', `/api/admin/patients/${id}/status-options${qs}`, U.semCelula));
-
-    const kanban = await opcoes('?changeSource=kanban');
-    expect(kanban.status).toBe(200);
-    expect(kanban.body.data.changeSource).toBe('kanban');
-    expect((kanban.body.data.options as Array<{ status: string }>).map((o) => o.status)).toContain('SEARCHING');
-
-    for (const qs of ['', '?changeSource=admin_panel']) {
-      const painel = await opcoes(qs);
-      expect(painel.status).toBe(200);
-      expect(painel.body.data.changeSource).toBe('admin_panel');
-      expect((painel.body.data.options as Array<{ status: string }>).map((o) => o.status)).not.toContain('SEARCHING');
+    for (const id of [completo, semHorario, semServico]) {
+      for (const status of ['SEARCHING', 'REPLACEMENT', 'ACTIVE']) {
+        for (const uid of [U.operadora, U.semCelula]) {
+          const r = await http('PUT', `/api/admin/patients/${id}/status`, uid, { status });
+          expect(r.status).toBe(422);
+          expect(r.body).toMatchObject({ code: 'PATIENT_STATUS_NOT_MANUAL', details: { to: status, changeSource: 'admin_panel' } });
+        }
+      }
+      expect(await estado(id)).toBe('DISCHARGED');
+      expect(await historico(id)).toEqual([]);
     }
-    expect((await opcoes('?changeSource=system')).status).toBe(400);
-    expect((await opcoes('?changeSource=admin_panel_override')).status).toBe(400);
+  });
 
-    // o PUT concorda com a lista, nas duas origens (a completude do fluxo normal passa: serviço com horário)
-    const recusado = await http('PUT', `/api/admin/patients/${id}/status`, U.semCelula, { status: 'SEARCHING', changeSource: 'admin_panel' });
-    expect(recusado.status).toBe(422);
+  it('F3. a rota GET status-options foi REMOVIDA: 404 para a conta com células, a sem células e a leitora; status-actions segue de pé (controle positivo)', async () => {
+    const id = await paciente('f3', 'DISCHARGED', 'completo');
+    for (const uid of [U.operadora, U.semCelula, U.leitora]) {
+      expect((await http('GET', `/api/admin/patients/${id}/status-options`, uid)).status).toBe(404);
+    }
+    const acoes = await http('GET', `/api/admin/patients/${id}/status-actions`, U.operadora);
+    expect(acoes.status).toBe(200);
+  });
+
+  it('F3/D469. paciente do FUNIL (ADMISSION): kanban e admin_panel pedindo SEARCHING são NOT_MANUAL (só o foguete sai do funil); estado e trilha intactos', async () => {
+    const id = await paciente('d469', 'ADMISSION', 'completo');
+    for (const changeSource of ['kanban', 'admin_panel']) {
+      const r = await http('PUT', `/api/admin/patients/${id}/status`, U.semCelula, { status: 'SEARCHING', changeSource });
+      expect(r.status).toBe(422);
+      expect(r.body).toMatchObject({ code: 'PATIENT_STATUS_NOT_MANUAL', details: { to: 'SEARCHING', changeSource } });
+    }
     expect(await estado(id)).toBe('ADMISSION');
-    const aceito = await http('PUT', `/api/admin/patients/${id}/status`, U.semCelula, { status: 'SEARCHING', changeSource: 'kanban' });
-    expect(aceito.status).toBe(200);
-    expect(await estado(id)).toBe('SEARCHING');
-    expect((await historico(id)).map((h) => h.change_source)).toEqual(['kanban']); // funil→SEARCHING está na FSM (479): sem override
+    expect(await historico(id)).toEqual([]);
+    // o kanban também não anda dentro do funil (qualquer destino)
+    const k = await http('PUT', `/api/admin/patients/${id}/status`, U.semCelula, { status: 'PENDING_ADMISSION', changeSource: 'kanban' });
+    expect(k.status).toBe(422);
+    expect(k.body.code).toBe('PATIENT_STATUS_NOT_MANUAL');
   });
 });

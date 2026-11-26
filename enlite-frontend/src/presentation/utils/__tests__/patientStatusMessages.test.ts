@@ -44,8 +44,9 @@ describe('friendlyStatusMessage', () => {
     expect(friendlyStatusMessage(t, { code: 'ON_HOLD_REASON_REQUIRED' })).toBe('Para dejar al paciente «En espera» indica el motivo (escuela, obra social u otro).');
     expect(friendlyStatusMessage(t, { code: 'SUSPENSION_EXIT_REASON_REQUIRED' })).toBe('Para sacar al paciente de «Suspendido» elige el motivo.');
     expect(friendlyStatusMessage(t, { code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED' })).toBe('Este cambio de estado no está disponible.');
-    expect(friendlyStatusMessage(t, { code: 'STATUS_NOT_OFFERED', to: 'SEARCHING' })).toBe('Este cambio de estado no está disponible.');
-    expect(friendlyStatusMessage(t, { code: 'STATUS_OPTIONS_UNAVAILABLE' })).toBe('No se pudieron comprobar los estados disponibles. Intenta de nuevo.');
+    // F5: o estado derivado é do fluxo automático (422 PATIENT_STATUS_NOT_MANUAL); as recusas locais da lista de destinos saíram.
+    expect(friendlyStatusMessage(t, { code: 'PATIENT_STATUS_NOT_MANUAL', to: 'SEARCHING' })).toBe('Ese estado lo define el flujo automático.');
+    expect(friendlyStatusMessage(t, { code: 'STATUS_NOT_OFFERED' })).toBeNull();
   });
 
   it('código desconhecido ou ausente → null (o chamador usa o genérico dele)', () => {

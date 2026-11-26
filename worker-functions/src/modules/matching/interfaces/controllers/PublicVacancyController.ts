@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
+import { cicloDeVidaSql } from '../../domain/vacancyLifecycle';
 import { logger } from '@shared/logging';
 import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
 import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
@@ -158,6 +159,9 @@ export class PublicVacancyController {
           jp.vacancy_number,
           jp.title,
           jp.status,
+          -- estado-automatico-do-paciente F2 (D3): a página pública mostra SÓ o ciclo de vida (tabela do dono); o estado do
+          -- paciente NÃO sai aqui — nem a coluna entra neste SELECT.
+          ${cicloDeVidaSql('jp')} AS lifecycle,
           -- patient_id so serve para a 2a chamada (rotulo); NUNCA entra na resposta.
           jp.patient_id,
           -- ATENCAO: as duas colunas clinicas do paciente NAO entram aqui -- as duas revelam
@@ -225,6 +229,7 @@ export class PublicVacancyController {
         vacancy_number:         row.vacancy_number,
         title:                  row.title,
         status:                 row.status,
+        lifecycle:              row.lifecycle,
         // Change baja-vacante-por-servico: DE_BAJA é o único status que este endpoint serve
         // sem ser "candidatável" (STATUS_PUBLICAVEL) — a tela usa este campo para não oferecer
         // candidatura e mostrar o badge de desativada, em vez de inferir a partir de `status`

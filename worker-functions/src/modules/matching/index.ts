@@ -59,10 +59,15 @@ export { VacancyCrudController } from './interfaces/controllers/VacancyCrudContr
 export {
   buildInsertQuery,
   buildInsertParams,
-  CANONICAL_STATUSES,
+  clientStatusRefusal,
   SOURCE_LOCKED_FIELDS,
   pickSourceLockedFields,
 } from './interfaces/controllers/vacancyCrudHelpers';
+export {
+  VACANCY_STATUS_VALUES, CICLOS_DE_VIDA, CICLO_POR_STATUS, STATUS_GRAVAVEIS,
+  cicloDeVidaDaVaga, cicloDeVidaSql, isStatusGravavel, isCicloDeVida, statusDeRetomada,
+} from './domain/vacancyLifecycle';
+export type { VacancyStatusValue, CicloDeVida, StatusGravavel } from './domain/vacancyLifecycle';
 export type { VacancyInsertParams, SourceLockedField } from './interfaces/controllers/vacancyCrudHelpers';
 export { VacancyAddressReviewController } from './interfaces/controllers/VacancyAddressReviewController';
 export { VacancySocialLinksController } from './interfaces/controllers/VacancySocialLinksController';

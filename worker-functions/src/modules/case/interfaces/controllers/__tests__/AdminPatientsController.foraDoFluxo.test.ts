@@ -23,7 +23,7 @@ jest.mock('../../../infrastructure/PatientStatusHistoryQueryHelper', () => ({ fe
 import { Request, Response } from 'express';
 import { AdminPatientsController } from '../AdminPatientsController';
 import type { PatientService } from '../../../application/PatientService';
-import { PatientStatusPermissionError } from '../../../application/PatientStatusWriter';
+import { PatientStatusNotManualError, PatientStatusPermissionError } from '../../../application/PatientStatusWriter';
 import type { CreatePatientUseCase } from '../../../application/CreatePatientUseCase';
 
 const ID = '11111111-1111-4111-8111-111111111111';
@@ -41,29 +41,40 @@ describe('AdminPatientsController.updatePatientStatus — troca fora do fluxo (s
   beforeEach(() => jest.clearAllMocks());
 
   it('as células do ator viajam ao serviço: [] continua [] e a ausência continua null (nunca `?? []`)', async () => {
-    const moveStatus = jest.fn().mockResolvedValue({ id: ID, status: 'SEARCHING' });
+    const moveStatus = jest.fn().mockResolvedValue({ id: ID, status: 'SUSPENDED' });
     const ctrl = ctrlCom(moveStatus);
-    const cells = ['patient:update', 'patient_status:move_to_searching'];
-    await ctrl.updatePatientStatus(...reqRes({ status: 'SEARCHING' }, { permissionCells: cells }));
-    await ctrl.updatePatientStatus(...reqRes({ status: 'SEARCHING' }, { permissionCells: [] }));
-    await ctrl.updatePatientStatus(...reqRes({ status: 'SEARCHING' }));
+    const cells = ['patient:update', 'patient_status:move_to_suspended'];
+    await ctrl.updatePatientStatus(...reqRes({ status: 'SUSPENDED' }, { permissionCells: cells }));
+    await ctrl.updatePatientStatus(...reqRes({ status: 'SUSPENDED' }, { permissionCells: [] }));
+    await ctrl.updatePatientStatus(...reqRes({ status: 'SUSPENDED' }));
     expect(moveStatus.mock.calls.map((c) => c[2].cells)).toEqual([cells, [], null]);
   });
 
   it('PatientStatusPermissionError → 403 com code e details {from,to,cell}', async () => {
-    const moveStatus = jest.fn().mockRejectedValue(new PatientStatusPermissionError('ACTIVE', 'SEARCHING', 'patient_status:move_to_searching'));
-    const [req, res] = reqRes({ status: 'SEARCHING' }, { permissionCells: ['patient:update'] });
+    const moveStatus = jest.fn().mockRejectedValue(new PatientStatusPermissionError('ACTIVE', 'SUSPENDED', 'patient_status:move_to_suspended'));
+    const [req, res] = reqRes({ status: 'SUSPENDED' }, { permissionCells: ['patient:update'] });
     await ctrlCom(moveStatus).updatePatientStatus(req, res);
     expect(res.status).toHaveBeenCalledWith(403);
     expect(bodyOf(res)).toMatchObject({
       success: false, code: 'PATIENT_STATUS_MOVE_NOT_PERMITTED',
-      details: { from: 'ACTIVE', to: 'SEARCHING', cell: 'patient_status:move_to_searching' },
+      details: { from: 'ACTIVE', to: 'SUSPENDED', cell: 'patient_status:move_to_suspended' },
     });
   });
 
+  it.each([['admin_panel', 'SEARCHING'], ['admin_panel', 'REPLACEMENT'], ['admin_panel', 'ACTIVE'], ['kanban', 'ON_HOLD']] as const)(
+    'PatientStatusNotManualError (%s → %s) → 422 PATIENT_STATUS_NOT_MANUAL com details {to, changeSource}, só código e nomes de estado',
+    async (changeSource, to) => {
+      const moveStatus = jest.fn().mockRejectedValue(new PatientStatusNotManualError(to, changeSource));
+      const [req, res] = reqRes({ status: to, changeSource }, { permissionCells: ['patient:update'] });
+      await ctrlCom(moveStatus).updatePatientStatus(req, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(bodyOf(res)).toMatchObject({ success: false, code: 'PATIENT_STATUS_NOT_MANUAL', details: { to, changeSource } });
+    },
+  );
+
   it.each(['admin_panel_override', 'kanban_override'])('corpo com changeSource "%s" → 400 e o serviço não é chamado', async (changeSource) => {
     const moveStatus = jest.fn();
-    const [req, res] = reqRes({ status: 'SEARCHING', changeSource }, { permissionCells: ['patient_status:move_to_searching'] });
+    const [req, res] = reqRes({ status: 'SUSPENDED', changeSource }, { permissionCells: ['patient_status:move_to_suspended'] });
     await ctrlCom(moveStatus).updatePatientStatus(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(moveStatus).not.toHaveBeenCalled();
@@ -79,7 +90,7 @@ describe('AdminPatientsController.updatePatientStatus — troca fora do fluxo (s
 
   it('paciente deletado/inexistente → 404 (A4-h)', async () => {
     const moveStatus = jest.fn().mockRejectedValue(new Error(`Patient not found: ${ID}`));
-    const [req, res] = reqRes({ status: 'SEARCHING' }, { permissionCells: ['patient_status:move_to_searching'] });
+    const [req, res] = reqRes({ status: 'SUSPENDED' }, { permissionCells: ['patient_status:move_to_suspended'] });
     await ctrlCom(moveStatus).updatePatientStatus(req, res);
     expect(res.status).toHaveBeenCalledWith(404);
   });

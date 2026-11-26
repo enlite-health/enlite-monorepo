@@ -42,7 +42,7 @@ const cand = (id: string, d: number | null, extra = {}) => ({
   matchScore: null, internalNotes: null, alreadyApplied: false, messagedAt: null, ...extra,
 });
 const ready = (candidates: unknown[], ids: string[]) => ({
-  status: 'ready', error: null, isRefreshing: false, refetch: vi.fn().mockResolvedValue(undefined), reload: vi.fn(), currentIds: new Set(ids),
+  status: 'ready', error: null, isRefreshing: false, refetch: vi.fn().mockResolvedValue(true), reload: vi.fn(), currentIds: new Set(ids),
   results: { jobPostingId: 'v1', operationDate: '2026-11-06', service: { lat: -34.6, lng: -58.4, addressLabel: 'X' }, candidates },
 });
 
@@ -259,7 +259,7 @@ describe('VacancyInvitePage (T026a)', () => {
     });
 
     it('F4/DF-19: ao terminar o envio, alerta só com quem saiu + "M no se enviaron", 1 GET (refetch), linha do erro', async () => {
-      const refetch = vi.fn().mockResolvedValue(undefined);
+      const refetch = vi.fn().mockResolvedValue(true);
       board.value = { ...ready([cand('a', 2), cand('b', 4)], ['a', 'b']), refetch };
       useInviteProgressStore.setState({ enqueue: () => undefined });
       open5();
