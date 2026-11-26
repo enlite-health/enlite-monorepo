@@ -6,6 +6,7 @@ import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogServ
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
 import { ItineraryDailyRunHealthService } from '@shared/events/ItineraryDailyRunHealthService';
+import { TalentumWebhookHealthService, TalentumWebhookHealth } from '@shared/events/TalentumWebhookHealthService';
 import { OutboxProcessor } from '../../infrastructure/OutboxProcessor';
 import { BulkDispatchScheduler } from '../../infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '../../infrastructure/BulkDispatchTalentumScheduler';
@@ -55,6 +56,11 @@ export const SWEEP_SAFE_EVENTS = ['worker.mirror_requested', 'worker.registratio
  * Controller for internal endpoints triggered by Pub/Sub push, Cloud Tasks, and Cloud Scheduler.
  * All endpoints are protected by InternalAuthMiddleware.
  */
+/** Sino do ciclo do webhook do Talentum (implementado por `matching/application/TalentumWebhookAlarmNotifier`). */
+export interface TalentumWebhookCycleNotifier {
+  notifyCycle(health: TalentumWebhookHealth, now: Date): Promise<void>;
+}
+
 export class InternalController {
   constructor(
     private readonly eventProcessor: DomainEventProcessor,
@@ -68,6 +74,10 @@ export class InternalController {
     private readonly ptContactReminderHealthService?: TherapeuticContactReminderHealthService,
     /** spec 069 F4: opcional pelo mesmo motivo — sem ele o bloco da rotina diária do itinerário é omitido. */
     private readonly itineraryDailyRunHealthService?: ItineraryDailyRunHealthService,
+    /** spec 095 F4: opcional pelo mesmo motivo — sem ele o bloco do webhook do Talentum é omitido. */
+    private readonly talentumWebhookHealthService?: TalentumWebhookHealthService,
+    /** spec 095 T-095-42: opcional — sem ele só o WARN sai (o sino com dedup é este colaborador; nunca lança). */
+    private readonly talentumWebhookAlarmNotifier?: TalentumWebhookCycleNotifier,
   ) {}
 
   /**
@@ -329,6 +339,30 @@ export class InternalController {
         logger.warn({ msg: 'itinerary_daily_run_failures', country: f.country, operationDate: f.operationDate, failures: f.failures });
       }
 
+      /**
+       * spec 095 F4 — webhook do Talentum: predicado de ESTADO; reemite 1 WARN por alarme com contagem > 0 a CADA ciclo (heartbeat).
+       * Sem PII (só enum + inteiro). Falha do detector NÃO derruba o health dos outros blocos.
+       */
+      let talentumWebhook: TalentumWebhookHealth | null = null;
+      if (this.talentumWebhookHealthService) {
+        try {
+          const now = new Date();
+          talentumWebhook = await this.talentumWebhookHealthService.getHealth(now);
+          for (const [alarme, quantidade] of Object.entries(talentumWebhook)) {
+            if (quantidade > 0) logger.warn({ msg: 'talentum_webhook_alarm', alarme, quantidade });
+          }
+          // Sino (dedup 24 h em talentum_webhook_alarm_state). A falha vira WARN `sino_falhou` dentro do notificador; o catch abaixo
+          // é só rede de segurança para o health dos outros blocos não cair.
+          if (this.talentumWebhookAlarmNotifier) await this.talentumWebhookAlarmNotifier.notifyCycle(talentumWebhook, now);
+        } catch (e) {
+          talentumWebhook = null;
+          logger.error({ msg: '[talentum-webhook/health] error', error: e instanceof Error ? e.message : String(e) });
+          // Detector cego: sem este WARN a falha só aparece como ERROR e a alert policy (filtra `talentum_webhook_alarm`) não dispara.
+          // Sem a mensagem do erro (o pg pode ecoar dado): só o enum.
+          logger.warn({ msg: 'talentum_webhook_alarm', alarme: 'detector_falhou' });
+        }
+      }
+
       const stuckRows = summary.filter(row => row.stuck);
 
       for (const row of stuckRows) {
@@ -357,6 +391,7 @@ export class InternalController {
         anaCareMirror: mirror,
         ...(ptContactReminders ? { ptContactReminders } : {}),
         ...(itineraryDailyRun ? { itineraryDailyRun } : {}),
+        ...(talentumWebhook ? { talentumWebhook } : {}),
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));

@@ -1,101 +1,191 @@
 /**
- * PrescreeningResponseHandler.test.ts
+ * PrescreeningResponseHandler.test.ts — T-095-21 (spec 095 §3.2): o handler é só o ACK.
  *
- * Foco: PII guard (achado do gate, 2ª rodada) — o log INCOMING mascarava tudo
- * MENOS o e-mail do profile, mesmo caminho de request do achado de 608/7d em
- * ProcessTalentumPrescreening. Não cobre o resto do handler (o `try` chama o
- * use case real, que aqui vai falhar contra um Pool falso — comportamento
- * esperado e fora do escopo deste teste, coberto pelo `catch`).
+ * Guarda na inbox, publica o inboxId e responde 200; NÃO executa o caso de uso.
+ *  (a) insertReceived lança → 503 (nunca 500) + reportError sem PII;
+ *  (b) ProcessTalentumPrescreening não é chamado no ack (espião);
+ *  (c) publish lança → 200 + reportError.
+ * Inbox e publisher são dublês; dados sintéticos; PII nunca aparece em log nem em reportError.
  */
 jest.mock('@shared/logging', () => ({
   ...jest.requireActual('@shared/logging'),
   reportError: jest.fn(),
 }));
 
-import { PrescreeningResponseHandler } from '../PrescreeningResponseHandler';
-import { maskEmailForLog } from '@shared/utils/emailMask';
+import { PrescreeningResponseHandler, parseAck } from '../PrescreeningResponseHandler';
+import { ProcessTalentumPrescreening } from '@modules/matching';
+import { computeBodyHash } from '../../../../domain/TalentumInbox';
 import type { TalentumWebhookContext } from '../TalentumWebhookHandler';
-import type { TalentumPrescreeningResponseParsed } from '../../validators/talentumPrescreeningSchema';
 
-function makePayload(overrides: { email?: string } = {}): TalentumPrescreeningResponseParsed {
+const SENSITIVE_EMAIL = 'candidata.sensivel@example.com';
+const SENSITIVE_PHONE = '+5491100001111';
+
+function makeBody(subtype = 'ANALYZED') {
   return {
     action: 'PRESCREENING_RESPONSE',
-    subtype: 'ANALYZED',
+    subtype,
     data: {
       prescreening: { id: 'tp-1', name: 'Case Test' },
-      profile: {
-        id: 'prof-1',
-        firstName: 'Juan',
-        lastName: 'Perez',
-        email: overrides.email ?? 'candidata.sensivel@example.com',
-        phoneNumber: '+5491100001111',
-        registerQuestions: [],
-      },
+      profile: { id: 'prof-1', firstName: 'Juan', lastName: 'Perez', email: SENSITIVE_EMAIL, phoneNumber: SENSITIVE_PHONE, registerQuestions: [] },
       response: { id: 'resp-1', state: [], score: 85, statusLabel: 'QUALIFIED' },
     },
-  } as unknown as TalentumPrescreeningResponseParsed;
+  };
 }
 
 function fakeRes() {
   const res = { status: jest.fn(), json: jest.fn() };
   res.status.mockReturnValue(res);
-  return res as unknown as import('express').Response;
+  return res as unknown as import('express').Response & { status: jest.Mock; json: jest.Mock };
 }
 
-describe('PrescreeningResponseHandler — PII guard (log INCOMING)', () => {
-  it('e-mail mascarado no log INCOMING, nunca cru', async () => {
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
-    const errSpy = jest.spyOn(console, 'error').mockImplementation();
-    const SENSITIVE_EMAIL = 'candidata.sensivel@example.com';
-    const handler = new PrescreeningResponseHandler({ query: jest.fn().mockRejectedValue(new Error('no db in unit test')) } as never);
+function makeDeps() {
+  const inbox = { insertReceived: jest.fn().mockResolvedValue({ id: 'inbox-1', duplicate: false }) };
+  const publisher = { publish: jest.fn().mockResolvedValue(undefined) };
+  const handler = new PrescreeningResponseHandler(inbox as never, publisher as never);
+  return { inbox, publisher, handler };
+}
 
-    await handler.handle(makePayload({ email: SENSITIVE_EMAIL }), { environment: 'test' } as TalentumWebhookContext, fakeRes());
+const ctx: TalentumWebhookContext = { environment: 'production', partnerId: 'partner-1', ingressHost: 'api.example.test' };
+const reportErrorMock = () => (jest.requireMock('@shared/logging') as { reportError: jest.Mock }).reportError;
 
-    const lines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(lines).not.toContain(SENSITIVE_EMAIL);
-    expect(lines).toContain(`INCOMING | extId=tp-1`);
-    expect(lines).toContain(`email=${maskEmailForLog(SENSITIVE_EMAIL)}`);
-    expect(lines).toContain('profile=prof-1');
+describe('PrescreeningResponseHandler — ack', () => {
+  let logSpy: jest.SpyInstance;
+  let errSpy: jest.SpyInstance;
+  let warnSpy: jest.SpyInstance;
+  beforeEach(() => {
+    reportErrorMock().mockClear();
+    logSpy = jest.spyOn(console, 'log').mockImplementation();
+    errSpy = jest.spyOn(console, 'error').mockImplementation();
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+  });
+  afterEach(() => {
     logSpy.mockRestore();
     errSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 
-  // Sabotagem: reproduz o console.log ANTIGO (e-mail cru) — prova que a
-  // asserção acima detectaria o vazamento se o fix fosse desfeito. Valor
-  // passa por variável de nome neutro antes do template literal — mesmo
-  // runtime, sem repetir "email" junto de um console.log de verdade (o
-  // próprio V5 casaria a reprodução, do jeito certo — padrão do 8a856c73).
-  it('sabotagem: reproduzindo o console.log ANTIGO (e-mail cru), a asserção acima cairia', () => {
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
-    const valorAntigoCru = 'candidata.sensivel@example.com';
-    console.log(`[TalentumWebhook:PrescreeningResponse] INCOMING | extId=tp-1 | subtype=ANALYZED | profile=prof-1 | email=${valorAntigoCru} | statusLabel=QUALIFIED | score=85 | env=test`);
-    const oldLines = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(oldLines).toContain(valorAntigoCru); // confirma: o formato antigo vazava
-    logSpy.mockRestore();
+  it('guarda na inbox (hash, ids, ambiente, host, corpo), publica o inboxId e responde 200 { received: true }', async () => {
+    const { inbox, publisher, handler } = makeDeps();
+    const res = fakeRes();
+    const body = makeBody();
+
+    await handler.handle(body, ctx, res);
+
+    expect(inbox.insertReceived).toHaveBeenCalledWith({
+      bodyHash: computeBodyHash(body),
+      action: 'PRESCREENING_RESPONSE',
+      subtype: 'ANALYZED',
+      statusLabel: 'QUALIFIED',
+      prescreeningId: 'tp-1',
+      profileId: 'prof-1',
+      environment: 'production',
+      ingressHost: 'api.example.test',
+      payload: body,
+    });
+    expect(publisher.publish).toHaveBeenCalledWith('inbox-1');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+  });
+
+  it('(a) insertReceived lança → 503 { error: "retry" } (nunca 500), sem publish, reportError sem PII', async () => {
+    const { inbox, publisher, handler } = makeDeps();
+    inbox.insertReceived.mockRejectedValue(
+      Object.assign(new Error(`invalid input syntax: "${SENSITIVE_EMAIL}"`), { code: '22P02', constraint: 'x', detail: `Key (email)=(${SENSITIVE_EMAIL})` }),
+    );
+    const res = fakeRes();
+
+    await handler.handle(makeBody(), ctx, res);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.status).not.toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: 'retry' });
+    expect(publisher.publish).not.toHaveBeenCalled();
+    expect(reportErrorMock()).toHaveBeenCalledTimes(1);
+    const [err, rctx] = reportErrorMock().mock.calls[0];
+    expect(rctx).toEqual({ source: 'PrescreeningResponseHandler:ack-insert', talentumPrescreeningId: 'tp-1' });
+    expect(JSON.stringify([err.message, err.stack, rctx])).not.toContain('candidata.sensivel');
+  });
+
+  it('(b) o caso de uso ProcessTalentumPrescreening NÃO é chamado no ack', async () => {
+    const execSpy = jest.spyOn(ProcessTalentumPrescreening.prototype, 'execute').mockRejectedValue(new Error('não devia ser chamado'));
+    const { handler } = makeDeps();
+
+    await handler.handle(makeBody(), ctx, fakeRes());
+
+    expect(execSpy).not.toHaveBeenCalled();
+    execSpy.mockRestore();
+  });
+
+  it('(c) publish lança → 200 mesmo assim + reportError (a linha fica RECEIVED)', async () => {
+    const { publisher, handler } = makeDeps();
+    publisher.publish.mockRejectedValue(new Error('pubsub down'));
+    const res = fakeRes();
+
+    await handler.handle(makeBody(), ctx, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ received: true });
+    expect(reportErrorMock()).toHaveBeenCalledTimes(1);
+    expect(reportErrorMock().mock.calls[0][1]).toEqual({ source: 'PrescreeningResponseHandler:ack-publish', inboxId: 'inbox-1' });
+  });
+
+  it('duplicado (mesmo corpo) → 200 e o log diz duplicate=true', async () => {
+    const { inbox, handler } = makeDeps();
+    inbox.insertReceived.mockResolvedValue({ id: 'inbox-0', duplicate: true });
+    const res = fakeRes();
+
+    await handler.handle(makeBody(), ctx, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('duplicate=true');
+  });
+
+  it('PII guard: o log do ack tem só inboxId/subtype/ingress_host/duplicate, nunca e-mail, telefone ou nome', async () => {
+    const { handler } = makeDeps();
+
+    await handler.handle(makeBody(), ctx, fakeRes());
+
+    const lines = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(lines).toContain('inboxId=inbox-1');
+    expect(lines).toContain('subtype=ANALYZED');
+    expect(lines).toContain('ingress_host=api.example.test');
+    expect(lines).toContain('duplicate=false');
+    expect(lines).not.toContain(SENSITIVE_EMAIL);
+    expect(lines).not.toContain(SENSITIVE_PHONE);
+    expect(lines).not.toContain('Juan');
+    expect(lines).not.toContain('INCOMING');
+  });
+
+  it('corpo sem o mínimo → 400 e nada é gravado nem publicado', async () => {
+    const { inbox, publisher, handler } = makeDeps();
+    const res = fakeRes();
+    const body = makeBody();
+    (body.data.profile as { id: string }).id = '';
+
+    await handler.handle(body, ctx, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(inbox.insertReceived).not.toHaveBeenCalled();
+    expect(publisher.publish).not.toHaveBeenCalled();
   });
 });
 
-describe('PrescreeningResponseHandler — alarme no caminho de exceção', () => {
-  it('erro do banco → reportError com source e talentumPrescreeningId, SEM PII; o 500 não muda', async () => {
-    const { reportError } = jest.requireMock('@shared/logging') as { reportError: jest.Mock };
-    reportError.mockClear();
-    const logSpy = jest.spyOn(console, 'log').mockImplementation();
-    const errSpy = jest.spyOn(console, 'error').mockImplementation();
-    const pgErr = Object.assign(new Error('invalid input syntax for type uuid: "candidata.sensivel@example.com"'), {
-      code: '22P02', constraint: 'workers_x', detail: 'Key (email)=(candidata.sensivel@example.com) já existe',
-    });
-    const res = fakeRes();
-    const handler = new PrescreeningResponseHandler({ query: jest.fn().mockRejectedValue(pgErr) } as never);
+describe('parseAck — validação mínima do ack', () => {
+  it('PRESCREENING_RESPONSE exige prescreening.id e profile.id', () => {
+    expect(parseAck(makeBody())).toEqual({ action: 'PRESCREENING_RESPONSE', subtype: 'ANALYZED', statusLabel: 'QUALIFIED', prescreeningId: 'tp-1', profileId: 'prof-1' });
+    expect(parseAck({ action: 'PRESCREENING_RESPONSE', data: { prescreening: { id: 'x' } } })).toBeNull();
+    expect(parseAck({ action: 'PRESCREENING_RESPONSE', data: { prescreening: { id: '  ' }, profile: { id: 'p' } } })).toBeNull();
+  });
 
-    await handler.handle(makePayload(), { environment: 'test' } as TalentumWebhookContext, res);
+  it('PRESCREENING exige data._id', () => {
+    expect(parseAck({ action: 'PRESCREENING', subtype: 'CREATED', data: { _id: 'proj-1' } })).toMatchObject({ prescreeningId: 'proj-1', profileId: null });
+    expect(parseAck({ action: 'PRESCREENING', data: {} })).toBeNull();
+  });
 
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(reportError).toHaveBeenCalledTimes(1);
-    const [err, ctx] = reportError.mock.calls[0];
-    expect(ctx).toEqual({ source: 'PrescreeningResponseHandler:process', talentumPrescreeningId: 'tp-1' });
-    expect(JSON.stringify([err.message, err.stack, ctx])).not.toContain('candidata.sensivel');
-    expect(err).toBeInstanceOf(Error);
-    logSpy.mockRestore();
-    errSpy.mockRestore();
+  it('action ausente / não-string → null; action desconhecida é guardada (vira UNSUPPORTED no processador)', () => {
+    expect(parseAck(null)).toBeNull();
+    expect(parseAck({})).toBeNull();
+    expect(parseAck({ action: 7 })).toBeNull();
+    expect(parseAck({ action: 'OUTRA' })).toMatchObject({ action: 'OUTRA', prescreeningId: null });
   });
 });

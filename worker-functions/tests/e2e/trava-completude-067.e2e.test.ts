@@ -8,8 +8,8 @@
  *               após a resposta; o `status` só cai no DELETE
  *   A3          validar o último documento pendente → volta a Completado com etapa, nota e linha da candidatura IDÊNTICAS
  *               (0 escrita em worker_job_applications) e 0 `worker.mirror_requested` novo
- *   A4 / FR-13  o webhook da Talentum com prestador incompleto responde EXATAMENTE como antes (corpo gravado de `origin/main`,
- *               fixtures/trava-completude-067-webhook-referencia.json) e grava prescreening, encuadre e candidatura
+ *   A4 / FR-13  o webhook da Talentum com prestador incompleto responde 200 ao ack e, depois do drain da inbox (spec 095), grava
+ *               prescreening, encuadre e candidatura
  *   A6          a soma das 9 colunas = total de candidaturas da vaga, antes e depois
  *   A11         o admin esvazia um campo obrigatório de um REGISTERED → INCOMPLETE_REGISTER → o card vai a Bloqueados
  *
@@ -19,8 +19,6 @@
  * (scripts/rede-bloqueada-em-teste.cjs). Dados SINTÉTICOS (@example.test), sem PII em asserção.
  */
 import { Pool } from 'pg';
-import * as fs from 'fs';
-import * as path from 'path';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -29,12 +27,10 @@ process.env.DATABASE_URL = DATABASE_URL;
 import { createApiClient, getMockToken, waitForBackend } from './helpers';
 import { completeWorkerProfile, cleanWorkerProfile, type AptoDocs } from './helpers/aptoWorkerFixture';
 import { setWorkerStatusForTest } from './helpers/setWorkerStatusForTest';
+import { postTalentumAndDrain } from './helpers/talentumWebhook';
 
 /** As 9 colunas do quadro da vaga (VACANCY_BOARD_COLUMNS). IN_PROGRESS é dobrada em PRE_SCREENING e não conta. */
 const NOVE_COLUNAS = ['COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'BLOQUEADO', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED'];
-const REFERENCIA = path.join(__dirname, 'fixtures', 'trava-completude-067-webhook-referencia.json');
-/** Gravar a resposta de referência: `GRAVAR_REFERENCIA_067=1` contra uma API de `origin/main`. Nunca no CI. */
-const GRAVAR = process.env.GRAVAR_REFERENCIA_067 === '1';
 
 const RUN = Date.now().toString(36);
 const CASE_FUNIL = 99067200; // vaga dos cenários A2/A3/A11
@@ -341,12 +337,12 @@ describe('A11 — o admin esvazia um campo obrigatório de um REGISTERED → INC
 
 // ─────────────────────────────────────────────────────────────────────────────
 describe('A4 + FR-13 — o webhook da Talentum com prestador incompleto responde como antes e grava tudo', () => {
-  it('prestador REGISTERED sem documento validado: INITIATED e ANALYZED+QUALIFIED respondem idêntico à referência de origin/main; prescreening, encuadre e candidatura gravados; card em Bloqueados', async () => {
+  it('prestador REGISTERED sem documento validado: INITIATED e ANALYZED+QUALIFIED respondem 200 ao ack e, depois do drain; prescreening, encuadre e candidatura gravados; card em Bloqueados', async () => {
     const p = await novoPrestador('a4', 'unvalidated');
     const phone = (await pool.query<{ phone: string }>(`SELECT phone FROM workers WHERE id = $1`, [p.id])).rows[0].phone;
     const prescreeningId = `p067-psc-${RUN}`;
-    const envio = async (subtype: string, extra: Record<string, unknown> = {}) => {
-      const res = await api.post('/api/webhooks/talentum/prescreening', {
+    const envio = async (subtype: string, extra: Record<string, unknown> = {}) =>
+      postTalentumAndDrain(api, {
         action: 'PRESCREENING_RESPONSE',
         subtype,
         data: {
@@ -355,31 +351,20 @@ describe('A4 + FR-13 — o webhook da Talentum com prestador incompleto responde
           response: { id: `resp-${prescreeningId}-${subtype}`, state: [], ...extra },
         },
       });
-      return { status: res.status, body: res.data };
-    };
 
     const iniciado = await envio('INITIATED');
     const qualificado = await envio('ANALYZED', { statusLabel: 'QUALIFIED', score: 85 });
-    // ids gerados por execução viram marcadores (depois de provar que são os da execução); a FORMA, as chaves, a ordem e o status ficam
-    const prescreening = (await pool.query<{ id: string }>(`SELECT id FROM talentum_prescreenings WHERE job_posting_id = $1 AND worker_id = $2`, [ID.vagaA4, p.id])).rows[0].id;
-    const normalizar = (r: { status: number; body: Record<string, unknown> }) => {
-      expect(r.body.prescreeningId).toBe(prescreening);
-      expect(r.body.talentumPrescreeningId).toBe(prescreeningId);
-      expect(r.body.workerId).toBe(p.id);
-      expect(r.body.jobPostingId).toBe(ID.vagaA4);
-      return { status: r.status, body: { ...r.body, prescreeningId: '<id da linha em talentum_prescreenings>', talentumPrescreeningId: '<id do prescreening na Talentum>', workerId: '<id do prestador>', jobPostingId: '<id da vaga>' } };
-    };
-    const gravado = { INITIATED: normalizar(iniciado), ANALYZED_QUALIFIED: normalizar(qualificado) };
-
-    if (GRAVAR) {
-      fs.mkdirSync(path.dirname(REFERENCIA), { recursive: true });
-      fs.writeFileSync(REFERENCIA, JSON.stringify(gravado, null, 2) + '\n');
+    // Ack assíncrono (spec 095): o corpo de resposta é só `{ received: true }` (contrato do ack em talentum-inbox-ack T3); a comparação
+    // byte a byte com o corpo antigo de origin/main (fixtures/trava-completude-067-webhook-referencia.json, removido) deixou de existir.
+    // O que A4 prova continua provado pelo BANCO, depois do drain: o prescreening, o encuadre e a candidatura gravados com prestador incompleto.
+    for (const r of [iniciado, qualificado]) {
+      expect(r.ack).toEqual({ status: 200, data: { received: true } });
+      expect(r.drain).toMatchObject({ processed: 1, failed: 0 });
     }
-    // o mesmo cenário, o mesmo corpo e o mesmo status que a API de origin/main devolveu (A4: "exatamente como antes")
-    const referencia = JSON.parse(fs.readFileSync(REFERENCIA, 'utf8'));
-    expect(JSON.stringify(gravado)).toBe(JSON.stringify(referencia)); // byte a byte: chaves, ordem, tipos, status
-    expect(iniciado.status).toBe(200);
-    expect(qualificado.status).toBe(200);
+    const espelho = (await pool.query<{ id: string; talentum_prescreening_id: string; worker_id: string; job_posting_id: string }>(
+      `SELECT id, talentum_prescreening_id, worker_id, job_posting_id FROM talentum_prescreenings WHERE job_posting_id = $1 AND worker_id = $2`, [ID.vagaA4, p.id])).rows;
+    expect(espelho).toHaveLength(1);
+    expect(espelho[0].talentum_prescreening_id).toBe(prescreeningId);
 
     // FR-13: prescreening, encuadre e candidatura gravados mesmo com o prestador incompleto
     const wja = (await pool.query(`SELECT application_funnel_stage AS s, match_score FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`, [p.id, ID.vagaA4])).rows;

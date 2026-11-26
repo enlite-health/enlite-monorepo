@@ -5,6 +5,8 @@ import {
   buildItineraryUncoveredShiftsPayload,
   buildPedidoIaAplicarPayload,
   buildAdmissionImportBlockedPayload,
+  buildTalentumWebhookAlarmPayload,
+  SYSTEM_TALENTUM_WEBHOOK_ACTOR_UID,
   SYSTEM_ITINERARY_ACTOR_UID,
   SYSTEM_ADMISSION_ACTOR_UID,
   SYSTEM_NOTIFICATION_ACTOR_UID,
@@ -328,6 +330,51 @@ describe('SystemNotificationPublisher — importação bloqueada (spec 083, D-7)
   it('publisher que recebe payload inválido lança e nada grava', async () => {
     const r = repo();
     await expect(new SystemNotificationPublisher(r as never).publishAdmissionImportBlocked({} as never, { recipientUid: 'op1', payload: { ...host, stage: 'will_be_lost' } })).rejects.toThrow();
+    expect(r.insertEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildTalentumWebhookAlarmPayload / publishTalentumWebhookAlarm (spec 095 T-095-42)', () => {
+  const ok = { alarme: 'inbox_falha', quantidade: 2, desde: '2026-11-25T12:00:00.000Z' };
+
+  it('constrói as 3 chaves fechadas, para cada alarme do conjunto', () => {
+    for (const alarme of ['inbox_falha', 'inbox_pendente', 'veredito_ausente', 'silencio', 'CONFLITO_HUMANO']) {
+      expect(buildTalentumWebhookAlarmPayload({ ...ok, alarme })).toEqual({ alarme, quantidade: 2, desde: ok.desde });
+    }
+  });
+
+  it('chave extra (nome, e-mail, id) LANÇA, não é ignorada', () => {
+    for (const extra of [{ nome: 'Fulana' }, { email: 'a@b.c' }, { workerId: 'w-1' }]) {
+      expect(() => buildTalentumWebhookAlarmPayload({ ...ok, ...extra } as never)).toThrow(/chave fora do contrato/);
+    }
+  });
+
+  it('alarme fora do conjunto, quantidade inválida e desde que não é data lançam', () => {
+    expect(() => buildTalentumWebhookAlarmPayload({ ...ok, alarme: 'sino_falhou' })).toThrow(/fora do contrato/);
+    expect(() => buildTalentumWebhookAlarmPayload({ ...ok, alarme: 'qualquer coisa' })).toThrow(/fora do contrato/);
+    expect(() => buildTalentumWebhookAlarmPayload({ ...ok, quantidade: 0 })).toThrow(/fora do contrato/);
+    expect(() => buildTalentumWebhookAlarmPayload({ ...ok, quantidade: 1.5 })).toThrow(/fora do contrato/);
+    expect(() => buildTalentumWebhookAlarmPayload({ ...ok, desde: 'ontem' })).toThrow(/fora do contrato/);
+  });
+
+  it('publica 1 evento (sentinela, sem paciente) + 1 notificação por destinatário distinto; sem destinatário não grava', async () => {
+    const r = repo();
+    const pub = new SystemNotificationPublisher(r as never);
+    await pub.publishTalentumWebhookAlarm({} as never, { recipientUids: ['u1', 'u2', 'u1'], payload: ok });
+    expect(r.insertEvent).toHaveBeenCalledWith(
+      { typeCode: 'TALENTUM_WEBHOOK_ALARM', actorUid: SYSTEM_TALENTUM_WEBHOOK_ACTOR_UID, patientId: null, conversationId: null, messageId: null, payload: ok },
+      expect.anything(),
+    );
+    expect(SYSTEM_TALENTUM_WEBHOOK_ACTOR_UID).toBe('system:talentum-webhook');
+    expect(r.insertNotifications).toHaveBeenCalledWith('ev-1', ['u1', 'u2'], expect.anything());
+    const vazio = repo();
+    expect(await new SystemNotificationPublisher(vazio as never).publishTalentumWebhookAlarm({} as never, { recipientUids: [], payload: ok })).toBeNull();
+    expect(vazio.insertEvent).not.toHaveBeenCalled();
+  });
+
+  it('payload inválido lança e nada grava', async () => {
+    const r = repo();
+    await expect(new SystemNotificationPublisher(r as never).publishTalentumWebhookAlarm({} as never, { recipientUids: ['u1'], payload: { ...ok, nome: 'x' } as never })).rejects.toThrow();
     expect(r.insertEvent).not.toHaveBeenCalled();
   });
 });

@@ -463,3 +463,42 @@ describe('ADMISSION_IMPORT_BLOCKED (spec 083, F4)', () => {
     expect(body).not.toMatch(/\d{4}-\d{2}/);
   });
 });
+
+// Spec 095 (T-095-43): o aviso do webhook do Talentum — o servidor manda só `{ alarme, quantidade, desde }`; o TEXTO vive aqui.
+describe('TALENTUM_WEBHOOK_ALARM (spec 095, T-095-43)', () => {
+  const aviso = (payload: unknown) =>
+    notif({ typeCode: 'TALENTUM_WEBHOOK_ALARM', actorUid: 'system:talentum-webhook', actorDisplayName: null, patientId: null, patientDisplayName: null, messageId: null, payload: payload as never });
+  const h = () => getNotificationTypeHandler('TALENTUM_WEBHOOK_ALARM');
+  const realT = async (lng: 'es' | 'pt-BR') => {
+    const i18n = i18next.createInstance();
+    const json = lng === 'es' ? esJson : ptBRJson;
+    await i18n.init({ lng, resources: { [lng]: { translation: { admin: { notifications: json.admin.notifications } } } } });
+    return i18n.t.bind(i18n) as never;
+  };
+
+  it.each([
+    [{ alarme: 'inbox_falha', quantidade: 3, desde: '2026-11-25T10:00:00.000Z' }, 'es', 'Webhook de Talentum: 3 eventos con error'],
+    [{ alarme: 'silencio', quantidade: 1, desde: '2026-11-25T10:00:00.000Z' }, 'pt-BR', 'Webhook do Talentum: sem eventos em 6 h'],
+    [{ alarme: 'silencio', quantidade: 1, desde: '2026-11-25T10:00:00.000Z' }, 'es', 'Webhook de Talentum: sin eventos en 6 h'],
+    [{ alarme: 'CONFLITO_HUMANO', quantidade: 2, desde: '2026-11-25T10:00:00.000Z' }, 'pt-BR', 'Webhook do Talentum: 2 mudança manual no Talentum em conflito com um movimento da equipe'],
+  ] as const)('payload %j em %s -> "%s"', async (payload, lng, esperado) => {
+    expect(h().buildText(aviso(payload), await realT(lng))).toBe(esperado);
+  });
+
+  it('autor "Enlite" (nunca o uid do sistema), sem paciente e sem deep link', async () => {
+    for (const lng of ['es', 'pt-BR'] as const) {
+      expect(h().actorLabel?.(aviso(null), await realT(lng))).toBe('Enlite');
+    }
+    expect(h().getDeepLink(aviso({ alarme: 'inbox_falha', quantidade: 1, desde: 'x' }))).toBeNull();
+  });
+
+  it('alarme desconhecido / payload ausente ou estranho: rótulo genérico, nunca crash', async () => {
+    for (const p of [null, {}, { alarme: 'futuro', quantidade: 'x' }, { alarme: 'inbox_falha', quantidade: -4 }]) {
+      for (const lng of ['es', 'pt-BR'] as const) {
+        const tt = await realT(lng);
+        expect(() => h().buildText(aviso(p), tt)).not.toThrow();
+        expect(h().buildText(aviso(p), tt)).toMatch(/^Webhook d[eo]l? Talentum: 1 /);
+      }
+    }
+  });
+});

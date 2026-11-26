@@ -92,6 +92,7 @@ import { OutboxProcessor } from '@modules/notification/infrastructure/OutboxProc
 import { BulkDispatchScheduler } from '@modules/notification/infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '@modules/notification/infrastructure/BulkDispatchTalentumScheduler';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { txBoundPool } from '@shared/database/txBoundPool';
 import { createMeAreasRouter } from '@modules/identity/interfaces/meAreasRoute';
 import { createPersonTreeRouter } from '@modules/identity/interfaces/personTreeRoute';
 import { requirePersonTreeService } from '@modules/identity/interfaces/middleware/requirePersonTreeService';
@@ -116,6 +117,8 @@ import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogServ
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
 import { ItineraryDailyRunHealthService } from '@shared/events/ItineraryDailyRunHealthService';
+import { TalentumWebhookHealthService } from '@shared/events/TalentumWebhookHealthService';
+import { TalentumWebhookAlarmNotifier } from '@modules/matching/application/TalentumWebhookAlarmNotifier';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyAutoInviteHandler';
@@ -179,7 +182,10 @@ import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
 import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
 import { registerEnquadreInternalJobRoutes } from './bootstrap/registerEnquadreInternalJobRoutes';
-import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController } from '@modules/integration';
+import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController, createTalentumInboxInternalRoutes, TalentumInboxInternalController, ProcessTalentumInboxUseCase, TalentumInboxRepository, CreateJobPostingFromTalentumUseCase, talentumPrescreeningIdResolver } from '@modules/integration';
+import type { CreateJobPostingFromTalentumPrefetch } from './modules/integration/application/CreateJobPostingFromTalentumUseCase';
+import { ProcessTalentumPrescreening, TalentumPrescreeningRepository, JobPostingLookup } from '@modules/matching';
+import { WorkerRepository } from '@modules/worker';
 import { createAdminPedidosIaRoutes, createPedidoIaController, createAssistantsPlatformController, createAdminAssistantsRoutes, createAssistantCountService, createAdminLuzPruebaRoutes, createLuzPruebaController } from '@modules/agentes';
 import { createAdminCostsRoutes, createGetCostOverviewUseCase } from '@modules/custos';
 import { registerFunnelStageHandlers } from './shared/events/registerFunnelStageHandlers';
@@ -939,7 +945,8 @@ const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, 
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
 const messagingRetentionService = new MessagingRetentionService(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool), new ItineraryDailyRunHealthService(dbPool));
+const talentumAlarmNotifier = new TalentumWebhookAlarmNotifier({ pool: dbPool });
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool), new ItineraryDailyRunHealthService(dbPool), new TalentumWebhookHealthService(dbPool), talentumAlarmNotifier);
 app.use('/api/internal', systemContextMiddleware('job:internal'), createInternalRoutes(internalController));
 app.use(
   '/api/internal',
@@ -961,6 +968,26 @@ app.use(
   systemContextMiddleware('job:itinerary-daily'),
   internalAuthMiddleware,
   createItineraryDailyInternalRoutes(new ItineraryDailyInternalController()),
+);
+
+// spec 095 T-095-31: processador da inbox do Talentum (push do Pub/Sub, só com o inboxId) + redrive manual. Mesmo guard dos jobs internos.
+const talentumInboxProcessor = new ProcessTalentumInboxUseCase(
+  dbPool,
+  new TalentumInboxRepository(),
+  new ProcessTalentumPrescreening(new TalentumPrescreeningRepository(), new WorkerRepository(), new JobPostingLookup(dbPool), dbPool, pubsubClient, talentumAlarmNotifier),
+  {
+    // A busca no Talentum (prefetch) roda FORA da transação do processador; `execute` só grava no client dela (T-095-30).
+    prefetch: (data) => new CreateJobPostingFromTalentumUseCase(dbPool, talentumPrescreeningIdResolver).prefetch(data),
+    execute: (data, environment, client, prefetched) =>
+      new CreateJobPostingFromTalentumUseCase(client ? txBoundPool(client) : dbPool, talentumPrescreeningIdResolver)
+        .execute(data, environment, prefetched as CreateJobPostingFromTalentumPrefetch | undefined),
+  },
+);
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:talentum-inbox'),
+  internalAuthMiddleware,
+  createTalentumInboxInternalRoutes(new TalentumInboxInternalController(talentumInboxProcessor, dbPool)),
 );
 
 // spec 049 F4: teste diário do vínculo do Tactiq + aviso no sino por transição + alarme 48 h (Cloud Scheduler, 1×/dia).

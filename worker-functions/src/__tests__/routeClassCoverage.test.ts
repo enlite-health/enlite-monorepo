@@ -114,6 +114,7 @@ const FABRICAS = [
   'modules/inapp-notification/interfaces/routes/adminNotificationRoutes',
   'modules/integration/interfaces/routes/adminAiPromptRoutes',
   'modules/integration/interfaces/routes/adminIntegrationsRoutes',
+  'modules/integration/interfaces/routes/talentumInboxInternalRoutes',
   'modules/integration/interfaces/webhooks/routes/webhookRoutes',
   'modules/matching/interfaces/routes/adminAdmissionRoutes',
   'modules/matching/interfaces/routes/adminEnquadreEventListRoutes',
@@ -214,6 +215,6 @@ describe('T313 â€” cobertura de classe sobre os routers reais', () => {
       sem.push(...unclassifiedRoutes(rotas).map((r) => `${arquivo}: ${r.method} ${r.path}`));
     }
     expect(sem).toEqual([]);
-    expect(total).toBe(458); // 457 +2 (GET/POST status-actions, F3) ï¿½ˆ’1 (GET status-options saiu na F5 do estado-automatico); antes +1: POST /interview-hosts/:id/tactiq-seat (F5, tactiq-vinculo-resiliente)
+    expect(total).toBe(460); // 458 (main) + 2 (095: talentum inbox)
   });
 });

@@ -11,6 +11,7 @@
  */
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
+import { postTalentumAndDrain, TALENTUM_WEBHOOK } from './helpers/talentumWebhook';
 import { envelope, type ResponseBlock } from '../fixtures/talentumPayload';
 import { reconcile, type PendingRow, type TalentumReader } from '../../scripts/reconciliar-talentum-sem-worker-lib';
 import { withActorContext } from '../../src/shared/database/actorContext';
@@ -19,7 +20,7 @@ import { systemActor } from '../../src/shared/audit/actorSource';
 type Analyzed = ResponseBlock & { score: number; statusLabel: 'IN_DOUBT' };
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
-const ENDPOINT = '/api/webhooks/talentum/prescreening';
+const ENDPOINT = TALENTUM_WEBHOOK;
 const KEYS = ['SEL', 'QRT', 'CTL'] as const;
 type Key = (typeof KEYS)[number];
 const START: Record<Key, string> = { SEL: 'SELECTED', QRT: 'QUICK_RESPONSE_TEAM', CTL: 'QUALIFIED' };
@@ -45,13 +46,14 @@ describe('Talentum — script de reconciliação: NOT_QUALIFIED não rebaixa eta
 
   /** Estado da operação: o webhook cria worker/WJA/encuadre (IN_DOUBT); a operação move a WJA; o card fica sem worker (o que o script lista). */
   async function seed(k: Key) {
-    const res = await api.post(ENDPOINT, envelope({
+    const res = await postTalentumAndDrain(api, envelope({
       subtype: 'ANALYZED',
       prescreening: { id: PSC(k), name: TITLE[k] },
       profile: { id: PROF(k), email: EMAIL(k), phoneNumber: PHONE[k], cuil: `20-8${PHONE[k].slice(-7)}-3` },
       response: { id: `rcnq-resp-${k}`, state: [], score: 50, statusLabel: 'IN_DOUBT' } as Analyzed,
-    }));
-    expect(res.status).toBe(200);
+    }), ENDPOINT);
+    expect(res.ack.status).toBe(200);
+    expect(res.drain).toMatchObject({ processed: 1, failed: 0 });
     await pool.query(
       `UPDATE worker_job_applications SET application_funnel_stage=$3, updated_at=NOW() WHERE worker_id=$1 AND job_posting_id=$2`, [wid[k], jid[k], START[k]]);
     await pool.query(

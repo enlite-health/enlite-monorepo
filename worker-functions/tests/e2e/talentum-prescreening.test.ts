@@ -23,6 +23,7 @@ import { TalentumPrescreeningPayloadSchema } from '../../src/modules/integration
 import { TalentumPrescreeningRepository } from '../../src/modules/matching/infrastructure/TalentumPrescreeningRepository';
 import type { TalentumPrescreeningStatus } from '../../src/modules/matching/domain/TalentumPrescreening';
 import { BASE_DATA, envelope, type QuestionItem } from '../fixtures/talentumPayload';
+import { postTalentumDrainAndRead, readTalentumMirror, TALENTUM_WEBHOOK } from './helpers/talentumWebhook';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -1068,7 +1069,16 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
   let workerFixtureId: string;     // worker com email = 'ana.webhook@test.local'
   let jobFixtureId: string;        // job_posting com title = 'Caso HTTP Test'
 
-  const ENDPOINT = '/api/webhooks/talentum/prescreening';
+  const ENDPOINT = TALENTUM_WEBHOOK;
+
+  /**
+   * POST no webhook + drain da inbox (spec 095: o ack só guarda). `status` = o do ack; `data` = o que o processador
+   * gravou, LIDO DO BANCO (o corpo do ack é `{ received: true }`); em ack 400, `data` é o corpo do ack.
+   */
+  const post = (payload: unknown) => postTalentumDrainAndRead(api, pool, payload, ENDPOINT);
+  const inboxState = async (psc: string) =>
+    (await pool.query<{ state: string }>(
+      `SELECT state FROM talentum_webhook_inbox WHERE talentum_prescreening_id = $1 ORDER BY received_at DESC, id LIMIT 1`, [psc])).rows[0]?.state;
 
   // Payload base — envelope PRESCREENING_RESPONSE + data
   // BASE_DATA e envelope() vêm de tests/fixtures/talentumPayload.ts
@@ -1148,48 +1158,62 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
     await pool.query(
       `DELETE FROM talentum_questions WHERE question_id LIKE 'http-%'`,
     );
+    await pool.query(`DELETE FROM talentum_webhook_inbox WHERE talentum_prescreening_id LIKE 'http-%'`);
   });
 
   // ─────────────────────────────────────────────────────────────────
   // 400 — payload inválido (Zod valida antes do use case)
   // ─────────────────────────────────────────────────────────────────
 
-  describe('400 — payload inválido', () => {
-    it('body ausente → 400 com campo "details"', async () => {
-      const res = await api.post(ENDPOINT, {});
+  describe('400 — validação mínima do ack; o resto vira estado da inbox depois do drain', () => {
+    // Zod completo saiu do ack (spec 095 §3.2): o 400 só existe para o que o ack precisa (action e ids). Cada caso de schema abaixo
+    // vira "200 no ack + linha REJECTED_SCHEMA/UNSUPPORTED depois do drain"; o detalhe do schema está em unit
+    // (ProcessTalentumInboxUseCase.validacao.test.ts: [7]-[12], [34]-[37]).
+    it('body ausente → 400 sem "details" (o detalhe do Zod não vai mais ao ack)', async () => {
+      const res = await post({});
       expect(res.status).toBe(400);
-      expect(res.data).toHaveProperty('details');
+      expect(res.data).not.toHaveProperty('details');
     });
 
-    it('subtype inválido em PRESCREENING_RESPONSE → 400', async () => {
-      const res = await api.post(ENDPOINT, { ...envelope(), subtype: 'CANCELED' });
-      expect(res.status).toBe(400);
+    it('subtype inválido em PRESCREENING_RESPONSE → 200 no ack e linha UNSUPPORTED depois do drain', async () => {
+      const res = await post({ ...envelope({ prescreening: { id: 'http-psc-bad-subtype' } }), subtype: 'CANCELED' });
+      expect(res.status).toBe(200);
+      expect(res.drain).toMatchObject({ selected: 1, processed: 0, failed: 0 });
+      expect(await inboxState('http-psc-bad-subtype')).toBe('UNSUPPORTED');
+      expect(await readTalentumMirror(pool, 'http-psc-bad-subtype')).toBeNull();
     });
 
-    it('email malformado em profile.email → 400', async () => {
-      const res = await api.post(ENDPOINT, envelope({ profile: { email: 'nao-e-email' } }));
-      expect(res.status).toBe(400);
+    it('email malformado em profile.email → 200 no ack e linha REJECTED_SCHEMA depois do drain', async () => {
+      const res = await post(envelope({ prescreening: { id: 'http-psc-bad-email' }, profile: { email: 'nao-e-email' } }));
+      expect(res.status).toBe(200);
+      expect(res.drain).toMatchObject({ selected: 1, processed: 0, failed: 0 });
+      expect(await inboxState('http-psc-bad-email')).toBe('REJECTED_SCHEMA');
+      expect(await readTalentumMirror(pool, 'http-psc-bad-email')).toBeNull();
     });
 
-    it('campo extra dentro de data.profile (.strict() aninhado) → 400', async () => {
-      const res = await api.post(ENDPOINT, {
-        ...envelope(),
+    it('campo extra dentro de data.profile (.strict() aninhado) → 200 no ack e linha REJECTED_SCHEMA depois do drain', async () => {
+      const res = await post({
+        ...envelope({ prescreening: { id: 'http-psc-extra-field' } }),
         data: {
-          ...envelope().data,
+          ...envelope({ prescreening: { id: 'http-psc-extra-field' } }).data,
           profile: { ...BASE_DATA.profile, dadoExtra: true },
         },
       });
+      expect(res.status).toBe(200);
+      expect(res.drain).toMatchObject({ selected: 1, processed: 0, failed: 0 });
+      expect(await inboxState('http-psc-extra-field')).toBe('REJECTED_SCHEMA');
+    });
+
+    it('prescreening.id vazio → 400 no ack (a chave é a validação mínima)', async () => {
+      const res = await post(envelope({ prescreening: { id: '' } }));
       expect(res.status).toBe(400);
     });
 
-    it('prescreening.id vazio → 400', async () => {
-      const res = await api.post(ENDPOINT, envelope({ prescreening: { id: '' } }));
-      expect(res.status).toBe(400);
-    });
-
-    it('profile.firstName vazio → 400', async () => {
-      const res = await api.post(ENDPOINT, envelope({ profile: { firstName: '' } }));
-      expect(res.status).toBe(400);
+    it('profile.firstName vazio → 200 no ack e linha REJECTED_SCHEMA depois do drain', async () => {
+      const res = await post(envelope({ prescreening: { id: 'http-psc-empty-first' }, profile: { firstName: '' } }));
+      expect(res.status).toBe(200);
+      expect(res.drain).toMatchObject({ selected: 1, processed: 0, failed: 0 });
+      expect(await inboxState('http-psc-empty-first')).toBe('REJECTED_SCHEMA');
     });
   });
 
@@ -1204,7 +1228,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
     // Google ID Token é bypassed no controller — este teste só faz sentido em produção.
     it.skip('sem Authorization header → 401 (skip: USE_MOCK_AUTH=true em testes locais)', async () => {
       // Em produção (USE_MOCK_AUTH=false):
-      // const res = await api.post(ENDPOINT, BASE_PAYLOAD); // sem header
+      // const res = await post(BASE_PAYLOAD); // sem header
       // expect(res.status).toBe(401);
     });
 
@@ -1213,7 +1237,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
         // Se por acaso rodar sem mock auth, não testamos o bypass
         return;
       }
-      const res = await api.post(ENDPOINT, envelope({ prescreening: { id: 'http-psc-auth-bypass' } }));
+      const res = await post(envelope({ prescreening: { id: 'http-psc-auth-bypass' } }));
       // Com USE_MOCK_AUTH=true, chega ao use case e processa normalmente
       expect(res.status).toBe(200);
     });
@@ -1225,7 +1249,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
 
   describe('200 — INITIATED (sem respostas)', () => {
     it('retorna 200 com prescreeningId, talentumPrescreeningId e resolved', async () => {
-      const res = await api.post(ENDPOINT, envelope({ prescreening: { id: 'http-psc-initiated-001' } }));
+      const res = await post(envelope({ prescreening: { id: 'http-psc-initiated-001' } }));
 
       expect(res.status).toBe(200);
       expect(res.data).toHaveProperty('prescreeningId');
@@ -1236,7 +1260,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
     });
 
     it('persiste prescreening no banco com status INITIATED', async () => {
-      await api.post(ENDPOINT, envelope({ prescreening: { id: 'http-psc-persist-001' } }));
+      await post(envelope({ prescreening: { id: 'http-psc-persist-001' } }));
 
       const { rows } = await pool.query(
         `SELECT status, job_case_name FROM talentum_prescreenings
@@ -1248,7 +1272,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
     });
 
     it('sem respostas → talentum_prescreening_responses vazio para este prescreening', async () => {
-      const res = await api.post(ENDPOINT, envelope({ prescreening: { id: 'http-psc-no-resp-001' } }));
+      const res = await post(envelope({ prescreening: { id: 'http-psc-no-resp-001' } }));
       expect(res.status).toBe(200);
 
       const { rows } = await pool.query(
@@ -1267,7 +1291,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
   describe('200 — resolução de worker e job posting', () => {
     it('worker encontrado por email → workerId preenchido, resolved.worker = true', async () => {
       // profile.email = 'ana.webhook@test.local' → workerFixtureId
-      const res = await api.post(ENDPOINT, envelope({ prescreening: { id: 'http-psc-worker-found-001' } }));
+      const res = await post(envelope({ prescreening: { id: 'http-psc-worker-found-001' } }));
 
       expect(res.status).toBe(200);
       expect(res.data.workerId).toBe(workerFixtureId);
@@ -1276,7 +1300,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
 
     it('job posting encontrado por ILIKE em title → jobPostingId preenchido, resolved.jobPosting = true', async () => {
       // prescreening.name = 'Caso HTTP Test' → job_postings.title = 'Caso HTTP Test'
-      const res = await api.post(ENDPOINT, envelope({ prescreening: { id: 'http-psc-jp-found-001' } }));
+      const res = await post(envelope({ prescreening: { id: 'http-psc-jp-found-001' } }));
 
       expect(res.status).toBe(200);
       expect(res.data.jobPostingId).toBe(jobFixtureId);
@@ -1286,7 +1310,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
     it('worker com email desconhecido → auto-criado (workerId preenchido, resolved.worker = true)', async () => {
       // Comportamento atual: quando o worker não é encontrado por email/phone/cuil,
       // o use case auto-cria um worker INCOMPLETE_REGISTER com auth_uid=talentum_<profileId>.
-      const res = await api.post(ENDPOINT, envelope({
+      const res = await post(envelope({
         prescreening: { id: 'http-psc-no-worker-001' },
         profile: {
           email: 'desconhecido@nowhere.test',
@@ -1309,7 +1333,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
     });
 
     it('job posting com nome desconhecido → jobPostingId null, resolved.jobPosting = false', async () => {
-      const res = await api.post(ENDPOINT, envelope({
+      const res = await post(envelope({
         prescreening: { id: 'http-psc-no-jp-001', name: 'Caso que nao existe no sistema XYZ123' },
       }));
 
@@ -1325,7 +1349,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
 
   describe('200 — fluxo incremental', () => {
     it('IN_PROGRESS com registerQuestions → persiste respostas source=register', async () => {
-      const res = await api.post(ENDPOINT, envelope({
+      const res = await post(envelope({
         subtype: 'IN_PROGRESS',
         prescreening: { id: 'http-psc-reg-001' },
         profile: {
@@ -1351,7 +1375,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
     });
 
     it('IN_PROGRESS com response.state → persiste respostas source=prescreening', async () => {
-      const res = await api.post(ENDPOINT, envelope({
+      const res = await post(envelope({
         subtype: 'IN_PROGRESS',
         prescreening: { id: 'http-psc-state-001' },
         response: {
@@ -1380,12 +1404,12 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
       const pscExtId = 'http-psc-full-flow-001';
 
       // POST 1 — INITIATED, sem respostas
-      const res1 = await api.post(ENDPOINT, envelope({ prescreening: { id: pscExtId } }));
+      const res1 = await post(envelope({ prescreening: { id: pscExtId } }));
       expect(res1.status).toBe(200);
       const pscInternalId = res1.data.prescreeningId;
 
       // POST 2 — IN_PROGRESS, primeira resposta
-      const res2 = await api.post(ENDPOINT, envelope({
+      const res2 = await post(envelope({
         subtype: 'IN_PROGRESS',
         prescreening: { id: pscExtId },
         response: {
@@ -1400,7 +1424,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
       expect(res2.data.prescreeningId).toBe(pscInternalId);
 
       // POST 3 — COMPLETED, 2 respostas acumuladas + registerQuestion
-      const res3 = await api.post(ENDPOINT, envelope({
+      const res3 = await post(envelope({
         subtype: 'COMPLETED',
         prescreening: { id: pscExtId },
         profile: {
@@ -1441,8 +1465,8 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
     it('idempotência: mesmo payload enviado 2x → 1 registro, 200 ambas as vezes', async () => {
       const payload = envelope({ prescreening: { id: 'http-psc-idem-001' } });
 
-      const res1 = await api.post(ENDPOINT, payload);
-      const res2 = await api.post(ENDPOINT, payload);
+      const res1 = await post(payload);
+      const res2 = await post(payload);
 
       expect(res1.status).toBe(200);
       expect(res2.status).toBe(200);
@@ -1457,7 +1481,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
 
     it('COALESCE via endpoint: POST 1 sem job posting → null; POST 2 com job posting → resolvido', async () => {
       // POST 1: vaga com nome desconhecido → job_posting_id null
-      const res1 = await api.post(ENDPOINT, envelope({
+      const res1 = await post(envelope({
         prescreening: { id: 'http-psc-coalesce-jp-001', name: 'Vaga Ainda Nao Importada XYZ' },
       }));
       expect(res1.status).toBe(200);
@@ -1474,7 +1498,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
       const newJobId = jpNew[0].id;
 
       try {
-        const res2 = await api.post(ENDPOINT, envelope({
+        const res2 = await post(envelope({
           subtype: 'IN_PROGRESS',
           prescreening: { id: 'http-psc-coalesce-jp-001', name: 'Vaga Ainda Nao Importada XYZ' },
         }));
@@ -1490,7 +1514,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
       const pscExtId = 'http-psc-analyzed-flow-001';
 
       // POST 1 — COMPLETED (worker terminou de responder)
-      const res1 = await api.post(ENDPOINT, envelope({
+      const res1 = await post(envelope({
         subtype: 'COMPLETED',
         prescreening: { id: pscExtId },
         response: {
@@ -1504,7 +1528,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
       const pscInternalId = res1.data.prescreeningId;
 
       // POST 2 — ANALYZED (equipe analisou o prescreening)
-      const res2 = await api.post(ENDPOINT, envelope({
+      const res2 = await post(envelope({
         subtype: 'ANALYZED',
         prescreening: { id: pscExtId },
         response: {
@@ -1525,45 +1549,91 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
       expect(pscRow[0].status).toBe('ANALYZED');
     });
 
-    it('regressão de status: ANALYZED → COMPLETED não deve ser permitida (se houver regra)', async () => {
-      // POST 1 — COMPLETED
+    // T1 (spec 095 §3.1): a trava de ordem segura a regressão; antes deste cartão o upsert sobrescrevia (COMPLETED).
+    it('status não regride: ANALYZED → COMPLETED mantém o veredito (T1)', async () => {
       const pscExtId = 'http-psc-regression-001';
-      const res1 = await api.post(ENDPOINT, envelope({ subtype: 'COMPLETED', prescreening: { id: pscExtId } }));
+      const res1 = await post(envelope({ subtype: 'COMPLETED', prescreening: { id: pscExtId } }));
       expect(res1.status).toBe(200);
 
-      // POST 2 — ANALYZED
-      const res2 = await api.post(ENDPOINT, envelope({ subtype: 'ANALYZED', prescreening: { id: pscExtId } }));
+      const res2 = await post(envelope({
+        subtype: 'ANALYZED',
+        prescreening: { id: pscExtId },
+        response: { id: 'http-resp-regression-001', state: [], score: 80, statusLabel: 'QUALIFIED' } as any,
+      }));
       expect(res2.status).toBe(200);
+      const { rows: afterAnalyzed } = await pool.query(
+        `SELECT status FROM talentum_prescreenings WHERE id = $1`,
+        [res2.data.prescreeningId],
+      );
+      expect(afterAnalyzed[0].status).toBe('QUALIFIED');
 
-      // POST 3 — Tentativa de voltar para COMPLETED (atualmente o sistema permite)
-      // Este teste documenta o comportamento atual. Se houver regra de negócio futura,
-      // o teste deve ser atualizado para validar a rejeição.
-      const res3 = await api.post(ENDPOINT, envelope({ subtype: 'COMPLETED', prescreening: { id: pscExtId } }));
+      // POST 3: evento atrasado (COMPLETED, precedência 2 < 4) não regride o status
+      const res3 = await post(envelope({ subtype: 'COMPLETED', prescreening: { id: pscExtId } }));
       expect(res3.status).toBe(200);
 
-      // Verifica que o status foi atualizado (comportamento atual de upsert)
       const { rows: pscRow } = await pool.query(
         `SELECT status FROM talentum_prescreenings WHERE id = $1`,
         [res3.data.prescreeningId],
       );
-      expect(pscRow[0].status).toBe('COMPLETED');
+      expect(pscRow[0].status).toBe('QUALIFIED');
+    });
+
+    // T2: empate de precedência grava o novo (veredito → veredito é reclassificação).
+    it('status não regride, mas empate grava o novo: NOT_QUALIFIED → QUALIFIED (T2)', async () => {
+      const pscExtId = 'http-psc-regression-tie-001';
+      const res1 = await post(envelope({
+        subtype: 'ANALYZED',
+        prescreening: { id: pscExtId },
+        response: { id: 'http-resp-tie-001', state: [], score: 30, statusLabel: 'NOT_QUALIFIED' } as any,
+      }));
+      expect(res1.status).toBe(200);
+      const { rows: r1 } = await pool.query(`SELECT status FROM talentum_prescreenings WHERE id = $1`, [res1.data.prescreeningId]);
+      expect(r1[0].status).toBe('NOT_QUALIFIED');
+
+      const res2 = await post(envelope({
+        subtype: 'ANALYZED',
+        prescreening: { id: pscExtId },
+        response: { id: 'http-resp-tie-001', state: [], score: 80, statusLabel: 'QUALIFIED' } as any,
+      }));
+      expect(res2.status).toBe(200);
+      const { rows: r2 } = await pool.query(`SELECT status FROM talentum_prescreenings WHERE id = $1`, [res2.data.prescreeningId]);
+      expect(r2[0].status).toBe('QUALIFIED');
+    });
+
+    // T3 (T-095-11): EXPIRED fica abaixo do veredito; o EXPIRED atrasado não o sobrescreve (veredito depois de EXPIRED vence: T12 do processador).
+    it('status não regride: QUALIFIED → EXPIRED atrasado mantém o veredito (T3)', async () => {
+      const pscExtId = 'http-psc-regression-expired-001';
+      const res1 = await post(envelope({
+        subtype: 'ANALYZED',
+        prescreening: { id: pscExtId },
+        response: { id: 'http-resp-expired-001', state: [], score: 80, statusLabel: 'QUALIFIED' } as any,
+      }));
+      expect(res1.status).toBe(200);
+      const res2 = await post(envelope({
+        subtype: 'ANALYZED',
+        prescreening: { id: pscExtId },
+        response: { id: 'http-resp-expired-001', state: [], statusLabel: 'EXPIRED' } as any,
+      }));
+      expect(res2.status).toBe(200);
+      const { rows } = await pool.query(`SELECT status FROM talentum_prescreenings WHERE id = $1`, [res1.data.prescreeningId]);
+      expect(rows[0].status).toBe('QUALIFIED');
     });
 
     it('query analytics: filtro por status ANALYZED retorna apenas prescreenings analisados', async () => {
       // Cria prescreenings em diferentes status
-      await api.post(ENDPOINT, envelope({
+      await post(envelope({
         subtype: 'COMPLETED',
         prescreening: { id: 'http-psc-analytics-001' },
         profile: { email: 'analytics1@test.local' },
       }));
 
-      await api.post(ENDPOINT, envelope({
+      await post(envelope({
         subtype: 'ANALYZED',
         prescreening: { id: 'http-psc-analytics-002' },
         profile: { email: 'analytics2@test.local' },
       }));
 
-      await api.post(ENDPOINT, envelope({
+      await post(envelope({
         subtype: 'ANALYZED',
         prescreening: { id: 'http-psc-analytics-003' },
         profile: { email: 'analytics3@test.local' },
@@ -1588,7 +1658,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
       const pscExtId = 'http-psc-worker-analyzed-001';
 
       // POST 1: COMPLETED, worker é auto-criado
-      const res1 = await api.post(ENDPOINT, envelope({
+      const res1 = await post(envelope({
         subtype: 'COMPLETED',
         prescreening: { id: pscExtId },
         profile: { email: 'worker.analyzed@test.local' },
@@ -1598,7 +1668,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
       const firstWorkerId = res1.data.workerId;
 
       // POST 2: ANALYZED, mesmo email → mesmo workerId
-      const res2 = await api.post(ENDPOINT, envelope({
+      const res2 = await post(envelope({
         subtype: 'ANALYZED',
         prescreening: { id: pscExtId },
         profile: { email: 'worker.analyzed@test.local' },
@@ -1608,7 +1678,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
       expect(res2.data.resolved.worker).toBe(true);
 
       // POST 3: ANALYZED com email DIFERENTE — COALESCE deve preservar o worker_id original
-      const res3 = await api.post(ENDPOINT, envelope({
+      const res3 = await post(envelope({
         subtype: 'ANALYZED',
         prescreening: { id: pscExtId },
         profile: { email: 'outro.email@test.local' },
@@ -1628,7 +1698,7 @@ describe('Talentum Webhook — POST /api/webhooks/talentum/prescreening (HTTP)',
 
       // Dispara 5 requests simultâneos com o mesmo prescreening ID
       const promises = Array.from({ length: 5 }, (_, i) =>
-        api.post(ENDPOINT, envelope({
+        post(envelope({
           subtype: 'COMPLETED',
           prescreening: { id: pscExtId },
           response: {

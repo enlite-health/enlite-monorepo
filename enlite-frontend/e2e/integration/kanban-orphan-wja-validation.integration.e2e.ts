@@ -35,6 +35,7 @@ import {
   openKanban,
   MOCK_TOKEN,
   BACKEND_URL,
+  drainTalentumInbox,
 } from '../helpers/talentumWebhookHelper';
 
 // ── DB helpers ─────────────────────────────────────────────────────────────────
@@ -236,6 +237,8 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
       headers: { 'Content-Type': 'application/json' },
     });
     expect(webhookRes.status(), 'Webhook Talentum deve retornar 200').toBe(200);
+    // Ack assíncrono (spec 095): o card só existe depois do drain da inbox; o funil abaixo é lido logo depois do POST.
+    await drainTalentumInbox(request, { prescreeningId: payload.data.prescreening.id, profileId: payload.data.profile.id });
 
     const funnelRes = await request.get(
       `${BACKEND_URL}/api/admin/vacancies/${vacancyId}/funnel`,

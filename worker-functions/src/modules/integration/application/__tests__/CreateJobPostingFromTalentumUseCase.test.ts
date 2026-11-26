@@ -575,6 +575,36 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
       expect(testResult.created).toBe(true);
     });
   });
+  describe('prefetch (T-095-30): a busca no Talentum sai antes da transação', () => {
+    it('prefetch resolve o _id UMA vez; execute com o resultado NÃO chama o resolver e grava o _id', async () => {
+      const resolver = jest.fn().mockResolvedValue('presc-pre');
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })              // prefetch: SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })              // execute: SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })              // SELECT por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '7' }] });  // nextval
+      mockClientQuery.mockResolvedValueOnce({}).mockResolvedValueOnce({ rows: [{ id: 'jp-pre' }] }).mockResolvedValue({ rows: [] });
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery), resolver);
+
+      const pre = await useCase.prefetch(makeInput({ _id: 'proj-pre', name: 'CASO 5' }));
+      expect(pre).toEqual({ prescreeningId: 'presc-pre' });
+      expect(resolver).toHaveBeenCalledTimes(1);
+
+      await useCase.execute(makeInput({ _id: 'proj-pre', name: 'CASO 5' }), 'production', pre);
+      expect(resolver).toHaveBeenCalledTimes(1); // execute (dentro da transação) não refaz o HTTP
+      const insert = mockClientQuery.mock.calls.find((c) => String(c[0]).includes('INSERT INTO job_postings'));
+      expect(insert![1]).toContain('presc-pre');
+    });
+
+    it('vaga já existente: prefetch nem chama o resolver', async () => {
+      const resolver = jest.fn();
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 'jp-x' }] });
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery), resolver);
+      expect(await useCase.prefetch(makeInput())).toEqual({ prescreeningId: null });
+      expect(resolver).not.toHaveBeenCalled();
+    });
+  });
+
   describe('talentum_prescreening_id (espelho do Talentum, M5)', () => {
     it('vaga CRIADA pelo Talentum grava o _id do prescreening (resolvido por getPrescreening) no INSERT', async () => {
       mockQuery

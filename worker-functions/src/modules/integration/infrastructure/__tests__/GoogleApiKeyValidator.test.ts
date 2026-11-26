@@ -5,7 +5,8 @@
  *
  * Cenários cobertos:
  *   - Bypass em modo mock (USE_MOCK_AUTH=true)
- *   - Cache hit/miss e expiração de TTL
+ *   - Cache hit/miss e expiração de TTL (6 h)
+ *   - T-095-23: stale-on-error (24 h), refresh sem await (> 1 h), 400/403/404 derrubam o cache
  *   - Respostas bem-sucedidas da Google API
  *   - Respostas de erro (400, 403, 404, 500)
  *   - Key válida mas sem displayName
@@ -237,17 +238,17 @@ describe('GoogleApiKeyValidator', () => {
       expect(mockRequest).toHaveBeenCalledTimes(4); // 2 keys × 2 chamadas cada
     });
 
-    it('deve expirar cache após TTL (5 minutos)', async () => {
+    it('deve expirar cache após TTL (6 horas)', async () => {
       mockLookupAndDetails('API-Key-Talentum');
 
       await validator.validate('ttl-key');
       expect(mockRequest).toHaveBeenCalledTimes(2); // lookup + details
 
       // Simular passagem do tempo: acessar o cache internamente
-      // e modificar o cachedAt para 6 minutos atrás
+      // e modificar o cachedAt para 7 horas atrás
       const cacheMap = (validator as any).cache as Map<string, { displayName: string; cachedAt: number }>;
       for (const [key, entry] of cacheMap) {
-        entry.cachedAt = Date.now() - 6 * 60 * 1000; // 6 min atrás
+        entry.cachedAt = Date.now() - 7 * 60 * 60 * 1000; // 7 h atrás
       }
 
       // Mockar novamente para a segunda chamada após expiração
@@ -263,7 +264,7 @@ describe('GoogleApiKeyValidator', () => {
 
       await validator.validate('fresh-key');
 
-      // Simular 4 minutos (dentro do TTL de 5 min)
+      // Simular 4 minutos (dentro da janela sem refresh, < 1 h)
       const cacheMap = (validator as any).cache as Map<string, { displayName: string; cachedAt: number }>;
       for (const [, entry] of cacheMap) {
         entry.cachedAt = Date.now() - 4 * 60 * 1000;
@@ -320,6 +321,134 @@ describe('GoogleApiKeyValidator', () => {
       expect(cacheKeys.length).toBe(1);
       // O hash deve ter 64 chars (SHA-256 hex)
       expect(cacheKeys[0].length).toBe(64);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // T-095-23: stale-on-error, refresh sem await, 400/403/404 derrubam o cache
+  // ─────────────────────────────────────────────────────────────────
+
+  describe('cache 6 h com stale-on-error e refresh em background (spec 095 §3.2 item 6)', () => {
+    const H = 60 * 60 * 1000;
+    const NOW = Date.parse('2026-11-25T12:00:00Z');
+    const KEY = 'AIzaSyFakeSyntheticKey000';
+    const flush = () => new Promise<void>((r) => setImmediate(r));
+
+    /** Popula o cache com uma entrada de `ageMs` atrás, pelo caminho real (relógio falso). */
+    async function seed(ageMs: number, displayName = 'API-Key-Talentum') {
+      jest.setSystemTime(NOW - ageMs);
+      mockRequest.mockReset();
+      mockRequest
+        .mockResolvedValueOnce({ data: { name: 'p/k/1' } })
+        .mockResolvedValueOnce({ data: { name: 'p/k/1', displayName } });
+      await validator.validate(KEY);
+      jest.setSystemTime(NOW);
+      mockRequest.mockReset();
+    }
+
+    let warnSpy: jest.SpyInstance;
+    let errSpy: jest.SpyInstance;
+    let unhandled: jest.Mock;
+
+    beforeEach(() => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'], now: NOW });
+      warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      errSpy = jest.spyOn(console, 'error').mockImplementation();
+      unhandled = jest.fn();
+      process.on('unhandledRejection', unhandled);
+    });
+
+    afterEach(() => {
+      process.off('unhandledRejection', unhandled);
+      warnSpy.mockRestore();
+      errSpy.mockRestore();
+      jest.useRealTimers();
+    });
+
+    it('(a) cache vencido (7 h) + API 500 → devolve o displayName em cache (stale-on-error) e loga sem a chave', async () => {
+      await seed(7 * H);
+      mockRequest.mockRejectedValue({ response: { status: 500 } });
+
+      expect(await validator.validate(KEY)).toBe('API-Key-Talentum');
+      expect(warnSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('partner_key_validation_stale');
+      const logged = [...warnSpy.mock.calls, ...errSpy.mock.calls].map((c) => c.join(' ')).join('\n');
+      expect(logged).not.toContain(KEY);
+      expect(logged).not.toContain(KEY.slice(0, 6));
+    });
+
+    it('(a2) cache de 3 h + API 500 no refresh → devolve o displayName e não rejeita', async () => {
+      await seed(3 * H);
+      mockRequest.mockRejectedValue({ response: { status: 500 } });
+
+      expect(await validator.validate(KEY)).toBe('API-Key-Talentum');
+      await flush();
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(await validator.validate(KEY)).toBe('API-Key-Talentum'); // a entrada segue de pé
+    });
+
+    it('(b) cache de 3 h + API 403 → o refresh apaga a entrada; a chamada seguinte vai à API e dá null', async () => {
+      await seed(3 * H);
+      mockRequest.mockRejectedValue({ response: { status: 403 } });
+
+      expect(await validator.validate(KEY)).toBe('API-Key-Talentum'); // resposta imediata, do cache
+      await flush();
+      mockRequest.mockClear();
+
+      expect(await validator.validate(KEY)).toBeNull();
+      expect(mockRequest).toHaveBeenCalled(); // foi à API, não ao cache
+    });
+
+    it('(b2) cache vencido (7 h) + API 403 → null na hora, mesmo havendo cache stale', async () => {
+      await seed(7 * H);
+      mockRequest.mockRejectedValue({ response: { status: 403 } });
+      expect(await validator.validate(KEY)).toBeNull();
+    });
+
+    it('(c) cache de 25 h + API 500 → null (acima do teto de 24 h)', async () => {
+      await seed(25 * H);
+      mockRequest.mockRejectedValue({ response: { status: 500 } });
+      expect(await validator.validate(KEY)).toBeNull();
+    });
+
+    it('(d) cache de 2 h → responde sem esperar a API (a promise da API fica pendente)', async () => {
+      await seed(2 * H);
+      mockRequest.mockReturnValue(new Promise(() => undefined)); // nunca resolve
+
+      expect(await validator.validate(KEY)).toBe('API-Key-Talentum');
+      expect(mockRequest).toHaveBeenCalledTimes(1); // o refresh foi disparado...
+    });
+
+    it('cache de 30 min → nem dispara refresh (dentro de 1 h)', async () => {
+      await seed(H / 2);
+      expect(await validator.validate(KEY)).toBe('API-Key-Talentum');
+      expect(mockRequest).not.toHaveBeenCalled();
+    });
+
+    it('refresh bem-sucedido renova o cachedAt; chamadas concorrentes disparam um refresh só', async () => {
+      await seed(2 * H);
+      mockRequest
+        .mockResolvedValueOnce({ data: { name: 'p/k/1' } })
+        .mockResolvedValueOnce({ data: { name: 'p/k/1', displayName: 'API-Key-Renamed' } });
+
+      await Promise.all([validator.validate(KEY), validator.validate(KEY), validator.validate(KEY)]);
+      await flush();
+      expect(mockRequest).toHaveBeenCalledTimes(2); // 1 refresh = lookup + details
+      mockRequest.mockClear();
+
+      expect(await validator.validate(KEY)).toBe('API-Key-Renamed'); // entrada nova, sem refresh
+      expect(mockRequest).not.toHaveBeenCalled();
+    });
+
+    it('refresh que falha com erro de rede não gera unhandledRejection', async () => {
+      await seed(2 * H);
+      mockRequest.mockRejectedValue(new Error('ECONNRESET ?keyString=' + KEY));
+
+      await validator.validate(KEY);
+      await flush();
+      await flush();
+      expect(unhandled).not.toHaveBeenCalled();
+      const logged = [...warnSpy.mock.calls, ...errSpy.mock.calls].map((c) => c.join(' ')).join('\n');
+      expect(logged).not.toContain(KEY);
     });
   });
 

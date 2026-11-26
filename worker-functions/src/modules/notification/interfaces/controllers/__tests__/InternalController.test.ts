@@ -200,7 +200,13 @@ describe('InternalController', () => {
 
   describe('sweepMessagingRetention', () => {
     it('calls MessagingRetentionService.run and returns the counts', async () => {
-      messagingRetentionService.run.mockResolvedValue({ outboxDeleted: 226, bulkDeleted: 40, tokensDeleted: 1501 });
+      messagingRetentionService.run.mockResolvedValue({
+        outboxDeleted: 226,
+        bulkDeleted: 40,
+        tokensDeleted: 1501,
+        talentumInboxPayloadsCleared: 3,
+        talentumInboxDeleted: 2,
+      });
       const res = mockRes();
       await controller.sweepMessagingRetention(mockReq(), res);
 
@@ -211,6 +217,8 @@ describe('InternalController', () => {
         outboxDeleted: 226,
         bulkDeleted: 40,
         tokensDeleted: 1501,
+        talentumInboxPayloadsCleared: 3,
+        talentumInboxDeleted: 2,
       });
     });
 
@@ -530,6 +538,60 @@ describe('InternalController', () => {
         const res = mockRes();
         await controller.getEventsHealth(mockReq({}, {}), res);
         expect((res.json as jest.Mock).mock.calls[0][0]).not.toHaveProperty('itineraryDailyRun');
+      });
+    });
+
+    describe('spec 095 F4 — alarmes do webhook do Talentum', () => {
+      const { logger } = jest.requireMock('@shared/logging');
+      beforeEach(() => logger.warn.mockClear());
+      const comTalentum = (getHealth: jest.Mock) =>
+        new InternalController(
+          eventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler,
+          domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, undefined, undefined, { getHealth } as never,
+        );
+      const alarmes = () => logger.warn.mock.calls.filter((x: [{ msg: string }]) => x[0].msg === 'talentum_webhook_alarm');
+
+      it('inbox_falha = 2 → WARN talentum_webhook_alarm {alarme, quantidade}; só o alarme > 0; bloco sobe no JSON', async () => {
+        const h = { inbox_falha: 2, inbox_pendente: 0, veredito_ausente: 0, silencio: 0 };
+        const res = mockRes();
+        await comTalentum(jest.fn().mockResolvedValue(h)).getEventsHealth(mockReq({}, {}), res);
+        expect(alarmes()).toHaveLength(1);
+        expect(alarmes()[0][0]).toEqual({ msg: 'talentum_webhook_alarm', alarme: 'inbox_falha', quantidade: 2 });
+        expect((res.json as jest.Mock).mock.calls[0][0].talentumWebhook).toEqual(h);
+      });
+
+      it('o laço do health chama o sino do ciclo com a contagem e o MESMO relógio (depois do WARN)', async () => {
+        const h = { inbox_falha: 2, inbox_pendente: 0, veredito_ausente: 0, silencio: 0 };
+        const notifyCycle = jest.fn().mockResolvedValue(undefined);
+        const getHealth = jest.fn().mockResolvedValue(h);
+        const c = new InternalController(
+          eventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler,
+          domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, undefined, undefined, { getHealth } as never, { notifyCycle },
+        );
+        await c.getEventsHealth(mockReq({}, {}), mockRes());
+        expect(notifyCycle).toHaveBeenCalledTimes(1);
+        expect(notifyCycle).toHaveBeenCalledWith(h, getHealth.mock.calls[0][0]);
+      });
+
+      it('detector que lança (getHealth) → WARN talentum_webhook_alarm {alarme: detector_falhou} sem a mensagem do erro; health segue 200', async () => {
+        const res = mockRes();
+        await comTalentum(jest.fn().mockRejectedValue(new Error('linha com dado sensivel'))).getEventsHealth(mockReq({}, {}), res);
+        expect(alarmes()).toHaveLength(1);
+        expect(alarmes()[0][0]).toEqual({ msg: 'talentum_webhook_alarm', alarme: 'detector_falhou' });
+        expect(JSON.stringify(alarmes())).not.toContain('sensivel');
+        expect(res.status).toHaveBeenCalledWith(200);
+      });
+
+      it('tudo 0 → nenhum WARN; detector que falha não derruba o health (200); sem o serviço o bloco é omitido', async () => {
+        await comTalentum(jest.fn().mockResolvedValue({ inbox_falha: 0, inbox_pendente: 0, veredito_ausente: 0, silencio: 0 })).getEventsHealth(mockReq({}, {}), mockRes());
+        expect(alarmes()).toHaveLength(0);
+        const res = mockRes();
+        await comTalentum(jest.fn().mockRejectedValue(new Error('boom'))).getEventsHealth(mockReq({}, {}), res);
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect((res.json as jest.Mock).mock.calls[0][0]).not.toHaveProperty('talentumWebhook');
+        const res2 = mockRes();
+        await controller.getEventsHealth(mockReq({}, {}), res2);
+        expect((res2.json as jest.Mock).mock.calls[0][0]).not.toHaveProperty('talentumWebhook');
       });
     });
 

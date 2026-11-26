@@ -1874,6 +1874,7 @@
         "OVERQUALIFIED": "Sobrequalificado",
         "DEPENDENCY_MISMATCH": "Dependência",
         "TALENTUM_NOT_QUALIFIED": "Talentum não qualificado",
+        "TALENTUM_EXPIRED": "Talentum expirado",
         "OTHER": "Outro"
       },
       "noName": "Sem nome",
@@ -6787,7 +6788,19 @@
         "semana": "esta semana"
       },
       "pedidoIaActor": "Sol",
-      "pedidoIaContext": "Pedidos do Sol"
+      "pedidoIaContext": "Pedidos do Sol",
+      "talentumWebhookText": "Webhook do Talentum: {{quantidade}} {{alarme}}",
+      "talentumWebhookTextSilencio": "Webhook do Talentum: sem eventos em 6 h",
+      "talentumWebhookActor": "Enlite",
+      "talentumWebhookContext": "Webhook do Talentum",
+      "talentumWebhookAlarm": {
+        "inbox_falha": "eventos com erro",
+        "inbox_pendente": "eventos sem processar",
+        "veredito_ausente": "candidaturas sem veredito",
+        "silencio": "sem eventos em 6 h",
+        "CONFLITO_HUMANO": "mudança manual no Talentum em conflito com um movimento da equipe"
+      },
+      "talentumWebhookAlarmUnknown": "avisos de alarme"
     },
     "profile": {
       "title": "Meu perfil",
