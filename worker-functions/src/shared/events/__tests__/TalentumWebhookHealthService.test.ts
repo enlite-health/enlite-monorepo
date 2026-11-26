@@ -17,8 +17,8 @@ function fakePool(inbox: InboxRow[], mirror: MirrorRow[]) {
       const [status, cutoff] = params as [string[], Date];
       n = mirror.filter((r) => status.includes(r.status) && r.updated_at < cutoff).length;
     } else if (sql.includes('state = ANY($1')) {
-      const [states] = params as [string[]];
-      n = inbox.filter((r) => states.includes(r.state)).length;
+      const [sempre, comCorte, cutoff] = params as [string[], string[], Date];
+      n = inbox.filter((r) => sempre.includes(r.state) || (comCorte.includes(r.state) && r.received_at >= cutoff)).length;
     } else if (sql.includes('state = $1')) {
       const [state, cutoff] = params as [string, Date];
       n = inbox.filter((r) => r.state === state && r.received_at < cutoff).length;
@@ -64,6 +64,14 @@ describe('TalentumWebhookHealthService (spec 095 T-095-40)', () => {
     const t = AR_15H;
     const inbox = ['FAILED', 'REJECTED_SCHEMA', 'UNSUPPORTED', 'PROCESSED', 'RECEIVED'].map((state) => ({ state, received_at: t }));
     expect((await health(AR_15H, inbox)).inbox_falha).toBe(3);
+  });
+
+  it('UNSUPPORTED há 25 h não conta; há 23 h conta; FAILED há 30 dias conta', async () => {
+    const at = (state: string, ms: number) => [{ state, received_at: new Date(AR_15H.getTime() - ms) }];
+    expect((await health(AR_15H, at('UNSUPPORTED', 25 * H))).inbox_falha).toBe(0);
+    expect((await health(AR_15H, at('UNSUPPORTED', 23 * H))).inbox_falha).toBe(1);
+    expect((await health(AR_15H, at('REJECTED_SCHEMA', 25 * H))).inbox_falha).toBe(0);
+    expect((await health(AR_15H, at('FAILED', 30 * 24 * H))).inbox_falha).toBe(1);
   });
 
   it('0 linhas na inbox às 08:00 AR → nada; às 15:00 AR → silencio', async () => {

@@ -106,7 +106,7 @@ resource "google_monitoring_alert_policy" "talentum_webhook_alarm" {
       ## O que este alerta afirma
       O health check (`GET /api/internal/events/health`, a cada 5 min) reemite um WARN `talentum_webhook_alarm` por alarme com contagem > 0
       (campos `alarme` e `quantidade`, sem PII). Sinal de **ESTADO**: dura enquanto a condição durar. Ver o campo `alarme` no log do `worker-functions`:
-      - `inbox_falha` — há linhas da inbox em `FAILED`, `REJECTED_SCHEMA` ou `UNSUPPORTED`;
+      - `inbox_falha` — há linhas da inbox em `FAILED` (sem corte de idade) ou em `REJECTED_SCHEMA`/`UNSUPPORTED` recebidas nas últimas 24 h;
       - `inbox_pendente` — há linha `RECEIVED` parada há mais de 15 min: órfã de publish (o Pub/Sub não entregou ou a assinatura não existe);
       - `veredito_ausente` — espelho `COMPLETED` há mais de 2 h sem veredito;
       - `silencio` — 0 eventos em 6 h dentro da janela 09-21 (Buenos Aires): o Talentum parou de chamar o webhook;

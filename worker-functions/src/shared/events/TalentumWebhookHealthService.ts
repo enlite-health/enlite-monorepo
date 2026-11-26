@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 
 export interface TalentumWebhookHealth {
-  /** Linhas da inbox em estado terminal de erro (FAILED / REJECTED_SCHEMA / UNSUPPORTED). */
+  /** FAILED (sempre) + REJECTED_SCHEMA / UNSUPPORTED recebidas nas últimas `INBOX_FALHA_JANELA_HORAS`. */
   inbox_falha: number;
   /** Linhas RECEIVED há mais de `INBOX_PENDENTE_MINUTOS` sem processar. */
   inbox_pendente: number;
@@ -22,6 +22,11 @@ export const SILENCIO_HORA_FIM = 21;
 
 /** Estados de erro da inbox. */
 export const INBOX_ESTADOS_FALHA: readonly string[] = ['FAILED', 'REJECTED_SCHEMA', 'UNSUPPORTED'];
+/** FAILED é acionável (redrive): conta enquanto existir, sem corte de idade. */
+export const INBOX_FALHA_SEM_CORTE: readonly string[] = ['FAILED'];
+/** UNSUPPORTED / REJECTED_SCHEMA não têm redrive que os limpe: só alarmam nesta janela, senão o alarme é eterno. */
+export const INBOX_FALHA_COM_CORTE: readonly string[] = ['REJECTED_SCHEMA', 'UNSUPPORTED'];
+export const INBOX_FALHA_JANELA_HORAS = 24;
 /** Único status do espelho que conta como "veredito ausente". IN_PROGRESS (abandono) NUNCA entra. */
 export const ESPELHO_STATUS_SEM_VEREDITO: readonly string[] = ['COMPLETED'];
 
@@ -47,8 +52,8 @@ export class TalentumWebhookHealthService {
     };
 
     const inbox_falha = await count(
-      'SELECT count(*)::int AS n FROM talentum_webhook_inbox WHERE state = ANY($1::text[])',
-      [INBOX_ESTADOS_FALHA],
+      'SELECT count(*)::int AS n FROM talentum_webhook_inbox WHERE state = ANY($1::text[]) OR (state = ANY($2::text[]) AND received_at >= $3)',
+      [INBOX_FALHA_SEM_CORTE, INBOX_FALHA_COM_CORTE, ago(INBOX_FALHA_JANELA_HORAS * 3_600_000)],
     );
     const inbox_pendente = await count(
       'SELECT count(*)::int AS n FROM talentum_webhook_inbox WHERE state = $1 AND received_at < $2',
