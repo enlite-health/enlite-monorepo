@@ -21,7 +21,7 @@ export class EmailCoordinationAlertChannel implements CoordinationAlertChannel {
     if (!recipient.email) return { status: 'NO_ADDRESS' };
     const s = alert.shift;
     try {
-      await this.email.sendCoordinationAlert(recipient.email, { kind: alert.kind, onDate: s.onDate, time: alert.kind === 'PRESENCE_OPEN_4H' ? s.endTime : s.startTime });
+      await this.email.sendCoordinationAlert(recipient.email, { kind: alert.kind, onDate: s.onDate, time: alert.kind === 'PRESENCE_OPEN_4H' ? s.endTime : s.startTime, country: s.country });
       return { status: 'SENT' };
     } catch (err) {
       if (err instanceof EmailChannelUnavailableError) return { status: err.motivo === 'ambiente de teste' ? 'SKIPPED_TEST' : 'SKIPPED_NO_KEY' };

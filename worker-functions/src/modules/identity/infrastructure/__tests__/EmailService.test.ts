@@ -276,6 +276,27 @@ describe('EmailService — guard de envio (teste nunca toca canal real)', () => 
       expect(refused.html).not.toMatch(PROIBIDOS);
     });
 
+    it('BR: português (minúsculas aceitas) nos dois tipos, mesmos dados, sem texto em espanhol', async () => {
+      envDeProducao();
+      await new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'PRESENCE_OPEN_4H', country: 'br', ...base });
+      await new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'CHECK_IN_REFUSED_NO_ENTRY', country: 'BR', ...base });
+      const [open, refused] = mockSend.mock.calls.map((c) => c[0]);
+      expect(open.subject).toBe('Turno sem saída registrada');
+      expect(open.html).toContain('(2026-11-02, 18:00) e não há saída registrada');
+      expect(open.html).toContain('Abrir a fila de revisão');
+      expect(refused.subject).toBe('Entrada recusada em um turno');
+      expect(refused.html).toContain('um turno de 2026-11-02, 18:00');
+      expect(open.html).not.toContain('Abrir la cola');
+      expect(open.html).toContain('https://app.enlite.health/admin/presencia/revision');
+    });
+
+    it('país ausente ou desconhecido cai em espanhol', async () => {
+      envDeProducao();
+      await new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'PRESENCE_OPEN_4H', ...base });
+      await new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'PRESENCE_OPEN_4H', country: 'XX', ...base });
+      expect(mockSend.mock.calls.map((c) => c[0].subject)).toEqual(['Turno sin salida registrada', 'Turno sin salida registrada']);
+    });
+
     it('escapa data/hora no HTML', async () => {
       envDeProducao();
       await new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'PRESENCE_OPEN_4H', onDate: '<b>x</b>', time: '18:00' });

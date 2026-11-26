@@ -237,9 +237,9 @@ describe('canais (adapters) — nenhum envio real', () => {
     const send = jest.fn().mockResolvedValue(undefined);
     const ch = new EmailCoordinationAlertChannel({ sendCoordinationAlert: send } as never);
     expect(await ch.deliver(alert('PRESENCE_OPEN_4H'), recipient)).toEqual({ status: 'SENT' });
-    expect(send).toHaveBeenLastCalledWith('u1@example.test', { kind: 'PRESENCE_OPEN_4H', onDate: '2026-11-25', time: '16:00' });
+    expect(send).toHaveBeenLastCalledWith('u1@example.test', { kind: 'PRESENCE_OPEN_4H', onDate: '2026-11-25', time: '16:00', country: 'AR' });
     await ch.deliver(alert('CHECK_IN_REFUSED_NO_ENTRY'), recipient);
-    expect(send).toHaveBeenLastCalledWith('u1@example.test', { kind: 'CHECK_IN_REFUSED_NO_ENTRY', onDate: '2026-11-25', time: '08:00' });
+    expect(send).toHaveBeenLastCalledWith('u1@example.test', { kind: 'CHECK_IN_REFUSED_NO_ENTRY', onDate: '2026-11-25', time: '08:00', country: 'AR' });
     expect(await ch.deliver(alert('PRESENCE_OPEN_4H'), { ...recipient, email: null })).toEqual({ status: 'NO_ADDRESS' });
 
     const { EmailChannelUnavailableError } = jest.requireActual('@modules/identity/infrastructure/EmailService');
