@@ -199,6 +199,7 @@ jobs:
             CHATWOOT_URL=https://chatwoot-production-0e81.up.railway.app
             PERISKOPE_PHONE=5491176360496
             PERISKOPE_WEBHOOK_ENABLED=true
+            ATTENDANCE_SERVICE_URL=https://attendance-service-byh3gvl5yq-tl.a.run.app
             TEMPLATE_SUBMISSION_ENABLED=true
             # spec 078, ato (k): aviso GRAVE do Sol. SOL_TWILIO_FROM = o MESMO número do backend (decisão 30/10).
             # Template pendente de aprovação na Meta: até aprovar, o envio vira `falha` com motivo (fail-closed).
