@@ -1495,7 +1495,8 @@
       "aiPrompts": "Prompts de IA",
       "interviewHosts": "Entrevistadores",
       "insuranceProviders": "Obras sociais",
-      "pedidosIa": "Pedidos da IA"
+      "pedidosIa": "Pedidos da IA",
+      "presenceReview": "Revisão de presença"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -5438,6 +5439,8 @@
             "incomplete_alert": "Aviso dia 12",
             "waive_contact": "Não precisa",
             "decidir": "Decidir",
+            "review": "Revisar",
+            "receive": "Receber",
             "register": "Registrar",
             "resend_message": "Reenviar mensagem",
             "move_to_on_hold": "Para em espera",
@@ -5472,6 +5475,8 @@
             "tag": "Catálogo de etiquetas",
             "ai_prompt": "Prompts de IA",
             "pedidos_ia": "Pedidos de IA",
+            "presence_alert": "Aviso de presença à coordenação",
+            "presence_exception": "Revisão de presença (exceções de local)",
             "platform_costs": "Custos da plataforma",
             "luz_prueba": "Luz (prova)",
             "recruitment_activity_per_person": "Atividade do funil por recrutadora",
@@ -6053,6 +6058,9 @@
         },
         "pedidosIa": {
           "label": "Pedidos da IA"
+        },
+        "presenceReview": {
+          "label": "Revisão de presença"
         }
       }
     },
@@ -7343,6 +7351,91 @@
       "unavailable": "Luz indisponível, tente de novo.",
       "noAccess": "Você não tem acesso à Luz (prueba).",
       "genericError": "Algo deu errado. Tente de novo."
+    },
+    "presenceReview": {
+      "title": "Revisão de presença",
+      "subtitle": "Turnos que precisam de revisão da coordenação: exceções de local, saídas declaradas, horas não verificáveis e entradas recusadas sem entrada aceita.",
+      "loading": "Carregando…",
+      "authzError": "Não foi possível verificar o seu acesso. Tente de novo.",
+      "noAccess": {
+        "title": "Sem acesso",
+        "message": "Sua conta não tem permissão para revisar a presença. Peça à coordenação que libere."
+      },
+      "filters": {
+        "kind": "Tipo",
+        "country": "País",
+        "allKinds": "Todos os tipos"
+      },
+      "kinds": {
+        "EXCEPTION_PENDING": "Exceção de local",
+        "EXIT_DECLARED": "Saída declarada",
+        "CLOCK_UNVERIFIED": "Hora não verificável",
+        "ENTRY_REFUSED_NO_ENTRY": "Entrada recusada sem entrada aceita"
+      },
+      "columns": {
+        "type": "Tipo",
+        "shift": "Data e horário do turno",
+        "worker": "Prestador/a",
+        "patient": "Paciente (nº do caso)",
+        "reason": "Motivo escolhido",
+        "distance": "Distância e precisão",
+        "action": "Ação"
+      },
+      "caseLabel": "Caso {{number}}",
+      "distance": "{{meters}} m do paciente",
+      "accuracy": "precisão ±{{meters}} m",
+      "reasons": {
+        "GPS_INDOOR": "O GPS não funciona dentro da casa",
+        "ADDRESS_WRONG": "O endereço do paciente está errado no mapa",
+        "PATIENT_ELSEWHERE": "O paciente está em outro lugar (consulta, internação, saída)",
+        "OTHER": "Outro motivo",
+        "SERVER_DETECTED": "O servidor detectou outra localização; a prestadora não escolheu motivo",
+        "OCCURRENCE_NOT_OWNED": "O turno não é da prestadora",
+        "UNKNOWN_OCCURRENCE": "Turno que não existe no itinerário",
+        "CLOCK_SUSPECT": "Hora do telefone suspeita",
+        "MOCK_LOCATION": "Localização simulada",
+        "MOCK": "Localização simulada",
+        "OUT_OF_WINDOW": "Fora do horário permitido",
+        "ALREADY_CLOSED": "O turno já tinha saída",
+        "CHECK_OUT_BEFORE_CHECK_IN": "Saída antes da entrada",
+        "CHECK_IN_AFTER_CHECK_OUT": "Entrada depois da saída",
+        "OUTSIDE": "Fora do local do paciente",
+        "INCONCLUSIVE": "Localização inconclusiva",
+        "NO_POSITION": "Sem localização",
+        "ADDRESS_UNRELIABLE": "Endereço do paciente pouco confiável",
+        "UNKNOWN": "Outro motivo"
+      },
+      "actions": {
+        "approve": "Aprovar",
+        "reject": "Recusar"
+      },
+      "monthlyCheck": "A conferir na validação mensal",
+      "empty": "Não há nada para revisar.",
+      "loadMore": "Carregar mais",
+      "dialog": {
+        "title": {
+          "APPROVED": "Aprovar exceção de local",
+          "REFUSED": "Recusar exceção de local"
+        },
+        "legend": "Código de resolução (obrigatório)",
+        "required": "Escolha um código de resolução para continuar.",
+        "confirm": "Confirmar",
+        "cancel": "Cancelar"
+      },
+      "resolution": {
+        "INDOOR_CONFIRMED": "GPS dentro de casa, confirmado",
+        "ADDRESS_TO_FIX": "Endereço a corrigir",
+        "PATIENT_ELSEWHERE_CONFIRMED": "Paciente em outro lugar, confirmado",
+        "NOT_AT_PATIENT": "Não estava com o paciente",
+        "NO_EVIDENCE": "Sem como confirmar"
+      },
+      "errors": {
+        "load": "Não foi possível carregar a fila de revisão. Tente de novo.",
+        "generic": "Não foi possível registrar a decisão. Tente de novo.",
+        "alreadyDecided": "Esta exceção já tem uma decisão. A fila foi atualizada.",
+        "notFound": "Não encontramos essa exceção. A fila foi atualizada.",
+        "unavailable": "O serviço de presença não está disponível agora. Tente de novo em alguns minutos."
+      }
     },
     "pedidosIa": {
       "title": "Pedidos da IA",

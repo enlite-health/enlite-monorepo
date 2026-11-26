@@ -65,6 +65,8 @@ const ROTAS_SEM_CHAVE_SCREEN = new Set([
   'pedidos-ia',
   // Spec 082: painel de custos — gateado pela célula só-Master `platform_costs:read`, não por país; sem item de menu (DF-2).
   'custos',
+  // Emenda 077 §6: fila de revisão de presença — gateada pela célula `presence_exception:review` (página: "Sin acceso"; API: 403), não por país.
+  'presencia/revision',
 ]);
 
 /** Todo `href: '...'` literal declarado em `adminNavigation.tsx` (baseItems + adminItems + accessItems). */

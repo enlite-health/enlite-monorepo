@@ -154,6 +154,8 @@
     "prescreening:read",
     "prescreening:update",
     "prescreening:write",
+    "presence_alert:receive",
+    "presence_exception:review",
     "recruitment:read",
     "recruitment:write",
     "recruitment_activity_per_person:read",
