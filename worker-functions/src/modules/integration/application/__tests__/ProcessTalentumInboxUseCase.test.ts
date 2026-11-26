@@ -79,7 +79,9 @@ function buildWorld(rows: TalentumInboxRow[], payloads: Record<string, unknown>)
       events.push(`${client.name}:lock`);
     }),
     pendingForKey: jest.fn(async (_c, _p, _k, also: string[] = []) =>
-      rows.filter((r) => states.get(r.id) === 'RECEIVED' || (also.includes(r.id) && states.get(r.id) !== 'PROCESSED'))
+      // Espelha o SQL real: RECEIVED e FAILED da chave (+ as pedidas, menos PROCESSED), por received_at, id.
+      rows.filter((r) => ['RECEIVED', 'FAILED'].includes(states.get(r.id)!) || (also.includes(r.id) && states.get(r.id) !== 'PROCESSED'))
+        .sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime() || a.id.localeCompare(b.id))
         .map((r) => ({ ...r, state: states.get(r.id)! }))),
     decryptPayload: jest.fn(async (r) => payloads[String(r.payloadEnc).slice(4, -1)]),
     markProcessed: jest.fn(async (_c, id) => { states.set(id, 'PROCESSED'); events.push(`mark:${id}:PROCESSED`); }),
@@ -164,6 +166,46 @@ describe('ProcessTalentumInboxUseCase', () => {
     expect(w.inbox.pendingForKey).toHaveBeenCalledWith(expect.anything(), K.p, K.c, ['i1']);
     expect(r).toMatchObject({ outcome: 'PROCESSED', processed: 1 });
     expect(w.states.get('i1')).toBe('PROCESSED');
+  });
+
+  describe('ordem com FAILED (T-095-30): a mais nova da chave espera a mais antiga não processada', () => {
+    const older = new Date('2026-11-25T10:00:00Z');
+    const newer = new Date('2026-11-25T11:00:00Z');
+
+    it('A (mais antiga) FAILED + push de B → A é aplicada ANTES de B', async () => {
+      const w = buildWorld(
+        [row('a', { state: 'FAILED', receivedAt: older, attempts: 1 }), row('b', { receivedAt: newer })],
+        { a: responsePayload('A'), b: responsePayload('B') },
+      );
+      const applied: string[] = [];
+      const processor = { execute: jest.fn(async (p: any) => { applied.push(p.data.profile.phoneNumber); }) };
+
+      const r = await new ProcessTalentumInboxUseCase(w.pool as any, w.inbox, processor, { execute: jest.fn() }).execute('b');
+
+      expect(applied).toEqual(['A', 'B']);
+      expect(r).toMatchObject({ outcome: 'PROCESSED', processed: 2 });
+      expect([...w.states.values()]).toEqual(['PROCESSED', 'PROCESSED']);
+    });
+
+    it('A falha de novo → B continua RECEIVED, não é aplicada nem marcada (sem attempts)', async () => {
+      const w = buildWorld(
+        [row('a', { state: 'FAILED', receivedAt: older, attempts: 1 }), row('b', { receivedAt: newer })],
+        { a: responsePayload('A'), b: responsePayload('B') },
+      );
+      const applied: string[] = [];
+      const processor = { execute: jest.fn(async (p: any) => { applied.push(p.data.profile.phoneNumber); throw Object.assign(new Error('x'), { code: '40001' }); }) };
+
+      await expect(
+        new ProcessTalentumInboxUseCase(w.pool as any, w.inbox, processor, { execute: jest.fn() }).execute('b'),
+      ).rejects.toMatchObject({ code: '40001' });
+
+      expect(applied).toEqual(['A']); // B nem foi tentada
+      expect(w.states.get('a')).toBe('FAILED');
+      expect(w.states.get('b')).toBe('RECEIVED');
+      expect(w.inbox.markFailed).toHaveBeenCalledTimes(1);
+      expect(w.inbox.markFailed).toHaveBeenCalledWith(expect.anything(), 'a', 'code=40001');
+      expect(w.inbox.markProcessed).not.toHaveBeenCalled();
+    });
   });
 
   it('UNSUPPORTED/REJECTED_SCHEMA: o push não reprocessa; o redrive (reprocess) sim', async () => {

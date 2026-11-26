@@ -12,6 +12,7 @@
  *       a EXPIRAÇÃO automática depois dele não rejeita (AFTER_MANUAL); e o ANALYZED sem marcador é INFERIDO como manual
  *  T11  manual contra a última linha da trilha de uid humano NOSSO → só o espelho muda + aviso CONFLITO_HUMANO
  *  T12  expiração → EXPIRED / REJECTED / TALENTUM_EXPIRED / auto_expired; depois ANALYZED/QUALIFIED automático reverte
+ *  T17  a mais antiga da chave em FAILED + push da mais nova → a antiga é aplicada ANTES (a mais nova não passa na frente)
  *  T16  os `domain_events` pendentes de COMPLETED → QUALIFIED pela inbox são só `funnel_stage.qualified`
  *
  * Canal real: nenhum. `PubSubClient` é mock em NODE_ENV=test (o ack não dispara o processador; quem processa é a rota interna
@@ -49,7 +50,7 @@ describe('Talentum — processador da inbox (spec 095 §3.2/§3.4)', () => {
   let pool: Pool;
 
   // Cada caso tem a sua chave (prescreening + profile), seu worker e sua vaga: nada é compartilhado entre casos.
-  const CASES = ['T6', 'T7', 'T8', 'T9', 'T10A', 'T10C', 'T11', 'T12', 'T16'] as const;
+  const CASES = ['T6', 'T7', 'T8', 'T9', 'T10A', 'T10C', 'T11', 'T12', 'T16', 'T17'] as const;
   type Case = (typeof CASES)[number];
   const PSC = (c: Case) => `proc95-${RUN}-psc-${c}`;
   const PROF = (c: Case) => `proc95-${RUN}-prof-${c}`;
@@ -227,6 +228,23 @@ describe('Talentum — processador da inbox (spec 095 §3.2/§3.4)', () => {
     // A ordem de processamento ficou na trilha do WJA: INITIATED (PRE_SCREENING) → veredito. Fora de ordem, o 1º degrau seria outro.
     expect((await trail('T6')).map((r) => r.new_value)).toEqual(['PRE_SCREENING', 'QUALIFIED']);
     expect(await stage('T6')).toBe('QUALIFIED');
+  });
+
+  // ── T17 ───────────────────────────────────────────────────────────────────────────────────────────────
+  it('T17: a mais antiga da chave em FAILED + push da mais nova → a antiga é aplicada ANTES; espelho final = o veredito', async () => {
+    const t0 = Date.now() - 60 * 60 * 1000;
+    const verdict = await insertInbox('T17', analyzed('T17', 'QUALIFIED'), new Date(t0 + 1000));
+    await pool.query(`UPDATE talentum_webhook_inbox SET state = 'FAILED', error_code = 'code=40001', attempts = 1 WHERE id = $1`, [verdict]);
+    const completed = await insertInbox('T17', body('T17', 'COMPLETED'), new Date(t0 + 2000));
+
+    const res = await processRow(completed);
+    expect(res.status).toBe(200);
+    expect(res.data).toEqual({ inboxId: completed, outcome: 'PROCESSED', processed: 2 });
+
+    expect((await inbox('T17')).map((r) => [r.id, r.state])).toEqual([[verdict, 'PROCESSED'], [completed, 'PROCESSED']]);
+    // Antes do conserto a FAILED ficava de fora: o COMPLETED era aplicado sozinho (espelho COMPLETED) e o veredito velho esperava a reentrega.
+    expect((await mirror('T17')).map((r) => r.status)).toEqual(['QUALIFIED']);
+    expect(await stage('T17')).toBe('QUALIFIED');
   });
 
   // ── T7 ────────────────────────────────────────────────────────────────────────────────────────────────

@@ -83,7 +83,7 @@ describe('TalentumInboxRepository', () => {
     expect(client.query.mock.calls[0][0]).toContain('pg_advisory_xact_lock(hashtextextended($1, 0))');
   });
 
-  it('pendingForKey: só RECEIVED, ordenado por received_at, mapeado', async () => {
+  it('pendingForKey: RECEIVED e FAILED, ordenado por received_at, mapeado', async () => {
     const at = new Date('2026-11-25T10:00:00Z');
     const client = {
       query: jest.fn().mockResolvedValue({
@@ -92,7 +92,7 @@ describe('TalentumInboxRepository', () => {
     };
     const rows = await new TalentumInboxRepository(makeKms() as never).pendingForKey(client, 'tp-1', 'prof-1');
     const [sql, values] = client.query.mock.calls[0];
-    expect(sql).toContain(`state = 'RECEIVED'`);
+    expect(sql).toContain(`state IN ('RECEIVED', 'FAILED')`); // a FAILED mais antiga não fica de fora (a mais nova não passa na frente)
     expect(sql).toContain('ORDER BY received_at');
     expect(values).toEqual(['tp-1', 'prof-1', []]);
     expect(rows[0]).toMatchObject({ id: 'i1', receivedAt: at, payloadEnc: 'ENC(x)', state: 'RECEIVED', talentumPrescreeningId: 'tp-1', talentumProfileId: 'prof-1' });

@@ -56,9 +56,10 @@ export interface ITalentumInboxRepository {
   /** Uma linha pelo id (qualquer estado), ou `null` se não existe. */
   findById(client: InboxQueryable, id: string): Promise<TalentumInboxRow | null>;
   /**
-   * Linhas `RECEIVED` da chave, da mais antiga para a mais nova (`received_at`). `alsoIds`: linhas pedidas
-   * explicitamente que entram mesmo fora de `RECEIVED` (reentrega de `FAILED`, redrive de `UNSUPPORTED`/`REJECTED_SCHEMA`),
-   * exceto `PROCESSED`.
+   * Linhas `RECEIVED` e `FAILED` da chave, da mais antiga para a mais nova (`received_at`, depois `id`). A `FAILED` mais antiga
+   * entra ANTES das mais novas: o processador para na primeira que falha, então uma mais nova nunca passa na frente dela
+   * (senão a reentrega da antiga aplicaria o evento velho por cima do novo). `UNSUPPORTED`/`REJECTED_SCHEMA` (assentadas)
+   * não entram e não bloqueiam; `alsoIds`: linhas pedidas explicitamente que entram mesmo assim (redrive), exceto `PROCESSED`.
    */
   pendingForKey(
     client: InboxQueryable, prescreeningId: string | null, profileId: string | null, alsoIds?: string[],

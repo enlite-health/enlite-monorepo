@@ -2,9 +2,10 @@
  * ProcessTalentumInboxUseCase — processador da inbox do webhook do Talentum (spec 095 §3.2).
  *
  * Roda DEPOIS do ack (Pub/Sub push só com o `inboxId`): lê a linha, toma o lock da chave
- * `(talentum_prescreening_id, talentum_profile_id)` e processa TODAS as `RECEIVED` da chave por `received_at`
- * (a mais antiga primeiro). Isso também recolhe órfã de `publish` que falhou, sem timer: o próximo evento da
- * mesma chave a leva junto.
+ * `(talentum_prescreening_id, talentum_profile_id)` e processa TODAS as `RECEIVED` e `FAILED` da chave por `received_at`
+ * (a mais antiga primeiro) e PARA na primeira que falha: as mais novas ficam como estão (sem tentativa, sem `attempts`)
+ * até a anterior passar. Uma `FAILED` antiga nunca é ultrapassada por uma mais nova. Isso também recolhe órfã de `publish`
+ * que falhou, sem timer: o próximo evento da mesma chave a leva junto.
  *
  * LOCK (T-095-30, escolha justificada): `pg_advisory_xact_lock` numa transação externa (`withActorContext`), e NÃO
  * `pg_advisory_lock`/`unlock` de sessão em `finally`.
@@ -120,7 +121,7 @@ export class ProcessTalentumInboxUseCase {
           await client.query('ROLLBACK TO SAVEPOINT talentum_inbox_row');
           await this.inbox.markFailed(client, item.id, describeError(err));
           failure = { error: err };
-          break; // ordem importa: as mais novas ficam RECEIVED e entram na próxima entrega
+          break; // ordem importa: as mais novas (RECEIVED/FAILED) não são tentadas e entram na próxima entrega, depois desta
         }
       }
     });

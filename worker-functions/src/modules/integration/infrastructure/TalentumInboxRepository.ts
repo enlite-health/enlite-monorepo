@@ -89,7 +89,7 @@ export class TalentumInboxRepository implements ITalentumInboxRepository {
     const r = await client.query(
       `SELECT ${ROW_COLUMNS}
          FROM talentum_webhook_inbox
-        WHERE (state = 'RECEIVED' OR (id = ANY($3::uuid[]) AND state <> 'PROCESSED'))
+        WHERE (state IN ('RECEIVED', 'FAILED') OR (id = ANY($3::uuid[]) AND state <> 'PROCESSED'))
           AND talentum_prescreening_id IS NOT DISTINCT FROM $1
           AND talentum_profile_id IS NOT DISTINCT FROM $2
         ORDER BY received_at, id`,
