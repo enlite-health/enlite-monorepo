@@ -11,6 +11,7 @@ import {
   POLITICA_POR_ORIGEM,
   escopoDaCompletudeDe,
   isManualChangeSource,
+  origemPodePedirDestino,
   saiDoFunilParaSearching,
   type PatientChangeSource,
 } from '../PatientChangeSource';
@@ -23,10 +24,10 @@ describe('PatientChangeSource — tabela de política por origem', () => {
     expect([...MANUAL_CHANGE_SOURCES, ...INTERNAL_CHANGE_SOURCES].sort()).toEqual([...CHANGE_SOURCES].sort());
   });
 
-  it('D1: só o foguete e o arrasto do Kanban saem do funil — o lançamento da vaga (e toda origem só de leitura da trilha) NÃO sai', () => {
-    expect(saemDoFunil()).toEqual(['kanban', 'recruitment_activation']);
+  it('D1 + F5: SÓ o foguete sai do funil — nem o arrasto do Kanban (saiu na F5), nem o lançamento da vaga, nem origem só de leitura', () => {
+    expect(saemDoFunil()).toEqual(['recruitment_activation']);
     const naoSaem = CHANGE_SOURCES.filter((s) => !saiDoFunilParaSearching(s));
-    expect(naoSaem).toHaveLength(CHANGE_SOURCES.length - 2);
+    expect(naoSaem).toHaveLength(CHANGE_SOURCES.length - 1);
     expect(naoSaem.filter((s) => s.startsWith('vacancy_'))).toHaveLength(1); // a origem do lançamento continua na união (trilha antiga) mas sem saída
   });
 
@@ -39,7 +40,7 @@ describe('PatientChangeSource — tabela de política por origem', () => {
   });
 
   it('F3 (E3): `resume` é humana (motivo de saída de SUSPENDED + trava de alocação), NÃO é aceita na rota e NÃO sai do funil', () => {
-    expect(POLITICA_POR_ORIGEM.resume).toEqual({ humana: true, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente' });
+    expect(POLITICA_POR_ORIGEM.resume).toMatchObject({ humana: true, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente' });
     expect(isManualChangeSource('resume')).toBe(true);
     expect([...ROTA_CHANGE_SOURCES]).not.toContain('resume');
   });
@@ -48,5 +49,16 @@ describe('PatientChangeSource — tabela de política por origem', () => {
     const escopos = Object.fromEntries(CHANGE_SOURCES.map((s: PatientChangeSource) => [s, escopoDaCompletudeDe(s)]));
     expect(escopos.recruitment_activation).toBe('servico');
     expect(CHANGE_SOURCES.filter((s) => escopoDaCompletudeDe(s) === 'servico')).toEqual(['recruitment_activation']);
+  });
+
+  it('F5: quem pode pedir cada destino clínico sai da tabela — admin_panel só os humanos, kanban nenhum, o resto do fluxo automático os derivados', () => {
+    const DERIVADOS = ['SEARCHING', 'REPLACEMENT', 'ACTIVE'] as const;
+    const HUMANOS = ['ON_HOLD', 'SUSPENDED', 'ALTA', 'DISCHARGED'] as const;
+    for (const d of DERIVADOS) expect(origemPodePedirDestino('admin_panel', d)).toBe(false);
+    for (const d of HUMANOS) expect(origemPodePedirDestino('admin_panel', d)).toBe(true);
+    for (const d of [...DERIVADOS, ...HUMANOS, 'ADMISSION', 'SOLICITANTE', 'PENDING_ADMISSION'] as const) expect(origemPodePedirDestino('kanban', d)).toBe(false);
+    for (const o of ['system', 'resume'] as const) for (const d of DERIVADOS) expect(origemPodePedirDestino(o, d)).toBe(true);
+    expect(CHANGE_SOURCES.filter((o) => origemPodePedirDestino(o, 'SEARCHING')).sort()).toEqual(['recruitment_activation', 'resume', 'system']);
+    expect(CHANGE_SOURCES.filter((o) => origemPodePedirDestino(o, 'ACTIVE')).sort()).toEqual(['resume', 'system']);
   });
 });

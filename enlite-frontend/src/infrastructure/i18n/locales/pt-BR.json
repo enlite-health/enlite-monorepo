@@ -3569,7 +3569,6 @@
         "toggleKanban": "Kanban",
         "caseNumber": "Caso",
         "noName": "—",
-        "moveError": "Não foi possível mover o paciente",
         "columns": {
           "SOLICITANTE": "Solicitante",
           "ADMISSION": "Admissão",
@@ -3585,16 +3584,7 @@
         },
         "contactOfResponsible": "Contato do responsável",
         "responsible": "Responsável",
-        "dragHint": "Arraste um cartão para mudar o estado do paciente.",
-        "suspensionExitDialog": {
-          "title": "Motivo de saída de Suspenso",
-          "body": "{{name}} vai passar de Suspenso para {{target}}. Escolha o motivo de saída.",
-          "confirm": "Confirmar e mover"
-        },
-        "moveErrorCodes": {
-          "SUSPENSION_EXIT_REASON_REQUIRED": "É preciso indicar o motivo de saída de Suspenso.",
-          "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para ativar, use \"Ativar recrutamento\" no serviço contratado da ficha do paciente."
-        },
+        "readonlyHint": "O Kanban é somente leitura: o estado é definido pelo fluxo automático e pelas ações da ficha do paciente.",
         "subcard": {
           "weeklyUnit": "h/sem",
           "pairAria": "{{covered}} de {{contracted}} horas semanais cobertas",
@@ -5072,7 +5062,6 @@
           "error": "Não foi possível carregar o histórico"
         },
         "blockedOption": "{{status}} (falta: {{items}})",
-        "optionsLoadError": "Não foi possível carregar os estados disponíveis.",
         "optionsRetry": "Tentar de novo",
         "actions": {
           "title": "Ações",
@@ -5097,7 +5086,7 @@
           "onHoldReasonRequired": "Para deixar o paciente «Em espera», informe o motivo (escola, convênio ou outro).",
           "suspensionExitReasonRequired": "Para tirar o paciente de «Suspenso», escolha o motivo.",
           "notAvailable": "Esta mudança de estado não está disponível.",
-          "optionsUnavailable": "Não foi possível verificar os estados disponíveis. Tente novamente.",
+          "notManual": "Esse estado é definido pelo fluxo automático.",
           "lockedByAllocation": "Não é possível mudar o estado: o paciente tem prestador alocado no itinerário. Retire o prestador do itinerário primeiro."
         }
       }
@@ -5450,9 +5439,6 @@
             "decidir": "Decidir",
             "register": "Registrar",
             "resend_message": "Reenviar mensagem",
-            "move_to_searching": "Para busca",
-            "move_to_active": "Para ativo",
-            "move_to_replacement": "Para reposição",
             "move_to_on_hold": "Para em espera",
             "move_to_suspended": "Para suspenso",
             "move_to_alta": "Para alta",

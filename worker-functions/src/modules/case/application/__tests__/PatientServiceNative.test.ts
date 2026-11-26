@@ -244,7 +244,7 @@ describe('PatientService — native write path (migration 251)', () => {
     _queryImpl = async (sql: string) =>
       sql.startsWith('SELECT status FROM patients') ? { rowCount: 0, rows: [] } : { rows: [], rowCount: 0 };
 
-    await expect(service.moveStatus('missing', 'ACTIVE')).rejects.toThrow(/not found/i);
+    await expect(service.moveStatus('missing', 'DISCHARGED')).rejects.toThrow(/not found/i);
   });
 
   // ── c. moveStatus validation ──────────────────────────────────────────────

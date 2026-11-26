@@ -6,6 +6,8 @@
  * por origem fora daqui — o escritor, o zod da rota e `decidirTrocaForaDoFluxo` leem dela.
  */
 
+import type { PatientStatus } from './PatientStatus';
+
 /** Onde a completude do destino é medida: o paciente inteiro ou só o serviço contratado clicado (D2). */
 export type EscopoDaCompletudeDaOrigem = 'paciente' | 'servico';
 
@@ -18,21 +20,30 @@ export interface PoliticaDeOrigem {
   readonly saiDoFunilParaSearching: boolean;
   /** Escopo da completude de `SEARCHING`/`ACTIVE`/`REPLACEMENT` para esta origem (D2). */
   readonly escopoDaCompletude: EscopoDaCompletudeDaOrigem;
+  /**
+   * Destinos que esta origem pode PEDIR ao escritor (F5, design §4). `SEARCHING`/`REPLACEMENT`/`ACTIVE` só saem do fluxo automático
+   * (foguete, derivação do itinerário, `resume`); a pessoa no painel só pede os humanos. Fora da lista → `PatientStatusNotManualError`.
+   */
+  readonly destinos: readonly PatientStatus[];
 }
+
+const FUNIL = ['SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION'] as const satisfies readonly PatientStatus[];
+const DERIVADOS = ['SEARCHING', 'REPLACEMENT', 'ACTIVE'] as const satisfies readonly PatientStatus[];
+const HUMANOS = ['ON_HOLD', 'SUSPENDED', 'ALTA', 'DISCHARGED'] as const satisfies readonly PatientStatus[];
 
 export const POLITICA_POR_ORIGEM = {
   // O foguete mede o SERVIÇO clicado (D2): o gate dele já mediu o mesmo serviço, então a recusa do escritor é inalcançável.
-  recruitment_activation: { humana: false, aceitaNaRota: false, saiDoFunilParaSearching: true, escopoDaCompletude: 'servico' },
-  system: { humana: false, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente' },
-  admin_panel: { humana: true, aceitaNaRota: true, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente' },
-  // F1-F4: o arrasto ainda sai do funil (D469); a F5 tira.
-  kanban: { humana: true, aceitaNaRota: true, saiDoFunilParaSearching: true, escopoDaCompletude: 'paciente' },
+  recruitment_activation: { humana: false, aceitaNaRota: false, saiDoFunilParaSearching: true, escopoDaCompletude: 'servico', destinos: ['SEARCHING'] },
+  system: { humana: false, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente', destinos: DERIVADOS },
+  admin_panel: { humana: true, aceitaNaRota: true, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente', destinos: [...FUNIL, ...HUMANOS] },
+  // F5: o arrasto saiu — `kanban` não sai do funil e não pede destino nenhum (a rota ainda a aceita para devolver 422).
+  kanban: { humana: true, aceitaNaRota: true, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente', destinos: [] },
   // retomar e reativar (F3, E3): decisão de uma PESSOA (motivo de saída de SUSPENDED, trava de alocação viva), mas o servidor a
   // põe — o corpo do PUT nunca a aceita. O destino é re-derivado pelo itinerário, nunca escolhido.
-  resume: { humana: true, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente' },
+  resume: { humana: true, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente', destinos: DERIVADOS },
   // Origem só de LEITURA da trilha antiga (linhas gravadas pelo gancho do lançamento, que deixou de mover — D1).
-  vacancy_launch: { humana: false, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente' },
-  activate: { humana: false, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente' },
+  vacancy_launch: { humana: false, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente', destinos: [] },
+  activate: { humana: false, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente', destinos: [] },
 } as const satisfies Record<string, PoliticaDeOrigem>;
 
 export type PatientChangeSource = keyof typeof POLITICA_POR_ORIGEM;
@@ -76,3 +87,7 @@ export const saiDoFunilParaSearching = (origem: PatientChangeSource): boolean =>
 /** Escopo da completude desta origem (D2). */
 export const escopoDaCompletudeDe = (origem: PatientChangeSource): EscopoDaCompletudeDaOrigem =>
   POLITICA_POR_ORIGEM[origem].escopoDaCompletude;
+
+/** F5: esta origem pode pedir este destino? Lê a tabela — o escritor a consulta ANTES da FSM (design §4). */
+export const origemPodePedirDestino = (origem: PatientChangeSource, destino: PatientStatus): boolean =>
+  (POLITICA_POR_ORIGEM[origem].destinos as readonly PatientStatus[]).includes(destino);

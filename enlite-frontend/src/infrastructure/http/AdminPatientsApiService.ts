@@ -21,8 +21,6 @@ import type {
   PatientFunnelData,
   UpdatePatientStatusPayload,
   PatientStatusHistoryEntry,
-  PatientStatusOptions,
-  PatientStatusChangeSource,
   InsuranceProvider,
   PatientAddressLogisticsPayload,
   PatientChatIdsPayload,
@@ -332,7 +330,7 @@ export class AdminPatientsApiServiceClass {
   }
 
   /**
-   * PUT /api/admin/patients/:id/status — Kanban (funil) e select da ficha (estado v2, spec 012).
+   * PUT /api/admin/patients/:id/status — os estados humanos e o movimento dentro do funil (estado v2, spec 012; Búsqueda/Reemplazo/Activo e a origem `kanban` → 422 PATIENT_STATUS_NOT_MANUAL desde a F5).
    * Aceita a string legada ou o payload com motivo/nota/origem/motivo de saída. 422 com `code`
    * (PATIENT_STATUS_TRANSITION_NOT_ALLOWED / ON_HOLD_REASON_REQUIRED /
    * SUSPENSION_EXIT_REASON_REQUIRED, migration 486) sai como PatientApiError.
@@ -340,14 +338,6 @@ export class AdminPatientsApiServiceClass {
   async updatePatientStatus(id: string, status: string | UpdatePatientStatusPayload): Promise<UpdatePatientStatusResult> {
     const body: UpdatePatientStatusPayload = typeof status === 'string' ? { status } : status;
     return this.writeJson<UpdatePatientStatusResult>('PUT', `/api/admin/patients/${id}/status`, body);
-  }
-
-  /** GET /api/admin/patients/:id/status-options — os destinos que o SERVIDOR aceitaria (spec 051). */
-  async getPatientStatusOptions(id: string, changeSource: PatientStatusChangeSource): Promise<PatientStatusOptions> {
-    const r = await this.request<PatientStatusOptions>('GET', `/api/admin/patients/${id}/status-options?changeSource=${changeSource}`);
-    // A lista vale para a ORIGEM do PUT que vai sair: lista de outra origem nunca é usada (quem chamou trata como indisponível).
-    if (r.changeSource !== changeSource) throw new Error(`status-options: origem ${String(r.changeSource)} ≠ pedida ${changeSource}`);
-    return r;
   }
 
   /** GET /api/admin/patients/:id/status-actions — as ações humanas que o SERVIDOR aceitaria agora (F3). */

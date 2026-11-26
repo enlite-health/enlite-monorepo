@@ -610,18 +610,11 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'knowledge_technical:read': 'Leer la gaveta de conocimiento técnico',
   'knowledge_product_meetings:read': 'Leer la gaveta de conocimiento de reuniones de producto',
   // ── Spec 051 (F1 / PR-A): trocar o status do paciente por FORA do fluxo normal de transições.
-  //    Uma célula por DESTINO. Nenhuma rota as exige neste PR: o consumidor é a função pura
-  //    `decidirTrocaForaDoFluxo` (`case/domain/trocaForaDoFluxo.ts`), ainda não ligada ao writer.
+  //    Uma célula por DESTINO HUMANO (on_hold, suspended, alta, discharged). Consumidor: a função pura
+  //    `decidirTrocaForaDoFluxo` (`case/domain/trocaForaDoFluxo.ts`), via `avaliarTroca` no escritor.
   //    Nenhuma entra em grupo por padrão; o Acesso Master as recebe pelo sync do catálogo.
-  'patient_status:move_to_searching':
-    'Trocar o paciente para BÚSQUEDA (procurando prestador) por FORA do fluxo normal de transições, '
-    + 'a partir de qualquer estado clínico. Exige a ficha completa para o novo estado. Não vem em nenhum grupo por padrão.',
-  'patient_status:move_to_active':
-    'Trocar o paciente para ATIVO (em atendimento) por FORA do fluxo normal de transições, '
-    + 'a partir de qualquer estado clínico. Exige a ficha completa para o novo estado. Não vem em nenhum grupo por padrão.',
-  'patient_status:move_to_replacement':
-    'Trocar o paciente para REEMPLAZO (troca de prestador) por FORA do fluxo normal de transições, '
-    + 'a partir de qualquer estado clínico. Exige a ficha completa para o novo estado. Não vem em nenhum grupo por padrão.',
+  //    estado-automatico-do-paciente F5: `move_to_{searching,active,replacement}` deixaram de ser declaradas — esses três estados só
+  //    saem do fluxo automático; o sync do boot marca `deprecated_at` nas linhas antigas de `iam.permissions`.
   'patient_status:move_to_on_hold':
     'Trocar o paciente para EN ESPERA por FORA do fluxo normal de transições, a partir de qualquer '
     + 'estado clínico. Continua exigindo o motivo da espera. Não vem em nenhum grupo por padrão.',

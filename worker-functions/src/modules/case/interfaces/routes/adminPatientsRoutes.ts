@@ -219,11 +219,6 @@ export function createAdminPatientsRoutes(
   router.put('/patients/:id/status', staffOnly, perm.require('patient', 'update'), (req: Request, res: Response) =>
     controller.updatePatientStatus(req, res),
   );
-  // Spec 051 (F3): lista de destinos que o servidor aceitaria para ESTE paciente e ESTE ator. Mesma
-  // célula do PUT acima (`patient:update`) — a lista nunca oferece o que o PUT negaria por falta dela.
-  router.get('/patients/:id/status-options', staffOnly, perm.require('patient', 'update'), (req: Request, res: Response) =>
-    controller.getPatientStatusOptions(req, res),
-  );
   // F3: pausar, suspender, dar alta, dar baja, retomar e reativar. Mesma célula do PUT (`patient:update`); a lista sai da MESMA avaliação da escrita.
   router.get('/patients/:id/status-actions', staffOnly, perm.require('patient', 'update'), (req: Request, res: Response) =>
     statusActionsController.list(req, res),

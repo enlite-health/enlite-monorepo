@@ -11,12 +11,12 @@ import type { PatientCompletenessCode } from '../../domain/PatientCompleteness';
 const PID = '11111111-1111-4111-8111-111111111111';
 const SID = '22222222-2222-4222-8222-222222222222';
 
-function montar(missing: PatientCompletenessCode[] = []) {
+function montar(missing: PatientCompletenessCode[] = [], de = 'ADMISSION') {
   const queries: string[] = [];
   const tx: StatusTx = {
     query: jest.fn(async (sql: string) => {
       queries.push(sql);
-      if (/FROM patients/.test(sql)) return { rows: [{ status: 'ADMISSION' }], rowCount: 1 };
+      if (/FROM patients/.test(sql)) return { rows: [{ status: de }], rowCount: 1 };
       if (/patient_status_transitions/.test(sql)) return { rows: [{ ok: 1 }], rowCount: 1 };
       return { rows: [], rowCount: 1 };
     }) as never,
@@ -40,9 +40,8 @@ describe('createPatientStatusWriter — por ports', () => {
   });
 
   it('origem manual: o escopo é SEMPRE o paciente inteiro, mesmo que o chamador mande um serviço (a tabela decide, não o chamador)', async () => {
-    const { ports, move } = montar();
-    await move(PID, 'ADMISSION', { changeSource: 'kanban', escopo: { kind: 'servico', serviceId: SID } }); // funil→funil não mede nada
-    await move(PID, 'SEARCHING', { changeSource: 'kanban', escopo: { kind: 'servico', serviceId: SID } });
+    const { ports, move } = montar([], 'ON_HOLD');
+    await move(PID, 'SEARCHING', { changeSource: 'resume', escopo: { kind: 'servico', serviceId: SID } });
     expect(ports.completeness.missingFor).toHaveBeenCalledWith(expect.anything(), PID, { kind: 'paciente' });
   });
 

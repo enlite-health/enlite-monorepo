@@ -97,34 +97,40 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     await pool.end();
   });
 
-  // migration 428 (este PR, spec 018/PR-6/ADR-5) removeu funil→ACTIVE de
-  // `patient_status_transitions`: esse pulo direto não existe mais (é
-  // `activate-recruitment` que move para SEARCHING; ver testes 11-13). Os
-  // testes 1-4/7-9 abaixo mediam a régua de completude sobre ACTIVE partindo
-  // do funil (PENDING_ADMISSION) — pré-428 isso passava pela FSM e caía no
-  // gate de completude. Agora a FSM barra ANTES (`PatientStatusWriter` roda a
-  // tabela antes do checklist, de propósito: "transição que nem existe deve
-  // dizer 'não existe', não 'falta horário'"), e a resposta vira sempre
-  // PATIENT_STATUS_TRANSITION_NOT_ALLOWED. Migrados para partir de SEARCHING
-  // (transição SEARCHING→ACTIVE continua na 315) — mesma régua de completude,
-  // caminho que ainda existe.
-  it('1. serviço sem horário (NULL) → PUT status ACTIVE devolve 422 PATIENT_STATUS_NOT_READY com SERVICE_SCHEDULE, e o banco NÃO muda', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-1', status: 'SEARCHING', schedule: null });
-
-    const r = await put(id, { status: 'ACTIVE' });
+  // F5 (estado-automatico-do-paciente): a troca MANUAL para ACTIVE/SEARCHING/REPLACEMENT acabou — o `PUT /status` devolve
+  // 422 PATIENT_STATUS_NOT_MANUAL ANTES de olhar FSM ou completude. Logo o gate de completude (SERVICE_SCHEDULE/ADDRESS) deixou de ser
+  // alcançável por esse caminho; fica provado pelo único caminho real que ainda o cobra: `activate-recruitment` (o foguete). Os casos
+  // que mediam a régua pelo PUT viraram dois pares: (a) o PUT recusa com NOT_MANUAL mesmo com a ficha incompleta (prova que a recusa
+  // não depende da completude e que o gate antigo não responde mais) e (b) o foguete recusa/aceita pela mesma régua.
+  const trilha = async (id: string): Promise<number> =>
+    Number((await pool.query('SELECT count(*) AS n FROM patient_status_history WHERE patient_id = $1', [id])).rows[0].n);
+  const sidDe = async (id: string): Promise<string> =>
+    (await pool.query<{ id: string }>('SELECT id FROM patient_contracted_services WHERE patient_id = $1 ORDER BY created_at LIMIT 1', [id])).rows[0].id;
+  const foguete = (id: string, sid: string) =>
+    api.post(`/api/admin/patients/${id}/contracted-services/${sid}/activate-recruitment`, {}, asAdmin);
+  const recusaNotManual = async (id: string, status: string, changeSource?: string) => {
+    const antes = { status: (await pool.query('SELECT status FROM patients WHERE id = $1', [id])).rows[0].status, trilha: await trilha(id) };
+    const r = await put(id, changeSource ? { status, changeSource } : { status });
     expect(r.status).toBe(422);
-    expect(r.data).toMatchObject({
-      success: false,
-      code: 'PATIENT_STATUS_NOT_READY',
-      details: { to: 'ACTIVE', missing: ['SERVICE_SCHEDULE'] },
-    });
+    expect(r.data).toMatchObject({ success: false, code: 'PATIENT_STATUS_NOT_MANUAL', details: { to: status, changeSource: changeSource ?? 'admin_panel' } });
+    expect(r.data.details.missing).toBeUndefined(); // a completude nem foi consultada
+    expect({ status: (await pool.query('SELECT status FROM patients WHERE id = $1', [id])).rows[0].status, trilha: await trilha(id) }).toEqual(antes);
+  };
 
-    const { rows } = await pool.query<{ status: string }>('SELECT status FROM patients WHERE id = $1', [id]);
-    expect(rows[0].status).toBe('SEARCHING');
+  it('1. serviço sem horário (NULL): PUT status ACTIVE devolve 422 PATIENT_STATUS_NOT_MANUAL (não NOT_READY) e o banco NÃO muda; o foguete recusa com SERVICE_SCHEDULE', async () => {
+    const id = await criarPaciente({ tag: 'sched-gate-e2e-1', status: 'SEARCHING', schedule: null });
+    await recusaNotManual(id, 'ACTIVE');
+
+    const f = await criarPaciente({ tag: 'sched-gate-e2e-1f', status: 'PENDING_ADMISSION', schedule: null, coverage: 'Particular', comDiagnostico: true });
+    const r = await foguete(f, await sidDe(f));
+    expect(r.status).toBe(422);
+    expect(r.data.code).toBe('PATIENT_NOT_READY');
+    expect(r.data.details.missing).toContain('SERVICE_SCHEDULE');
+    expect((await pool.query('SELECT status FROM patients WHERE id = $1', [f])).rows[0].status).toBe('PENDING_ADMISSION');
   });
 
-  it('2. serviço com ZERO faixas conta como sem horário — o serviço existe, a lista de faixas é vazia, o predicado tem de pegá-lo', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-2', status: 'SEARCHING', schedule: [] });
+  it('2. serviço com ZERO faixas conta como sem horário — o serviço existe, a lista é vazia, o foguete tem de pegá-lo', async () => {
+    const id = await criarPaciente({ tag: 'sched-gate-e2e-2', status: 'PENDING_ADMISSION', schedule: [], coverage: 'Particular', comDiagnostico: true });
 
     // controle positivo: o serviço REALMENTE existe e tem 0 faixas (senão o teste mediria "sem serviço")
     const { rows } = await pool.query<{ n: string }>(
@@ -135,44 +141,42 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     expect(rows).toHaveLength(1);
     expect(Number(rows[0].n)).toBe(0);
 
-    const r = await put(id, { status: 'ACTIVE' });
+    const r = await foguete(id, await sidDe(id));
     expect(r.status).toBe(422);
     expect(r.data.details.missing).toContain('SERVICE_SCHEDULE');
+    expect((await pool.query('SELECT count(*) AS n FROM job_postings WHERE patient_id = $1', [id])).rows[0].n).toBe('0');
   });
 
-  it('3. COM horário → ACTIVE passa (200) e o banco grava', async () => {
+  it('3. COM horário o PUT ACTIVE continua recusado (NOT_MANUAL): a recusa não depende de a ficha estar completa', async () => {
     const id = await criarPaciente({ tag: 'sched-gate-e2e-3', status: 'SEARCHING', schedule: HORARIO });
-
-    const r = await put(id, { status: 'ACTIVE' });
-    expect(r.status).toBe(200);
-    const { rows } = await pool.query<{ status: string }>('SELECT status FROM patients WHERE id = $1', [id]);
-    expect(rows[0].status).toBe('ACTIVE');
+    await recusaNotManual(id, 'ACTIVE');
   });
 
-  it('4. o DROP NO KANBAN (changeSource kanban) passa a cobrar o checklist INTEIRO — sem endereço é 422 ADDRESS', async () => {
+  it('4. o DROP NO KANBAN (changeSource kanban) é NOT_MANUAL para QUALQUER destino; o foguete sem endereço do serviço é recusado', async () => {
     const id = await criarPaciente({
       tag: 'sched-gate-e2e-4', status: 'SEARCHING', schedule: HORARIO, comEndereco: false,
     });
+    await recusaNotManual(id, 'ACTIVE', 'kanban');
+    await recusaNotManual(id, 'ON_HOLD', 'kanban');
 
-    const r = await put(id, { status: 'ACTIVE', changeSource: 'kanban' });
+    const f = await criarPaciente({
+      tag: 'sched-gate-e2e-4f', status: 'PENDING_ADMISSION', schedule: HORARIO, comEndereco: false, coverage: 'Particular', comDiagnostico: true,
+    });
+    const r = await foguete(f, await sidDe(f));
     expect(r.status).toBe(422);
-    expect(r.data.code).toBe('PATIENT_STATUS_NOT_READY');
-    // o serviço nasceu sem endereço junto — os dois códigos bloqueiam
-    expect(r.data.details.missing).toEqual(expect.arrayContaining(['ADDRESS', 'SERVICE_ADDRESS']));
-
-    const { rows } = await pool.query<{ status: string }>('SELECT status FROM patients WHERE id = $1', [id]);
-    expect(rows[0].status).toBe('SEARCHING');
+    expect(r.data.code).toBe('PATIENT_NOT_READY');
+    expect(r.data.details.missing).toEqual(expect.arrayContaining(['SERVICE_ADDRESS']));
+    expect((await pool.query('SELECT status FROM patients WHERE id = $1', [f])).rows[0].status).toBe('PENDING_ADMISSION');
   });
 
-  it('5. SEARCHING e REPLACEMENT exigem só o horário — recusados sem ele, aceitos com ele', async () => {
+  it('5. SEARCHING e REPLACEMENT pelo PUT são NOT_MANUAL com e sem horário (a recusa é pelo destino, não pela ficha)', async () => {
     const semHorario = await criarPaciente({ tag: 'sched-gate-e2e-5a', status: 'ACTIVE', schedule: null });
-    const r1 = await put(semHorario, { status: 'REPLACEMENT' });
-    expect(r1.status).toBe(422);
-    expect(r1.data.details.missing).toEqual(['SERVICE_SCHEDULE']);
+    await recusaNotManual(semHorario, 'REPLACEMENT');
+    await recusaNotManual(semHorario, 'SEARCHING');
 
     const comHorario = await criarPaciente({ tag: 'sched-gate-e2e-5b', status: 'ACTIVE', schedule: HORARIO });
-    expect((await put(comHorario, { status: 'REPLACEMENT' })).status).toBe(200);
-    expect((await put(comHorario, { status: 'SEARCHING' })).status).toBe(200);
+    await recusaNotManual(comHorario, 'REPLACEMENT');
+    await recusaNotManual(comHorario, 'SEARCHING');
   });
 
   it('6. pausa e saída NÃO exigem horário — ON_HOLD, SUSPENDED e DISCHARGED passam com a ficha incompleta', async () => {
@@ -186,32 +190,38 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     expect((await put(c, { status: 'DISCHARGED' })).status).toBe(200);
   });
 
-  it('7. paciente SEM serviço nenhum não é barrado pelo horário (mesmo fallback do endereço do serviço)', async () => {
+  it('7. paciente SEM serviço nenhum: o PUT ACTIVE é NOT_MANUAL e o foguete não tem serviço para ativar', async () => {
     const id = await criarPaciente({
       tag: 'sched-gate-e2e-7', status: 'SEARCHING', schedule: null, comServico: false,
     });
-    expect((await put(id, { status: 'ACTIVE' })).status).toBe(200);
+    await recusaNotManual(id, 'ACTIVE');
+    const { rows } = await pool.query('SELECT 1 FROM patient_contracted_services WHERE patient_id = $1', [id]);
+    expect(rows).toHaveLength(0);
   });
 
-  it('8. UM serviço com horário e outro SEM → bloqueia (a régua é "todo serviço ativo", não "algum")', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-8', status: 'SEARCHING', schedule: HORARIO });
+  it('8. UM serviço com horário e outro SEM: o foguete do serviço sem horário é recusado (a régua olha o serviço que se ativa)', async () => {
+    const id = await criarPaciente({ tag: 'sched-gate-e2e-8', status: 'PENDING_ADMISSION', schedule: HORARIO, coverage: 'Particular', comDiagnostico: true });
     const addr = (await pool.query<{ id: string }>(
       `SELECT id FROM patient_addresses WHERE patient_id = $1`, [id],
     )).rows[0].id;
-    await pool.query(
+    const semHorario = (await pool.query<{ id: string }>(
       `INSERT INTO patient_contracted_services
-         (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
-       VALUES ($1,'CAREGIVER',true,'AR','sched-gate-e2e','sched-gate-e2e',$2,NULL)`,
+         (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule,
+          required_professions, required_sex, required_experience, work_schedule, payment_day)
+       VALUES ($1,'CAREGIVER',true,'AR','sched-gate-e2e','sched-gate-e2e',$2,NULL,
+               ARRAY['AT'],'BOTH','EXP-E2E','part-time','DIA-E2E') RETURNING id`,
       [id, addr],
-    );
+    )).rows[0].id;
 
-    const r = await put(id, { status: 'ACTIVE' });
+    const r = await foguete(id, semHorario);
     expect(r.status).toBe(422);
-    expect(r.data.details.missing).toEqual(['SERVICE_SCHEDULE']);
+    expect(r.data.details.missing).toContain('SERVICE_SCHEDULE');
+    expect((await pool.query('SELECT count(*) AS n FROM job_postings WHERE patient_id = $1', [id])).rows[0].n).toBe('0');
   });
 
-  it('9. serviço INATIVO sem horário não bloqueia — a régua é sobre serviço ATIVO', async () => {
-    const id = await criarPaciente({ tag: 'sched-gate-e2e-9', status: 'SEARCHING', schedule: HORARIO });
+  it('9. serviço INATIVO sem horário não bloqueia o foguete do serviço ativo — a régua é sobre serviço ATIVO', async () => {
+    const id = await criarPaciente({ tag: 'sched-gate-e2e-9', status: 'PENDING_ADMISSION', schedule: HORARIO, coverage: 'Particular', comDiagnostico: true });
+    const sid = await sidDe(id);
     await pool.query(
       // `ended_at` é obrigatório quando `active=false` (CHECK pcs_active_ended_coerente)
       `INSERT INTO patient_contracted_services
@@ -219,7 +229,9 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
        VALUES ($1,'CAREGIVER',false,NOW(),'AR','sched-gate-e2e','sched-gate-e2e',NULL)`,
       [id],
     );
-    expect((await put(id, { status: 'ACTIVE' })).status).toBe(200);
+    const r = await foguete(id, sid);
+    expect(r.status).toBe(201);
+    expect(r.data.data.patientStatus).toBe('SEARCHING');
   });
 
   it('10. o checklist da ficha mostra SERVICE_SCHEDULE em missing E em blocking — a tela avisa o mesmo que a rota recusa', async () => {

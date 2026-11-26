@@ -6,13 +6,12 @@ import { pgUniqueViolationConflict } from '@shared/http/pgUniqueViolationConflic
 import { AuthMiddleware, resolveCountryScope, CountryScopeError } from '@modules/identity';
 import { currentDbContext } from '@shared/database/requestDbSession';
 import { adminPatientsListSchema } from '../validators/adminPatientsListSchema';
-import { statusOptionsQuerySchema } from '../validators/statusOptionsQuerySchema';
 import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema';
 import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
-import { canReadPatientOperational, patientContainerReadsOf, canReadPatientContainer, patientContainerCell, exposeBlockingCodes } from '../../application/patientContainerAccess';
+import { canReadPatientOperational, patientContainerReadsOf, canReadPatientContainer, patientContainerCell } from '../../application/patientContainerAccess';
 import { hourlyValueActorOf } from '../../application/contractedServiceHourlyValueAccess';
 import {
   toAdminPatientListItem,
@@ -386,43 +385,6 @@ export class AdminPatientsController {
         error: 'Failed to update patient status',
         details: e.message,
       });
-    }
-  }
-
-  /**
-   * GET /api/admin/patients/:id/status-options — spec 051 (F3): os destinos de estado que o
-   * servidor ACEITARIA para este paciente e este ator (`via: 'fluxo' | 'permissao'`, `blockedBy`
-   * opcional). Mesma célula do PUT (`patient:update`): a lista nunca oferece o que o PUT negaria
-   * por falta dela. `?changeSource=admin_panel|kanban` (default admin_panel; outro valor → 400): o
-   * PUT depende da origem (D469 libera funil→SEARCHING só para `kanban`) e a resposta devolve a
-   * origem usada em `data.changeSource`. `cells=null` (engine neutro) → só a FSM, como hoje. Só status e contagem:
-   * nenhum texto clínico.
-   */
-  async getPatientStatusOptions(req: Request, res: Response): Promise<void> {
-    const parsed = adminPatientParamsSchema.safeParse(req.params);
-    if (!parsed.success) {
-      res.status(400).json({ success: false, error: 'Invalid params', details: parsed.error.flatten() });
-      return;
-    }
-    const query = statusOptionsQuerySchema.safeParse(req.query);
-    if (!query.success) {
-      res.status(400).json({ success: false, error: 'Invalid query', details: query.error.flatten() });
-      return;
-    }
-    try {
-      const cells = clinicalCellsOf(req);
-      const data = await this.patientService.statusOptions(parsed.data.id, cells, query.data.changeSource);
-      // `blockedBy` pode trazer `DIAGNOSIS`: sai como `CLINICAL_DATA` para quem não lê `patient_clinical`.
-      const options = data.options.map((o) => (o.blockedBy ? { ...o, blockedBy: exposeBlockingCodes(o.blockedBy, cells) } : o));
-      res.status(200).json({ success: true, data: { ...data, options } });
-    } catch (err: unknown) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      if (/not found/i.test(e.message)) {
-        res.status(404).json({ success: false, error: 'Patient not found' });
-        return;
-      }
-      reportError(e, { source: 'AdminPatientsController:getPatientStatusOptions' });
-      res.status(500).json({ success: false, error: 'Failed to load patient status options', details: e.message });
     }
   }
 

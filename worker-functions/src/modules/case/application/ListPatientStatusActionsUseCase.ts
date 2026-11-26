@@ -67,7 +67,7 @@ export class ListPatientStatusActionsUseCase {
       // D489/D530: com alocação viva o escritor recusa TODA troca humana — toda ação sai bloqueada e a completude nem é lida.
       const vivas = await this.ports.allocation.countLive(tx, input.patientId);
       const exigeCompletude = (a: (typeof aceitas)[number]): readonly PatientCompletenessCode[] =>
-        blockingCodesForStatusChange(a.destino, a.via === 'permissao', current);
+        blockingCodesForStatusChange(a.destino, current);
       const missing = vivas === 0 && aceitas.some((a) => exigeCompletude(a).length > 0)
         ? await this.ports.completeness.missingFor(tx, input.patientId, { kind: 'paciente' })
         : [];

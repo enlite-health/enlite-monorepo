@@ -26,25 +26,6 @@ export interface UpdatePatientStatusPayload {
   suspensionExitReason?: string | null;
 }
 
-/**
- * Um destino de GET /api/admin/patients/:id/status-options (spec 051). A lista é do SERVIDOR: a
- * tela não decide permissão nem FSM. `via` só informa (fluxo normal × liberado por permissão) —
- * não é motivo de aviso. `blockedBy` = códigos de completude (os mesmos do checklist da ficha).
- */
-export interface PatientStatusOption {
-  status: PatientStatus;
-  via: 'fluxo' | 'permissao';
-  /** + `ACTIVE_ALLOCATION` (D489/D530): alocação viva no itinerário bloqueia TODO destino. */
-  blockedBy?: Array<PatientCompletenessCode | 'ACTIVE_ALLOCATION'>;
-}
-
-export interface PatientStatusOptions {
-  current: PatientStatus | null;
-  /** Origem com que o servidor calculou a lista: tem de ser a pedida (e a do PUT que vai sair). */
-  changeSource: PatientStatusChangeSource;
-  options: PatientStatusOption[];
-}
-
 /** As ações humanas sobre o estado (F3, D5/D9) — o servidor decide o que existe e para onde vai; a tela só lista e pede. */
 export const PATIENT_STATUS_ACTIONS = ['pausar', 'suspender', 'dar_alta', 'dar_baja', 'retomar', 'reativar'] as const;
 export type PatientStatusActionName = (typeof PATIENT_STATUS_ACTIONS)[number];

@@ -108,7 +108,7 @@ describe('PatientService.moveStatus v2', () => {
 
   it('1b. transição AUSENTE da tabela → PatientStatusTransitionError com from/to, ROLLBACK, nenhum UPDATE', async () => {
     db('ACTIVE', [['ACTIVE', 'ON_HOLD']]);
-    await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'admin_panel' })).rejects.toMatchObject({
+    await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'resume' })).rejects.toMatchObject({
       name: 'PatientStatusTransitionError', code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED', from: 'ACTIVE', to: 'SEARCHING',
     });
     const c = calls();
@@ -124,22 +124,22 @@ describe('PatientService.moveStatus v2', () => {
 
   it('2b. sair de ON_HOLD limpa motivo e nota (NULL explícito), mesmo que o chamador mande motivo', async () => {
     db('ON_HOLD', [['ON_HOLD', 'ACTIVE']]);
-    await service.moveStatus(PID, 'ACTIVE', { onHoldReason: 'SCHOOL', onHoldNote: 'x', changeSource: 'admin_panel' });
+    await service.moveStatus(PID, 'ACTIVE', { onHoldReason: 'SCHOOL', onHoldNote: 'x', changeSource: 'resume' });
     const upd = calls().find((x) => /^UPDATE patients/.test(x.sql));
     expect(upd?.params).toEqual([PID, 'ACTIVE', null, null]);
   });
 
-  it('4. movimento DENTRO do funil (Kanban: SOLICITANTE → ADMISSION) não consulta a tabela e grava', async () => {
+  it('4. movimento DENTRO do funil (SOLICITANTE → ADMISSION, origem admin_panel) não consulta a tabela e grava', async () => {
     db('SOLICITANTE', []);
-    await service.moveStatus(PID, 'ADMISSION', { changeSource: 'kanban' });
+    await service.moveStatus(PID, 'ADMISSION', { changeSource: 'admin_panel' });
     const c = calls();
     expect(c.some((x) => /patient_status_transitions/.test(x.sql))).toBe(false);
     expect(c.find((x) => /^UPDATE patients/.test(x.sql))?.params).toEqual([PID, 'ADMISSION', null, null]);
   });
 
-  it('4b. saída do funil para ACTIVE (Kanban "Activo") passa pela tabela — o seed da 315 a permite', async () => {
+  it('4b. saída do funil para ACTIVE (origem resume) passa pela tabela — o seed da 315 a permite', async () => {
     db('PENDING_ADMISSION', [['PENDING_ADMISSION', 'ACTIVE']]);
-    await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'kanban' })).resolves.toEqual({ id: PID, status: 'ACTIVE' });
+    await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'resume' })).resolves.toEqual({ id: PID, status: 'ACTIVE' });
     expect(calls().some((x) => /patient_status_transitions/.test(x.sql))).toBe(true);
   });
 
@@ -157,26 +157,26 @@ describe('PatientService.moveStatus v2', () => {
   });
 
   // ── Guarda D469 (02/10/2026): funil → SEARCHING é ato intencional (foguete, envio, arrasto) ─
-  describe('guarda D469: funil → SEARCHING só por foguete, envio à Talentum ou Kanban', () => {
+  describe('guarda D469 + F5: funil → SEARCHING só pelo foguete (nem o arrasto, nem o select, nem a derivação)', () => {
     it.each(['SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION'] as const)(
-      '%s → SEARCHING com changeSource kanban → PASSA: consulta o catálogo (479), set_config kanban, UPDATE',
+      '%s → SEARCHING com changeSource recruitment_activation → PASSA: consulta o catálogo (479), set_config recruitment_activation, UPDATE',
       async (from) => {
         db(from, [[from, 'SEARCHING']]);
-        await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).resolves.toEqual({
+        await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'recruitment_activation' })).resolves.toEqual({
           id: PID, status: 'SEARCHING',
         });
         const c = calls();
         expect(c.some((x) => /patient_status_transitions/.test(x.sql))).toBe(true);
-        expect(c.find((x) => /set_config\('app\.change_source'/.test(x.sql))?.params).toEqual(['kanban']);
+        expect(c.find((x) => /set_config\('app\.change_source'/.test(x.sql))?.params).toEqual(['recruitment_activation']);
         expect(c.some((x) => /^UPDATE patients/.test(x.sql))).toBe(true);
       },
     );
 
     it.each(['SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION'] as const)(
-      '%s → SEARCHING com admin_panel (select da ficha) → recusado, nenhuma consulta ao catálogo, nenhum UPDATE, ROLLBACK — MESMO com a 479 no catálogo',
+      '%s → SEARCHING com resume (retomar não sai do funil) → recusado, nenhuma consulta ao catálogo, nenhum UPDATE, ROLLBACK — MESMO com a 479 no catálogo',
       async (from) => {
         db(from, [[from, 'SEARCHING']]);
-        await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'admin_panel' })).rejects.toMatchObject({
+        await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'resume' })).rejects.toMatchObject({
           name: 'PatientStatusTransitionError', code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED', from, to: 'SEARCHING',
         });
         const c = calls();
@@ -193,23 +193,28 @@ describe('PatientService.moveStatus v2', () => {
       });
     });
 
-    it.each(['recruitment_activation', 'kanban'] as const)(
-      'ADMISSION → SEARCHING com changeSource %s → consulta o catálogo (linha da 479) e grava, set_config com a origem',
-      async (source) => {
-        db('ADMISSION', [['ADMISSION', 'SEARCHING']]);
-        await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: source })).resolves.toEqual({
-          id: PID, status: 'SEARCHING',
-        });
-        const c = calls();
-        expect(c.some((x) => /patient_status_transitions/.test(x.sql))).toBe(true);
-        expect(c.find((x) => /set_config\('app\.change_source'/.test(x.sql))?.params).toEqual([source]);
-        expect(c.some((x) => /^UPDATE patients/.test(x.sql))).toBe(true);
-      },
-    );
+    it('ADMISSION → SEARCHING com changeSource recruitment_activation → consulta o catálogo (linha da 479) e grava, set_config com a origem', async () => {
+      db('ADMISSION', [['ADMISSION', 'SEARCHING']]);
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'recruitment_activation' })).resolves.toEqual({
+        id: PID, status: 'SEARCHING',
+      });
+      const c = calls();
+      expect(c.some((x) => /patient_status_transitions/.test(x.sql))).toBe(true);
+      expect(c.find((x) => /set_config\('app\.change_source'/.test(x.sql))?.params).toEqual(['recruitment_activation']);
+      expect(c.some((x) => /^UPDATE patients/.test(x.sql))).toBe(true);
+    });
 
-    it('controle: ON_HOLD → SEARCHING com kanban PASSA — a guarda não pega transição que já existia', async () => {
+    it.each(['admin_panel', 'kanban'] as const)('F5: ADMISSION → SEARCHING com %s → PATIENT_STATUS_NOT_MANUAL, o banco nem é aberto', async (source) => {
+      db('ADMISSION', [['ADMISSION', 'SEARCHING']]);
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: source })).rejects.toMatchObject({
+        name: 'PatientStatusNotManualError', code: 'PATIENT_STATUS_NOT_MANUAL', to: 'SEARCHING', changeSource: source,
+      });
+      expect(calls().some((x) => /^UPDATE patients/.test(x.sql))).toBe(false);
+    });
+
+    it('controle: ON_HOLD → SEARCHING com o foguete PASSA — a guarda não pega transição que já existia', async () => {
       db('ON_HOLD', [['ON_HOLD', 'SEARCHING']]);
-      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).resolves.toEqual({
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'recruitment_activation' })).resolves.toEqual({
         id: PID, status: 'SEARCHING',
       });
     });
@@ -220,9 +225,9 @@ describe('PatientService.moveStatus v2', () => {
     const SEM_DIAG = { status: 'ADMISSION', active_diagnosis_count: '0' };
     const COM_DIAG = { status: 'ADMISSION', active_diagnosis_count: '1' };
 
-    it('ADMISSION → SEARCHING (kanban) SEM diagnóstico ativo é RECUSADO com DIAGNOSIS, ROLLBACK, nenhum UPDATE', async () => {
+    it('ADMISSION → SEARCHING (foguete) SEM diagnóstico ativo é RECUSADO com DIAGNOSIS, ROLLBACK, nenhum UPDATE', async () => {
       db('ADMISSION', [['ADMISSION', 'SEARCHING']], SEM_DIAG);
-      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).rejects.toMatchObject({
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'recruitment_activation' })).rejects.toMatchObject({
         name: 'PatientStatusNotReadyError',
         code: 'PATIENT_STATUS_NOT_READY',
         to: 'SEARCHING',
@@ -235,7 +240,7 @@ describe('PatientService.moveStatus v2', () => {
 
     it('ADMISSION → SEARCHING COM diagnóstico ativo passa', async () => {
       db('ADMISSION', [['ADMISSION', 'SEARCHING']], COM_DIAG);
-      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).resolves.toEqual({ id: PID, status: 'SEARCHING' });
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'recruitment_activation' })).resolves.toEqual({ id: PID, status: 'SEARCHING' });
     });
 
     it.each(['ALTA', 'DISCHARGED', 'PENDING_ADMISSION', 'SOLICITANTE'])('ADMISSION → %s (descarte ou andar no funil) NÃO exige diagnóstico', async (to) => {
@@ -247,7 +252,7 @@ describe('PatientService.moveStatus v2', () => {
 
     it.each(['PENDING_ADMISSION', 'SOLICITANTE'])('%s → SEARCHING sem diagnóstico ativo é RECUSADO com DIAGNOSIS (o desvio dos dois passos está fechado)', async (from) => {
       db(from, [[from, 'SEARCHING']], { status: from, active_diagnosis_count: '0' });
-      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).rejects.toMatchObject({
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'recruitment_activation' })).rejects.toMatchObject({
         code: 'PATIENT_STATUS_NOT_READY',
         to: 'SEARCHING',
         missing: ['DIAGNOSIS'],
@@ -257,17 +262,17 @@ describe('PatientService.moveStatus v2', () => {
 
     it.each(['PENDING_ADMISSION', 'SOLICITANTE'])('%s → SEARCHING COM diagnóstico ativo passa', async (from) => {
       db(from, [[from, 'SEARCHING']], { status: from, active_diagnosis_count: '1' });
-      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).resolves.toEqual({ id: PID, status: 'SEARCHING' });
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'recruitment_activation' })).resolves.toEqual({ id: PID, status: 'SEARCHING' });
     });
 
     it('paciente JÁ em atendimento (SEARCHING → ACTIVE) sem diagnóstico não é afetado: a regra só olha a ENTRADA', async () => {
       db('SEARCHING', [['SEARCHING', 'ACTIVE']], { status: 'SEARCHING', active_diagnosis_count: '0' });
-      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'admin_panel' })).resolves.toEqual({ id: PID, status: 'ACTIVE' });
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'resume' })).resolves.toEqual({ id: PID, status: 'ACTIVE' });
     });
 
     it('ADMISSION → ACTIVE sem diagnóstico e sem endereço: os dois acusam juntos, DIAGNOSIS por último', async () => {
       db('ADMISSION', [['ADMISSION', 'ACTIVE']], { ...SEM_DIAG, active_address_count: '0' });
-      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'admin_panel' })).rejects.toMatchObject({
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'resume' })).rejects.toMatchObject({
         missing: ['ADDRESS', 'DIAGNOSIS'],
       });
     });
@@ -277,7 +282,7 @@ describe('PatientService.moveStatus v2', () => {
   describe('guarda de completude por status-alvo', () => {
     it('serviço ativo SEM horário → ACTIVE é RECUSADO com PATIENT_STATUS_NOT_READY, ROLLBACK, nenhum UPDATE', async () => {
       db('PENDING_ADMISSION', [['PENDING_ADMISSION', 'ACTIVE']], { services_without_schedule_count: '1' });
-      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'admin_panel' })).rejects.toMatchObject({
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'resume' })).rejects.toMatchObject({
         name: 'PatientStatusNotReadyError',
         code: 'PATIENT_STATUS_NOT_READY',
         to: 'ACTIVE',
@@ -288,9 +293,9 @@ describe('PatientService.moveStatus v2', () => {
       expect(c[c.length - 1].sql).toBe('ROLLBACK');
     });
 
-    it('o DROP NO KANBAN em "Activo" agora passa pelo checklist INTEIRO — sem endereço é recusado (era o atalho que furava o gate)', async () => {
+    it('entrar em ACTIVE passa pelo checklist INTEIRO — sem endereço é recusado (era o atalho que furava o gate)', async () => {
       db('PENDING_ADMISSION', [['PENDING_ADMISSION', 'ACTIVE']], { active_address_count: '0' });
-      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'kanban' })).rejects.toMatchObject({
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'resume' })).rejects.toMatchObject({
         code: 'PATIENT_STATUS_NOT_READY',
         missing: ['ADDRESS'],
       });
@@ -299,19 +304,19 @@ describe('PatientService.moveStatus v2', () => {
 
     it('SEARCHING exige SÓ o horário — falta de consentimento/cobertura NÃO barra a busca de prestador', async () => {
       db('ON_HOLD', [['ON_HOLD', 'SEARCHING']], { has_consent: false, insurance_informed: null });
-      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'admin_panel' })).resolves.toEqual({
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'resume' })).resolves.toEqual({
         id: PID, status: 'SEARCHING',
       });
     });
 
     it('REPLACEMENT sem horário é recusado; com horário passa', async () => {
       db('ACTIVE', [['ACTIVE', 'REPLACEMENT']], { services_without_schedule_count: '2' });
-      await expect(service.moveStatus(PID, 'REPLACEMENT', { changeSource: 'admin_panel' })).rejects.toMatchObject({
+      await expect(service.moveStatus(PID, 'REPLACEMENT', { changeSource: 'resume' })).rejects.toMatchObject({
         code: 'PATIENT_STATUS_NOT_READY', missing: ['SERVICE_SCHEDULE'],
       });
       jest.clearAllMocks();
       db('ACTIVE', [['ACTIVE', 'REPLACEMENT']]);
-      await expect(service.moveStatus(PID, 'REPLACEMENT', { changeSource: 'admin_panel' })).resolves.toEqual({
+      await expect(service.moveStatus(PID, 'REPLACEMENT', { changeSource: 'resume' })).resolves.toEqual({
         id: PID, status: 'REPLACEMENT',
       });
     });
@@ -335,14 +340,14 @@ describe('PatientService.moveStatus v2', () => {
         active_service_count: '0',
         services_without_schedule_count: '0',
       });
-      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'kanban' })).resolves.toEqual({
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'resume' })).resolves.toEqual({
         id: PID, status: 'ACTIVE',
       });
     });
 
-    it('reenviar o MESMO status não dispara a guarda — salvar o select sem mudar nada não pode virar erro', async () => {
+    it('reenviar o MESMO status (origem resume) não dispara a guarda de completude', async () => {
       db('ACTIVE', [], { services_without_schedule_count: '1', active_address_count: '0' });
-      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'admin_panel' })).resolves.toEqual({
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'resume' })).resolves.toEqual({
         id: PID, status: 'ACTIVE',
       });
       expect(calls().some((x) => /services_without_schedule_count/.test(x.sql))).toBe(false);
@@ -350,7 +355,7 @@ describe('PatientService.moveStatus v2', () => {
 
     it('a FSM é consultada ANTES da completude — transição inexistente diz "não existe", não "falta horário"', async () => {
       db('ACTIVE', [], { services_without_schedule_count: '1' });
-      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'admin_panel' })).rejects.toMatchObject({
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'resume' })).rejects.toMatchObject({
         code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
       });
       expect(calls().some((x) => /services_without_schedule_count/.test(x.sql))).toBe(false);
@@ -361,7 +366,7 @@ describe('PatientService.moveStatus v2', () => {
         active_address_count: '0',
         services_without_schedule_count: '1',
       });
-      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'kanban' })).rejects.toMatchObject({
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'resume' })).rejects.toMatchObject({
         missing: ['ADDRESS', 'SERVICE_SCHEDULE'],
       });
     });
@@ -369,7 +374,7 @@ describe('PatientService.moveStatus v2', () => {
 
   it('paciente inexistente → "not found" (404 no controller); status inválido (DISCONTINUED) → erro antes do banco', async () => {
     db(undefined as unknown as string, []);
-    await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'admin_panel' })).rejects.toThrow(/not found/i);
+    await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'resume' })).rejects.toThrow(/not found/i);
     await expect(service.moveStatus(PID, 'DISCONTINUED' as never, { changeSource: 'admin_panel' })).rejects.toThrow(/Invalid patient status/);
   });
 
@@ -404,23 +409,23 @@ describe('PatientService.moveStatus v2', () => {
 
   // ── Saída de SUSPENDED com motivo (migration 486, decisão do Gabriel 29/09/2026) ──────────────
   describe('saída de SUSPENDED com motivo', () => {
-    it('SUSPENDED → SEARCHING sem motivo (admin_panel) → SuspensionExitReasonRequiredError, ROLLBACK, nenhum UPDATE', async () => {
+    it('SUSPENDED → SEARCHING sem motivo (resume) → SuspensionExitReasonRequiredError, ROLLBACK, nenhum UPDATE', async () => {
       db('SUSPENDED', [['SUSPENDED', 'SEARCHING']]);
-      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'admin_panel' })).rejects.toBeInstanceOf(SuspensionExitReasonRequiredError);
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'resume' })).rejects.toBeInstanceOf(SuspensionExitReasonRequiredError);
       const c = calls();
       expect(c.some((x) => /^UPDATE patients/.test(x.sql))).toBe(false);
       expect(c[c.length - 1].sql).toBe('ROLLBACK');
     });
 
-    it('SUSPENDED → REPLACEMENT sem motivo (kanban) → idem', async () => {
+    it('SUSPENDED → REPLACEMENT sem motivo (resume) → idem', async () => {
       db('SUSPENDED', [['SUSPENDED', 'REPLACEMENT']]);
-      await expect(service.moveStatus(PID, 'REPLACEMENT', { changeSource: 'kanban' })).rejects.toBeInstanceOf(SuspensionExitReasonRequiredError);
+      await expect(service.moveStatus(PID, 'REPLACEMENT', { changeSource: 'resume' })).rejects.toBeInstanceOf(SuspensionExitReasonRequiredError);
     });
 
     it('SUSPENDED → SEARCHING com motivo: grava, set_config(app.status_reason) e set_config(app.actor_uid) na transação', async () => {
       db('SUSPENDED', [['SUSPENDED', 'SEARCHING']]);
       const r = await service.moveStatus(PID, 'SEARCHING', {
-        changeSource: 'admin_panel', suspensionExitReason: 'RESUMED_SERVICE', actorUid: 'uid-123',
+        changeSource: 'resume', suspensionExitReason: 'RESUMED_SERVICE', actorUid: 'uid-123',
       });
       expect(r).toEqual({ id: PID, status: 'SEARCHING' });
       const c = calls();
@@ -457,7 +462,7 @@ describe('PatientService.moveStatus v2', () => {
 
     it('a FSM é consultada ANTES da exigência de motivo — transição inexistente diz "não existe", não "falta motivo"', async () => {
       db('SUSPENDED', []);
-      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'admin_panel' })).rejects.toMatchObject({
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'resume' })).rejects.toMatchObject({
         code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
       });
     });
@@ -465,7 +470,7 @@ describe('PatientService.moveStatus v2', () => {
 
   it('C5: DEMOÇÃO de estado clínico para o funil consulta a tabela e é RECUSADA (nada é gravado, nota intacta)', async () => {
     db('ACTIVE', [['ACTIVE', 'ON_HOLD']]); // o seed da 315 não tem ACTIVE → ADMISSION
-    await expect(service.moveStatus(PID, 'ADMISSION', { changeSource: 'kanban' })).rejects.toMatchObject({
+    await expect(service.moveStatus(PID, 'ADMISSION', { changeSource: 'admin_panel' })).rejects.toMatchObject({
       name: 'PatientStatusTransitionError', code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED', from: 'ACTIVE', to: 'ADMISSION',
     });
     const c = calls();
@@ -520,15 +525,5 @@ describe('movePatientStatus com o client de quem chama (cadeia Fase 15)', () => 
     const c = calls();
     expect(c[0].sql).toBe('BEGIN');
     expect(c[c.length - 1].sql).toBe('COMMIT');
-  });
-
-  it('spec 051: statusOptions é a porta da lista de destinos — passa o estado atual e as células ao módulo', async () => {
-    queryImpl = async (sql) => {
-      if (/FROM patients/.test(sql)) return { rows: [{ status: 'ALTA' }], rowCount: 1 };
-      if (/FROM patient_status_transitions/.test(sql)) return { rows: [{ to_status: 'DISCHARGED' }], rowCount: 1 };
-      return { rows: [], rowCount: 0 };
-    };
-    jest.clearAllMocks();
-    await expect(new PatientService().statusOptions(PID, null, 'kanban')).resolves.toEqual({ current: 'ALTA', changeSource: 'kanban', options: [{ status: 'DISCHARGED', via: 'fluxo' }] });
   });
 });

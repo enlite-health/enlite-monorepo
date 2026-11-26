@@ -4,23 +4,35 @@
  */
 import { CLINICAL_PATIENT_STATUSES, type ClinicalPatientStatus } from '../enums/PatientStatus';
 import { INTERNAL_CHANGE_SOURCES, ROTA_CHANGE_SOURCES, type PatientChangeSource } from '../enums/PatientChangeSource';
-import { CELULA_DO_DESTINO, decidirTrocaForaDoFluxo } from '../trocaForaDoFluxo';
+import { CELULA_DO_DESTINO, decidirTrocaForaDoFluxo, type DestinoHumano } from '../trocaForaDoFluxo';
 
-const DESTINOS: readonly ClinicalPatientStatus[] = CLINICAL_PATIENT_STATUSES;
+const DESTINOS: readonly DestinoHumano[] = ['ON_HOLD', 'SUSPENDED', 'ALTA', 'DISCHARGED'];
+const DERIVADOS: readonly ClinicalPatientStatus[] = ['SEARCHING', 'REPLACEMENT', 'ACTIVE'];
 const outraOrigem = (d: ClinicalPatientStatus): ClinicalPatientStatus => (d === 'ACTIVE' ? 'SEARCHING' : 'ACTIVE');
 const TODAS = Object.values(CELULA_DO_DESTINO);
 
 let casos = 0;
 afterAll(() => {
-  // Contagem declarada: 7 destinos x 14 casos + 1 de funil + 1 de tipo = 100.
+  // Contagem declarada: 4 destinos x 14 casos + 3 derivados x 2 origens da rota + 1 de funil + 1 de tipo = 64.
   // eslint-disable-next-line no-console
   console.log(`TABELA_VERDADE casos executados: ${casos}`);
 });
 const marca = () => { casos += 1; };
 
 describe('decidirTrocaForaDoFluxo — tabela-verdade', () => {
-  it('controle positivo: 7 destinos', () => {
-    expect(DESTINOS).toHaveLength(7);
+  it('controle positivo: 4 destinos humanos (com célula) e 3 derivados (sem)', () => {
+    expect(DESTINOS).toHaveLength(4);
+    expect(DERIVADOS).toHaveLength(3);
+    expect(CLINICAL_PATIENT_STATUSES).toHaveLength(7);
+  });
+
+  describe.each(DERIVADOS)('destino derivado %s (F5: não há célula)', (para) => {
+    const base = { de: 'DISCHARGED' as const, para, cells: Object.values(CELULA_DO_DESTINO) as string[] | null };
+    it.each(ROTA_CHANGE_SOURCES)('fora da FSM (%s): não se aplica — nenhuma célula o destrava', (changeSource) => {
+      marca();
+      expect(decidirTrocaForaDoFluxo({ ...base, naFsm: false, changeSource }))
+        .toEqual({ resultado: 'nao_se_aplica', motivo: 'destino_do_fluxo_automatico' });
+    });
   });
 
   describe.each(DESTINOS)('destino %s', (para) => {
@@ -99,9 +111,9 @@ describe('decidirTrocaForaDoFluxo — tabela-verdade', () => {
     expect(r).toEqual({ resultado: 'nao_se_aplica', motivo: 'origem_nao_manual' });
   });
 
-  it('contagem: 7 destinos x 14 casos + 1 de funil + 1 de tipo = 100 (contagem zero é falha, não sucesso)', () => {
+  it('contagem: 4 destinos x 14 casos + 3 derivados x |ROTA| + 1 de funil + 1 de tipo (contagem zero é falha, não sucesso)', () => {
     // por destino: 4 origens não manuais + funil(de) + nulo + mesmo estado + 2 na FSM
     //              + null + [] + só-outras + 2 permitidas = 14
-    expect(casos).toBe(7 * 14 + 2);
+    expect(casos).toBe(4 * 14 + DERIVADOS.length * ROTA_CHANGE_SOURCES.length + 2);
   });
 });

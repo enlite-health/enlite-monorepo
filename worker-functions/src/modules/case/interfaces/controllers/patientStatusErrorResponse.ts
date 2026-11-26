@@ -5,6 +5,7 @@ import {
   OnHoldReasonRequiredError,
   PatientStatusNotReadyError,
   PatientStatusLockedByAllocationError,
+  PatientStatusNotManualError,
   SuspensionExitReasonRequiredError,
 } from '../../application/PatientStatusWriter';
 import { PatientStatusActionNotAvailableError } from '../../application/PatientStatusActionUseCase';
@@ -36,6 +37,10 @@ const TRADUCOES = [
   // D489/D530: prestador com alocação viva no itinerário. Só a contagem — sem nome (PII).
   traducao(PatientStatusLockedByAllocationError, (err) => ({
     status: 422, body: { success: false, error: err.message, code: err.code, details: { allocations: err.allocations } },
+  })),
+  // F5: o estado pedido é do fluxo automático (SEARCHING/REPLACEMENT/ACTIVE por quem não é o fluxo; `kanban` para qualquer destino).
+  traducao(PatientStatusNotManualError, (err) => ({
+    status: 422, body: { success: false, error: err.message, code: err.code, details: { to: err.to, changeSource: err.changeSource } },
   })),
   // F3: retomar fora de ON_HOLD/SUSPENDED, reativar fora de DISCHARGED, …
   traducao(PatientStatusActionNotAvailableError, (err) => ({

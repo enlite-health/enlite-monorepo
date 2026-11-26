@@ -3,6 +3,7 @@ import { isPatientStatus, isClinicalPatientStatus, isFunnelToSearchingTransition
 import {
   escopoDaCompletudeDe,
   isManualChangeSource,
+  origemPodePedirDestino,
   saiDoFunilParaSearching,
   type PatientChangeSource,
 } from '../domain/enums/PatientChangeSource';
@@ -106,8 +107,21 @@ export class PatientStatusLockedByAllocationError extends Error {
 }
 
 /**
+ * O estado pedido é definido pelo fluxo automático, não por quem pediu (F5, D6/D9): a origem não tem o destino na coluna `destinos`
+ * da tabela (`POLITICA_POR_ORIGEM`) — `admin_panel` não pede SEARCHING/REPLACEMENT/ACTIVE e `kanban` não pede nada. O controller
+ * devolve 422 `PATIENT_STATUS_NOT_MANUAL`. Só código e nomes de estado, nenhum texto clínico.
+ */
+export class PatientStatusNotManualError extends Error {
+  readonly code = 'PATIENT_STATUS_NOT_MANUAL';
+  constructor(readonly to: PatientStatus, readonly changeSource: PatientChangeSource) {
+    super(`Patient status ${to} is defined by the automatic flow and cannot be requested by ${changeSource}`);
+    this.name = 'PatientStatusNotManualError';
+  }
+}
+
+/**
  * Guarda D469 (02/10/2026; antes D434/DX-6.4): funil→SEARCHING é ato intencional. QUEM pode é a tabela de origem
- * (`POLITICA_POR_ORIGEM.saiDoFunilParaSearching`, dono único): o foguete (e, até a F5, o arrasto no Kanban). O lançamento
+ * (`POLITICA_POR_ORIGEM.saiDoFunilParaSearching`, dono único): só o foguete. O lançamento
  * da vaga NÃO move (D1); o select da ficha (admin_panel) e a derivação (system) continuam recusados com o 422. Não depende
  * da FSM: o writer a checa ANTES de consultá-la.
  */
@@ -135,9 +149,9 @@ export type AvaliacaoDaTroca =
 
 /**
  * O ÚNICO lugar que responde "esta troca de estado passa pela guarda de transição/permissão?".
- * O writer (PUT /status) e a lista de destinos (GET /status-options) chamam esta função — a lista
- * e o PUT nunca têm duas implementações da regra (spec 051, A6). Ordem preservada de antes: D469
- * primeiro, depois a FSM, e só então a célula.
+ * O writer (PUT /status) e a lista de ações (F3, `ListPatientStatusActionsUseCase`) chamam esta função — a lista
+ * e a escrita nunca têm duas implementações da regra (spec 051, A6). Ordem preservada de antes: D469
+ * primeiro, depois a FSM, e só então a célula. (A lista de destinos `GET /status-options` saiu na F5.)
  */
 export function avaliarTroca(e: {
   from: PatientStatus | null;
@@ -240,6 +254,10 @@ export function createPatientStatusWriter(ports: PatientStatusPorts): MovePatien
     if (!isPatientStatus(status)) {
       throw new Error(`Invalid patient status: ${String(status)}`);
     }
+    // F5: a tabela de origem diz quem pode pedir o destino — antes de abrir transação, da trava de alocação e da FSM.
+    if (!origemPodePedirDestino(opts.changeSource, status)) {
+      throw new PatientStatusNotManualError(status, opts.changeSource);
+    }
     const goingOnHold = status === 'ON_HOLD';
     if (goingOnHold && !opts.onHoldReason) {
       throw new OnHoldReasonRequiredError();
@@ -315,7 +333,7 @@ export function createPatientStatusWriter(ports: PatientStatusPorts): MovePatien
       // "Activo" no Kanban ativava sem checklist NENHUM, furando inclusive o ADDRESS que barra o
       // botão "Activar" desde a D255. SEARCHING/REPLACEMENT cobram só o horário.
       if (from !== status) {
-        const required = blockingCodesForStatusChange(status, foraDoFluxo, from);
+        const required = blockingCodesForStatusChange(status, from);
         if (required.length > 0) {
           const missing = await ports.completeness.missingFor(client, patientId, escopoDaTroca(opts));
           const faltando = required.filter((code) => missing.includes(code));
