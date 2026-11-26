@@ -83,9 +83,14 @@ export class DailyReportError extends Error {
   }
 }
 
-/** 409 do contrato: `daily_report_conflict` (mesmo id, corpo diferente) e `daily_report_exists` (outro id para a guarda). */
+/**
+ * 409 do contrato: `daily_report_conflict` (mesmo id, corpo diferente) e `daily_report_exists` (outro id para a guarda); emenda 077:
+ * `daily_report_presence_open` (guarda sem saída aceita/declarada) e `daily_report_template_outdated` (molde ≠ PTI vigente) — os dois retentáveis.
+ */
+export type DailyReportConflictCode = 'daily_report_conflict' | 'daily_report_exists' | 'daily_report_presence_open' | 'daily_report_template_outdated';
+
 export class DailyReportConflictError extends Error {
-  constructor(readonly code: 'daily_report_conflict' | 'daily_report_exists') {
+  constructor(readonly code: DailyReportConflictCode) {
     super(code);
     this.name = 'DailyReportConflictError';
   }
