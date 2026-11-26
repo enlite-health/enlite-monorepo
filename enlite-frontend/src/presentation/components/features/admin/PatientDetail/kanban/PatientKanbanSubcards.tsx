@@ -59,8 +59,8 @@ export function PatientKanbanSubcards({ patientId, services }: Props): JSX.Eleme
             aria-label={pairAria}
           >
             <div className="flex flex-1 min-w-0 items-center gap-1.5">
-              {/* semaforo-da-vaga F3: cor + n da vaga viva do serviço (do servidor); sem vaga viva (null) = nada. */}
-              {service.semaphore && <VacancySemaphoreDot value={service.semaphore} testId="patient-kanban-subcard-semaphore" />}
+              {/* semaforo-da-vaga F3: só o círculo da vaga viva do serviço (n no aria-label, não espreme o nome); sem vaga viva (null) = nada. */}
+              {service.semaphore && <VacancySemaphoreDot value={service.semaphore} display="dotOnly" testId="patient-kanban-subcard-semaphore" />}
               <Text as="span" size="xs" color="secondary" className="min-w-0 truncate">
                 {serviceLabel}
               </Text>

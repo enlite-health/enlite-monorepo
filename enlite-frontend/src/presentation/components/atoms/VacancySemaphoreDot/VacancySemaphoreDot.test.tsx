@@ -41,6 +41,14 @@ describe('VacancySemaphoreDot — pinta a cor recebida e não decide nada', () =
     expect(dot().textContent).toBe('');
   });
 
+  it("display='dotOnly': sem número visível, mas o aria-label e o title carregam o n", () => {
+    render(<VacancySemaphoreDot value={{ color: 'green', n: 10 }} display="dotOnly" />);
+    expect(dot().textContent).toBe('');
+    expect(dot()).toHaveAttribute('aria-label', 'admin.semaphore.dotAria|admin.semaphore.colors.green|10');
+    expect(dot()).toHaveAttribute('title', 'admin.semaphore.dotAria|admin.semaphore.colors.green|10');
+    expect(dot().querySelector('[data-part="circle"]')).not.toBeNull();
+  });
+
   it('null → "—" com admin.semaphore.none, sem cor', () => {
     render(<VacancySemaphoreDot value={null} />);
     expect(dot()).toHaveAttribute('data-color', 'none');

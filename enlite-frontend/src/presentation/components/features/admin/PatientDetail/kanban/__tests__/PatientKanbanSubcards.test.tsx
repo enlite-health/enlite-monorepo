@@ -269,14 +269,18 @@ describe('PatientKanbanSubcards — gate do foguete (patient_services:update + v
 describe('PatientKanbanSubcards — círculo do semáforo (semaforo-da-vaga F3)', () => {
   beforeAll(() => { i18n.changeLanguage('es'); });
 
-  it('mostra a cor e o n do serviço ANTES do nome, com a palavra da cor no aria-label', () => {
+  it('mostra só o círculo (sem o n visível) ANTES do nome; o n vai no aria-label e o nome do serviço segue visível', () => {
     renderSubcards([service({ semaphore: { n: 0, color: 'green' } })]);
     const dot = screen.getByTestId('patient-kanban-subcard-semaphore');
     expect(dot).toHaveAttribute('data-color', 'green'); // n=0 e verde: o front só pinta
-    expect(dot).toHaveTextContent('0');
+    expect(dot.textContent).toBe(''); // sem número visível: espremia o nome do serviço
     expect(dot.getAttribute('aria-label')).toContain('Verde');
+    expect(dot.getAttribute('aria-label')).toContain('0');
+    const nome = screen.getByText('Acompañante Terapéutico');
+    expect(nome).toBeVisible();
     const sub = screen.getByTestId('patient-kanban-subcard');
-    expect(sub.textContent!.indexOf('0')).toBeLessThan(sub.textContent!.indexOf('Acompañante'));
+    expect(sub.textContent).toContain('Acompañante');
+    expect(dot.compareDocumentPosition(nome) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('dois serviços → dois círculos, cada um com a sua cor', () => {

@@ -142,9 +142,11 @@ test.describe('semáforo da vaga — lista de vagas e Kanban de pacientes (F3) @
     const subVerde = card.locator(`[data-testid="patient-kanban-subcard"][data-service-id="${servicoVerde}"]`).getByTestId('patient-kanban-subcard-semaphore');
     const subVermelho = card.locator(`[data-testid="patient-kanban-subcard"][data-service-id="${servicoVermelho}"]`).getByTestId('patient-kanban-subcard-semaphore');
     await expect(subVerde).toHaveAttribute('data-color', 'green');
-    await expect(subVerde).toHaveText('10');
+    await expect(subVerde).toHaveText(''); // só o círculo: o n não é visível no subcard
+    await expect(subVerde).toHaveAttribute('aria-label', /10/);
     await expect(subVermelho).toHaveAttribute('data-color', 'red');
-    await expect(subVermelho).toHaveText('0');
+    await expect(subVermelho).toHaveText('');
+    await expect(subVermelho).toHaveAttribute('aria-label', /: 0 /);
     await expect(card).toHaveScreenshot('semaforo-alt1-card.png', {
       mask: [card.getByTestId(`patient-kanban-card-${patientId}-open`), card.locator('span', { hasText: /^Caso #/ })],
       maxDiffPixelRatio: 0.05,

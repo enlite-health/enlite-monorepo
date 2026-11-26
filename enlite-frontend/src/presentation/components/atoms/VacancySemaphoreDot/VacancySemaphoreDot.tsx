@@ -16,6 +16,8 @@ import type { SemaphoreColor } from '@domain/value-objects/vacancySemaphore';
 
 export interface VacancySemaphoreDotProps {
   value: { color: SemaphoreColor; n?: number } | null;
+  /** 'dotAndCount' (padrão, lista de vagas): círculo + n. 'dotOnly' (subcard estreito): só o círculo; o n segue no aria-label/title. */
+  display?: 'dotAndCount' | 'dotOnly';
   testId?: string;
   className?: string;
 }
@@ -26,7 +28,7 @@ const CIRCLE_CLASS: Record<SemaphoreColor, string> = {
   green: 'bg-green-600',
 };
 
-export function VacancySemaphoreDot({ value, testId = 'vacancy-semaphore-dot', className = '' }: VacancySemaphoreDotProps): JSX.Element {
+export function VacancySemaphoreDot({ value, display = 'dotAndCount', testId = 'vacancy-semaphore-dot', className = '' }: VacancySemaphoreDotProps): JSX.Element {
   const { t } = useTranslation();
 
   if (!value) {
@@ -50,7 +52,7 @@ export function VacancySemaphoreDot({ value, testId = 'vacancy-semaphore-dot', c
       className={`inline-flex items-center gap-1.5 ${className}`}
     >
       <span data-part="circle" className={`inline-block h-3 w-3 shrink-0 rounded-full ${CIRCLE_CLASS[value.color]}`} />
-      {value.n !== undefined && (
+      {display === 'dotAndCount' && value.n !== undefined && (
         <Text as="span" size="xs" weight="semibold" color="primary">
           {value.n}
         </Text>
