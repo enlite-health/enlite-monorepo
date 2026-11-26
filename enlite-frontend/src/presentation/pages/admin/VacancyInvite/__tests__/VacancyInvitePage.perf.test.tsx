@@ -37,7 +37,7 @@ const cand = (id: string, d: number) => ({
   matchScore: null, internalNotes: null, alreadyApplied: false, messagedAt: null,
 });
 const ready = (error: string | null = null) => ({
-  status: 'ready', error, isRefreshing: false, refetch: vi.fn().mockResolvedValue(undefined), reload: vi.fn(), currentIds: new Set(['a', 'b', 'c']),
+  status: 'ready', error, isRefreshing: false, refetch: vi.fn().mockResolvedValue(true), reload: vi.fn(), currentIds: new Set(['a', 'b', 'c']),
   results: { jobPostingId: 'v1', operationDate: '2026-11-06', service: { lat: -34.6, lng: -58.4, addressLabel: 'X' }, candidates: [cand('a', 3), cand('b', 4), cand('c', 5)] },
 });
 const renderPage = () =>
