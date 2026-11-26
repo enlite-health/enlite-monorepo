@@ -68,6 +68,9 @@ export {
   cicloDeVidaDaVaga, cicloDeVidaSql, isStatusGravavel, isCicloDeVida, statusDeRetomada,
 } from './domain/vacancyLifecycle';
 export type { VacancyStatusValue, CicloDeVida, StatusGravavel } from './domain/vacancyLifecycle';
+export { CORES, FAIXAS_DO_SEMAFORO, GRAVIDADE_DA_COR, corDoSemaforo, corDoSemaforoSql, piorCor } from './domain/vacancySemaphore';
+export type { CorDoSemaforo, FaixaDoSemaforo } from './domain/vacancySemaphore';
+export { semaforoContagemSql } from './infrastructure/vacancySemaphoreSql';
 export type { VacancyInsertParams, SourceLockedField } from './interfaces/controllers/vacancyCrudHelpers';
 export { VacancyAddressReviewController } from './interfaces/controllers/VacancyAddressReviewController';
 export { VacancySocialLinksController } from './interfaces/controllers/VacancySocialLinksController';
