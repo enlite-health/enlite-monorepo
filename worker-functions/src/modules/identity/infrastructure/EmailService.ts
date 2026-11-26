@@ -151,6 +151,39 @@ export class EmailService {
   }
 
   /**
+   * Emenda 077 §5.5 — aviso de presença à coordenação. Corpo: SÓ a data, a hora e o link da fila de revisão. NUNCA nome de prestador ou paciente,
+   * endereço ou dado clínico (a assinatura nem recebe esses dados). Passa por `assertCanSend` (via `send`): teste/sem chave NUNCA envia.
+   */
+  async sendCoordinationAlert(to: string, input: { kind: 'PRESENCE_OPEN_4H' | 'CHECK_IN_REFUSED_NO_ENTRY'; onDate: string; time: string }): Promise<void> {
+    const link = 'https://app.enlite.health/admin/presencia/revision';
+    const open = input.kind === 'PRESENCE_OPEN_4H';
+    const title = open ? 'Turno sin salida registrada' : 'Entrada rechazada en un turno';
+    const lead = open
+      ? `Pasaron más de 4 h del fin previsto de un turno (${escapeHtml(input.onDate)}, ${escapeHtml(input.time)}) y no hay salida registrada.`
+      : `Una entrada fue rechazada y no hay entrada aceptada en un turno del ${escapeHtml(input.onDate)}, ${escapeHtml(input.time)}.`;
+    await this.send({
+      to,
+      subject: title,
+      html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;font-family:'Poppins',Arial,sans-serif;background:#FFF9FC;">
+  <div style="max-width:520px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(24,1,73,0.08);">
+    <div style="background:#180149;padding:24px;text-align:center;">
+      <h1 style="color:#fff;margin:0;font-size:20px;font-family:'Lexend',Arial,sans-serif;">${title}</h1>
+    </div>
+    <div style="padding:24px;">
+      <p style="color:#333;font-size:14px;">${lead}</p>
+      <p style="text-align:center;margin:24px 0;"><a href="${link}" style="color:#180149;font-weight:bold;">Abrir la cola de revisión</a></p>
+    </div>
+  </div>
+</body>
+</html>`,
+    });
+  }
+
+  /**
    * `false` = não existe canal para este processo. Duas condições, e as duas
    * precisam ser explícitas:
    *   · sem `SENDGRID_API_KEY` não há como enviar (e o SDK tentaria mesmo assim);

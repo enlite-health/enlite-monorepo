@@ -3,6 +3,8 @@ import {
   buildAdmissionTactiqLinkPayload,
   buildPtContactsPendingPayload,
   buildItineraryUncoveredShiftsPayload,
+  buildCoordinationAlertPayload,
+  SYSTEM_PRESENCE_ACTOR_UID,
   buildPedidoIaAplicarPayload,
   buildAdmissionImportBlockedPayload,
   buildTalentumWebhookAlarmPayload,
@@ -376,5 +378,28 @@ describe('buildTalentumWebhookAlarmPayload / publishTalentumWebhookAlarm (spec 0
     const r = repo();
     await expect(new SystemNotificationPublisher(r as never).publishTalentumWebhookAlarm({} as never, { recipientUids: ['u1'], payload: { ...ok, nome: 'x' } as never })).rejects.toThrow();
     expect(r.insertEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('SystemNotificationPublisher — aviso de presença à coordenação (emenda 077 §5)', () => {
+  const U = '11111111-1111-4111-8111-111111111111';
+  const payload = { occurrence_id: U, slot_id: U, on_date: '2026-11-25', worker_id: U, service_id: U };
+
+  it('UM evento (sentinela, patient_id na COLUNA, payload só-ids) + UMA notificação ao destinatário', async () => {
+    const r = repo();
+    const id = await new SystemNotificationPublisher(r as never).publishCoordinationAlert({} as never, { typeCode: 'PRESENCE_OPEN_4H', recipientUid: 'u1', patientId: U, payload });
+    expect(id).toBe('ev-1');
+    expect(r.insertEvent).toHaveBeenCalledWith(
+      { typeCode: 'PRESENCE_OPEN_4H', actorUid: SYSTEM_PRESENCE_ACTOR_UID, patientId: U, conversationId: null, messageId: null, payload },
+      {},
+    );
+    expect(r.insertNotifications).toHaveBeenCalledWith('ev-1', ['u1'], {});
+  });
+
+  it('o builder é FECHADO: chave extra (nome, endereço, patient_id) LANÇA; uuid ou data fora do contrato lançam', () => {
+    expect(() => buildCoordinationAlertPayload({ ...payload, worker_name: 'Ana' } as never)).toThrow(/chave fora do contrato/);
+    expect(() => buildCoordinationAlertPayload({ ...payload, patient_id: U } as never)).toThrow(/chave fora do contrato/);
+    expect(() => buildCoordinationAlertPayload({ ...payload, worker_id: 'x' })).toThrow(/valor fora do contrato/);
+    expect(() => buildCoordinationAlertPayload({ ...payload, on_date: '25/11/2026' })).toThrow(/valor fora do contrato/);
   });
 });

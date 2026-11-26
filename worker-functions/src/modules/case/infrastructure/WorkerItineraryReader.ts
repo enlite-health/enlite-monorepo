@@ -125,7 +125,7 @@ interface PatientRow {
 }
 
 /** $1 = worker, $2 = from, $3 = to. */
-const WORKER_SCOPE_SQL = `pcs.active
+export const WORKER_SCOPE_SQL = `pcs.active
   AND (
     EXISTS (SELECT 1 FROM patient_itinerary_assignment wa
              WHERE wa.slot_id = s.id AND wa.worker_id = $1::uuid AND wa.status = 'ACTIVE'

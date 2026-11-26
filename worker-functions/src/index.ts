@@ -48,6 +48,8 @@ import {
   createTherapeuticContactRemindersInternalRoutes,
   ItineraryDailyInternalController,
   createItineraryDailyInternalRoutes,
+  PresenceAlertsInternalController,
+  createPresenceAlertsInternalRoutes,
   createAdminPatientsRoutes,
   createAdminInsuranceRoutes,
   AdminInsuranceProviderContactsController,
@@ -968,6 +970,14 @@ app.use(
   systemContextMiddleware('job:itinerary-daily'),
   internalAuthMiddleware,
   createItineraryDailyInternalRoutes(new ItineraryDailyInternalController()),
+);
+
+// emenda 077 §5 (F6): alerta de presença à coordenação (turno sem saída 4 h depois do fim; entrada recusada sem entrada aceita). Cloud Scheduler a cada 15 min.
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:presence-alerts'),
+  internalAuthMiddleware,
+  createPresenceAlertsInternalRoutes(new PresenceAlertsInternalController()),
 );
 
 // spec 095 T-095-31: processador da inbox do Talentum (push do Pub/Sub, só com o inboxId) + redrive manual. Mesmo guard dos jobs internos.

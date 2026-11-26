@@ -47,7 +47,18 @@ export type NotificationTypeCode =
   | 'PEDIDO_IA_NOVO'
   | 'PEDIDO_IA_GRAVE'
   | 'PEDIDO_IA_APLICAR'
-  | 'TALENTUM_WEBHOOK_ALARM';
+  | 'TALENTUM_WEBHOOK_ALARM'
+  | 'PRESENCE_OPEN_4H'
+  | 'CHECK_IN_REFUSED_NO_ENTRY';
+
+/** Payload do aviso de presença à coordenação (emenda 077 §5.5): SÓ ids e a data do turno. O `patient_id` vai na coluna do evento. */
+export interface CoordinationAlertPayload {
+  occurrence_id: string;
+  slot_id: string;
+  on_date: string;
+  worker_id: string;
+  service_id: string;
+}
 
 /**
  * Payload do aviso de contatos pendentes do PT (spec 048): SÓ ids e nomes de campo — nunca nome do
@@ -157,7 +168,7 @@ export interface InsertNotificationEventInput {
   conversationId: string | null;
   messageId: string | null;
   /** Metadado SÓ-ids (461). Omitido = `'{}'`. Hoje só o tipo do PT grava aqui. */
-  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | TalentumWebhookAlarmPayload;
+  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | TalentumWebhookAlarmPayload | CoordinationAlertPayload;
 }
 
 export interface NotificationEventRow {
