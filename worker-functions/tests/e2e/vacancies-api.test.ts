@@ -221,6 +221,27 @@ describe('Vacancies API', () => {
       const res = await api.get('/api/admin/vacancies/stats');
       expect(res.status).toBe(401);
     });
+
+    // semaforo-da-vaga F4: o tempo médio de fechamento mantém a semântica LEGADA (`status NOT IN abertas`), fora do escopo da mudança.
+    // Um rascunho com status SEARCHING (is_draft=true) NÃO entra no cálculo; com `NOT publicável` ele entraria e o médio dispararia.
+    it('tempo_medio_fechamento: vaga rascunho com status SEARCHING NÃO entra no cálculo (semântica legada)', async () => {
+      const tempo = async () => {
+        const r = await api.get('/api/admin/vacancies/stats', authHeaders(adminToken));
+        expect(r.status).toBe(200);
+        return (r.data.data as Array<{ label: string; value: string }>)[3].value; // 4º indicador = tempo_medio_fechamento (rótulo legado 'Total de Vacantes')
+      };
+      const antes = await tempo();
+      const ins = await pool.query<{ id: string }>(
+        `INSERT INTO job_postings (case_number, vacancy_number, title, status, is_draft, search_start_date, updated_at, country)
+         VALUES (99933, nextval('job_postings_vacancy_number_seq'), 'tempo-medio-rascunho-QA', 'SEARCHING', true, NOW() - INTERVAL '100000 days', NOW(), 'AR')
+         RETURNING id`,
+      );
+      try {
+        expect(await tempo()).toBe(antes);
+      } finally {
+        await pool.query(`DELETE FROM job_postings WHERE id = $1`, [ins.rows[0].id]);
+      }
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────────

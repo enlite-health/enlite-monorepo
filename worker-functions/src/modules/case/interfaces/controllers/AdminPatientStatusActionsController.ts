@@ -87,7 +87,7 @@ export class AdminPatientStatusActionsController {
         // Spec 051: a célula do ator chega ao escritor. `null` (engine neutro) NÃO vira `[]`.
         cells: clinicalCellsOf(req),
       });
-      dispatchPatientTalentumPause(result.talentum, 'AdminPatientStatusActionsController');
+      dispatchPatientTalentumPause(result.talentum, 'AdminPatientStatusActionsController', result.id);
       res.status(200).json({ success: true, data: { id: result.id, action: result.acao, from: result.from, status: result.status } });
     } catch (err: unknown) {
       if (respondPatientStatusError(err, req, res)) return;

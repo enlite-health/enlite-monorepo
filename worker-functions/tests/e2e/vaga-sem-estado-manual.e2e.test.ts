@@ -16,7 +16,8 @@
  *   (v)    linha legada ON_HOLD com is_draft=false → fora do feed e lifecycle = null (D6, opção A);
  *   (vi)   POST /vacancies/baja de vaga sem serviço → DE_BAJA, fora do feed, página pública 200 com is_disabled;
  *   (vii)  vaga de serviço → baixa recusada com a mensagem nova (P8);
- *   (viii) a Luz ("vagas próximas") oferece o que o feed oferece: uma vaga de paciente SUSPENDED não aparece.
+ *   (viii) a Luz ("vagas próximas") oferece o que o feed oferece: uma vaga de paciente SUSPENDED não aparece;
+ *   (ix)   P6: vaga lançada com o paciente pausado não ganha link; a retomada do paciente garante o short link e a vaga volta ao feed.
  */
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
@@ -101,14 +102,14 @@ describe('F4 (back) — a vaga não tem estado manual; "publicável" tem dono @i
   }
 
   /** Vaga já lançada com projeto no stub (sem passar por Vertex nem publish): o que o estado de pausa precisa. */
-  async function vagaPublicadaNoStub(p: { patientId: string; addressId: string }, caseNumber: number, over: { status?: string; pauseState?: string | null } = {}): Promise<{ id: string; projectId: string }> {
+  async function vagaPublicadaNoStub(p: { patientId: string; addressId: string }, caseNumber: number, over: { status?: string; pauseState?: string | null; semLink?: boolean } = {}): Promise<{ id: string; projectId: string }> {
     const id = await novaVaga(p, caseNumber);
     const projectId = `${TAG}-proj-${caseNumber}`;
     talentum.seed({ _id: projectId, name: `proj ${caseNumber}`, myRole: 'OWNER' });
     await pool.query(
       `UPDATE job_postings SET is_draft = false, status = $2, talentum_project_id = $3, talentum_pause_state = $4,
-              social_short_links = '{"site":"https://stub.invalid/x"}'::jsonb WHERE id = $1`,
-      [id, over.status ?? 'PENDING_ACTIVATION', projectId, over.pauseState ?? null],
+              social_short_links = CASE WHEN $5 THEN NULL ELSE '{"site":"https://stub.invalid/x"}'::jsonb END WHERE id = $1`,
+      [id, over.status ?? 'PENDING_ACTIVATION', projectId, over.pauseState ?? null, over.semLink ?? false],
     );
     return { id, projectId };
   }
@@ -343,6 +344,26 @@ describe('F4 (back) — a vaga não tem estado manual; "publicável" tem dono @i
     await pool.query(`UPDATE patients SET status = 'SEARCHING' WHERE id = $1`, [p.patientId]);
     expect(await publicaveis()).toEqual([id]);
   });
+
+  it('(ix) P6: vaga lançada com o paciente pausado nasce SEM link (nada ao Short.io); quando o paciente retoma, ela volta ao feed COM o short link (1 POST /links)', async () => {
+    const p = await novoPaciente('ix');
+    const pausa = await api.post(`/api/admin/patients/${p.patientId}/status-actions`, { action: 'pausar', onHoldReason: 'SCHOOL' }, asAdmin);
+    expect(pausa.status).toBe(200);
+    const v = await vagaPublicadaNoStub(p, 996009, { semLink: true }); // lançada (is_draft=false) com o paciente em ON_HOLD
+    const trecho = `caso996009-`;
+    expect(await noFeed(v.id)).toBe(false); // não é publicável: o paciente está pausado
+    expect(shortIo.createdFor(trecho)).toHaveLength(0); // o stub NÃO recebeu POST: o link não nasce com a vaga fora do ar
+    expect((await linha(v.id)).social_short_links).toBeNull();
+
+    const retoma = await api.post(`/api/admin/patients/${p.patientId}/status-actions`, { action: 'retomar' }, asAdmin);
+    expect(retoma.status).toBe(200);
+    const t0 = Date.now();
+    while (shortIo.createdFor(trecho).length === 0 && Date.now() - t0 < 20_000) await espera(300);
+    expect(shortIo.createdFor(trecho)).toHaveLength(1); // a retomada garantiu o link (um ponto só, o mesmo ensure do publish)
+    expect((await linha(v.id)).social_short_links?.site).toBeTruthy(); // o que o feed exige (`social_short_links ? 'site'`)
+    expect(await noFeed(v.id)).toBe(true);
+    expect(await noRaio(v.id)).toBe(true);
+  }, 90_000);
 
   it('mapa de outbound: só o stub recebeu — Talentum só em /projects, Short.io só POST /links; nenhum DELETE no Talentum', async () => {
     for (const c of talentum.calls) expect(c.path === '/auth/login' || c.path.startsWith('/projects')).toBe(true);

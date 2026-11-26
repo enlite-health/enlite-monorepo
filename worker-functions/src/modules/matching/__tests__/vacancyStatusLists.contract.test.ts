@@ -5,7 +5,7 @@
  * Há DOIS donos: `matching/domain/vacancyLifecycle.ts` (o selo: rascunho/baja) e `matching/domain/vacancyPublication.ts` ("publicável":
  * feed, página pública, candidatura, short link, a Luz, o painel e a marcação do Talentum leem dele). A F4 re-apontou os leitores que
  * decidiam "vaga aberta" por lista própria (`PublicJobsQueryBuilder`, `FindNearbyVacanciesForWorkerUseCase`, `PublicVacancyController`,
- * `VacancyCrudController`, `propagateVacancyEditToTalentum`, `VacanciesController`): saíram da allowlist e o teste abaixo EXIGE que
+ * `VacancyCrudController`, `propagateVacancyEditToTalentum`): saíram da allowlist e o teste abaixo EXIGE que
  * não tenham voltado. Sobram os que a LISTA do design mantém ("vaga viva" com 3 donos, painéis legados): congelados, sem novos.
  * Uma NOVA lista literal de status de vaga num arquivo fora da allowlist reprova.
  *
@@ -33,7 +33,6 @@ const RE_APONTADOS_NA_F4 = [
   'modules/matching/interfaces/controllers/PublicVacancyController.ts',
   'modules/matching/interfaces/controllers/VacancyCrudController.ts',
   'modules/matching/application/propagateVacancyEditToTalentum.ts',
-  'modules/matching/interfaces/controllers/VacanciesController.ts',
 ];
 
 /** Outros arquivos que JÁ tinham lista literal quando a F2 mediu (painéis, fusão, OpenAPI…): congelados também, sem justificar novos. */
@@ -46,6 +45,8 @@ const JA_EXISTENTES_FORA_DA_LISTA = [
   'modules/case/infrastructure/PatientDetailQueryHelper.ts',
   'modules/matching/application/PromoteBlockedApplicationsUseCase.ts',
   'modules/matching/interfaces/controllers/VacanciesAuxController.ts',
+  // tempo_medio_fechamento: semântica legada, fora do escopo (LISTA). Os contadores de "abertas" do mesmo arquivo leem o dono de publicável.
+  'modules/matching/interfaces/controllers/VacanciesController.ts',
   'modules/matching/interfaces/controllers/vacancyListHelpers.ts',
   'modules/worker/interfaces/controllers/AdminWorkersAuxController.ts',
 ];

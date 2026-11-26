@@ -184,6 +184,7 @@ export class VacanciesController {
     if (!countries) return;
     try {
       // P7 (semaforo-da-vaga F4): "aberta" = publicável, pelo dono (`vacancyPublication.ts`), como o feed e o painel de gestão.
+      // tempo_medio_fechamento: semântica legada, fora do escopo (LISTA) — segue `status NOT IN (abertas)` como em origin/main.
       const publicavel = vagaPublicavelSql('jp', 'p');
       const result = await this.db.query(`
         SELECT
@@ -208,7 +209,7 @@ export class VacanciesController {
           AVG(
             CASE
               WHEN jp.search_start_date IS NOT NULL
-                AND NOT ${publicavel}
+                AND jp.status NOT IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')
               THEN EXTRACT(EPOCH FROM (jp.updated_at - jp.search_start_date)) / 3600
               ELSE NULL
             END
