@@ -383,7 +383,7 @@ describe('buildTalentumWebhookAlarmPayload / publishTalentumWebhookAlarm (spec 0
 
 describe('SystemNotificationPublisher — aviso de presença à coordenação (emenda 077 §5)', () => {
   const U = '11111111-1111-4111-8111-111111111111';
-  const payload = { occurrence_id: U, slot_id: U, on_date: '2026-11-25', worker_id: U, service_id: U };
+  const payload = { occurrence_id: U, slot_id: U, on_date: '2026-11-25', worker_id: U, service_id: U, start_time: '2026-11-25T12:00:00.000Z', end_time: '2026-11-25T21:30:00.000Z' };
 
   it('UM evento (sentinela, patient_id na COLUNA, payload só-ids) + UMA notificação ao destinatário', async () => {
     const r = repo();
@@ -401,5 +401,7 @@ describe('SystemNotificationPublisher — aviso de presença à coordenação (e
     expect(() => buildCoordinationAlertPayload({ ...payload, patient_id: U } as never)).toThrow(/chave fora do contrato/);
     expect(() => buildCoordinationAlertPayload({ ...payload, worker_id: 'x' })).toThrow(/valor fora do contrato/);
     expect(() => buildCoordinationAlertPayload({ ...payload, on_date: '25/11/2026' })).toThrow(/valor fora do contrato/);
+    expect(() => buildCoordinationAlertPayload({ ...payload, end_time: '21:30' })).toThrow(/valor fora do contrato/);
+    expect(() => buildCoordinationAlertPayload({ ...payload, start_time: undefined as never })).toThrow(/valor fora do contrato/);
   });
 });

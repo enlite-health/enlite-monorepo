@@ -228,7 +228,7 @@ describe('canais (adapters) — nenhum envio real', () => {
     expect(await ch.deliver(alert('PRESENCE_OPEN_4H'), recipient, tx)).toEqual({ status: 'SENT', notificationEventId: 'evt-1' });
     expect(publishCoordinationAlert).toHaveBeenCalledWith(tx, {
       typeCode: 'PRESENCE_OPEN_4H', recipientUid: 'u1', patientId: PATIENT,
-      payload: { occurrence_id: OCC, slot_id: SLOT, on_date: '2026-11-25', worker_id: WORKER, service_id: SERVICE },
+      payload: { occurrence_id: OCC, slot_id: SLOT, on_date: '2026-11-25', worker_id: WORKER, service_id: SERVICE, start_time: expect.any(String), end_time: expect.any(String) },
     });
     await expect(ch.deliver(alert('PRESENCE_OPEN_4H'), recipient)).rejects.toThrow('transação do alerta');
   });

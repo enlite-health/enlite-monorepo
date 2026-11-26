@@ -51,13 +51,19 @@ export type NotificationTypeCode =
   | 'PRESENCE_OPEN_4H'
   | 'CHECK_IN_REFUSED_NO_ENTRY';
 
-/** Payload do aviso de presença à coordenação (emenda 077 §5.5): SÓ ids e a data do turno. O `patient_id` vai na coluna do evento. */
+/**
+ * Payload do aviso de presença à coordenação (emenda 077 §5.5): SÓ ids e a data/janela do turno. O `patient_id` vai na coluna do evento.
+ * `start_time`/`end_time` = instantes ISO (UTC) da janela do turno (`occurrenceWindowOf`); o cliente formata a hora no fuso do país. Não são PII.
+ * `null` só ao LER aviso gravado antes de existirem; o builder sempre grava os dois.
+ */
 export interface CoordinationAlertPayload {
   occurrence_id: string;
   slot_id: string;
   on_date: string;
   worker_id: string;
   service_id: string;
+  start_time: string | null;
+  end_time: string | null;
 }
 
 /**

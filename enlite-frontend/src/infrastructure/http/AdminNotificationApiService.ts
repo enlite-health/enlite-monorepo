@@ -111,6 +111,9 @@ export interface PresenceAlertPayload {
   on_date: string;
   worker_id: string;
   service_id: string;
+  /** Instantes ISO da janela do turno (hora formatada no cliente, no fuso do país); `null` em aviso antigo. */
+  start_time: string | null;
+  end_time: string | null;
 }
 
 export interface AdminNotification {

@@ -19,7 +19,7 @@ export class InAppCoordinationAlertChannel implements CoordinationAlertChannel {
       typeCode: alert.kind,
       recipientUid: recipient.uid,
       patientId: s.patientId,
-      payload: { occurrence_id: s.occurrenceId, slot_id: s.slotId, on_date: s.onDate, worker_id: s.workerId, service_id: s.serviceId },
+      payload: { occurrence_id: s.occurrenceId, slot_id: s.slotId, on_date: s.onDate, worker_id: s.workerId, service_id: s.serviceId, start_time: s.startsAt, end_time: s.endsAt },
     });
     return { status: 'SENT', notificationEventId };
   }

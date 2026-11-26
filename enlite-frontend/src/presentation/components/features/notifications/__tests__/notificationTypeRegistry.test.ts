@@ -528,6 +528,16 @@ describe('PRESENCE_OPEN_4H / CHECK_IN_REFUSED_NO_ENTRY (emenda 077 §5.5)', () =
     expect(getNotificationTypeHandler(code).buildText(aviso(code), await realT(lng))).toBe(esperado);
   });
 
+  it.each([
+    ['PRESENCE_OPEN_4H', 'es', 'Turno sin salida registrada: pasaron más de 4 h del fin previsto (25/11/2026, 18:30).'],
+    ['PRESENCE_OPEN_4H', 'pt-BR', 'Turno sem saída registrada: passaram mais de 4 h do fim previsto (25/11/2026, 18:30).'],
+    ['CHECK_IN_REFUSED_NO_ENTRY', 'es', 'Entrada rechazada y sin entrada aceptada: turno del 25/11/2026, 09:00.'],
+    ['CHECK_IN_REFUSED_NO_ENTRY', 'pt-BR', 'Entrada recusada e sem entrada aceita: turno de 25/11/2026, 09:00.'],
+  ] as const)('%s em %s: com start_time/end_time ISO, a hora sai no fuso do país (-03), nao UTC', async (code, lng, esperado) => {
+    const comHora = { ...PAYLOAD, start_time: '2026-11-25T12:00:00.000Z', end_time: '2026-11-25T21:30:00.000Z' };
+    expect(getNotificationTypeHandler(code).buildText(aviso(code, comHora), await realT(lng))).toBe(esperado);
+  });
+
   it('payload ausente/estranho: variante sem data, nunca "undefined" nem crash', async () => {
     for (const payload of [null, {}, { on_date: '25/11/2026' }]) {
       const es = getNotificationTypeHandler('PRESENCE_OPEN_4H').buildText(aviso('PRESENCE_OPEN_4H', payload), await realT('es'));

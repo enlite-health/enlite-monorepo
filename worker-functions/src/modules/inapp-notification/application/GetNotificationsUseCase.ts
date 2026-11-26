@@ -153,16 +153,17 @@ function payloadOf(
 }
 
 /**
- * Emenda 077 §5.5: o aviso de presença à coordenação leva SÓ as 5 chaves de id/data do contrato, reconstruídas uma a uma (chave extra gravada por
+ * Emenda 077 §5.5: o aviso de presença à coordenação leva SÓ as 5 chaves de id/data do contrato + a janela (`start_time`/`end_time`, ISO), reconstruídas uma a uma (chave extra gravada por
  * engano nunca passa). Linha malformada = sem payload (o front cai no texto sem data). Nenhum nome, endereço nem dado clínico — o `patient_id` vai na coluna.
  */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 function coordinationAlertPayloadOf(raw: Record<string, unknown> | null): CoordinationAlertPayload | null {
   if (!raw) return null;
-  const { occurrence_id, slot_id, on_date, worker_id, service_id } = raw;
+  const { occurrence_id, slot_id, on_date, worker_id, service_id, start_time, end_time } = raw;
   const ids = [occurrence_id, slot_id, worker_id, service_id];
   if (!ids.every((v) => typeof v === 'string' && v !== '') || typeof on_date !== 'string' || !ISO_DATE.test(on_date)) return null;
-  return { occurrence_id, slot_id, on_date, worker_id, service_id } as CoordinationAlertPayload;
+  const instantOrNull = (v: unknown): string | null => (typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? v : null);
+  return { occurrence_id, slot_id, on_date, worker_id, service_id, start_time: instantOrNull(start_time), end_time: instantOrNull(end_time) } as CoordinationAlertPayload;
 }
 
 /**
