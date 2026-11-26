@@ -8,7 +8,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
       {
         id: 'fd269cde-d8c9-4fdc-88a9-5b19ebcdb531',
         caseNumber: 349, caseOrdinal: 1,
-        status: 'Esperando Ativação',
+        lifecycle: 'aberta',
         diasAberto: '05',
         stageCounts: {
           COMPATIBLE: 6,
@@ -29,7 +29,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
       {
         id: 'c83963ee-beaf-45f2-88a3-365147b0c205',
         caseNumber: 348, caseOrdinal: 1,
-        status: 'Esperando Ativação',
+        lifecycle: 'aberta',
         diasAberto: '03',
         stageCounts: {
           COMPATIBLE: 8,
@@ -56,7 +56,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
     expect(screen.getByText('348#01')).toBeVisible();
 
     // GARANTIA 2: Status visível (aparece 2x)
-    const statusElements = screen.getAllByText('Esperando Ativação');
+    const statusElements = screen.getAllByText('admin.vacancyDetail.lifecycle.aberta');
     expect(statusElements).toHaveLength(2);
     statusElements.forEach((el) => expect(el).toBeVisible());
 

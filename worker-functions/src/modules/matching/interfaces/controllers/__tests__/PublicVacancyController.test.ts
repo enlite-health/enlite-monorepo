@@ -72,6 +72,8 @@ const CAMPOS_PUBLICOS = [
   'worker_attributes', 'schedule', 'schedule_days_hours', 'salary_text',
   'talentum_description', 'can_apply', 'patient_zone', 'country', 'created_at',
   'diagnosisLabel',
+  // estado-automatico-do-paciente F2 (D3): a página pública mostra SÓ o ciclo de vida — `patient_status` NUNCA sai aqui.
+  'lifecycle',
 ].sort();
 
 function makeVacancyRow(overrides: Record<string, unknown> = {}) {
@@ -602,6 +604,7 @@ describe('PublicVacancyController.getById', () => {
     const CHAVES_PROIBIDAS = [
       'diagnosis', 'dependency_level', 'diagnoses', 'concept_code', 'conceptCode', 'concept_uri',
       'conceptUri', 'isPrimary', 'source', 'catalogRelease', 'patient_id', 'patientId',
+      'patient_status', 'patientStatus', 'redacted', // D3: a página pública nunca mostra o estado do paciente
     ];
 
     it('A3: chaves exatas de data + corpo sem código, URI, patient_id nem texto livre; SQL sem patient_diagnoses/concept_', async () => {

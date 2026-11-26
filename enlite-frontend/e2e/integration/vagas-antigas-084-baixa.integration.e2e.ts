@@ -194,7 +194,7 @@ test.describe('Spec 084 — vagas antigas: baixa, só consulta, En espera e #NN 
 
     await page.getByTestId('vacancy-status-editor-trigger').click();
     await page.getByTestId('vacancy-status-option-RESUME').click();
-    await expect(page.getByTestId('vacancy-status-editor-trigger')).toContainText('En búsqueda', { timeout: 15_000 });
+    await expect(page.getByTestId('vacancy-status-editor-trigger')).toContainText('Abierta', { timeout: 15_000 }); // o badge mostra o CICLO (D3): SEARCHING → Abierta
     expect(estado(S.vHold)).toBe('SEARCHING');
   });
 
@@ -210,7 +210,7 @@ test.describe('Spec 084 — vagas antigas: baixa, só consulta, En espera e #NN 
     await abrirFicha(page, livre);
     await page.getByTestId('vacancy-status-editor-trigger').click();
     await page.getByTestId('vacancy-status-option-CLOSED').click();
-    await expect(page.getByTestId('vacancy-status-editor-trigger')).toContainText('Cerrado', { timeout: 15_000 });
+    await expect(page.getByTestId('vacancy-status-editor-trigger')).toContainText('Cerrada', { timeout: 15_000 });
     expect(estado(livre)).toBe('CLOSED');
   });
 

@@ -8,14 +8,16 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('@presentation/components/atoms/VacancyStatusBadge', () => ({
-  VacancyStatusBadge: ({ status }: { status: string }) => (
-    <span data-testid="status-badge">{status}</span>
+vi.mock('@presentation/components/atoms/VacancyLifecycleBadge', () => ({
+  VacancyLifecycleBadge: ({ lifecycle }: { lifecycle: string | null }) => (
+    <span data-testid="status-badge">{lifecycle}</span>
   ),
 }));
 
 const defaultProps = {
-  status: 'BUSQUEDA',
+  status: 'SEARCHING',
+  lifecycle: 'aberta' as const,
+  patientStatus: 'SEARCHING',
   caseNumber: 748,
   dependencyLevel: 'MODERATE',
   profession: 'AT',
@@ -182,6 +184,21 @@ describe('VacancyCaseCard — formatDateAR catch (defensivo)', () => {
     } finally {
       Date.prototype.toLocaleDateString = original;
     }
+  });
+});
+
+// ── D3/E6 — a ficha da vaga mostra o estado do PACIENTE ao lado do ciclo de vida ───
+
+describe('VacancyCaseCard — estado do paciente (estado-automatico-do-paciente F2)', () => {
+  it('mostra a pílula do estado do paciente e o badge do ciclo de vida', () => {
+    renderCard({ patientStatus: 'SEARCHING', lifecycle: 'rascunho' });
+    expect(screen.getByTestId('patient-status-pill')).toHaveAttribute('data-patient-status', 'SEARCHING');
+    expect(screen.getByTestId('status-badge')).toHaveTextContent('rascunho');
+  });
+
+  it('sem a célula (patientStatus null) a pílula mostra "—"', () => {
+    renderCard({ patientStatus: null });
+    expect(screen.getByTestId('patient-status-pill')).toHaveTextContent('—');
   });
 });
 

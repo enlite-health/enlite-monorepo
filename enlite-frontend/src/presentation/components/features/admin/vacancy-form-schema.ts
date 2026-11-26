@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ScheduleValue } from './vacancyScheduleUtils';
 import { parseScheduleString, LABEL_TO_KEY } from './vacancyScheduleUtils';
+import { STATUS_GRAVAVEIS } from '@domain/value-objects/vacancyLifecycle';
 
 // ---------------------------------------------------------------------------
 // Zod Schema
@@ -66,15 +67,8 @@ export type VacancyFormData = z.infer<typeof vacancyFormSchema>;
 // Option constants
 // ---------------------------------------------------------------------------
 
-export const STATUS_OPTIONS = [
-  'SEARCHING',
-  'SEARCHING_REPLACEMENT',
-  'RAPID_RESPONSE',
-  'PENDING_ACTIVATION',
-  'ACTIVE',
-  'SUSPENDED',
-  'CLOSED',
-] as const;
+/** O wizard grava só o ciclo de vida (D3/E5): os mesmos 4 do dono (`STATUS_GRAVAVEIS`), conferidos por contrato contra o back. */
+export const STATUS_OPTIONS = STATUS_GRAVAVEIS;
 
 /**
  * Profession options exposed in the create-vacancy form. Operations only

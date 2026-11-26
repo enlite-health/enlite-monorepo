@@ -33,6 +33,8 @@ export interface PublicVacancyDetail {
   vacancy_number: number;
   title: string;
   status: string;
+  /** Ciclo de vida (D3): é o que a página pública MOSTRA. O estado do paciente nunca sai nesta rota. */
+  lifecycle: import('../value-objects/vacancyLifecycle').CicloDeVida;
   /** Change baja-vacante-por-servico: `true` quando `status === 'DE_BAJA'` (serviço contratado
    *  ligado deu baixa) — a tela usa este campo para não oferecer candidatura, em vez de
    *  comparar `status` contra a string crua. */
@@ -77,6 +79,16 @@ export interface AdminVacancyDetail {
   id: string;
   title: string | null;
   status: string;
+  /** Ciclo de vida da vaga, calculado pelo back (tabela do dono, D3) — a tela só traduz. */
+  lifecycle?: import('../value-objects/vacancyLifecycle').CicloDeVida | null;
+  /**
+   * Estado do paciente (`patients.status`), lido por join na hora (D3). Sem a célula `patient:read`: `null` + `redacted.patient`.
+   * Vaga sem paciente: a chave não vem.
+   */
+  patient_status?: string | null;
+  redacted?: { patient?: true };
+  /** E8: o valor de escrita que "Reanudar" envia (do status de antes da pausa), calculado pelo back. */
+  resumeStatus?: import('../value-objects/vacancyLifecycle').StatusGravavel;
   case_number: number | null;
   vacancy_number: number | null;
   /** FK para patients */

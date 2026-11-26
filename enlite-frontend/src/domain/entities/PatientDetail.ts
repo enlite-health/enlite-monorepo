@@ -359,6 +359,10 @@ export interface PatientVacancySummary {
   status: string | null;
   isDraft: boolean;
   createdAt: string;
+  /** Ciclo de vida calculado pelo back (D3) — o card traduz pelo i18n, sem mapa de cor por valor de banco. */
+  lifecycle?: import('../value-objects/vacancyLifecycle').CicloDeVida | null;
+  /** `patients.status` por join (D3/E6). Ausente/`null` = sem a célula do container `patient` → "—". */
+  patientStatus?: string | null;
 }
 
 // ============================================================================

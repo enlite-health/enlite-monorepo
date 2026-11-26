@@ -2,14 +2,15 @@
  * Spec 084 F5 (R4/R18) e F6 (R12/R16): pausar = ON_HOLD, encerrar vaga de serviço ATIVO é recusado pelo servidor,
  * e o número #NN vem da ordem do serviço (nunca MAX+1).
  */
-import { authorizeVacancyUpdate, buildInsertQuery, buildInsertParams, CANONICAL_STATUSES } from '../vacancyCrudHelpers';
+import { authorizeVacancyUpdate, buildInsertQuery, buildInsertParams } from '../vacancyCrudHelpers';
+import { isStatusGravavel } from '../../../domain/vacancyLifecycle';
 
 const dbCom = (row: Record<string, unknown>) => ({ query: jest.fn(async () => ({ rows: [row] })) }) as never;
 const VAGA = { status: 'SEARCHING', is_draft: false, patient_id: 'p', contracted_service_id: null, service_active: null };
 
 describe('F5 — pausar com "En espera" (ON_HOLD)', () => {
   it('o servidor aceita ON_HOLD (antes: 400 "Invalid status")', async () => {
-    expect(CANONICAL_STATUSES.has('ON_HOLD')).toBe(true);
+    expect(isStatusGravavel('ON_HOLD')).toBe(true);
     expect(await authorizeVacancyUpdate(dbCom(VAGA), 'v', { status: 'ON_HOLD' })).toMatchObject({ kind: 'ok' });
   });
 

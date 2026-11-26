@@ -208,4 +208,17 @@ describe('useVacanciesData', () => {
     await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(3));
     expect(listSpy).toHaveBeenLastCalledWith({ limit: '20', sort: 'completed', order: 'desc' });
   });
+
+  it('refetch quando o ciclo de vida ou o estado do paciente mudam (E7) — sem isso o filtro da tela não filtra', async () => {
+    const listSpy = vi.spyOn(AdminApiService, 'listVacancies').mockResolvedValue({ data: [], total: 0 });
+    vi.spyOn(AdminApiService, 'getVacanciesStats').mockResolvedValue([]);
+
+    const { rerender } = renderHook(({ f }) => useVacanciesData(f), { initialProps: { f: { lifecycle: '', patient_status: '' } } });
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(1));
+    rerender({ f: { lifecycle: 'baja', patient_status: '' } });
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
+    rerender({ f: { lifecycle: 'baja', patient_status: 'SEARCHING' } });
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(3));
+    expect(listSpy).toHaveBeenLastCalledWith({ lifecycle: 'baja', patient_status: 'SEARCHING' });
+  });
 });

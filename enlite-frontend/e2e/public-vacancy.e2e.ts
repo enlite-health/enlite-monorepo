@@ -27,6 +27,7 @@ const MOCK_VACANCY = {
   vacancy_number: 2208,
   title: 'CASO 226 Acompañante Terapéutico',
   status: 'BUSQUEDA',
+  lifecycle: 'aberta',
   dependency_level: 'Grau de Dependência',
   pathology_types: 'Patologias e transtornos neurológicos',
   required_professions: ['Acompañante Terapéutico'],
@@ -325,8 +326,8 @@ test.describe('PublicVacancyPage', () => {
     // Case number visível
     await expect(page.locator('text=CASO 226').first()).toBeVisible({ timeout: 15000 });
 
-    // Status badge visível (BUSQUEDA é alias legado de SEARCHING → "En búsqueda")
-    await expect(page.locator('text=En búsqueda').first()).toBeVisible({ timeout: 5000 });
+    // Badge visível: a página pública mostra SÓ o ciclo de vida (D3) — `lifecycle: aberta` → "Abierta"
+    await expect(page.locator('text=Abierta').first()).toBeVisible({ timeout: 5000 });
 
     // Título do card de detalhes com ocupação
     await expect(

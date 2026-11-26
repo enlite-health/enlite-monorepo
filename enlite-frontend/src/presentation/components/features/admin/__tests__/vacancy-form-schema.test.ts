@@ -21,15 +21,8 @@ import {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const CANONICAL_VALUES = [
-  'SEARCHING',
-  'SEARCHING_REPLACEMENT',
-  'RAPID_RESPONSE',
-  'PENDING_ACTIVATION',
-  'ACTIVE',
-  'SUSPENDED',
-  'CLOSED',
-] as const;
+// D3/E5: o wizard grava só o ciclo de vida — os 4 de STATUS_GRAVAVEIS (a lista é conferida contra o back por contrato).
+const CANONICAL_VALUES = ['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED'] as const;
 
 const CANONICAL = new Set<string>(CANONICAL_VALUES);
 
@@ -60,19 +53,11 @@ const minimalFormData: VacancyFormData = {
 // ---------------------------------------------------------------------------
 
 describe('STATUS_OPTIONS — canonical values contract', () => {
-  it('contains only the 7 canonical DB values (no legacy values allowed)', () => {
-    expect(STATUS_OPTIONS).toHaveLength(7);
-    expect(STATUS_OPTIONS).toEqual(
-      expect.arrayContaining([
-        'SEARCHING',
-        'SEARCHING_REPLACEMENT',
-        'RAPID_RESPONSE',
-        'PENDING_ACTIVATION',
-        'ACTIVE',
-        'SUSPENDED',
-        'CLOSED',
-      ]),
-    );
+  it('contém só os 4 valores gravaveis do ciclo de vida (nenhum valor que finja ser estado do paciente)', () => {
+    expect([...STATUS_OPTIONS]).toEqual(['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED']);
+    for (const fora of ['SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'PENDING_ACTIVATION', 'ACTIVE']) {
+      expect(STATUS_OPTIONS as readonly string[]).not.toContain(fora);
+    }
   });
 
   it('does not contain any legacy value that violates job_postings_status_check', () => {

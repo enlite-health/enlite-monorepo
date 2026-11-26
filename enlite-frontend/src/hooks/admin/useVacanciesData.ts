@@ -4,6 +4,8 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 export interface UseVacanciesDataFilters {
   search?: string;
   status?: string;
+  lifecycle?: string;
+  patient_status?: string;
   limit?: string;
   offset?: string;
   worker_type?: string;
@@ -56,6 +58,8 @@ export function useVacanciesData(filters?: UseVacanciesDataFilters) {
   }, [
     filters?.search,
     filters?.status,
+    filters?.lifecycle,
+    filters?.patient_status,
     filters?.limit,
     filters?.offset,
     filters?.worker_type,

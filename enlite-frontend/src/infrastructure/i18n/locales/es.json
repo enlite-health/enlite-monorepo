@@ -2180,7 +2180,6 @@
       "errorLoading": "Error al cargar vacantes",
       "searchPlaceholder": "Buscar por nombre del paciente",
       "searchPlaceholderSemNome": "Buscar por caso, vacante o título",
-      "statusLabel": "Estado",
       "priorityLabel": "Prioridad",
       "noVacancies": "No se encontraron vacantes",
       "stats": {
@@ -2207,18 +2206,6 @@
         "noLastAction": "—",
         "noDivulgationRecord": "sin registro"
       },
-      "statusOptions": {
-        "all": "Todos",
-        "searching": "Buscando AT",
-        "searchingReplacement": "Buscando Sustituto",
-        "rapidResponse": "Respuesta Rápida",
-        "pendingActivation": "Esperando Activación",
-        "active": "Activo",
-        "onHold": "En Espera",
-        "suspended": "Suspendido",
-        "closed": "Cerrado",
-        "deBaja": "Dada de baja"
-      },
       "priorityOptions": {
         "all": "Todas",
         "urgent": "Urgente",
@@ -2229,6 +2216,12 @@
       "filters": {
         "allOption": "Todos",
         "clear": "Limpiar filtros",
+        "lifecycle": {
+          "label": "Ciclo de vida"
+        },
+        "patientStatus": {
+          "label": "Estado del paciente"
+        },
         "type": {
           "label": "Tipo",
           "at": "AT",
@@ -2658,13 +2651,10 @@
           "flexible": "Flexible"
         },
         "statusOptions": {
-          "SEARCHING": "Búsqueda",
-          "SEARCHING_REPLACEMENT": "Reemplazo",
-          "RAPID_RESPONSE": "Rta. Rápida",
-          "PENDING_ACTIVATION": "Activación Pendiente",
-          "ACTIVE": "Activo",
-          "SUSPENDED": "Suspendido",
-          "CLOSED": "Cerrado"
+          "SEARCHING": "Abierta",
+          "ON_HOLD": "En espera",
+          "SUSPENDED": "Suspendida",
+          "CLOSED": "Cerrada"
         },
         "cancel": "Cancelar",
         "create": "Crear Vacante",
@@ -2778,6 +2768,13 @@
         "DE_BAJA": "Dada de baja",
         "ADMISSION": "Admisión"
       },
+      "lifecycle": {
+        "rascunho": "Borrador",
+        "aberta": "Abierta",
+        "pausada": "En espera",
+        "cerrada": "Cerrada",
+        "baja": "Dada de baja"
+      },
       "caseCard": {
         "caseLabel": "CASO",
         "paymentTerm": "Plazo de pago",
@@ -2821,8 +2818,15 @@
       "statusEditor": {
         "editLabel": "Editar estado de la vacante",
         "resume": "Reanudar",
+        "options": {
+          "SEARCHING": "Abierta",
+          "ON_HOLD": "En espera",
+          "SUSPENDED": "Suspendida",
+          "CLOSED": "Cerrada"
+        },
         "pauseHint": "En espera mantiene el tablero, el historial y el link corto.",
         "errors": {
+          "VACANCY_STATUS_NOT_LIFECYCLE": "El estado de la vacante solo admite: Abierta, En espera, Suspendida o Cerrada. El estado del paciente lo define el flujo automático.",
           "VACANCY_DE_BAJA_NO_REACTIVATION": "Una vacante dada de baja no se reactiva: solo vuelve cuando se reactiva el servicio que la dio de baja.",
           "CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED": "Una vacante de un servicio activo no se cierra: usá \"Pausar\" (En espera)."
         }

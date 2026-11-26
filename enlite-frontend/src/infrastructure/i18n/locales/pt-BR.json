@@ -2180,7 +2180,6 @@
       "errorLoading": "Erro ao carregar vagas",
       "searchPlaceholder": "Pesquisar pelo nome do paciente",
       "searchPlaceholderSemNome": "Buscar por caso, vaga ou título",
-      "statusLabel": "Status",
       "priorityLabel": "Prioridade",
       "noVacancies": "Nenhuma vaga encontrada",
       "stats": {
@@ -2207,18 +2206,6 @@
         "noLastAction": "—",
         "noDivulgationRecord": "sem registro"
       },
-      "statusOptions": {
-        "all": "Todos",
-        "searching": "Buscando AT",
-        "searchingReplacement": "Buscando Substituto",
-        "rapidResponse": "Resposta Rápida",
-        "pendingActivation": "Aguardando Ativação",
-        "active": "Ativo",
-        "onHold": "Em Espera",
-        "suspended": "Suspenso",
-        "closed": "Encerrado",
-        "deBaja": "Baixada"
-      },
       "priorityOptions": {
         "all": "Todas",
         "urgent": "Urgente",
@@ -2229,6 +2216,12 @@
       "filters": {
         "allOption": "Todos",
         "clear": "Limpar filtros",
+        "lifecycle": {
+          "label": "Ciclo de vida"
+        },
+        "patientStatus": {
+          "label": "Estado do paciente"
+        },
         "type": {
           "label": "Tipo",
           "at": "AT",
@@ -2644,13 +2637,10 @@
           "flexible": "Flexível"
         },
         "statusOptions": {
-          "SEARCHING": "Buscando",
-          "SEARCHING_REPLACEMENT": "Substituição",
-          "RAPID_RESPONSE": "Resp. Rápida",
-          "PENDING_ACTIVATION": "Ativação Pendente",
-          "ACTIVE": "Ativo",
-          "SUSPENDED": "Suspenso",
-          "CLOSED": "Encerrado"
+          "SEARCHING": "Aberta",
+          "ON_HOLD": "Em espera",
+          "SUSPENDED": "Suspensa",
+          "CLOSED": "Encerrada"
         },
         "cancel": "Cancelar",
         "create": "Criar Vaga",
@@ -2702,6 +2692,13 @@
         "DE_BAJA": "Baixada",
         "ADMISSION": "Admissão"
       },
+      "lifecycle": {
+        "rascunho": "Rascunho",
+        "aberta": "Aberta",
+        "pausada": "Em espera",
+        "cerrada": "Encerrada",
+        "baja": "Baixada"
+      },
       "caseCard": {
         "caseLabel": "CASO",
         "paymentTerm": "Prazo de pagamento",
@@ -2745,8 +2742,15 @@
       "statusEditor": {
         "editLabel": "Editar estado da vaga",
         "resume": "Retomar",
+        "options": {
+          "SEARCHING": "Aberta",
+          "ON_HOLD": "Em espera",
+          "SUSPENDED": "Suspensa",
+          "CLOSED": "Encerrada"
+        },
         "pauseHint": "Em espera mantém o quadro, o histórico e o link curto.",
         "errors": {
+          "VACANCY_STATUS_NOT_LIFECYCLE": "O estado da vaga só aceita: Aberta, Em espera, Suspensa ou Encerrada. O estado do paciente é definido pelo fluxo automático.",
           "VACANCY_DE_BAJA_NO_REACTIVATION": "Vaga baixada não é reativada: só volta quando o serviço que a baixou é reativado.",
           "CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED": "Vaga de serviço ativo não é encerrada: use \"Pausar\" (Em espera)."
         }

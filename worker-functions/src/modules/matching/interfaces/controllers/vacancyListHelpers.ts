@@ -27,7 +27,8 @@ import {
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
 import { workerNotTestSql, excludeTestVacancySql } from '@shared/database/testRealmSql';
 import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
-import { INICIAIS_REDIGIDAS, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
+import { INICIAIS_REDIGIDAS, PATIENT_CONTAINER_CELL, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
+import { cicloDeVidaSql, isCicloDeVida, type CicloDeVida } from '../../domain/vacancyLifecycle';
 import {
   tallyKanbanColumns,
   type KanbanTallyRow,
@@ -41,21 +42,6 @@ export function getInitials(firstName: string | null, lastName: string | null): 
   const first = firstName?.charAt(0)?.toUpperCase() || '';
   const last = lastName?.charAt(0)?.toUpperCase() || '';
   return first + last || 'XX';
-}
-
-export function mapStatus(status: string | null): string {
-  const statusMap: Record<string, string> = {
-    'SEARCHING':             'Buscando AT',
-    'SEARCHING_REPLACEMENT': 'Buscando Sustituto',
-    'RAPID_RESPONSE':        'Respuesta Rápida',
-    'PENDING_ACTIVATION':    'Esperando Activación',
-    'ACTIVE':                'Activo',
-    'ON_HOLD':               'En Espera',
-    'SUSPENDED':             'Suspendido',
-    'CLOSED':                'Cerrado',
-    'DE_BAJA':               'Dada de baja',
-  };
-  return statusMap[status ?? ''] ?? 'Desconocido';
 }
 
 // ── listVacancies query builder ────────────────────────────────────────────────
@@ -76,6 +62,11 @@ const LIST_VACANCIES_BASE = `
     jp.title,
     jp.status,
     jp.is_draft,
+    -- estado-automatico-do-paciente F2 (D3): o ciclo de vida sai da tabela do dono (vacancyLifecycle.ts) e o estado do paciente
+    -- é p.status lido por join AGORA — nunca coluna cópia em job_postings. O controller projeta sob o container patient (E6).
+    jp.patient_id,
+    p.status AS patient_status,
+    ${cicloDeVidaSql('jp')} AS lifecycle,
     -- spec 084: motivo da baixa, se a vaga nasceu de serviço e o estado do Talentum (lista "pausar à mão")
     jp.baja_reason,
     (jp.contracted_service_id IS NOT NULL) AS has_service,
@@ -158,6 +149,10 @@ export interface ListVacanciesFilters {
   countries: readonly string[];
   search?: unknown;
   status?: unknown;
+  /** E7: ciclo de vida da vaga (`rascunho`|`aberta`|`pausada`|`cerrada`|`baja`) — o SQL sai da MESMA tabela do dono. */
+  lifecycle?: unknown;
+  /** E7: estado do paciente (`p.status`), sob o container `patient` — sem a célula o controller devolve 403. */
+  patientStatus?: unknown;
   /** Filter by required_professions: 'AT' | 'CAREGIVER' */
   workerType?: unknown;
   /** Filter by patient_addresses.state (ILIKE exact value). */
@@ -194,7 +189,19 @@ export interface ListVacanciesQuery {
 
 const isTrue = (v: unknown): boolean => v === true || v === 'true' || v === '1';
 
-export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { searchByPatientName?: boolean } = {}): ListVacanciesQuery {
+/** Filtrar por estado do paciente sem poder LÊ-LO é oráculo (lex P5): o controller traduz em 403 `{ field, cell }`. */
+export class PatientStatusFilterForbiddenError extends Error {
+  readonly field = 'patientStatus';
+  readonly cell = PATIENT_CONTAINER_CELL;
+  constructor() {
+    super('Forbidden');
+  }
+}
+
+export function buildListVacanciesQuery(
+  filters: ListVacanciesFilters,
+  opts: { searchByPatientName?: boolean; canFilterByPatientStatus?: boolean } = {},
+): ListVacanciesQuery {
   let baseQuery = LIST_VACANCIES_BASE;
   const params: unknown[] = [];
   let paramIndex = 1;
@@ -221,14 +228,29 @@ export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { s
     paramIndex++;
   }
 
+  const lifecycle: CicloDeVida | undefined = isCicloDeVida(filters.lifecycle) ? filters.lifecycle : undefined;
+  if (lifecycle) {
+    baseQuery += ` AND ${cicloDeVidaSql('jp')} = $${paramIndex}`;
+    params.push(lifecycle);
+    paramIndex++;
+  }
+
+  // Valor de banco aceito só por compatibilidade (E7: 084-vagas-antigas-baixa e vacancies-api o usam); a tela não o oferece mais.
   if (typeof filters.status === 'string' && VALID_STATUSES.has(filters.status)) {
     baseQuery += ` AND jp.status = $${paramIndex}`;
     params.push(filters.status);
     paramIndex++;
-  } else if (!isTrue(filters.includeBaja) && !isTrue(filters.talentumManual)) {
+  } else if (!isTrue(filters.includeBaja) && !isTrue(filters.talentumManual) && lifecycle !== 'baja') {
     // Spec 084 F2: por padrão a lista esconde as dadas de baja (nunca apagadas: R2). A lista manual do Talentum (R13) NÃO as
     // esconde: quase toda vaga que espera pausa à mão é uma baixada.
     baseQuery += ` AND jp.status != 'DE_BAJA'`;
+  }
+
+  if (typeof filters.patientStatus === 'string' && filters.patientStatus !== '') {
+    if (!(opts.canFilterByPatientStatus ?? true)) throw new PatientStatusFilterForbiddenError();
+    baseQuery += ` AND p.status = $${paramIndex}`;
+    params.push(filters.patientStatus);
+    paramIndex++;
   }
 
   if (isTrue(filters.talentumManual)) {
@@ -359,6 +381,11 @@ export interface VacancyListRow {
   vacancy_number: number;
   status: string | null;
   is_draft: boolean | null;
+  /** Ciclo de vida (tabela do dono, SQL gerado) — o front traduz pelo i18n. */
+  lifecycle?: CicloDeVida | null;
+  patient_id?: string | null;
+  patient_status?: string | null;
+  redacted?: { patient?: true };
   baja_reason?: string | null;
   has_service?: boolean | null;
   talentum_pause_state?: string | null;
@@ -381,8 +408,12 @@ export function mapVacancyListRow(row: VacancyListRow) {
     caseNumber: row.case_number ?? null,
     caseOrdinal: row.case_ordinal ?? null,
     vacancyNumber: row.vacancy_number,
-    status: mapStatus(row.status),
     statusRaw: row.status,
+    lifecycle: row.lifecycle ?? null,
+    patient_id: row.patient_id ?? null,
+    // Sem a chave quando a vaga não tem paciente (a projeção apagou); `null` + `redacted.patient` quando falta a célula (E6).
+    ...('patient_status' in row ? { patient_status: row.patient_status ?? null } : {}),
+    ...(row.redacted ? { redacted: row.redacted } : {}),
     is_draft: row.is_draft === true,
     bajaReason: row.baja_reason ?? null,
     hasService: row.has_service === true,

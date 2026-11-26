@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Eye, FileText } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import {
   Table,
@@ -17,6 +17,9 @@ import type { TableSort } from '@hooks/useTableSort';
 import { formatVacancyCase } from '@domain/value-objects/caseNumberFormat';
 import { formatDateTime } from '@presentation/components/features/admin/VacancyDetail/draftVacancyFormat';
 import { isBajaSelectable } from './bajaSelectable';
+import { VacancyLifecycleBadge } from '@presentation/components/atoms/VacancyLifecycleBadge';
+import { PatientStatusPill } from '@presentation/components/atoms/PatientStatusPill';
+import type { CicloDeVida } from '@domain/value-objects/vacancyLifecycle';
 
 export interface VacancyRow {
   id: string;
@@ -24,7 +27,10 @@ export interface VacancyRow {
   caseNumber: number | null;
   /** Posição da vaga dentro do caso (`#01`). */
   caseOrdinal: number | null;
-  status: string;
+  /** Ciclo de vida calculado pelo back (tabela do dono, D3) — a tela traduz pelo i18n; nenhum rótulo vem do back. */
+  lifecycle: CicloDeVida | null;
+  /** `patients.status` por join (D3/E6); ausente/`null` = sem a célula do container `patient` (ou vaga sem paciente) → "—". */
+  patientStatus?: string | null;
   diasAberto: string;
   /** As 8 contagens do funil (DX-2.7, Fase 4: +QUICK_RESPONSE_TEAM), recorte do board — vêm prontas do backend (stageCounts). */
   stageCounts: Record<string, number>;
@@ -33,7 +39,7 @@ export interface VacancyRow {
   isDraft: boolean;
   /** GREATEST(última nota, último movimento de funil, talentum_published_at) — DX-3.5. null = sem nenhuma. */
   lastActionAt: string | null;
-  /** Spec 084: status cru (`DE_BAJA`, `SEARCHING`…); `status` é o rótulo. */
+  /** Spec 084: status cru (`DE_BAJA`, `SEARCHING`…) — só para as regras da baixa; o que se mostra é `lifecycle`. */
   statusRaw?: string | null;
   /** Spec 084: a vaga nasceu de um serviço contratado (P1: só vaga SEM serviço recebe baixa à mão). */
   hasService?: boolean;
@@ -175,7 +181,11 @@ export function VacanciesTable({
                 <TableCell weight="medium">{formatVacancyCase(row.caseNumber, row.caseOrdinal)}</TableCell>
                 <TableCell unwrapped className="whitespace-nowrap">
                   <div className="flex items-center gap-2">
-                    <Text as="span" size="sm" weight="medium">{row.status}</Text>
+                    <PatientStatusPill status={row.patientStatus} />
+                    {/* O rascunho É um ciclo de vida (D3): o selo antigo saiu; o testid fica para os e2e que acham a linha em rascunho. */}
+                    <span className="inline-flex" data-testid={row.isDraft ? `vacancy-draft-badge-${row.id}` : undefined}>
+                      <VacancyLifecycleBadge lifecycle={row.lifecycle} />
+                    </span>
                     {row.statusRaw === 'DE_BAJA' && (
                       <span
                         className="inline-flex items-center bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full"
@@ -199,18 +209,6 @@ export function VacanciesTable({
                             : row.talentumPauseState === 'MANUAL_RESUME'
                               ? t('admin.vacancies.baja.talentumManualResumeBadge')
                               : t('admin.vacancies.baja.talentumPendingBadge')}
-                        </Text>
-                      </span>
-                    )}
-                    {row.isDraft && (
-                      <span
-                        className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full"
-                        title={t('admin.vacancies.table.draftBadge')}
-                        data-testid={`vacancy-draft-badge-${row.id}`}
-                      >
-                        <FileText className="w-3 h-3" aria-hidden="true" />
-                        <Text as="span" size="xs" weight="medium" color="inherit">
-                          {t('admin.vacancies.table.draftBadge')}
                         </Text>
                       </span>
                     )}

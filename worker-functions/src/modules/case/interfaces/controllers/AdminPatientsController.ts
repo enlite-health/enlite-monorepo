@@ -12,7 +12,7 @@ import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
-import { patientContainerReadsOf, canReadPatientContainer, patientContainerCell, exposeBlockingCodes, exposeBlockingMessage } from '../../application/patientContainerAccess';
+import { canReadPatientOperational, patientContainerReadsOf, canReadPatientContainer, patientContainerCell, exposeBlockingCodes, exposeBlockingMessage } from '../../application/patientContainerAccess';
 import { hourlyValueActorOf } from '../../application/contractedServiceHourlyValueAccess';
 import {
   toAdminPatientListItem,
@@ -885,7 +885,15 @@ export class AdminPatientsController {
 
     try {
       const vacancies = await fetchPatientVacancies(this.db, parsed.data.id);
-      res.status(200).json({ success: true, data: vacancies });
+      // D3/E6: o estado do paciente na vaga viaja sob o container `patient` — sem `patient:read` sai `null` + `redacted.patient`.
+      const cells = clinicalCellsOf(req);
+      const data = vacancies.map((v) => {
+        const { patientStatus, ...resto } = v;
+        return canReadPatientOperational(cells)
+          ? (patientStatus != null ? { ...resto, patientStatus } : resto)
+          : { ...resto, patientStatus: null, redacted: { patient: true as const } };
+      });
+      res.status(200).json({ success: true, data });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientsController:listPatientVacancies' });
