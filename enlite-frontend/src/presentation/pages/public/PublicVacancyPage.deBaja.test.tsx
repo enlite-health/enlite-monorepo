@@ -34,6 +34,7 @@ const vacanciaDeBaja: PublicVacancyDetail = {
   vacancy_number: 1,
   title: 'CASO 501-1',
   status: 'DE_BAJA',
+  lifecycle: 'baja',
   is_disabled: true,
   required_professions: ['AT'],
   required_sex: null,
@@ -84,9 +85,10 @@ describe('PublicVacancyPage — vaga DE_BAJA (change baja-vacante-por-servico)',
     expect(screen.queryByText('publicVacancy.postularseUnavailable')).not.toBeInTheDocument();
   });
 
-  it('mostra o badge de status DE_BAJA (VacancyStatusBadge reusado, sem componente novo)', async () => {
+  it('mostra o badge do ciclo de vida "baja" (VacancyLifecycleBadge); a página pública não mostra estado do paciente', async () => {
     render(<PublicVacancyPage />);
-    expect(await screen.findByText('admin.vacancyDetail.statusBadge.DE_BAJA')).toBeInTheDocument();
+    expect(await screen.findByText('admin.vacancyDetail.lifecycle.baja')).toBeInTheDocument();
+    expect(screen.queryByTestId('patient-status-pill')).not.toBeInTheDocument();
   });
 
   it('continua mostrando o resto da ficha (zona do paciente) — a página SERVE a vaga, não é um 404 disfarçado', async () => {

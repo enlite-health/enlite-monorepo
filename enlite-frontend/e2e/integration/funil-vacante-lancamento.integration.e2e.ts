@@ -4,14 +4,15 @@
  * P12 (Fase 6, cadeia-paciente-vacante-itinerario) — 1 teste, caminho COMPLETO de tela
  * (ficha → foguete → borrador → wizard → /talentum → "Publicar en Talentum"):
  *
- * `lancamento-move-para-busqueda` (critérios 4, 5 e 8):
- *   4. o lançamento move o paciente ADMISSION → SEARCHING (trilha `vacancy_launch`, coluna
- *      do Kanban do paciente);
+ * `lancamento-nao-move-o-paciente` (critérios 4, 5 e 8) — estado-automatico-do-paciente, D1: o foguete é o ÚNICO
+ * gatilho de Búsqueda; o envio à Talentum NÃO move o paciente:
+ *   4. o paciente devolvido ao funil por SQL continua ADMISSION depois do envio (trilha `vacancy_launch` = 0,
+ *      coluna do Kanban do paciente = ADMISSION);
  *   5. o match sem convite roda: W1/W2 caem em Compatíveis, sem tocar canal real (a Talentum
  *      só no stub, nenhum request do navegador a canal externo, `stub.calls` com 1 create);
  *   8. o arrasto manual de Compatíveis até Equipe de Resposta Rápida continua liberado (DX-5.6)
  *      e pede motivo de salto (JUMP) — e não mexe no status do paciente nem na trilha do
- *      lançamento (o gancho já rodou; o arrasto é do quadro B, não do funil do paciente).
+ *      lançamento (o arrasto é do quadro B, não do funil do paciente).
  *
  * Único mock de navegador: `/generate-ai-content` (Gemini custaria) — instalado ANTES do
  * login (`mockGenerateAiContent`), senão a página `/talentum` fica esperando a IA de verdade
@@ -47,7 +48,6 @@ import { readPatientStatusApi, countOutboundSince, chooseReasonInModal } from '.
 import { runMatchApi, readFunnelApi, switchToKanban, gotoVacancyDetail, readStageCount } from '../helpers/compativeis-e2e-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
 import { tokenFor } from '../helpers/abac-stack-helper';
-import { runSQL } from '../helpers/patient-detail-a-helper';
 import { cleanupTestWorker } from '../helpers/db-test-helper';
 
 // Canal real — critério 5 (DX-6.9/Q-EX-6.5): o navegador NUNCA fala com nenhum destes hosts
@@ -57,24 +57,13 @@ const FORBIDDEN_HOSTS = /twilio|whatsapp|facebook|periskope|talentum\.chat|groq|
 
 const MOCK_ADMIN_USER = mockAdminUserFor('move');
 
-/** Última linha da trilha `vacancy_launch` do paciente — `old_value`/`new_value` (critério 4). */
-function readLaunchTrailRow(patientId: string): { oldValue: string | null; newValue: string } | null {
-  const out = runSQL(
-    `SELECT COALESCE(old_value, ''), new_value FROM patient_status_history ` +
-      `WHERE patient_id = '${patientId}' AND change_source = 'vacancy_launch' ORDER BY created_at DESC LIMIT 1`,
-  );
-  if (!out.trim()) return null;
-  const [oldValue, newValue] = out.split('|');
-  return { oldValue: oldValue || null, newValue };
-}
-
 test.describe('funil-vacante lancamento @integration', () => {
   test.use(LANCAMENTO_VIEWPORT_ES_AR);
   test.setTimeout(120_000);
 
   useLancamentoStaff(MOCK_ADMIN_USER, 'E2E Lancamento Move F6');
 
-  test('lancamento-move-para-busqueda', async ({ page, request }) => {
+  test('lancamento-nao-move-o-paciente', async ({ page, request }) => {
     // Coordenada própria do arquivo (DX-6.9) — distinta de P1/P10/P11/P24 e dos outros e2e do grupo.
     const LAT = -53.7877;
     const LNG = -67.7094;
@@ -105,7 +94,7 @@ test.describe('funil-vacante lancamento @integration', () => {
 
       // (1) Foguete pela ficha.
       const vacancyId = await clickFoguete(page, patient.patientId, patient.serviceId);
-      // D469: o foguete já moveu o paciente; devolve ao funil para provar o gancho do ENVIO (vacancy_launch).
+      // D469: o foguete já moveu o paciente; devolve ao funil por SQL para provar que o ENVIO à Talentum não o move (D1).
       devolverPacienteAoFunil(patient.patientId);
 
       // (2) Borrador → wizard (profissão AT, salário, meet) → /talentum.
@@ -122,32 +111,28 @@ test.describe('funil-vacante lancamento @integration', () => {
       expect(publishStatus, 'POST /publish-talentum').toBe(200);
       await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyId}$`), { timeout: 15_000 });
 
-      // ── Critério 4: o lançamento move ADMISSION → SEARCHING ──────────────────────
+      // ── Critério 4: o envio à Talentum NÃO move o paciente (D1) ──────────────────
       const statusAfter = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
-      expect(statusAfter, 'status depois do publish').toBe('SEARCHING');
+      expect(statusAfter, 'status depois do publish — o envio não move').toBe('ADMISSION');
 
       const trailAfter = countLaunchTrail(patient.patientId);
-      expect(trailAfter, 'trilha vacancy_launch depois do publish').toBe(1);
-      const trailRow = readLaunchTrailRow(patient.patientId);
-      expect(trailRow?.oldValue, 'old_value da linha de vacancy_launch').toBe('ADMISSION');
-      expect(trailRow?.newValue, 'new_value da linha de vacancy_launch').toBe('SEARCHING');
+      expect(trailAfter, 'trilha vacancy_launch depois do publish').toBe(0);
 
       const columnAfterLaunch = await readPatientKanbanColumn(page, patient.patientId);
-      expect(columnAfterLaunch, 'coluna do Kanban do paciente depois do lançamento').toBe('SEARCHING');
+      expect(columnAfterLaunch, 'coluna do Kanban do paciente depois do envio').toBe('ADMISSION');
 
-      console.log('[6.4] lancamento-move-para-busqueda', {
+      console.log('[6.4] lancamento-nao-move-o-paciente', {
         vacancyId,
         patientId: patient.patientId,
         statusBefore,
         statusAfter,
         trailBefore,
         trailAfter,
-        trailRow,
         columnAfterLaunch,
       });
 
       // ── Critério 5: match sem convite, sem tocar canal real ──────────────────────
-      // D466 (main): o lançamento só move o paciente; o match roda pela rota.
+      // D466 (main): o match roda pela rota (o envio não move o paciente — D1).
       const matchRes = await runMatchApi(request, token, vacancyId, { radiusKm: 1, topN: 200 });
       expect(matchRes.status, 'POST /match (pela rota)').toBe(200);
 
@@ -195,7 +180,7 @@ test.describe('funil-vacante lancamento @integration', () => {
       ).length;
       expect(talentumCreateCalls, 'stub.calls POST /projects').toBe(1);
 
-      console.log('[6.5] lancamento-move-para-busqueda', {
+      console.log('[6.5] lancamento-nao-move-o-paciente', {
         compatibleCount,
         w1WorkerId: w1,
         w2WorkerId: w2,
@@ -210,7 +195,7 @@ test.describe('funil-vacante lancamento @integration', () => {
 
       // ── Critério 8: arrasto Compatíveis → Equipe de Resposta Rápida (JUMP, DX-5.6) ──
       const s0 = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
-      expect(s0, 'status antes do arrasto no quadro B').toBe('SEARCHING');
+      expect(s0, 'status antes do arrasto no quadro B (o envio não o moveu)').toBe('ADMISSION');
 
       const w1Card = page.locator(`[data-testid="kanban-draggable-${w1WjaId}"]`);
       const targetColumn = page.locator('[data-testid="kanban-column-QUICK_RESPONSE_TEAM"]');
@@ -239,16 +224,14 @@ test.describe('funil-vacante lancamento @integration', () => {
       expect(sAfterMove, 'status do paciente não muda com o arrasto no quadro B').toBe(s0);
 
       const trailAfterMove = countLaunchTrail(patient.patientId);
-      expect(trailAfterMove, 'trilha vacancy_launch não ganha linha nova com o arrasto').toBe(1);
-      const trailRowTeardown = readLaunchTrailRow(patient.patientId);
+      expect(trailAfterMove, 'trilha vacancy_launch continua 0 com o arrasto').toBe(0);
 
-      console.log('[6.8] lancamento-move-para-busqueda', {
+      console.log('[6.8] lancamento-nao-move-o-paciente', {
         s0,
         firstPutStatus: firstPut.status(),
         secondPutStatus: secondPut.status(),
         sAfterMove,
         trailAfterMove,
-        trailRowTeardown,
       });
     } finally {
       await stub.close();

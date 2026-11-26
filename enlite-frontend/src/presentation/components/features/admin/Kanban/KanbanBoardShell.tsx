@@ -52,8 +52,10 @@ interface KanbanBoardShellProps<T> {
    * quem decide se soltar na própria coluna é no-op é o board de negócio,
    * porque a resposta muda por domínio (no funil de vaga, soltar em SELECTED
    * reabre o seletor de papel; no de pacientes, não faz nada).
+   * SEM `onDrop` o board é só de leitura (F5, estado-automatico-do-paciente — o Kanban de pacientes): o card não ganha nenhum
+   * atributo nem listener de arrasto, só o wrapper `kanban-card-<id>`.
    */
-  onDrop: (event: KanbanDropEvent<T>) => void;
+  onDrop?: (event: KanbanDropEvent<T>) => void;
   /**
    * Chave de localStorage do colapso das colunas. **Sem ela não há botão de
    * colapsar** — é o que liga a funcionalidade para um board.
@@ -164,7 +166,7 @@ export function KanbanBoardShell<T>({
     const found = locate(itemId);
     if (!found) return;
 
-    onDrop({ item: found.item, itemId, fromColumnId: found.columnId, toColumnId });
+    onDrop?.({ item: found.item, itemId, fromColumnId: found.columnId, toColumnId });
   }
 
   return (
@@ -194,15 +196,21 @@ export function KanbanBoardShell<T>({
               onToggleCollapse={collapseStorageKey ? () => toggle(col.id) : undefined}
               widthClass={columnWidthClass}
             >
-              {items.map((item) => (
-                <DraggableCard
-                  key={getItemId(item)}
-                  id={getItemId(item)}
-                  disabled={isDragDisabled?.(item) ?? false}
-                >
-                  {renderCard(item, col.id)}
-                </DraggableCard>
-              ))}
+              {items.map((item) =>
+                onDrop ? (
+                  <DraggableCard
+                    key={getItemId(item)}
+                    id={getItemId(item)}
+                    disabled={isDragDisabled?.(item) ?? false}
+                  >
+                    {renderCard(item, col.id)}
+                  </DraggableCard>
+                ) : (
+                  <div key={getItemId(item)} data-testid={`kanban-card-${getItemId(item)}`}>
+                    {renderCard(item, col.id)}
+                  </div>
+                ),
+              )}
             </KanbanColumn>
           );
         })}

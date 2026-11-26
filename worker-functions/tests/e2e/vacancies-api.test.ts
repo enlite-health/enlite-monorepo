@@ -727,20 +727,20 @@ describe('Vacancies API', () => {
   //   - ACTIVE vacancy with pre-existing site link: use case is idempotent
   // ─────────────────────────────────────────────────────────────────────────────
   describe('Short-link auto-publish hook (Phase 3)', () => {
-    it('criar vaga com status ACTIVE retorna 201 (hook roda sem bloquear)', async () => {
+    it('criar vaga com status SEARCHING retorna 201 (hook roda sem bloquear)', async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { patient_id: defaultPatientId, case_number: 66601, title: 'Short-link hook ACTIVE', status: 'ACTIVE' },
+        { patient_id: defaultPatientId, case_number: 66601, title: 'Short-link hook SEARCHING', status: 'SEARCHING' },
         authHeaders(adminToken),
       );
       expect(res.status).toBe(201);
       expect(res.data.success).toBe(true);
     });
 
-    it('servidor permanece saudável após criar vaga ACTIVE sem SHORT_IO configurado', async () => {
+    it('servidor permanece saudável após criar vaga SEARCHING sem SHORT_IO configurado', async () => {
       const createRes = await api.post(
         '/api/admin/vacancies',
-        { patient_id: defaultPatientId, case_number: 66602, title: 'Short-link hook resilience', status: 'ACTIVE' },
+        { patient_id: defaultPatientId, case_number: 66602, title: 'Short-link hook resilience', status: 'SEARCHING' },
         authHeaders(adminToken),
       );
       expect(createRes.status).toBe(201);
@@ -774,7 +774,7 @@ describe('Vacancies API', () => {
       expect(rows[0].social_short_links?.['site']).toBeUndefined();
     });
 
-    it('atualizar vaga PENDING_ACTIVATION → ACTIVE retorna 200 (hook roda sem bloquear)', async () => {
+    it('atualizar vaga PENDING_ACTIVATION → SEARCHING retorna 200 (hook roda sem bloquear)', async () => {
       const createRes = await api.post(
         '/api/admin/vacancies',
         { patient_id: defaultPatientId, case_number: 66604, title: 'Short-link update hook' },
@@ -785,7 +785,7 @@ describe('Vacancies API', () => {
 
       const updateRes = await api.put(
         `/api/admin/vacancies/${id}`,
-        { status: 'ACTIVE' },
+        { status: 'SEARCHING' },
         authHeaders(adminToken),
       );
       expect(updateRes.status).toBe(200);

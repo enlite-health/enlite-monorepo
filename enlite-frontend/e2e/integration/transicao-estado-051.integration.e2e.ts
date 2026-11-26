@@ -1,27 +1,25 @@
 /**
- * transicao-estado-051.integration.e2e.ts @integration — spec 051 (troca manual de estado do paciente,
- * fora do fluxo, atrás de permissão por destino), F5.
+ * transicao-estado-051.integration.e2e.ts @integration — spec 051 (troca manual de estado do paciente, fora do fluxo, atrás de permissão por
+ * destino), reescrito na F5 de estado-automatico-do-paciente: a troca livre dos estados DERIVADOS (Búsqueda, Reemplazo, Activo) e o arrasto
+ * saíram; ficam as ações dos estados HUMANOS, que podem sair do fluxo da FSM atrás da célula do destino (`move_to_on_hold|suspended|alta|discharged`).
  *
- * E2E DE TELA, sem mock de resposta: navegador + API + Postgres reais, engine ABAC LIGADO, staff REAL em grupo
- * (células por SQL), login e arrasto como uma pessoa faz, valor lido da TELA e do BANCO. Nenhum canal externo.
+ * E2E DE TELA, sem mock de resposta: navegador + API + Postgres reais, engine ABAC LIGADO, staff REAL em grupo (células por SQL), login como uma
+ * pessoa faz (click + `keyboard.type`), valor lido da TELA e do BANCO. Nenhum canal externo. Dados SINTÉTICOS (paciente "E2E051", sobrenome " QA").
  *
- *  feliz       — conta com `patient:update` + `patient_status:move_to_searching`, paciente DISCHARGED com serviço completo:
- *                a ficha oferece Búsqueda (DISCHARGED→SEARCHING não está na FSM), a troca sai, a tela mostra o novo estado;
- *                banco: `status='SEARCHING'` e +1 linha no histórico `admin_panel_override` com `actor_uid`; o Historial
- *                mostra a origem traduzida ("fuera del flujo").
- *  sem célula  — conta só com `patient:update`: a opção Búsqueda NÃO existe no select (controle positivo: Alta existe);
- *                o PUT cru leva 403 `PATIENT_STATUS_MOVE_NOT_PERMITTED` com `details.cell`; banco inalterado.
- *  integridade — conta COM a célula, serviço ativo sem horário: Búsqueda aparece DESABILITADA com o motivo; o PUT cru leva
- *                422 `PATIENT_STATUS_NOT_READY` com o que falta; banco inalterado.
- *  Kanban      — com a célula: o card fica em Búsqueda e o histórico grava `kanban_override`; sem ela: o card volta, a
- *                frase amigável aparece, nenhum PUT sai e o banco fica inalterado.
+ *  feliz       — conta com `patient:update` + `patient_status:move_to_suspended`, paciente ON_HOLD: ON_HOLD → SUSPENDED não está na FSM, então a
+ *                ficha oferece a ação "Suspender" (via permissão); o clique a aplica; banco: `status='SUSPENDED'` e +1 linha no histórico
+ *                `admin_panel_override` com `actor_uid`; o Historial mostra a origem traduzida ("fuera del flujo").
+ *  sem célula  — conta só com `patient:update`: a ação "Suspender" NÃO existe na ficha (controle positivo: "Retomar" existe); o PUT cru leva 403
+ *                `PATIENT_STATUS_MOVE_NOT_PERMITTED` com `details.cell`; banco inalterado.
+ *  derivados   — a conta COM a célula também não escolhe estado derivado: PUT cru de Búsqueda/Reemplazo/Activo (origem `admin_panel`) e de qualquer
+ *                destino pela origem `kanban` → 422 `PATIENT_STATUS_NOT_MANUAL`; banco e histórico inalterados.
+ *  integridade — paciente DISCHARGED com serviço ativo SEM horário: a ação "Reactivar" (re-deriva para Búsqueda) aparece DESABILITADA com o motivo.
+ *  Kanban      — o card não é arrastável e arrastar para outra coluna não manda PUT nem muda o banco.
  *
- * ⚠️ Precisa do engine ABAC LIGADO + sync do catálogo (as 7 células `patient_status:*` precisam existir em `iam.permissions`;
- * `grantCell` falha alto se não existirem). Por isso o nome entra no `--grep` do job `integration-e2e-group-simulation` do
- * `_frontend-integration.yml` e NÃO no `grep:` do `pr-gate.yml` (engine OFF: `cells===null` mostraria tudo e o "sem célula"
- * ficaria verde sem medir nada). Molde: `admissao-049-aba.integration.e2e.ts` e `pt-todavia-no-hay-048.integration.e2e.ts`.
+ * ⚠️ Precisa do engine ABAC LIGADO + sync do catálogo (as 4 células `patient_status:*` precisam existir em `iam.permissions`; `grantCell` falha alto
+ * se não existirem). Por isso o nome entra no `--grep` do job `integration-e2e-group-simulation` do `_frontend-integration.yml` e NÃO no `grep:` do
+ * `pr-gate.yml` (engine OFF: `cells===null` mostraria tudo e o "sem célula" ficaria verde sem medir nada). Molde: `admissao-049-aba.integration.e2e.ts`.
  * Rodar local = o job do CI: `ABAC_API_URL`, `ABAC_TEST_DB_URL`, `E2E_PG_CONTAINER`, `E2E_BACKEND_URL`.
- * Dados SINTÉTICOS (paciente "E2E051").
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
@@ -31,10 +29,6 @@ import {
 } from '../helpers/abac-stack-helper';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
-/** Horário do serviço = 1 faixa vigente em `patient_itinerary_slot` (spec 056: `pcs.schedule` não é lido). */
-const FAIXA_SQL = (serviceId: string) =>
-  `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
-   VALUES ('${serviceId}', 1, '08:00', 240, '[2026-01-01,)'::daterange, 'e2e051', 'e2e051')`;
 
 const operadoraUid = `e2e-051-operadora-${RUN_ID}`;
 const semCelulaUid = `e2e-051-sem-celula-${RUN_ID}`;
@@ -42,16 +36,20 @@ const operadora = { uid: operadoraUid, email: `${operadoraUid}@e2e.test`, role: 
 const semCelula = { uid: semCelulaUid, email: `${semCelulaUid}@e2e.test`, role: 'admin', country: 'AR' };
 const CELULAS_BASE: Array<[string, string]> = [['patient', 'read'], ['patient', 'update'], ['patient_identity', 'read']];
 
-/** Paciente DISCHARGED com 1 endereço e 1 serviço ativo; `horario` NULL = serviço sem horário (a integridade de Búsqueda). */
-function seedPaciente(tag: string, horario: boolean): string {
+/** Paciente no `status` pedido, com 1 endereço e 1 serviço ativo; `horario` NULL = serviço sem horário (a integridade de Reactivar). */
+function seedPaciente(tag: string, status: string, horario: boolean): string {
   const { patientId, addressId } = insertTestPatient({
-    status: 'DISCHARGED', firstName: 'E2E051', lastName: `${tag}${RUN_ID}`.slice(0, 40),
+    status, firstName: 'E2E051', lastName: `${tag}${RUN_ID} QA`.slice(0, 40),
     withAddress: true, hasConsent: true, insuranceInformed: 'OSDE',
   });
   if (!addressId) throw new Error('seedPaciente: insertTestPatient não devolveu addressId');
   const serviceId = scalar(`INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
           VALUES ('${patientId}', 'AT', true, 'AR', 'e2e051', 'e2e051', '${addressId}', NULL) RETURNING id`).split('\n')[0].trim();
-  if (horario) safeSql(FAIXA_SQL(serviceId));
+  if (horario) {
+    // Horário do serviço = 1 faixa vigente em `patient_itinerary_slot` (spec 056: `pcs.schedule` não é lido).
+    safeSql(`INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, duration_minutes, valid, created_by, updated_by)
+             VALUES ('${serviceId}', 1, '08:00', 240, '[2026-01-01,)'::daterange, 'e2e051', 'e2e051')`);
+  }
   return patientId;
 }
 
@@ -61,31 +59,24 @@ const ultimaLinha = (id: string): string =>
   scalar(`SELECT old_value || '|' || new_value || '|' || change_source || '|' || COALESCE(actor_uid, '<NULL>')
             FROM patient_status_history WHERE patient_id = '${id}' ORDER BY created_at DESC, id DESC LIMIT 1`);
 
+/** Abre a ficha e espera a lista de AÇÕES do servidor (o select livre não existe mais). */
 async function abrirFicha(page: Page, patientId: string): Promise<Locator> {
   await page.goto(`/admin/patients/${patientId}`);
-  const select = page.getByTestId('patient-status-select');
-  await expect(select).toBeVisible({ timeout: 30_000 });
-  // A lista vem do servidor: o select nasce travado e só habilita quando ela chega.
-  await expect(select).toBeEnabled({ timeout: 20_000 });
-  return select;
+  await expect(page.getByTestId('patient-status-control')).toBeVisible({ timeout: 30_000 });
+  const acoes = page.getByTestId('patient-status-actions');
+  await expect(acoes).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId('patient-status-select')).toHaveCount(0);
+  return acoes;
 }
 
-const opcao = (select: Locator, valor: string): Locator => select.locator(`option[value="${valor}"]`);
+const put = (request: import('@playwright/test').APIRequestContext, patientId: string, user: typeof operadora, data: Record<string, unknown>) =>
+  request.put(`${ABAC_API_URL}/api/admin/patients/${patientId}/status`, {
+    headers: { Authorization: `Bearer ${tokenFor(user)}` }, data, failOnStatusCode: false,
+  });
 
-async function abrirKanban(page: Page, patientId: string): Promise<{ card: Locator; coluna: (s: string) => Locator }> {
-  await page.goto('/admin/patients/kanban');
-  await expect(page.getByTestId('patient-kanban-board')).toBeVisible({ timeout: 20_000 });
-  const card = page.getByTestId(`patient-kanban-card-${patientId}`);
-  await expect(card).toBeVisible({ timeout: 20_000 });
-  await card.scrollIntoViewIfNeeded();
-  return { card, coluna: (s) => page.getByTestId(`kanban-column-${s}`) };
-}
-
-// Par de exemplo trocado no sync main→stage (16/10): a migration 485 da stage pôs ACTIVE→SEARCHING no fluxo;
-// DISCHARGED→SEARCHING está fora do fluxo nos dois lados.
 test.use({ viewport: { width: 1600, height: 1000 }, video: 'on' });
 
-test.describe('transicao-estado-051 — troca manual de estado com permissão por destino (spec 051) @integration', () => {
+test.describe('transicao-estado-051 — ações de estado humano com permissão por destino (spec 051 + F5) @integration', () => {
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(180_000);
 
@@ -95,7 +86,7 @@ test.describe('transicao-estado-051 — troca manual de estado com permissão po
   test.beforeAll(() => {
     operadoraGroupId = seedStaffInGroup({ uid: operadoraUid, email: operadora.email, groupName: `Est051 Operadora ${RUN_ID}`, country: 'AR' }).groupId;
     for (const [r, a] of CELULAS_BASE) grantCell(operadoraGroupId, r, a);
-    grantCell(operadoraGroupId, 'patient_status', 'move_to_searching'); // falha alto se o sync do catálogo não criou a célula
+    grantCell(operadoraGroupId, 'patient_status', 'move_to_suspended'); // falha alto se o sync do catálogo não criou a célula
     semCelulaGroupId = seedStaffInGroup({ uid: semCelulaUid, email: semCelula.email, groupName: `Est051 SemCelula ${RUN_ID}`, country: 'AR' }).groupId;
     for (const [r, a] of CELULAS_BASE) grantCell(semCelulaGroupId, r, a);
   });
@@ -106,34 +97,28 @@ test.describe('transicao-estado-051 — troca manual de estado com permissão po
     safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name LIKE 'Est051 % ${RUN_ID}'`);
   });
 
-  test('feliz: com patient_status:move_to_searching a ficha troca DISCHARGED → Búsqueda; tela, banco e Historial concordam', async ({ page }) => {
-    const patientId = seedPaciente('Feliz', true);
+  test('feliz: com patient_status:move_to_suspended a ficha oferece "Suspender" (ON_HOLD → Suspendido, fora da FSM); tela, banco e Historial concordam', async ({ page }) => {
+    const patientId = seedPaciente('Feliz', 'ON_HOLD', true);
     try {
       await loginAs(page, operadora);
-      const select = await abrirFicha(page, patientId);
+      await abrirFicha(page, patientId);
       const antes = linhasHistorico(patientId);
-      expect(statusDe(patientId)).toBe('DISCHARGED');
+      expect(statusDe(patientId)).toBe('ON_HOLD');
 
-      // A lista do servidor traz Búsqueda (fora da FSM, liberada pela célula) sem marca nem aviso, e traz a FSM (Alta).
-      await expect(opcao(select, 'ALTA')).toHaveCount(1);
-      await expect(opcao(select, 'SEARCHING')).toHaveCount(1);
-      await expect(opcao(select, 'SEARCHING')).toBeEnabled();
-      await expect(opcao(select, 'SEARCHING')).toHaveText('Búsqueda');
+      // A lista do servidor traz a ação liberada pela célula e a da FSM (Retomar).
+      await expect(page.getByTestId('patient-status-action-retomar')).toBeVisible();
+      const suspender = page.getByTestId('patient-status-action-suspender');
+      await expect(suspender).toBeVisible();
+      await expect(suspender).toBeEnabled();
 
-      await select.selectOption('SEARCHING');
-      await expect(select).toHaveValue('SEARCHING'); // lido da tela
-      const save = page.getByTestId('patient-status-save');
-      await expect(save).toBeEnabled();
-      const put = page.waitForResponse((r) => r.request().method() === 'PUT' && /\/status$/.test(r.url()));
-      await save.click();
-      expect((await put).status()).toBe(200);
-      await expect(page.getByTestId('patient-status-error')).toHaveCount(0);
-      await expect(page.getByTestId('patient-status-badge')).toContainText(/squeda/i, { timeout: 20_000 });
+      await suspender.click();
+      await expect(page.getByTestId('patient-status-action-error')).toHaveCount(0);
+      await expect(page.getByTestId('patient-status-badge')).toContainText('Suspendido', { timeout: 20_000 }); // lido da TELA
 
       // banco: o estado mudou e há UMA linha nova, marcada como troca fora do fluxo, com o ator.
-      await expect.poll(() => statusDe(patientId)).toBe('SEARCHING');
+      await expect.poll(() => statusDe(patientId)).toBe('SUSPENDED');
       expect(linhasHistorico(patientId)).toBe(antes + 1);
-      expect(ultimaLinha(patientId)).toBe(`DISCHARGED|SEARCHING|admin_panel_override|${operadoraUid}`);
+      expect(ultimaLinha(patientId)).toBe(`ON_HOLD|SUSPENDED|admin_panel_override|${operadoraUid}`);
 
       // Historial EM TELA: a origem traduzida deixa claro que foi fora do fluxo (nunca o valor cru do banco).
       await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Historial' }).click();
@@ -147,103 +132,77 @@ test.describe('transicao-estado-051 — troca manual de estado com permissão po
     }
   });
 
-  test('sem a permissão: só patient:update — Búsqueda NÃO aparece no select; o PUT cru leva 403 com a célula; banco inalterado', async ({ page, request }) => {
-    const patientId = seedPaciente('SemCelula', true);
+  test('sem a permissão: só patient:update — "Suspender" NÃO aparece; o PUT cru leva 403 com a célula; banco inalterado', async ({ page, request }) => {
+    const patientId = seedPaciente('SemCelula', 'ON_HOLD', true);
     try {
       await loginAs(page, semCelula);
-      const select = await abrirFicha(page, patientId);
-      // Controle positivo: o select TEM opções (a FSM) — a ausência de Búsqueda não é lista vazia nem tela quebrada.
-      await expect(opcao(select, 'ALTA')).toHaveCount(1);
-      await expect(opcao(select, 'SEARCHING')).toHaveCount(0);
-      const values = await select.locator('option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
-      expect(values).not.toContain('SEARCHING');
+      await abrirFicha(page, patientId);
+      // Controle positivo: a lista TEM ações (a FSM) — a ausência de "Suspender" não é lista vazia nem tela quebrada.
+      await expect(page.getByTestId('patient-status-action-retomar')).toBeVisible();
+      await expect(page.getByTestId('patient-status-action-suspender')).toHaveCount(0);
 
       const antes = linhasHistorico(patientId);
-      const direto = await request.put(`${ABAC_API_URL}/api/admin/patients/${patientId}/status`, {
-        headers: { Authorization: `Bearer ${tokenFor(semCelula)}` },
-        data: { status: 'SEARCHING', changeSource: 'admin_panel' },
-        failOnStatusCode: false,
-      });
+      const direto = await put(request, patientId, semCelula, { status: 'SUSPENDED', changeSource: 'admin_panel' });
       expect(direto.status()).toBe(403);
-      const corpo = await direto.json();
-      expect(corpo).toMatchObject({ code: 'PATIENT_STATUS_MOVE_NOT_PERMITTED', details: { from: 'DISCHARGED', to: 'SEARCHING', cell: 'patient_status:move_to_searching' } });
+      expect(await direto.json()).toMatchObject({ code: 'PATIENT_STATUS_MOVE_NOT_PERMITTED', details: { from: 'ON_HOLD', to: 'SUSPENDED', cell: 'patient_status:move_to_suspended' } });
 
-      expect(statusDe(patientId), 'banco inalterado').toBe('DISCHARGED');
+      expect(statusDe(patientId), 'banco inalterado').toBe('ON_HOLD');
       expect(linhasHistorico(patientId), 'histórico inalterado').toBe(antes);
     } finally {
       cleanupTestPatient(patientId);
     }
   });
 
-  test('integridade: com a célula, serviço ativo SEM horário — Búsqueda aparece desabilitada com o motivo; o PUT cru leva 422; banco inalterado', async ({ page, request }) => {
-    const patientId = seedPaciente('SemHorario', false);
+  test('derivados: nem a conta COM célula escolhe Búsqueda, Reemplazo ou Activo — PUT cru 422 PATIENT_STATUS_NOT_MANUAL; a origem kanban é recusada para qualquer destino', async ({ request }) => {
+    const patientId = seedPaciente('Derivados', 'ON_HOLD', true);
     try {
-      await loginAs(page, operadora);
-      const select = await abrirFicha(page, patientId);
-      const busqueda = opcao(select, 'SEARCHING');
-      await expect(busqueda).toHaveCount(1); // a célula a libera...
-      await expect(busqueda).toBeDisabled(); // ...mas a integridade a trava, em vez de falhar no clique
-      await expect(busqueda).toHaveText(/Búsqueda \(falta: .*horario del servicio/);
-      await expect(opcao(select, 'ALTA')).toBeEnabled(); // controle positivo: o bloqueio é só deste destino
-
       const antes = linhasHistorico(patientId);
-      const direto = await request.put(`${ABAC_API_URL}/api/admin/patients/${patientId}/status`, {
-        headers: { Authorization: `Bearer ${tokenFor(operadora)}` },
-        data: { status: 'SEARCHING', changeSource: 'admin_panel' },
-        failOnStatusCode: false,
-      });
-      expect(direto.status()).toBe(422);
-      const corpo = await direto.json();
-      expect(corpo.code).toBe('PATIENT_STATUS_NOT_READY');
-      expect(corpo.details.missing).toContain('SERVICE_SCHEDULE');
-
-      expect(statusDe(patientId), 'banco inalterado').toBe('DISCHARGED');
+      for (const [status, changeSource] of [['SEARCHING', 'admin_panel'], ['REPLACEMENT', 'admin_panel'], ['ACTIVE', 'admin_panel'], ['SUSPENDED', 'kanban'], ['SEARCHING', 'kanban']]) {
+        const r = await put(request, patientId, operadora, { status, changeSource });
+        expect(r.status(), `${changeSource} → ${status}`).toBe(422);
+        expect((await r.json()).code).toBe('PATIENT_STATUS_NOT_MANUAL');
+      }
+      expect(statusDe(patientId), 'banco inalterado').toBe('ON_HOLD');
       expect(linhasHistorico(patientId), 'histórico inalterado').toBe(antes);
     } finally {
       cleanupTestPatient(patientId);
     }
   });
 
-  test('Kanban com a célula: arrastar DISCHARGED → Búsqueda fica no lugar e o histórico grava kanban_override', async ({ page }) => {
-    const patientId = seedPaciente('KanbanCom', true);
+  test('integridade: DISCHARGED com serviço ativo SEM horário — "Reactivar" (re-deriva para Búsqueda) aparece desabilitada com o motivo; banco inalterado', async ({ page }) => {
+    const patientId = seedPaciente('SemHorario', 'DISCHARGED', false);
     try {
       await loginAs(page, operadora);
-      const { card, coluna } = await abrirKanban(page, patientId);
-      const antes = linhasHistorico(patientId);
-
-      const put = page.waitForResponse((r) => r.request().method() === 'PUT' && /\/status$/.test(r.url()));
-      await dndKitDrag(page, card, coluna('SEARCHING'));
-      expect((await put).status()).toBe(200);
-
-      await expect(coluna('SEARCHING').getByTestId(`patient-kanban-card-${patientId}`)).toHaveCount(1, { timeout: 15_000 });
-      await expect(coluna('DISCHARGED').getByTestId(`patient-kanban-card-${patientId}`)).toHaveCount(0);
-      await expect.poll(() => statusDe(patientId)).toBe('SEARCHING');
-      expect(linhasHistorico(patientId)).toBe(antes + 1);
-      expect(ultimaLinha(patientId)).toBe(`DISCHARGED|SEARCHING|kanban_override|${operadoraUid}`);
+      await abrirFicha(page, patientId);
+      const reativar = page.getByTestId('patient-status-action-reativar');
+      await expect(reativar).toBeVisible();
+      await expect(reativar).toBeDisabled(); // a integridade a trava, em vez de falhar no clique
+      await expect(reativar).toHaveAttribute('title', /horario del servicio/);
+      expect(statusDe(patientId), 'banco inalterado').toBe('DISCHARGED');
     } finally {
       cleanupTestPatient(patientId);
     }
   });
 
-  test('Kanban sem a célula: o card volta, a frase amigável aparece, nenhum PUT sai e o banco fica inalterado', async ({ page }) => {
-    const patientId = seedPaciente('KanbanSem', true);
+  test('Kanban: o card não é arrastável; arrastar para outra coluna não manda PUT e o banco fica inalterado', async ({ page }) => {
+    const patientId = seedPaciente('Kanban', 'ON_HOLD', true);
     try {
-      let putSaiu = false;
-      page.on('request', (r) => { if (r.method() === 'PUT' && /\/status$/.test(r.url())) putSaiu = true; });
-      await loginAs(page, semCelula);
-      const { card, coluna } = await abrirKanban(page, patientId);
+      const escritas: string[] = [];
+      page.on('request', (r) => { if (['PUT', 'POST', 'PATCH', 'DELETE'].includes(r.method()) && /\/api\/admin\/patients\//.test(r.url())) escritas.push(r.method()); });
+      await loginAs(page, operadora);
+      await page.goto('/admin/patients/kanban');
+      await expect(page.getByTestId('patient-kanban-board')).toBeVisible({ timeout: 20_000 });
+      const card = page.getByTestId(`patient-kanban-card-${patientId}`);
+      await expect(card).toBeVisible({ timeout: 20_000 });
+      await card.scrollIntoViewIfNeeded();
+      await expect(page.getByTestId(`kanban-card-${patientId}`)).not.toHaveAttribute('aria-roledescription', /.+/);
       const antes = linhasHistorico(patientId);
 
-      // A lista do servidor é lida no drop: a tela só segue se o destino está nela.
-      const lista = page.waitForResponse((r) => r.request().method() === 'GET' && new RegExp(`/patients/${patientId}/status-options\\?changeSource=kanban$`).test(r.url()));
-      await dndKitDrag(page, card, coluna('SEARCHING'));
-      expect((await lista).status()).toBe(200);
+      await dndKitDrag(page, card, page.getByTestId('kanban-column-SUSPENDED'));
 
-      await expect(page.getByText('Este cambio de estado no está disponible.')).toBeVisible({ timeout: 8_000 });
-      await expect(coluna('DISCHARGED').getByTestId(`patient-kanban-card-${patientId}`)).toHaveCount(1); // o card voltou (nunca saiu)
-      await expect(coluna('SEARCHING').getByTestId(`patient-kanban-card-${patientId}`)).toHaveCount(0);
-      expect(putSaiu, 'a tela recusa antes do PUT').toBe(false);
-      expect(statusDe(patientId), 'banco inalterado').toBe('DISCHARGED');
+      expect(escritas, 'nenhuma escrita sai do gesto').toEqual([]);
+      await expect(page.getByTestId('kanban-column-ON_HOLD').getByTestId(`patient-kanban-card-${patientId}`)).toHaveCount(1);
+      expect(statusDe(patientId), 'banco inalterado').toBe('ON_HOLD');
       expect(linhasHistorico(patientId), 'histórico inalterado').toBe(antes);
     } finally {
       cleanupTestPatient(patientId);

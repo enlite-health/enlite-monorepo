@@ -420,34 +420,15 @@ describe('AdminPatientContractedServicesController', () => {
       });
     });
 
-    it('D469 — 201 repassa patientNotMoved (só códigos) quando o paciente não moveu por completude', async () => {
+    it('D2 — o corpo 201 tem SÓ as 3 chaves do contrato: nada que o use case devolva além delas é repassado (o ramo "paciente não movido" deixou de existir)', async () => {
       const useCase = { execute: jest.fn().mockResolvedValue({
-        vacancyId: 'vac-3', patientStatus: 'ADMISSION', statusChanged: false, patientNotMoved: { missing: ['SERVICE_SCHEDULE'] },
+        vacancyId: 'vac-3', patientStatus: 'SEARCHING', statusChanged: true, sobra: { missing: ['SERVICE_SCHEDULE'] },
       }) };
       const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
       const res = mockRes();
       await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(201);
-      expect(res.json).toHaveBeenCalledWith({
-        success: true,
-        data: { vacancyId: 'vac-3', patientStatus: 'ADMISSION', statusChanged: false, patientNotMoved: { missing: ['SERVICE_SCHEDULE'] } },
-      });
-    });
-
-    it.each([
-      ['sem patient_clinical:read', ['patient_services:update'], ['SERVICE_SCHEDULE', 'CLINICAL_DATA']],
-      ['com patient_clinical:read', ['patient_services:update', 'patient_clinical:read'], ['SERVICE_SCHEDULE', 'DIAGNOSIS']],
-    ])('201 patientNotMoved.missing passa por exposeBlockingCodes — ator %s', async (_n, cells, esperado) => {
-      const useCase = { execute: jest.fn().mockResolvedValue({
-        vacancyId: 'vac-4', patientStatus: 'ADMISSION', statusChanged: false, patientNotMoved: { missing: ['SERVICE_SCHEDULE', 'DIAGNOSIS'] },
-      }) };
-      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
-      const res = mockRes();
-      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, permissionCells: cells }), res);
-      expect(res.status).toHaveBeenCalledWith(201);
-      const body = res.json.mock.calls[0][0];
-      expect(body.data.patientNotMoved).toEqual({ missing: esperado });
-      if (!cells.includes('patient_clinical:read')) expect(JSON.stringify(body)).not.toContain('DIAGNOSIS');
+      expect(Object.keys(res.json.mock.calls[0][0].data).sort()).toEqual(['patientStatus', 'statusChanged', 'vacancyId']);
     });
 
     // spec 029 — achado: o botão gravava SYSTEM/actor_user_id null mesmo com operador humano

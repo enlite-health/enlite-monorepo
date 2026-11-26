@@ -130,7 +130,7 @@ describe('ACTIVATION_BLOCKING_CODES (D255, decisão 03/09 + migration 330, decis
 describe('blockingCodesForStatusChange (decisão do Gabriel 07/09)', () => {
   it('ACTIVE exige o checklist bloqueante INTEIRO — fecha o atalho do drop no Kanban (DIAGNOSIS só quando vem de ADMISSION)', () => {
     expect(blockingCodesForStatusChange('ACTIVE')).toEqual(ACTIVATION_BLOCKING_CODES.filter((c) => c !== 'DIAGNOSIS'));
-    expect(blockingCodesForStatusChange('ACTIVE', false, 'ADMISSION')).toEqual(ACTIVATION_BLOCKING_CODES);
+    expect(blockingCodesForStatusChange('ACTIVE', 'ADMISSION')).toEqual(ACTIVATION_BLOCKING_CODES);
   });
 
   it('SEARCHING e REPLACEMENT exigem SÓ o horário — não reabrem a admissão numa troca urgente', () => {
@@ -414,42 +414,42 @@ describe('DIAGNOSIS no checklist e na troca de status (pedido do Javier / decis�
     expect(computePatientCompleteness({ ...baseInput, status: 'ADMISSION', activeDiagnosisCount: NaN }).missing).toEqual(['DIAGNOSIS']);
   });
 
-  describe('blockingCodesForStatusChange(to, foraDoFluxo, from)', () => {
+  describe('blockingCodesForStatusChange(to, from)', () => {
     it.each(PRE_CARE.flatMap((from) => CARE.map((to) => [from, to] as const)))(
       '%s → %s exige DIAGNOSIS',
       (from, to) => {
-        expect(blockingCodesForStatusChange(to, false, from)).toContain('DIAGNOSIS');
+        expect(blockingCodesForStatusChange(to, from)).toContain('DIAGNOSIS');
       },
     );
 
     it('o desvio dos dois passos: ADMISSION → PENDING_ADMISSION é livre, mas PENDING_ADMISSION → SEARCHING cobra', () => {
-      expect(blockingCodesForStatusChange('PENDING_ADMISSION', false, 'ADMISSION')).not.toContain('DIAGNOSIS');
-      expect(blockingCodesForStatusChange('SEARCHING', false, 'PENDING_ADMISSION')).toContain('DIAGNOSIS');
-      expect(blockingCodesForStatusChange('SEARCHING', false, 'SOLICITANTE')).toContain('DIAGNOSIS');
+      expect(blockingCodesForStatusChange('PENDING_ADMISSION', 'ADMISSION')).not.toContain('DIAGNOSIS');
+      expect(blockingCodesForStatusChange('SEARCHING', 'PENDING_ADMISSION')).toContain('DIAGNOSIS');
+      expect(blockingCodesForStatusChange('SEARCHING', 'SOLICITANTE')).toContain('DIAGNOSIS');
     });
 
     it.each(PRE_CARE.flatMap((from) => ['ALTA', 'DISCHARGED', ...PRE_CARE].map((to) => [from, to] as const)))(
       '%s → %s (descarte ou andar entre os estágios pré-atendimento) NÃO exige DIAGNOSIS',
       (from, to) => {
-        expect(blockingCodesForStatusChange(to, false, from)).not.toContain('DIAGNOSIS');
+        expect(blockingCodesForStatusChange(to, from)).not.toContain('DIAGNOSIS');
       },
     );
 
     it.each(CARE.flatMap((from) => [...CARE, 'ALTA', 'DISCHARGED', ...PRE_CARE].map((to) => [from, to] as const)))(
       'paciente já em %s → %s NÃO exige DIAGNOSIS (a regra só olha a entrada)',
       (from, to) => {
-        expect(blockingCodesForStatusChange(to, false, from)).not.toContain('DIAGNOSIS');
+        expect(blockingCodesForStatusChange(to, from)).not.toContain('DIAGNOSIS');
       },
     );
 
     it('sem `from` (chamador que não pergunta pela origem) → comportamento de antes, sem DIAGNOSIS', () => {
       expect(blockingCodesForStatusChange('ACTIVE')).toEqual(['ADDRESS', 'SERVICE_ADDRESS', 'SERVICE_SCHEDULE']);
-      expect(blockingCodesForStatusChange('SEARCHING', true)).not.toContain('DIAGNOSIS');
+      expect(blockingCodesForStatusChange('SEARCHING')).not.toContain('DIAGNOSIS');
     });
 
     it('acumula com o que o destino já cobrava (pré-atendimento → ACTIVE = checklist bloqueante + DIAGNOSIS)', () => {
-      expect(blockingCodesForStatusChange('ACTIVE', false, 'ADMISSION')).toEqual([...ACTIVATION_BLOCKING_CODES]);
-      expect(blockingCodesForStatusChange('SEARCHING', true, 'PENDING_ADMISSION')).toContain('SERVICE_SCHEDULE');
+      expect(blockingCodesForStatusChange('ACTIVE', 'ADMISSION')).toEqual([...ACTIVATION_BLOCKING_CODES]);
+      expect(blockingCodesForStatusChange('SEARCHING', 'PENDING_ADMISSION')).toContain('SERVICE_SCHEDULE');
     });
   });
 

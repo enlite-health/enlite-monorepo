@@ -2180,7 +2180,6 @@
       "errorLoading": "Erro ao carregar vagas",
       "searchPlaceholder": "Pesquisar pelo nome do paciente",
       "searchPlaceholderSemNome": "Buscar por caso, vaga ou título",
-      "statusLabel": "Status",
       "priorityLabel": "Prioridade",
       "noVacancies": "Nenhuma vaga encontrada",
       "stats": {
@@ -2207,18 +2206,6 @@
         "noLastAction": "—",
         "noDivulgationRecord": "sem registro"
       },
-      "statusOptions": {
-        "all": "Todos",
-        "searching": "Buscando AT",
-        "searchingReplacement": "Buscando Substituto",
-        "rapidResponse": "Resposta Rápida",
-        "pendingActivation": "Aguardando Ativação",
-        "active": "Ativo",
-        "onHold": "Em Espera",
-        "suspended": "Suspenso",
-        "closed": "Encerrado",
-        "deBaja": "Baixada"
-      },
       "priorityOptions": {
         "all": "Todas",
         "urgent": "Urgente",
@@ -2229,6 +2216,12 @@
       "filters": {
         "allOption": "Todos",
         "clear": "Limpar filtros",
+        "lifecycle": {
+          "label": "Ciclo de vida"
+        },
+        "patientStatus": {
+          "label": "Estado do paciente"
+        },
         "type": {
           "label": "Tipo",
           "at": "AT",
@@ -2644,13 +2637,10 @@
           "flexible": "Flexível"
         },
         "statusOptions": {
-          "SEARCHING": "Buscando",
-          "SEARCHING_REPLACEMENT": "Substituição",
-          "RAPID_RESPONSE": "Resp. Rápida",
-          "PENDING_ACTIVATION": "Ativação Pendente",
-          "ACTIVE": "Ativo",
-          "SUSPENDED": "Suspenso",
-          "CLOSED": "Encerrado"
+          "SEARCHING": "Aberta",
+          "ON_HOLD": "Em espera",
+          "SUSPENDED": "Suspensa",
+          "CLOSED": "Encerrada"
         },
         "cancel": "Cancelar",
         "create": "Criar Vaga",
@@ -2702,6 +2692,13 @@
         "DE_BAJA": "Baixada",
         "ADMISSION": "Admissão"
       },
+      "lifecycle": {
+        "rascunho": "Rascunho",
+        "aberta": "Aberta",
+        "pausada": "Em espera",
+        "cerrada": "Encerrada",
+        "baja": "Baixada"
+      },
       "caseCard": {
         "caseLabel": "CASO",
         "paymentTerm": "Prazo de pagamento",
@@ -2745,8 +2742,15 @@
       "statusEditor": {
         "editLabel": "Editar estado da vaga",
         "resume": "Retomar",
+        "options": {
+          "SEARCHING": "Aberta",
+          "ON_HOLD": "Em espera",
+          "SUSPENDED": "Suspensa",
+          "CLOSED": "Encerrada"
+        },
         "pauseHint": "Em espera mantém o quadro, o histórico e o link curto.",
         "errors": {
+          "VACANCY_STATUS_NOT_LIFECYCLE": "O estado da vaga só aceita: Aberta, Em espera, Suspensa ou Encerrada. O estado do paciente é definido pelo fluxo automático.",
           "VACANCY_DE_BAJA_NO_REACTIVATION": "Vaga baixada não é reativada: só volta quando o serviço que a baixou é reativado.",
           "CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED": "Vaga de serviço ativo não é encerrada: use \"Pausar\" (Em espera)."
         }
@@ -3565,7 +3569,6 @@
         "toggleKanban": "Kanban",
         "caseNumber": "Caso",
         "noName": "—",
-        "moveError": "Não foi possível mover o paciente",
         "columns": {
           "SOLICITANTE": "Solicitante",
           "ADMISSION": "Admissão",
@@ -3581,16 +3584,7 @@
         },
         "contactOfResponsible": "Contato do responsável",
         "responsible": "Responsável",
-        "dragHint": "Arraste um cartão para mudar o estado do paciente.",
-        "suspensionExitDialog": {
-          "title": "Motivo de saída de Suspenso",
-          "body": "{{name}} vai passar de Suspenso para {{target}}. Escolha o motivo de saída.",
-          "confirm": "Confirmar e mover"
-        },
-        "moveErrorCodes": {
-          "SUSPENSION_EXIT_REASON_REQUIRED": "É preciso indicar o motivo de saída de Suspenso.",
-          "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para ativar, use \"Ativar recrutamento\" no serviço contratado da ficha do paciente."
-        },
+        "readonlyHint": "O Kanban é somente leitura: o estado é definido pelo fluxo automático e pelas ações da ficha do paciente.",
         "subcard": {
           "weeklyUnit": "h/sem",
           "pairAria": "{{covered}} de {{contracted}} horas semanais cobertas",
@@ -4157,7 +4151,6 @@
           "activateRecruitmentTooltip": "Falta: {{items}}",
           "viewVacancy": "Ver vaga",
           "activateRecruitmentToast": "Vaga em rascunho criada",
-          "activateRecruitmentPatientNotMoved": "Vaga criada. O paciente continua em Admissão: falta {{items}} em um serviço ativo.",
           "activateRecruitmentError": "Não foi possível ativar o recrutamento",
           "activateRecruitmentAlreadyRecruiting": "Este serviço já tem uma vaga em andamento",
           "payerKindOptions": {
@@ -5053,6 +5046,8 @@
           "activate": "Ativação",
           "system": "Sistema",
           "recruitment_activation": "Ativação do recrutamento",
+          "vacancy_launch": "Lançamento da vaga",
+          "resume": "Retomado",
           "admin_panel_override": "Painel (fora do fluxo)",
           "kanban_override": "Kanban (fora do fluxo)"
         },
@@ -5067,8 +5062,22 @@
           "error": "Não foi possível carregar o histórico"
         },
         "blockedOption": "{{status}} (falta: {{items}})",
-        "optionsLoadError": "Não foi possível carregar os estados disponíveis.",
         "optionsRetry": "Tentar de novo",
+        "actions": {
+          "title": "Ações",
+          "loadError": "Não foi possível carregar as ações",
+          "confirm": "Confirmar",
+          "cancel": "Cancelar",
+          "willBecome": "Passará para «{{status}}»",
+          "names": {
+            "pausar": "Pausar",
+            "suspender": "Suspender",
+            "dar_alta": "Dar alta",
+            "dar_baja": "Dar baixa",
+            "retomar": "Retomar",
+            "reativar": "Reativar"
+          }
+        },
         "friendly": {
           "forbidden": "Você não tem permissão para passar este paciente para «{{status}}». Peça a quem administra os acessos que habilite.",
           "notReadySearching": "Para passar para «{{status}}», o serviço contratado precisa estar completo. Falta: {{items}}.",
@@ -5077,7 +5086,7 @@
           "onHoldReasonRequired": "Para deixar o paciente «Em espera», informe o motivo (escola, convênio ou outro).",
           "suspensionExitReasonRequired": "Para tirar o paciente de «Suspenso», escolha o motivo.",
           "notAvailable": "Esta mudança de estado não está disponível.",
-          "optionsUnavailable": "Não foi possível verificar os estados disponíveis. Tente novamente.",
+          "notManual": "Esse estado é definido pelo fluxo automático.",
           "lockedByAllocation": "Não é possível mudar o estado: o paciente tem prestador alocado no itinerário. Retire o prestador do itinerário primeiro."
         }
       }
@@ -5430,9 +5439,6 @@
             "decidir": "Decidir",
             "register": "Registrar",
             "resend_message": "Reenviar mensagem",
-            "move_to_searching": "Para busca",
-            "move_to_active": "Para ativo",
-            "move_to_replacement": "Para reposição",
             "move_to_on_hold": "Para em espera",
             "move_to_suspended": "Para suspenso",
             "move_to_alta": "Para alta",

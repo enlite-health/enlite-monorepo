@@ -1,12 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { AdminContractedServicesApiService, ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
-import type { PatientKanbanItem, PatientKanbanServiceSummary, PatientStatusOption } from '@domain/entities/PatientDetail';
+import type { PatientKanbanItem, PatientKanbanServiceSummary } from '@domain/entities/PatientDetail';
 import { ADMISSION_FUNNEL_STATUSES } from '@domain/entities/patientEnums';
-import { ACTIVE_ALLOCATION_BLOCK, STATUS_NOT_OFFERED, STATUS_OPTIONS_UNAVAILABLE, SERVER_STATUS_REFUSAL, refusalFromError } from '@domain/entities/PatientStatusRefusal';
-import type { PatientStatus } from '@domain/entities/patientEnums';
-import type { PatientCompletenessCode } from '@domain/entities/PatientCompleteness';
-import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 
 /**
  * As colunas do board agrupam por `patients.status` (estado clínico v2). ADMISSION junta os 3
@@ -28,19 +24,6 @@ export const PATIENT_KANBAN_STATUSES = [
 export type PatientKanbanStatus = (typeof PATIENT_KANBAN_STATUSES)[number];
 
 export type PatientKanbanGroups = Record<PatientKanbanStatus, PatientKanbanItem[]>;
-
-/**
- * Falha ao mover um card. `code` é o código de enum do backend (nunca o texto cru do servidor);
- * `missing` só vem no 422 de completude (decisão do Gabriel 07/09) e carrega os códigos do
- * checklist, para o toast poder NOMEAR o que falta em vez de dizer só "não foi possível".
- */
-export interface PatientKanbanMoveError {
-  code: string;
-  missing?: PatientCompletenessCode[];
-  /** Coluna de destino pedida — a frase amigável a nomeia (spec 051, §6.4). */
-  to?: PatientStatus;
-}
-
 
 function emptyGroups(): PatientKanbanGroups {
   return {
@@ -72,26 +55,14 @@ function groupByStatus(items: PatientKanbanItem[]): PatientKanbanGroups {
 }
 
 /**
- * Código devolvido quando o alvo é DONE ("Activo") — spec 018, PR-6, ADR-5. Até 07/09 soltar
- * ali mandava `PUT /status {status:'ACTIVE'}` (a transição que a 315 seedava a partir de
- * qualquer coluna do funil); a migration 428 REMOVE essa linha do catálogo — o Kanban não pode
- * continuar chamando uma transição que o backend vai recusar (422
- * `PATIENT_STATUS_TRANSITION_NOT_ALLOWED`). Ativar virou uma ação por SERVIÇO
- * (`ServicosContratadosCard`, "Activar reclutamiento"), não um drop de card.
- */
-export const KANBAN_ACTIVATION_MOVED_TO_SERVICE = 'KANBAN_ACTIVATION_MOVED_TO_SERVICE';
-
-/**
- * Data + move logic for the patient kanban. Mirrors useWJAFunnel's shape (fetch
- * + move + refetch), but moves change patient lifecycle status via
- * PUT /api/admin/patients/:id/status. The move is optimistic with rollback on
- * error (the funnel refetches; here we keep it snappy for drag-and-drop).
+ * Data for the patient kanban (read-only since F5 of estado-automatico-do-paciente: the board does not move
+ * cards — status is set by the automatic flow and by the patient-sheet actions).
  *
  * NOTE: grouping depends on each row carrying `status`. See listPatientsForKanban. Agrupa por
  * `patients.status`; admisión junta os 3 do funil.
  */
 export function usePatientKanban(country?: string) {
-  const [groups, setGroupsState] = useState<PatientKanbanGroups>(emptyGroups);
+  const [groups, setGroups] = useState<PatientKanbanGroups>(emptyGroups);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // DX-8.9: estado do agregado do subcard, carregado em paralelo com a listagem. `undefined` até
@@ -99,12 +70,6 @@ export function usePatientKanban(country?: string) {
   // o aviso da página (P13) — nunca silêncio nesse caso.
   const [servicesStatus, setServicesStatus] = useState<'ok' | 'forbidden' | 'error' | undefined>(undefined);
   const isFetchingRef = useRef(false);
-  // O agrupamento CORRENTE, síncrono: o rollback do movimento otimista precisa do estado
-  // anterior no instante do clique — o updater do setState roda depois, batched, e um PUT que
-  // rejeita no mesmo tick chegava antes dele (medido: o card sumia em vez de voltar).
-  const groupsRef = useRef<PatientKanbanGroups>(groups);
-  const setGroups = useCallback((next: PatientKanbanGroups) => { groupsRef.current = next; setGroupsState(next); }, []);
-
   const fetchBoard = useCallback(async () => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
@@ -141,109 +106,9 @@ export function usePatientKanban(country?: string) {
       setIsLoading(false);
       isFetchingRef.current = false;
     }
-  }, [country, setGroups]);
+  }, [country]);
 
   useEffect(() => { fetchBoard(); }, [fetchBoard]);
 
-  /**
-   * Move a patient card to another column. Optimistic: the card moves
-   * immediately; on failure the previous grouping is restored and the error is
-   * returned to the caller (so it can toast).
-   */
-  const moveStatus = useCallback(async (
-    patientId: string,
-    targetStatus: PatientKanbanStatus,
-    /**
-     * Motivo de SAÍDA de SUSPENDED (decisão do Gabriel 29/09/2026, 2ª rodada — migration 486):
-     * o board (`PatientKanbanBoard`) só chama `moveStatus` com isto preenchido DEPOIS que o
-     * `SuspensionExitReasonDialog` confirma — o board nunca chama `moveStatus` direto quando a
-     * origem é SUSPENDED, então este parâmetro chega aqui já validado pela UI (o servidor
-     * confere de novo, 422 se faltar).
-     */
-    opts?: { suspensionExitReason?: string },
-  ): Promise<PatientKanbanMoveError | null> => {
-    // find the card in any column
-    let card: PatientKanbanItem | undefined;
-    for (const key of PATIENT_KANBAN_STATUSES) {
-      const found = groupsRef.current[key].find((c) => c.id === patientId);
-      if (found) { card = found; break; }
-    }
-
-    // Spec 018, PR-6, ADR-5: sair de ADMISSION direto para ACTIVE ("Activo") não é mais um alvo
-    // de drop — a 428 tirou funil→ACTIVE do catálogo. O card NÃO se move (sem otimismo para
-    // desfazer) e o chamador toasta o caminho novo. Mover DENTRO da coluna ADMISSION (o funil
-    // antigo) continua livre, exatamente como antes.
-    if (targetStatus === 'ACTIVE' && card && columnOf(card.status) === 'ADMISSION') {
-      return { code: KANBAN_ACTIVATION_MOVED_TO_SERVICE };
-    }
-
-    // Spec 051: UMA leitura por arrasto, no drop, da MESMA lista do servidor que alimenta o select da
-    // ficha (GET status-options). O card ainda não saiu da origem — recusar aqui não tem otimismo a
-    // desfazer, e o PUT nem sai. O `KanbanBoardShell` não expõe `onDragStart`; ler no início do arrasto
-    // exigiria mexer no shell compartilhado com o funil de vagas.
-    let offered: PatientStatusOption[];
-    try {
-      offered = (await AdminApiService.getPatientStatusOptions(patientId, 'kanban')).options;
-    } catch (err) {
-      // 403 da lista = a conta não pode mexer no estado: a mesma frase de "sem permissão" do 403 do PUT.
-      if (err instanceof PatientApiError && err.status === 403) return { code: SERVER_STATUS_REFUSAL.NOT_PERMITTED, to: targetStatus };
-      return { code: STATUS_OPTIONS_UNAVAILABLE, to: targetStatus };
-    }
-    const destino = offered.find((o) => o.status === targetStatus);
-    if (!destino) return { code: STATUS_NOT_OFFERED, to: targetStatus };
-    // D489/D530: prestador com alocação viva — o PUT recusaria com 422; a lista já diz, poupa a ida e volta.
-    if (destino.blockedBy?.includes(ACTIVE_ALLOCATION_BLOCK)) return { code: SERVER_STATUS_REFUSAL.LOCKED_BY_ALLOCATION, to: targetStatus };
-    // Lista diz que falta dado do paciente: o PUT recusaria com o mesmo 422 — poupa a ida e volta.
-    if (destino.blockedBy?.length) return { code: SERVER_STATUS_REFUSAL.NOT_READY, missing: destino.blockedBy as PatientCompletenessCode[], to: targetStatus };
-
-    // O board é lido DEPOIS do `await` da lista: outro arrasto ou um refetch pode ter mudado o board nesse
-    // intervalo, e montar o próximo estado sobre a foto de antes devolveria o card dele à coluna antiga.
-    // `original` = o card como está agora (coluna e posição de origem), só dele se reverte em erro.
-    let original: { card: PatientKanbanItem; key: PatientKanbanStatus; index: number } | undefined;
-    const current = groupsRef.current;
-    for (const key of PATIENT_KANBAN_STATUSES) {
-      const index = current[key].findIndex((c) => c.id === patientId);
-      if (index >= 0) { original = { card: current[key][index], key, index }; break; }
-    }
-    if (original) {
-      const next = emptyGroups();
-      for (const key of PATIENT_KANBAN_STATUSES) {
-        next[key] = current[key].filter((c) => c.id !== patientId);
-      }
-      next[targetStatus] = [{ ...original.card, status: targetStatus }, ...next[targetStatus]];
-      setGroups(next);
-    }
-
-    try {
-      await AdminApiService.updatePatientStatus(patientId, {
-        status: targetStatus,
-        changeSource: 'kanban',
-        ...(opts?.suspensionExitReason ? { suspensionExitReason: opts.suspensionExitReason } : {}),
-      });
-      return null;
-    } catch (err) {
-      if (original) {
-        // Reverte SÓ o card movido, sobre o board de agora (não sobre a foto antiga, que apagaria outro movimento).
-        const now = groupsRef.current;
-        const back = emptyGroups();
-        for (const key of PATIENT_KANBAN_STATUSES) {
-          back[key] = now[key].filter((c) => c.id !== patientId);
-        }
-        back[original.key].splice(Math.min(original.index, back[original.key].length), 0, original.card);
-        setGroups(back);
-      }
-      // Spec 014 (US-D5, lex D5.1): devolve o CÓDIGO de enum quando o backend manda um
-      // (`PatientApiError.code` — PATIENT_STATUS_TRANSITION_NOT_ALLOWED/ON_HOLD_REASON_REQUIRED),
-      // nunca o texto cru — a página traduz o código, nunca ecoa `err.message` no toast. Erro
-      // sem código (rede, 500 genérico) cai na mensagem, que é o único dado que existe ali.
-      if (err instanceof Error) {
-        // `code`/`missing`/`to` pela MESMA leitura da ficha (`refusalFromError`): `missing` só com códigos do checklist.
-        const { code, missing } = refusalFromError(err as { code?: string; details?: unknown }, targetStatus);
-        return { code: code ?? err.message, missing, to: targetStatus };
-      }
-      return { code: 'Failed to move patient', to: targetStatus };
-    }
-  }, [setGroups]);
-
-  return { groups, isLoading, error, servicesStatus, refetch: fetchBoard, moveStatus };
+  return { groups, isLoading, error, servicesStatus, refetch: fetchBoard };
 }

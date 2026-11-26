@@ -2,9 +2,10 @@
  * patient-status-trava-alocacao-d489.e2e.test.ts @integration — D489/D530 (cadeia, 058 Parte B).
  *
  * App REAL (rotas da ficha, engine de permissão ligado) + Postgres real, sem mock: toda troca MANUAL de estado do paciente
- * (`PUT /patients/:id/status`, origem admin_panel ou kanban) é RECUSADA com 422 PATIENT_STATUS_LOCKED_BY_ALLOCATION quando o paciente
+ * (`PUT /patients/:id/status` com origem admin_panel para um destino humano, ou `POST /patients/:id/status-actions`) é RECUSADA com
+ * 422 PATIENT_STATUS_LOCKED_BY_ALLOCATION quando o paciente
  * tem alocação VIVA no itinerário (`ACTIVE` e `valid_to` nulo ou >= hoje do país — inclui a que começa no futuro). A prova é o que
- * NÃO mudou (estado e trilha), nunca só o 422. Itinerário montado SEM prestador não bloqueia; a derivação automática (`system`) segue.
+ * NÃO mudou (estado e trilha), nunca só o 422. F5: a origem `kanban` não troca mais estado nenhum (422 PATIENT_STATUS_NOT_MANUAL, antes da trava). Itinerário montado SEM prestador não bloqueia; a derivação automática (`system`) segue.
  */
 import { Pool } from 'pg';
 import type { AppDeFamilia } from './helpers/permissionFamilyHarness';
@@ -67,12 +68,19 @@ describe('D489/D530 — troca manual de estado com alocação viva no itinerári
     expect(antes.status).toBe('ACTIVE');
   });
 
-  it('o arrasto do Kanban (changeSource kanban) é recusado do mesmo jeito', async () => {
+  it('F5: o arrasto do Kanban (changeSource kanban) é NOT_MANUAL — recusado ANTES da trava, com alocação viva ou não; estado e trilha não mudam', async () => {
     const c = await comAlocacao(-3, null);
+    const antes = await estado(c.patientId);
     const r = await chamar(app, 'PUT', `/api/admin/patients/${c.patientId}/status`, ATOR.uid, { ...emEspera, changeSource: 'kanban' });
     expect(r.status).toBe(422);
-    expect(r.body.code).toBe('PATIENT_STATUS_LOCKED_BY_ALLOCATION');
-    expect((await estado(c.patientId)).status).toBe('ACTIVE');
+    expect(r.body).toMatchObject({ code: 'PATIENT_STATUS_NOT_MANUAL', details: { to: 'ON_HOLD', changeSource: 'kanban' } });
+    expect(await estado(c.patientId)).toEqual(antes);
+
+    const livre = await criarCenario(pool, { faixas: 2 }); // sem alocação: a trava não explica a recusa
+    const r2 = await chamar(app, 'PUT', `/api/admin/patients/${livre.patientId}/status`, ATOR.uid, { ...emEspera, changeSource: 'kanban' });
+    expect(r2.status).toBe(422);
+    expect(r2.body.code).toBe('PATIENT_STATUS_NOT_MANUAL');
+    expect((await estado(livre.patientId)).status).toBe('ACTIVE');
   });
 
   it('alocação que COMEÇA no futuro já é viva → 422', async () => {
@@ -82,13 +90,23 @@ describe('D489/D530 — troca manual de estado com alocação viva no itinerári
     expect(r.body.code).toBe('PATIENT_STATUS_LOCKED_BY_ALLOCATION');
   });
 
-  it('GET status-options com alocação viva: TODO destino sai com blockedBy [ACTIVE_ALLOCATION]', async () => {
+  it('POST status-actions com alocação viva: as 4 ações do painel são recusadas com LOCKED_BY_ALLOCATION; estado e trilha não mudam', async () => {
+    const c = await comAlocacao(-3, null);
+    const antes = await estado(c.patientId);
+    for (const corpo of [{ action: 'pausar', onHoldReason: 'SCHOOL' }, { action: 'suspender' }, { action: 'dar_alta' }, { action: 'dar_baja' }]) {
+      const r = await chamar(app, 'POST', `/api/admin/patients/${c.patientId}/status-actions`, ATOR.uid, corpo);
+      expect(r.status).toBe(422);
+      expect(r.body).toMatchObject({ success: false, code: 'PATIENT_STATUS_LOCKED_BY_ALLOCATION', details: { allocations: 1 } });
+    }
+    expect(await estado(c.patientId)).toEqual(antes);
+  });
+
+  it('a rota GET status-options foi REMOVIDA (404) — as ações novas vivem em status-actions', async () => {
     const c = await comAlocacao(-3, null);
     const r = await chamar(app, 'GET', `/api/admin/patients/${c.patientId}/status-options?changeSource=admin_panel`, ATOR.uid);
-    expect(r.status).toBe(200);
-    const opts = r.body.data.options as Array<{ blockedBy?: string[] }>;
-    expect(opts.length).toBeGreaterThan(0);
-    expect(opts.every((o) => JSON.stringify(o.blockedBy) === '["ACTIVE_ALLOCATION"]')).toBe(true);
+    expect(r.status).toBe(404);
+    const ok = await chamar(app, 'GET', `/api/admin/patients/${c.patientId}/status-actions`, ATOR.uid);
+    expect(ok.status).toBe(200); // controle positivo: a rota nova existe para o mesmo ator
   });
 
   it('SEM alocação (só o itinerário montado: serviço, vaga e faixas, nenhum prestador) → 200 e o estado muda', async () => {

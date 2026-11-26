@@ -21,15 +21,8 @@ import {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-const CANONICAL_VALUES = [
-  'SEARCHING',
-  'SEARCHING_REPLACEMENT',
-  'RAPID_RESPONSE',
-  'PENDING_ACTIVATION',
-  'ACTIVE',
-  'SUSPENDED',
-  'CLOSED',
-] as const;
+// D3/E5: o wizard grava só o ciclo de vida — os 4 de STATUS_GRAVAVEIS (a lista é conferida contra o back por contrato).
+const CANONICAL_VALUES = ['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED'] as const;
 
 const CANONICAL = new Set<string>(CANONICAL_VALUES);
 
@@ -60,19 +53,11 @@ const minimalFormData: VacancyFormData = {
 // ---------------------------------------------------------------------------
 
 describe('STATUS_OPTIONS — canonical values contract', () => {
-  it('contains only the 7 canonical DB values (no legacy values allowed)', () => {
-    expect(STATUS_OPTIONS).toHaveLength(7);
-    expect(STATUS_OPTIONS).toEqual(
-      expect.arrayContaining([
-        'SEARCHING',
-        'SEARCHING_REPLACEMENT',
-        'RAPID_RESPONSE',
-        'PENDING_ACTIVATION',
-        'ACTIVE',
-        'SUSPENDED',
-        'CLOSED',
-      ]),
-    );
+  it('contém só os 4 valores gravaveis do ciclo de vida (nenhum valor que finja ser estado do paciente)', () => {
+    expect([...STATUS_OPTIONS]).toEqual(['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED']);
+    for (const fora of ['SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'PENDING_ACTIVATION', 'ACTIVE']) {
+      expect(STATUS_OPTIONS as readonly string[]).not.toContain(fora);
+    }
   });
 
   it('does not contain any legacy value that violates job_postings_status_check', () => {
@@ -117,6 +102,13 @@ describe('buildVacancyPayload — status in output is canonical', () => {
       const data: VacancyFormData = { ...minimalFormData, status: value };
       const result = buildVacancyPayload(data, null);
       expect(result.status).toBe(value);
+    }
+  });
+
+  it('F4: status de sistema (a vaga do foguete nasce PENDING_ACTIVATION) não vai no payload — o PUT o recusaria com 400', () => {
+    for (const legado of ['PENDING_ACTIVATION', 'ACTIVE', 'RAPID_RESPONSE', 'SEARCHING_REPLACEMENT']) {
+      const result = buildVacancyPayload({ ...minimalFormData, status: legado }, null);
+      expect(result.status).toBeUndefined();
     }
   });
 });

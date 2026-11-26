@@ -140,7 +140,7 @@ describe('Vacancy Audit Log — Onda B', () => {
     beforeAll(async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { patient_id: patientId, case_number: 88802, status: 'PENDING_ACTIVATION' },
+        { patient_id: patientId, case_number: 88802 },
         auth(),
       );
       expect(res.status).toBe(201);
@@ -190,7 +190,7 @@ describe('Vacancy Audit Log — Onda B', () => {
     beforeAll(async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { patient_id: patientId, case_number: 88803, status: 'PENDING_ACTIVATION' },
+        { patient_id: patientId, case_number: 88803 },
         auth(),
       );
       expect(res.status).toBe(201);

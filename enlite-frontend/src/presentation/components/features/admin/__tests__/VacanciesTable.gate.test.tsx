@@ -11,7 +11,7 @@ vi.mock('react-i18next', () => ({
 const draftRow: VacancyRow = {
   id: 'v1',
   caseNumber: 1, caseOrdinal: 1,
-  status: 'Esperando Ativação',
+  lifecycle: 'aberta',
   diasAberto: '01',
   stageCounts: { INVITED: 1 },
   postulados: '1',

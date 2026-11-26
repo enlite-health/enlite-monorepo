@@ -129,7 +129,6 @@ describe('Vacancy Audit Log — Cobertura por Campo (20 campos)', () => {
       {
         patient_id: primaryPatientId,
         case_number: caseNumber,
-        status: 'PENDING_ACTIVATION',
         ...extraBody,
       },
       auth(),

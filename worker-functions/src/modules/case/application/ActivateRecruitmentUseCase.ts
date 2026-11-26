@@ -1,6 +1,4 @@
 import * as functions from "firebase-functions";
-import type { PoolClient } from "pg";
-import { inPatientTransaction } from "./patientTransaction";
 import {
   buildInsertQuery,
   buildInsertParams,
@@ -8,26 +6,30 @@ import {
   type SourceLockedField,
 } from "@modules/matching";
 import {
-  auditVacancyCreated,
-  type HumanActor,
-} from "../../matching/interfaces/controllers/vacancyCrudAuditHelpers";
-import {
   computeRecruitmentReadiness,
   type RECRUITMENT_BLOCKING_CODES,
 } from "../domain/PatientCompleteness";
 import { ADMISSION_FUNNEL_STATUSES } from "../domain/enums/PatientStatus";
-import { movePatientStatus, PatientStatusNotReadyError } from "./PatientStatusWriter";
+import type { MovePatientStatus } from "./PatientStatusWriter";
+import type {
+  RecruitmentActor,
+  RecruitmentContextPort,
+  StatusTx,
+  TransactionRunnerPort,
+  VacancyAuditPort,
+  VacancyLinkPort,
+} from "./ports/patientStatusPorts";
 import { formatCaseTitle } from "@shared/utils/caseNumberFormat";
-import { LinkExistingVacancyRepository } from "../infrastructure/LinkExistingVacancyRepository";
 import { linkableOpenVacancies } from "../domain/VacancyLinkEligibility";
-import { JobPostingAuditRepository } from "../../matching/infrastructure/JobPostingAuditRepository";
 import {
-  lockRecruitmentContext,
   readinessInputFromContext,
   PatientNotFoundForRecruitmentError,
   ServiceNotFoundForRecruitmentError,
   ServiceAlreadyRecruitingError,
 } from "./recruitmentReadinessContext";
+
+/** Autor da ação (o `HumanActor` do controller satisfaz este formato; declarado em ports para o use case não importar `interfaces/`). */
+export type HumanActor = RecruitmentActor;
 
 export {
   PatientNotFoundForRecruitmentError,
@@ -77,11 +79,15 @@ export interface ActivateRecruitmentResult {
   vacancyId: string;
   patientStatus: string;
   statusChanged: boolean;
-  /**
-   * D469 — aditivo e opcional: presente só quando o paciente estava no funil mas NÃO foi movido
-   * por falta de completude (a vaga nasceu mesmo assim). Só CÓDIGOS do checklist, nunca texto.
-   */
-  patientNotMoved?: { missing: string[] };
+}
+
+/** Tudo que o foguete usa do mundo, por port (D7): transação, contexto travado, vínculo, trilha da vaga e o escritor de estado. */
+export interface ActivateRecruitmentDeps {
+  transaction: TransactionRunnerPort;
+  context: RecruitmentContextPort;
+  links: VacancyLinkPort;
+  audit: VacancyAuditPort;
+  moveStatus: MovePatientStatus;
 }
 
 /**
@@ -95,23 +101,20 @@ export interface ActivateRecruitmentResult {
  * Efeitos em UMA transação: lock de linha do paciente e do serviço (`lockRecruitmentContext`) (trava a mesma corrida
  * que o antecessor travava); 409 `LinkableVacancyExistsError` se o paciente já tem vaga vinculável (sem serviço); gate `RECRUITMENT_BLOCKING_CODES`; 409 se já há vaga viva do
  * serviço; 1 INSERT em `job_postings` via `buildInsertQuery/buildInsertParams` (mesmo caminho de
- * `POST /api/admin/vacancies` — nunca SQL duplicado). D469 (02/10/2026, revê a D434): se o
- * paciente está no funil de admissão (SOLICITANTE/ADMISSION/PENDING_ADMISSION), o foguete o move
- * para SEARCHING por `movePatientStatus` (catálogo + trilha `change_source = 'recruitment_activation'`),
- * NA MESMA transação (`txClient` — sem 2ª transação, sem deadlock no lock de linha). Fora do funil
- * (já ACTIVE, ON_HOLD, etc.) o status NÃO muda. Se a pré-condição de completude do SEARCHING
- * (horário de TODO serviço ativo) falhar, a vaga é criada mesmo assim e o paciente fica onde está
- * (`statusChanged: false`). O envio à Talentum (`VacancyLaunchHook`) continua movendo quem sobrar.
+ * `POST /api/admin/vacancies` — nunca SQL duplicado). D469 (02/10/2026, revê a D434) + D1/D2 (estado-automatico-do-paciente):
+ * o foguete é o ÚNICO gatilho de Búsqueda. Se o paciente está no funil de admissão
+ * (SOLICITANTE/ADMISSION/PENDING_ADMISSION), ele o move para SEARCHING pelo escritor de estado (catálogo + trilha
+ * `change_source = 'recruitment_activation'`), NA MESMA transação, medindo a completude do SERVIÇO clicado
+ * (`escopo: { kind: 'servico', serviceId }`) — o gate acima já mediu o mesmo serviço, então a recusa do escritor é
+ * inalcançável aqui e não há mais "vaga criada, paciente parado". Fora do funil (já ACTIVE, ON_HOLD, etc.) o status NÃO muda.
+ * O envio à Talentum NÃO move o paciente (o gancho do lançamento deixou de existir).
  *
  * NÃO emite `vacancy.created` — a vaga nasce rascunho (`is_draft` default true, `status`
  * 'PENDING_ACTIVATION') para a equipe revisar e publicar (fluxo existente), igual ao
  * antecessor.
  */
 export class ActivateRecruitmentUseCase {
-  constructor(
-    private readonly linkRepo: LinkExistingVacancyRepository = new LinkExistingVacancyRepository(),
-    private readonly auditRepo: Pick<JobPostingAuditRepository, "logFieldChangesSafe"> = new JobPostingAuditRepository(),
-  ) {}
+  constructor(private readonly deps: ActivateRecruitmentDeps) {}
 
   async execute(
     patientId: string,
@@ -121,7 +124,7 @@ export class ActivateRecruitmentUseCase {
   ): Promise<ActivateRecruitmentResult> {
     const startMs = Date.now();
     try {
-      const result = await inPatientTransaction((client) =>
+      const result = await this.deps.transaction.run((client) =>
         this.runInTransaction(client, patientId, serviceId, actor, opts),
       );
       functions.logger.info("activate_recruitment.completed", {
@@ -152,19 +155,19 @@ export class ActivateRecruitmentUseCase {
   }
 
   private async runInTransaction(
-    client: PoolClient,
+    client: StatusTx,
     patientId: string,
     serviceId: string,
     actor: HumanActor | undefined,
     opts: ActivateRecruitmentOptions, // sempre vem de `execute` (que tem o default `{}`): sem default aqui, que seria ramo morto
   ): Promise<ActivateRecruitmentResult> {
-    const { patient, service } = await lockRecruitmentContext(client, patientId, serviceId);
+    const { patient, service } = await this.deps.context.lock(client, patientId, serviceId);
     const { status, case_number } = patient;
 
     // Um serviço = UMA vaga: se o paciente já tem vaga ABERTA sem serviço (legada), ela se VINCULA (spec 079), não se duplica.
     // Mesma transação e mesma régua do vínculo (`linkableOpenVacancies` = `linkableVacancies` sem as encerradas, que não
     // contam para o foguete); antes do portão e de qualquer escrita. `createNewVacancy` (escolha explícita) pula a trava.
-    const linkable = linkableOpenVacancies(await this.linkRepo.listPatientVacanciesForLink(client, patientId), patientId);
+    const linkable = linkableOpenVacancies(await this.deps.links.listPatientVacanciesForLink(client, patientId), patientId);
     if (linkable.length > 0 && !opts.createNewVacancy) {
       throw new LinkableVacancyExistsError(patientId, serviceId, linkable.map((v) => v.id));
     }
@@ -255,36 +258,26 @@ export class ActivateRecruitmentUseCase {
       actorType: "SYSTEM",
       actorLabel: "activate_recruitment",
     };
-    await auditVacancyCreated(client, vacancyId, insRes.rows[0], auditActor);
+    await this.deps.audit.vacancyCreated(client, vacancyId, insRes.rows[0], auditActor);
     if (linkable.length > 0) {
       // Criação COM candidata aberta recusada pela pessoa ("Criar vaga nova"): fica na trilha da vaga criada (só ids).
-      await this.auditRepo.logFieldChangesSafe(client, {
-        jobPostingId: vacancyId,
-        fields: [{ field: "linkable_vacancies_declined", before: null, after: linkable.map((v) => v.id) }],
-        actorUserId: auditActor.actorUserId,
-        actorType: auditActor.actorType,
-        actorLabel: auditActor.actorLabel,
-        traceId: auditActor.traceId ?? null,
-      });
+      await this.deps.audit.linkableDeclined(client, vacancyId, linkable.map((v) => v.id), auditActor);
     }
 
     // D469 — o foguete volta a mover o paciente do funil para SEARCHING (revê DX-6.6/D434).
     if (!(ADMISSION_FUNNEL_STATUSES as readonly string[]).includes(status)) {
       return { vacancyId, patientStatus: status, statusChanged: false };
     }
-    try {
-      await movePatientStatus(
-        patientId,
-        "SEARCHING",
-        { changeSource: "recruitment_activation", actorUid: actor?.actorUserId ?? null },
-        client,
-      );
-    } catch (err) {
-      if (!(err instanceof PatientStatusNotReadyError)) throw err;
-      // Outro serviço ativo sem horário: a vaga já foi criada (rascunho) e fica; o paciente não move.
-      functions.logger.warn("activate_recruitment.patient_not_moved", { patientId, serviceId, missing: err.missing });
-      return { vacancyId, patientStatus: status, statusChanged: false, patientNotMoved: { missing: [...err.missing] } };
-    }
+    await this.deps.moveStatus(
+      patientId,
+      "SEARCHING",
+      {
+        changeSource: "recruitment_activation",
+        actorUid: actor?.actorUserId ?? null,
+        escopo: { kind: "servico", serviceId },
+      },
+      client,
+    );
     return { vacancyId, patientStatus: "SEARCHING", statusChanged: true };
   }
 }

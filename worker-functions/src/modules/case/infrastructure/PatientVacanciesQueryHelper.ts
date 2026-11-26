@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { VACANCY_CASE_NUMBER_SQL } from '@shared/sql/vacancyCaseNumberSql';
+import { cicloDeVidaSql, type CicloDeVida } from '@modules/matching/domain/vacancyLifecycle';
 
 /**
  * PatientVacancyRow — shape returned by GET /api/admin/patients/:id/vacancies.
@@ -20,6 +21,10 @@ export interface PatientVacancyRow {
   /** Serviço contratado ao qual a vaga está vinculada (null = sem vínculo). */
   contractedServiceId: string | null;
   createdAt: Date;
+  /** Ciclo de vida (tabela do dono em `matching/domain/vacancyLifecycle.ts`) — o front traduz pelo i18n. */
+  lifecycle: CicloDeVida | null;
+  /** `patients.status` por join na hora (D3). Sob o container `patient`: o controller redige sem `patient:read`. */
+  patientStatus?: string | null;
 }
 
 const PATIENT_VACANCIES_SQL = `
@@ -32,7 +37,9 @@ const PATIENT_VACANCIES_SQL = `
     jp.status,
     jp.is_draft      AS "isDraft",
     jp.contracted_service_id AS "contractedServiceId",
-    jp.created_at    AS "createdAt"
+    jp.created_at    AS "createdAt",
+    ${cicloDeVidaSql('jp')} AS "lifecycle",
+    p.status         AS "patientStatus"
   FROM job_postings jp
   LEFT JOIN patients p ON p.id = jp.patient_id
   WHERE jp.patient_id = $1
@@ -59,6 +66,8 @@ export async function fetchPatientVacancies(
     isDraft: boolean;
     contractedServiceId: string | null;
     createdAt: Date;
+    lifecycle: CicloDeVida | null;
+    patientStatus: string | null;
   }>(PATIENT_VACANCIES_SQL, [patientId]);
 
   return result.rows.map((row) => ({
@@ -71,5 +80,7 @@ export async function fetchPatientVacancies(
     isDraft: row.isDraft === true,
     contractedServiceId: row.contractedServiceId ?? null,
     createdAt: row.createdAt,
+    lifecycle: row.lifecycle ?? null,
+    ...(row.patientStatus != null ? { patientStatus: row.patientStatus } : {}),
   }));
 }

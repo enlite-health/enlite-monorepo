@@ -184,8 +184,10 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
     // manter, `service_type` é array de profissão e `city_locality` é
     // operacional (spec 058: `insurance_verified` saiu do SELECT da vaga). Nenhuma é texto clínico livre.
     expect(colunasDePacientes()).toEqual(
+      // `status` entrou na estado-automatico-do-paciente F2 (D3): estado OPERACIONAL do paciente (enum de funil, não clínico),
+      // sob o container `patient`. `on_hold_note` (clínico) continua FORA — o conjunto exato abaixo o reprovaria.
       new Set(['first_name', 'last_name', 'zone_neighborhood', 'dependency_level', 'id',
-               'city_locality', 'service_type']),
+               'city_locality', 'service_type', 'status']),
     );
   });
 
@@ -214,6 +216,6 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
     // artefato do JOIN que `colunasDePacientes()` acima também inclui), não de uma coluna
     // projetada nova. Fora ele, a lista de hoje não precisa de mais nada do paciente além das
     // 3 usadas para exibir/buscar por nome e zona + `case_number` (spec 046 F2: o número do caso vem do paciente).
-    expect(colunasDaLista).toEqual(new Set(['zone_neighborhood', 'first_name', 'last_name', 'id', 'case_number']));
+    expect(colunasDaLista).toEqual(new Set(['zone_neighborhood', 'first_name', 'last_name', 'id', 'case_number', 'status']));
   });
 });

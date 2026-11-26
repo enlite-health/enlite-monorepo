@@ -7,7 +7,7 @@
  * O estado de destino e a lista "Falta: …" são traduzidos aqui, com as chaves que a tela já usa
  * (`admin.patients.statusOptions.*` e `admin.patients.detail.completeness.items.*`).
  */
-import { STATUS_NOT_OFFERED, STATUS_OPTIONS_UNAVAILABLE, SERVER_STATUS_REFUSAL as CODE, type StatusRefusal } from '@domain/entities/PatientStatusRefusal';
+import { SERVER_STATUS_REFUSAL as CODE, type StatusRefusal } from '@domain/entities/PatientStatusRefusal';
 import type { PatientCompletenessCode } from '@domain/entities/PatientCompleteness';
 
 type Translate = (key: string, opts?: Record<string, unknown>) => string;
@@ -43,10 +43,10 @@ export function friendlyStatusMessage(t: Translate, r: StatusRefusal): string | 
     case CODE.SUSPENSION_EXIT_REASON_REQUIRED:
       return f('suspensionExitReasonRequired');
     case CODE.TRANSITION_NOT_ALLOWED:
-    case STATUS_NOT_OFFERED:
+    case CODE.ACTION_NOT_AVAILABLE:
       return f('notAvailable');
-    case STATUS_OPTIONS_UNAVAILABLE:
-      return f('optionsUnavailable');
+    case CODE.NOT_MANUAL:
+      return f('notManual');
     default:
       return null;
   }

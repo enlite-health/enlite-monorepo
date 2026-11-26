@@ -24,6 +24,7 @@ import { AlertTriangle, ArrowUpRight } from 'lucide-react';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
+import { VacancyLifecycleBadge } from '@presentation/components/atoms/VacancyLifecycleBadge';
 import type { VacancyByAddressSummary } from '@domain/entities/VacancyDraft';
 
 export interface AddressHasVacancyDialogProps {
@@ -93,10 +94,6 @@ export function AddressHasVacancyDialog({
         {/* Vacancy list */}
         <ul className="flex flex-col gap-3 mb-5" role="list">
           {vacancies.map((vac) => {
-            const statusLabel = t(
-              `admin.vacancyDetail.vacancyForm.statusOptions.${vac.status}`,
-              { defaultValue: vac.status },
-            );
             return (
               <li
                 key={vac.id}
@@ -107,10 +104,11 @@ export function AddressHasVacancyDialog({
                   <Text size="sm" weight="semibold" color="primary">
                     {vac.title}
                   </Text>
-                  <Text size="xs" color="muted">
-                    {statusLabel}
-                    {vac.is_draft ? ` · ${k('draftBadge')}` : ''}
-                  </Text>
+                  <div className="flex items-center gap-2">
+                    {/* Ciclo de vida calculado pelo back (dono único); nunca o valor cru de `status`. */}
+                    <VacancyLifecycleBadge lifecycle={vac.lifecycle} />
+                    {vac.is_draft && <Text size="xs" color="muted">{k('draftBadge')}</Text>}
+                  </div>
                 </div>
                 <Button
                   variant="outline"

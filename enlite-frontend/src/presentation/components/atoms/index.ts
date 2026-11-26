@@ -16,7 +16,8 @@ export type { MetricAccent } from './MetricCard';
 export { PageContainer } from './PageContainer';
 export { PercentageDisplay } from './PercentageDisplay';
 export { ProgressBar } from './ProgressBar';
-export { VacancyStatusBadge } from './VacancyStatusBadge';
+export { VacancyLifecycleBadge } from './VacancyLifecycleBadge';
+export { PatientStatusPill } from './PatientStatusPill';
 export {
   Table,
   TableHeader,

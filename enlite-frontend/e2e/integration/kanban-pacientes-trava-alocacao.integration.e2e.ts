@@ -6,10 +6,10 @@
  * A massa é a REAL da cadeia: paciente derivável + itinerário montado + alocação pela API (`derivacao-e2e-helper`).
  * Nome do ARQUIVO: casa o termo `kanban-pacientes` do `grep:` do job padrão (`pr-gate.yml:~203`, workflow intocado).
  *
- * Regra (D489/D530): toda troca MANUAL de estado é recusada, com aviso, quando o paciente tem prestador com ALOCAÇÃO VIVA no itinerário.
- *   1. feliz — ficha de paciente com alocação: todo destino DESABILITADO, o aviso visível; teclado não troca o estado (lido da tela e do banco);
- *   2. alt1 — itinerário montado SEM prestador: nenhuma trava, a troca normal grava;
- *   3. alt2 — Kanban: arrastar o card de paciente com alocação é recusado com o aviso; o card fica na coluna e o banco não muda.
+ * Regra (D489/D530), na tela do estado-automatico-do-paciente (sem select de estado, Kanban sem arrasto — só as AÇÕES da ficha mudam estado humano):
+ *   1. feliz — ficha de paciente com alocação: toda ação desabilitada, o aviso visível, nenhum select; o estado e a trilha não mudam (lido da tela e do banco);
+ *   2. alt1 — itinerário montado SEM prestador: nenhuma trava, "Pausar" fica habilitada e a ação grava (ON_HOLD);
+ *   3. alt2 — Kanban: o card de paciente com alocação não é arrastável; o gesto de arrastar não manda escrita, o card fica na coluna e o banco não muda.
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { LANCAMENTO_VIEWPORT_ES_AR } from '../helpers/lancamento-e2e-helper';
@@ -18,7 +18,7 @@ import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import type { MockUser } from '../helpers/abac-stack-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
-import { escolherNoComboPorValor } from '../helpers/combobox';
+import { escolherNoCombo } from '../helpers/combobox';
 import {
   seedDerivablePatient, selectedWorker, allocateWorker, derivacaoToken, type DerivableSeed, type DerivableServiceSpec,
 } from '../helpers/derivacao-e2e-helper';
@@ -57,62 +57,63 @@ test.describe('D489/D530 — estado travado por alocação viva no itinerário @
     }
   }
 
-  test('feliz: ficha com prestador alocado — todo destino desabilitado, aviso visível, o estado não muda', async ({ page, request }) => {
+  test('feliz: ficha com prestador alocado — toda ação desabilitada, aviso visível, sem select, o estado não muda', async ({ page, request }) => {
     const seed = await massa(request, true);
     try {
       expect(statusDb(seed.patientId)).toBe('REPLACEMENT'); // a derivação (automática) NÃO foi afetada pela trava
+      const trilhaAntes = trilhaDb(seed.patientId);
       await loginComoStaffMock(page, STAFF, 'E2E D489');
       await page.goto(`/admin/patients/${seed.patientId}`);
 
-      const select = page.getByTestId('patient-status-select');
-      await expect(select).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('patient-status-locked-notice')).toHaveText(AVISO);
+      await expect(page.getByTestId('patient-status-actions')).toBeVisible({ timeout: 30_000 }); // a lista vem do SERVIDOR
+      await expect(page.getByTestId('patient-status-actions-locked-notice')).toHaveText(AVISO);
+      await expect(page.getByTestId('patient-status-select')).toHaveCount(0);
 
-      const destinos = select.locator('option:not([value="REPLACEMENT"])');
-      expect(await destinos.count()).toBeGreaterThan(0);
-      for (let i = 0; i < await destinos.count(); i++) await expect(destinos.nth(i)).toBeDisabled();
+      const botoes = page.getByTestId('patient-status-actions').getByRole('button');
+      expect(await botoes.count()).toBeGreaterThan(0);
+      for (let i = 0; i < await botoes.count(); i++) await expect(botoes.nth(i)).toBeDisabled();
 
-      // Teclado: nenhum destino é alcançável (as opções desabilitadas são puladas) e "Cambiar" continua desabilitado.
-      await select.focus();
-      await page.keyboard.press('ArrowDown');
-      await page.keyboard.press('ArrowDown');
-      await expect(select).toHaveValue('REPLACEMENT');
-      await expect(page.getByTestId('patient-status-save')).toBeDisabled();
-
+      await expect(page.getByTestId('patient-status-badge')).toContainText('Reemplazo'); // lido da tela
       expect(statusDb(seed.patientId)).toBe('REPLACEMENT');
+      expect(trilhaDb(seed.patientId)).toBe(trilhaAntes);
     } finally {
       seed.cleanup();
     }
   });
 
-  test('alt1: itinerário montado SEM prestador — sem aviso, destino habilitado, a troca normal grava', async ({ page, request }) => {
+  test('alt1: itinerário montado SEM prestador — sem aviso, "Pausar" habilitada, a ação grava', async ({ page, request }) => {
     const seed = await massa(request, false);
     try {
       await loginComoStaffMock(page, STAFF, 'E2E D489');
       await page.goto(`/admin/patients/${seed.patientId}`);
 
-      const select = page.getByTestId('patient-status-select');
-      await expect(select).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('patient-status-locked-notice')).toHaveCount(0);
-      await expect(select.locator('option[value="ON_HOLD"]')).toBeEnabled();
+      await expect(page.getByTestId('patient-status-actions')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('patient-status-actions-locked-notice')).toHaveCount(0);
+      const pausar = page.getByTestId('patient-status-action-pausar');
+      await expect(pausar).toBeEnabled();
 
-      await select.selectOption('ON_HOLD');
-      await escolherNoComboPorValor(page, page.getByTestId('patient-status-reason'), 'SCHOOL');
-      const save = page.getByTestId('patient-status-save');
-      await expect(save).toBeEnabled();
-      await save.click();
+      await pausar.click();
+      await escolherNoCombo(page, page.getByTestId('patient-status-action-reason'), 'Obra social'); // INSURER
+      const confirmar = page.getByTestId('patient-status-action-confirm');
+      await expect(confirmar).toBeEnabled();
+      await confirmar.click();
 
-      await expect(page.getByTestId('patient-status-error')).toHaveCount(0);
+      await expect(page.getByTestId('patient-status-action-error')).toHaveCount(0);
+      await expect(page.getByTestId('patient-status-badge')).toContainText('En espera', { timeout: 20_000 }); // lido da tela
       await expect.poll(() => statusDb(seed.patientId)).toBe('ON_HOLD');
     } finally {
       seed.cleanup();
     }
   });
 
-  test('alt2: Kanban — arrastar o card de paciente com prestador alocado é recusado com o aviso; nada muda', async ({ page, request }) => {
+  test('alt2: Kanban — o card de paciente com prestador alocado não é arrastável; arrastar não escreve e nada muda', async ({ page, request }) => {
     const seed = await massa(request, true);
     try {
       const trilhaAntes = trilhaDb(seed.patientId);
+      const escritas: string[] = [];
+      page.on('request', (r) => {
+        if (['PUT', 'POST', 'PATCH', 'DELETE'].includes(r.method()) && /\/api\/admin\/patients\//.test(r.url())) escritas.push(`${r.method()} ${r.url()}`);
+      });
       await loginComoStaffMock(page, STAFF, 'E2E D489 Kanban');
       await page.goto('/admin/patients/kanban');
       await expect(page.locator('[data-testid="patient-kanban-board"]')).toBeVisible({ timeout: 30_000 });
@@ -120,9 +121,11 @@ test.describe('D489/D530 — estado travado por alocação viva no itinerário @
       const card = page.locator(`[data-testid="patient-kanban-card-${seed.patientId}"]`);
       await expect(card).toBeVisible({ timeout: 30_000 });
       await card.scrollIntoViewIfNeeded();
+      await expect(page.getByTestId(`kanban-draggable-${seed.patientId}`)).toHaveCount(0);
+      await expect(page.getByTestId(`kanban-card-${seed.patientId}`)).not.toHaveAttribute('aria-roledescription', /.+/);
       await dndKitDrag(page, card, page.locator('[data-testid="kanban-column-SEARCHING"]'));
 
-      await expect(page.getByText(AVISO)).toBeVisible({ timeout: 8_000 });
+      expect(escritas, 'nenhuma escrita sai da página').toEqual([]);
       await expect(page.locator('[data-testid="kanban-column-REPLACEMENT"]').locator(`[data-testid="patient-kanban-card-${seed.patientId}"]`)).toBeVisible();
       expect(statusDb(seed.patientId)).toBe('REPLACEMENT');
       expect(trilhaDb(seed.patientId)).toBe(trilhaAntes);

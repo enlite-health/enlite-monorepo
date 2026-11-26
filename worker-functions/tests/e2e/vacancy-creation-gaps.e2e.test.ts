@@ -226,7 +226,6 @@ describe('Vacancy creation gaps — review 2026-05-27', () => {
         required_professions: ['AT'],
         providers_needed:    1,
         schedule:            [{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }],
-        status:              'PENDING_ACTIVATION',
       },
       auth(),
     );
@@ -266,7 +265,6 @@ describe('Vacancy creation gaps — review 2026-05-27', () => {
         required_professions: ['AT'],
         providers_needed:    1,
         schedule:            [{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }],
-        status:              'PENDING_ACTIVATION',
       },
       auth(),
     );
@@ -300,7 +298,6 @@ describe('Vacancy creation gaps — review 2026-05-27', () => {
         required_professions: ['AT'],
         providers_needed:    1,
         schedule:            [{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }],
-        status:              'PENDING_ACTIVATION',
       },
       auth(),
     );
@@ -410,7 +407,6 @@ describe('Vacancy creation gaps — review 2026-05-27', () => {
         required_professions: ['AT'],
         providers_needed:    1,
         schedule:            [{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }],
-        status:              'PENDING_ACTIVATION',
       },
       auth(),
     );
@@ -446,7 +442,6 @@ describe('Vacancy creation gaps — review 2026-05-27', () => {
         required_professions: ['AT'],
         providers_needed:    1,
         schedule:            [{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }],
-        status:              'PENDING_ACTIVATION',
       },
       auth(),
     );
@@ -498,7 +493,6 @@ describe('Vacancy creation gaps — review 2026-05-27', () => {
         required_professions: ['AT'],
         providers_needed:    1,
         schedule:            [{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }],
-        status:              'PENDING_ACTIVATION',
       },
       auth(),
     );
@@ -517,7 +511,6 @@ describe('Vacancy creation gaps — review 2026-05-27', () => {
         required_professions: ['CAREGIVER'],
         providers_needed:    1,
         schedule:            [{ dayOfWeek: 2, startTime: '10:00', endTime: '18:00' }],
-        status:              'PENDING_ACTIVATION',
       },
       auth(),
     );

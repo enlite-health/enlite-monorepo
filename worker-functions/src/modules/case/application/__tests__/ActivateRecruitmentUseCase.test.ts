@@ -8,9 +8,6 @@
  * e sem virada de status.
  */
 const mockInPatientTransaction = jest.fn((fn: (client: unknown) => unknown) => fn({ marker: 'client' }));
-jest.mock('../patientTransaction', () => ({
-  inPatientTransaction: (fn: (client: unknown) => unknown) => mockInPatientTransaction(fn),
-}));
 
 const mockBuildInsertParams = jest.fn((p: Record<string, unknown>) => [p]);
 jest.mock('@modules/matching', () => {
@@ -20,11 +17,8 @@ jest.mock('@modules/matching', () => {
   };
 });
 
+// O escritor de estado entra por port (dublê): a prova do SQL dele está em `PatientStatusWriter.*.test.ts` e nos e2e.
 const mockMovePatientStatus = jest.fn(async (..._args: unknown[]) => ({}));
-jest.mock('../PatientStatusWriter', () => ({
-  ...jest.requireActual('../PatientStatusWriter'),
-  movePatientStatus: (...args: unknown[]) => mockMovePatientStatus(...args),
-}));
 
 jest.mock('firebase-functions', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -39,8 +33,19 @@ import {
   LinkableVacancyExistsError,
 } from '../ActivateRecruitmentUseCase';
 import { PatientStatusNotReadyError } from '../PatientStatusWriter';
+import { PgRecruitmentContext, PgVacancyAudit, PgVacancyLink } from '../../infrastructure/PgRecruitmentAdapters';
 import { esperaSqlSemDadoClinico } from '../../../matching/__tests__/guardaVazamentoClinico';
 import type { HumanActor } from '../../../matching/interfaces/controllers/vacancyCrudAuditHelpers';
+
+/** O foguete só conhece ports: transação e escritor são dublês; contexto, vínculo e trilha são os adapters Pg lendo pelo client de mentira. */
+const novoUseCase = () =>
+  new ActivateRecruitmentUseCase({
+    transaction: { run: (fn) => mockInPatientTransaction(fn as never) as never },
+    context: new PgRecruitmentContext(),
+    links: new PgVacancyLink(),
+    audit: new PgVacancyAudit(),
+    moveStatus: mockMovePatientStatus as never,
+  });
 
 const PATIENT_ID = 'p-1';
 const SERVICE_ID = 's-1';
@@ -159,7 +164,7 @@ function makeClient(opts: DispatchOpts) {
 function run(opts: DispatchOpts, actor?: HumanActor, execOpts?: { createNewVacancy?: boolean }) {
   const client = makeClient(opts);
   mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
-  const useCase = new ActivateRecruitmentUseCase();
+  const useCase = novoUseCase();
   return { promise: useCase.execute(PATIENT_ID, SERVICE_ID, actor, execOpts), client };
 }
 
@@ -189,12 +194,12 @@ describe('ActivateRecruitmentUseCase', () => {
     });
     const result = await promise;
     expect(result).toEqual({ vacancyId: 'vac-42', patientStatus: 'SEARCHING', statusChanged: true });
-    expect(result).not.toHaveProperty('patientNotMoved');
     expect(mockMovePatientStatus).toHaveBeenCalledTimes(1);
     expect(mockMovePatientStatus).toHaveBeenCalledWith(
       PATIENT_ID,
       'SEARCHING',
-      { changeSource: 'recruitment_activation', actorUid: null },
+      // D2: o escritor mede o SERVIÇO clicado (escopo `servico`), não o paciente inteiro — por isso um 2º serviço sem horário não trava.
+      { changeSource: 'recruitment_activation', actorUid: null, escopo: { kind: 'servico', serviceId: SERVICE_ID } },
       expect.anything(), // o MESMO client da transação do foguete (sem 2ª transação)
     );
     expect(mockBuildInsertParams).toHaveBeenCalledWith(
@@ -261,21 +266,29 @@ describe('ActivateRecruitmentUseCase', () => {
     );
     await promise;
     expect(mockMovePatientStatus).toHaveBeenCalledWith(
-      PATIENT_ID, 'SEARCHING', { changeSource: 'recruitment_activation', actorUid: 'uid-9' }, expect.anything(),
+      PATIENT_ID, 'SEARCHING', { changeSource: 'recruitment_activation', actorUid: 'uid-9', escopo: { kind: 'servico', serviceId: SERVICE_ID } }, expect.anything(),
     );
   });
 
-  it('D469 — completude do SEARCHING falha (outro serviço sem horário): a vaga é criada, o paciente NÃO move, sem erro', async () => {
+  it('D2 — 2 serviços, o OUTRO sem horário, foguete no serviço completo: o escritor é chamado com escopo { kind: servico } deste serviço e o paciente MOVE', async () => {
+    const { promise } = run({
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+      serviceRow: READY_SERVICE,
+      insertedId: 'vac-78',
+    });
+    await expect(promise).resolves.toEqual({ vacancyId: 'vac-78', patientStatus: 'SEARCHING', statusChanged: true });
+    expect(mockMovePatientStatus).toHaveBeenCalledTimes(1);
+    expect(mockMovePatientStatus.mock.calls[0][2]).toMatchObject({ escopo: { kind: 'servico', serviceId: SERVICE_ID } });
+  });
+
+  it('D2 — se o escritor recusar por completude (inalcançável: o gate já mediu o serviço), a transação INTEIRA cai: nada de vaga criada com o paciente parado', async () => {
     mockMovePatientStatus.mockRejectedValueOnce(new PatientStatusNotReadyError('SEARCHING', ['SERVICE_SCHEDULE']));
     const { promise } = run({
       patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
       serviceRow: READY_SERVICE,
       insertedId: 'vac-77',
     });
-    await expect(promise).resolves.toEqual({
-      vacancyId: 'vac-77', patientStatus: 'ADMISSION', statusChanged: false,
-      patientNotMoved: { missing: ['SERVICE_SCHEDULE'] },
-    });
+    await expect(promise).rejects.toBeInstanceOf(PatientStatusNotReadyError);
   });
 
   it('D469 — erro inesperado do movimento sobe (derruba a transação inteira, vaga incluída)', async () => {
@@ -382,13 +395,13 @@ describe('ActivateRecruitmentUseCase', () => {
       await promise;
       const calls = (client.query as jest.Mock).mock.calls;
       // A lista de vagas do paciente (079, reusada do vínculo) faz LEFT JOIN patients SÓ para `case_number` (número do caso,
-      // não clínico): a guarda genérica de JOIN não a admite, então ela tem a guarda própria abaixo (só `p.case_number`/`p.id`).
+      // não clínico): a guarda genérica de JOIN não a admite, então ela tem a guarda própria abaixo (só `p.case_number`/`p.id`/`p.status` — estado do paciente, projeção da F2, não clínico).
       const isVacancyList = (c: unknown[]) => String(c[0]).includes('WHERE jp.patient_id = $1');
       esperaSqlSemDadoClinico(calls.filter((c) => !isVacancyList(c)));
       const listSql = String(calls.find(isVacancyList)?.[0] ?? '');
       expect(listSql).not.toBe('');
       expect(listSql).not.toMatch(/diagnosis|diagnostico|patholog|patolog/i);
-      expect(new Set(listSql.match(/\bp\.\w+/g))).toEqual(new Set(['p.case_number', 'p.id']));
+      expect(new Set(listSql.match(/\bp\.\w+/g))).toEqual(new Set(['p.case_number', 'p.id', 'p.status']));
     });
 
     it('o SELECT do serviço lê os 5 campos copiados e NÃO lê worker_attributes/daily_obs', async () => {
@@ -688,14 +701,14 @@ describe('ActivateRecruitmentUseCase', () => {
   it('erro inesperado (não é um dos 4 conhecidos) sobe cru — o controller decide o 500', async () => {
     const client = { query: jest.fn().mockRejectedValue(new Error('DB down')) };
     mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
-    const useCase = new ActivateRecruitmentUseCase();
+    const useCase = novoUseCase();
     await expect(useCase.execute(PATIENT_ID, SERVICE_ID)).rejects.toThrow('DB down');
   });
 
   it('erro inesperado que NÃO é instância de Error (String(err) no log) — sobe cru do mesmo jeito', async () => {
     const client = { query: jest.fn().mockRejectedValue('rejeição crua') };
     mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
-    const useCase = new ActivateRecruitmentUseCase();
+    const useCase = novoUseCase();
     await expect(useCase.execute(PATIENT_ID, SERVICE_ID)).rejects.toBe('rejeição crua');
   });
 
@@ -709,7 +722,7 @@ describe('ActivateRecruitmentUseCase', () => {
       }),
     };
     mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
-    const useCase = new ActivateRecruitmentUseCase();
+    const useCase = novoUseCase();
     await expect(useCase.execute(PATIENT_ID, SERVICE_ID)).rejects.toBeInstanceOf(PatientNotFoundForRecruitmentError);
   });
 
@@ -726,7 +739,7 @@ describe('ActivateRecruitmentUseCase', () => {
       }),
     };
     mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
-    const useCase = new ActivateRecruitmentUseCase();
+    const useCase = novoUseCase();
     await expect(useCase.execute(PATIENT_ID, SERVICE_ID)).rejects.toBeInstanceOf(ServiceNotFoundForRecruitmentError);
   });
 
@@ -757,7 +770,7 @@ describe('ActivateRecruitmentUseCase', () => {
       }),
     };
     mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
-    const useCase = new ActivateRecruitmentUseCase();
+    const useCase = novoUseCase();
     await expect(useCase.execute(PATIENT_ID, SERVICE_ID)).resolves.toMatchObject({ vacancyId: 'vac-x' });
   });
 
@@ -871,7 +884,7 @@ describe('ActivateRecruitmentUseCase', () => {
         }),
       };
       mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
-      const result = await new ActivateRecruitmentUseCase().execute(PATIENT_ID, SERVICE_ID);
+      const result = await novoUseCase().execute(PATIENT_ID, SERVICE_ID);
       expect(result.vacancyId).toBe('vac-700');
       expect(insertAttempts).toBe(1);
       expect(savepointCalls.filter((s) => s.includes('case_ordinal_retry'))).toHaveLength(0);
@@ -904,7 +917,7 @@ describe('ActivateRecruitmentUseCase', () => {
       };
       mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
 
-      const useCase = new ActivateRecruitmentUseCase();
+      const useCase = novoUseCase();
       await expect(useCase.execute(PATIENT_ID, SERVICE_ID)).rejects.toBe(otherErr);
       expect(insertAttempts).toBe(1); // não retentou
     });

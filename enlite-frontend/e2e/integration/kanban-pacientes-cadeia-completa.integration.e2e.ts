@@ -187,7 +187,7 @@ test.describe('cadeia-completa @integration', () => {
         const column = await readPatientKanbanColumn(page, X.patientId);
         expect(column).toBe('SEARCHING');
 
-        // D466 (main): o lançamento só move o paciente; o match roda pela rota.
+        // D466 (main): o match roda pela rota; o lançamento não move o paciente (D1).
         const matchRes = await runMatchApi(request, token, v, { radiusKm: 1, topN: 200 });
         expect(matchRes.status).toBe(200);
 
@@ -570,7 +570,8 @@ test.describe('cadeia-completa @integration', () => {
         expect(columnBefore).toBe('SEARCHING');
         expect(state).toEqual({ column: columnBefore, pair: pairBefore });
         const source = lastStatusChangeSource(z.patientId);
-        expect(source).toBe('vacancy_launch');
+        // D1 (estado-automatico-do-paciente): o lançamento NÃO move; a última linha da trilha é a do foguete que montou o Z.
+        expect(source).toBe('recruitment_activation');
         const systemTrail = Number(
           runSQL(`SELECT count(*) FROM patient_status_history WHERE patient_id = '${z.patientId}' AND change_source = 'system'`),
         );

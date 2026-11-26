@@ -61,6 +61,8 @@ interface MockVacancy {
   vacancy_number: number;
   title: string;
   status: string;
+  /** Ciclo de vida que o back calcula (D3) — o mock o recalcula no PUT pela mesma tabela de 4 valores graváveis. */
+  lifecycle: string;
   country: string;
   providers_needed: number;
   worker_profile_sought: string;
@@ -85,6 +87,7 @@ const baseVacancy: MockVacancy = {
   vacancy_number: 1,
   title: 'Caso 22002 — Vacante Operacional',
   status: 'SEARCHING',
+  lifecycle: 'aberta',
   country: 'Argentina',
   providers_needed: 1,
   worker_profile_sought: 'AT',
@@ -171,6 +174,8 @@ async function mockVacancyApi(
           (merged as unknown as Record<string, unknown>)[key] = value;
         }
       }
+      // o ciclo é derivado no back (SEARCHING→aberta, ON_HOLD/SUSPENDED→pausada, CLOSED→cerrada)
+      merged.lifecycle = ({ SEARCHING: 'aberta', ON_HOLD: 'pausada', SUSPENDED: 'pausada', CLOSED: 'cerrada' } as Record<string, string>)[merged.status] ?? merged.lifecycle;
       currentVacancy = merged;
       await route.fulfill({
         status: 200,
@@ -242,14 +247,14 @@ test.describe('VacancyDetailPage — edição localizada (validação visual)', 
     await trigger.click();
     await expect(statusDropdown(page)).toBeVisible();
 
-    // Confirma as 6 opções editáveis (PENDING_ACTIVATION fica de fora — não-editável aqui)
+    // Confirma as 4 opções editáveis do CICLO DE VIDA (D3/E5) — nenhum valor legado que fingia ser estado do paciente
     await expect(page.getByTestId('vacancy-status-option-SEARCHING')).toBeVisible();
-    await expect(page.getByTestId('vacancy-status-option-SEARCHING_REPLACEMENT')).toBeVisible();
-    await expect(page.getByTestId('vacancy-status-option-RAPID_RESPONSE')).toBeVisible();
-    await expect(page.getByTestId('vacancy-status-option-ACTIVE')).toBeVisible();
+    await expect(page.getByTestId('vacancy-status-option-ON_HOLD')).toBeVisible();
     await expect(page.getByTestId('vacancy-status-option-SUSPENDED')).toBeVisible();
     await expect(page.getByTestId('vacancy-status-option-CLOSED')).toBeVisible();
-    await expect(page.getByTestId('vacancy-status-option-PENDING_ACTIVATION')).not.toBeVisible();
+    for (const legado of ['SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'ACTIVE', 'PENDING_ACTIVATION']) {
+      await expect(page.getByTestId(`vacancy-status-option-${legado}`)).toHaveCount(0);
+    }
 
     // Snapshot do dropdown aberto na sua área completa
     await expect(statusDropdown(page)).toHaveScreenshot('03-status-dropdown-aberto.png', {
@@ -280,7 +285,7 @@ test.describe('VacancyDetailPage — edição localizada (validação visual)', 
     await expect.poll(() => spy.putBodies.length, { timeout: 5000 }).toBeGreaterThan(0);
     expect(spy.putBodies[0]).toEqual({ status: 'SUSPENDED' });
 
-    // Estado final — badge agora reflete SUSPENDED (cor diferente: bg-gray-800)
+    // Estado final — badge agora reflete o ciclo `pausada`
     await expect(trigger).not.toBeDisabled({ timeout: 5000 });
     await expect(trigger).toHaveScreenshot('05-status-apos-salvar-suspendido.png', {
       maxDiffPixelRatio: 0.02,

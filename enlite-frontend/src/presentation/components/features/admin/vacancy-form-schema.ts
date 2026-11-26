@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ScheduleValue } from './vacancyScheduleUtils';
 import { parseScheduleString, LABEL_TO_KEY } from './vacancyScheduleUtils';
+import { STATUS_GRAVAVEIS } from '@domain/value-objects/vacancyLifecycle';
 
 // ---------------------------------------------------------------------------
 // Zod Schema
@@ -66,15 +67,8 @@ export type VacancyFormData = z.infer<typeof vacancyFormSchema>;
 // Option constants
 // ---------------------------------------------------------------------------
 
-export const STATUS_OPTIONS = [
-  'SEARCHING',
-  'SEARCHING_REPLACEMENT',
-  'RAPID_RESPONSE',
-  'PENDING_ACTIVATION',
-  'ACTIVE',
-  'SUSPENDED',
-  'CLOSED',
-] as const;
+/** O wizard grava só o ciclo de vida (D3/E5): os mesmos 4 do dono (`STATUS_GRAVAVEIS`), conferidos por contrato contra o back. */
+export const STATUS_OPTIONS = STATUS_GRAVAVEIS;
 
 /**
  * Profession options exposed in the create-vacancy form. Operations only
@@ -233,7 +227,9 @@ export function buildVacancyPayload(
     salary_text: data.salary_text || 'A convenir',
     payment_day: data.payment_day || null,
     daily_obs: data.daily_obs || null,
-    status: data.status,
+    // Só o ciclo de vida é gravável (D3/E5): a vaga do foguete nasce com status de sistema (não gravável) e o form o devolvia no PUT → 400.
+    // Valor que o cliente não pode gravar fica de fora (a vaga mantém o que tem).
+    status: (STATUS_GRAVAVEIS as readonly string[]).includes(data.status ?? '') ? data.status : undefined,
     // Backend coalesces null published_at to NOW(); empty string is treated as
     // null too. closes_at stays null when blank.
     published_at: data.published_at?.trim() ? data.published_at : null,
