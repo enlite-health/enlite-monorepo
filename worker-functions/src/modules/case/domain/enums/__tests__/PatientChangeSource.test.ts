@@ -7,6 +7,7 @@ import {
   CHANGE_SOURCES,
   INTERNAL_CHANGE_SOURCES,
   MANUAL_CHANGE_SOURCES,
+  ROTA_CHANGE_SOURCES,
   POLITICA_POR_ORIGEM,
   escopoDaCompletudeDe,
   isManualChangeSource,
@@ -17,8 +18,8 @@ import {
 const saemDoFunil = () => CHANGE_SOURCES.filter((s) => saiDoFunilParaSearching(s)).sort();
 
 describe('PatientChangeSource — tabela de política por origem', () => {
-  it('controle positivo: a tabela tem as 6 origens e as listas saem dela', () => {
-    expect(CHANGE_SOURCES).toHaveLength(6);
+  it('controle positivo: a tabela tem as 7 origens e as listas saem dela', () => {
+    expect(CHANGE_SOURCES).toHaveLength(7);
     expect([...MANUAL_CHANGE_SOURCES, ...INTERNAL_CHANGE_SOURCES].sort()).toEqual([...CHANGE_SOURCES].sort());
   });
 
@@ -31,8 +32,16 @@ describe('PatientChangeSource — tabela de política por origem', () => {
 
   it('a rota HTTP só aceita as origens marcadas na tabela, e todas elas são humanas', () => {
     const aceitas = CHANGE_SOURCES.filter((s) => POLITICA_POR_ORIGEM[s].aceitaNaRota).sort();
-    expect(aceitas).toEqual([...MANUAL_CHANGE_SOURCES].sort());
+    expect(aceitas).toEqual([...ROTA_CHANGE_SOURCES].sort());
+    expect(aceitas).toEqual(['admin_panel', 'kanban']);
     for (const s of CHANGE_SOURCES) expect(isManualChangeSource(s)).toBe(POLITICA_POR_ORIGEM[s].humana);
+    for (const s of ROTA_CHANGE_SOURCES) expect(POLITICA_POR_ORIGEM[s].humana).toBe(true);
+  });
+
+  it('F3 (E3): `resume` é humana (motivo de saída de SUSPENDED + trava de alocação), NÃO é aceita na rota e NÃO sai do funil', () => {
+    expect(POLITICA_POR_ORIGEM.resume).toEqual({ humana: true, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente' });
+    expect(isManualChangeSource('resume')).toBe(true);
+    expect([...ROTA_CHANGE_SOURCES]).not.toContain('resume');
   });
 
   it('D2: o foguete mede o SERVIÇO; toda outra origem mede o paciente inteiro', () => {

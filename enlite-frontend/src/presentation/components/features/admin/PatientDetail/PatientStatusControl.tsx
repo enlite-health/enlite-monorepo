@@ -15,6 +15,7 @@ import { FormField } from '@presentation/components/molecules/FormField';
 import { buttonClasses } from '@presentation/components/atoms/Button/buttonClasses';
 import { ChevronDown } from 'lucide-react';
 import { SuspensionExitReasonSelect } from './SuspensionExitReasonSelect';
+import { PatientStatusActions } from './PatientStatusActions';
 import { Combobox, type ComboboxOption } from '@presentation/components/atoms/Combobox';
 
 interface Props {
@@ -212,6 +213,8 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
         <SuspensionExitReasonSelect id="patient-status-exit-reason" value={exitReason} onChange={setExitReason} />
       )}
       {error && <Text size="sm" className="text-red-600" data-testid="patient-status-error">{error}</Text>}
+      {/* F3: as ações dos estados humanos ao lado do select (o select sai na F5). */}
+      <PatientStatusActions patient={patient} onSaved={onSaved} />
     </div>
   );
 }

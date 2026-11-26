@@ -13,6 +13,7 @@ export type { PatientCompleteness, PatientCompletenessCode } from './PatientComp
 // batia no teto de 400 linhas do validador.
 export type { PatientCoverageSectionPayload } from './PatientCoverage';
 export type { UpdatePatientStatusPayload, PatientStatusHistoryEntry, PatientStatusOptions, PatientStatusOption, PatientStatusChangeSource } from './PatientLifecycle';
+export type { PatientStatusActions, PatientStatusActionOption, PatientStatusActionName, PatientStatusActionPayload, PatientStatusActionResult } from './PatientLifecycle';
 export type { InsuranceProvider, PatientCoverageView, CoverageEntryView } from './PatientCoverage';
 import type { PatientCoverageView } from './PatientCoverage';
 export type { PatientCoverageEmergencyContact, PatientCoverageEmergencyContactInput, CoverageEmergencyContactKind } from './PatientCoverage';

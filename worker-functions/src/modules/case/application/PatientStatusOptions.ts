@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
-import type { ManualChangeSource } from '../domain/enums/PatientChangeSource';
+import type { OrigemDaRota } from '../domain/enums/PatientChangeSource';
+import { ACTIVE_ALLOCATION_BLOCK, type ViaDaTroca } from '../domain/enums/PatientStatusBlock';
 import { avaliarTroca, trocaPassaPelaGuarda } from './PatientStatusWriter';
 import { PATIENT_STATUSES, type PatientStatus } from '../domain/enums/PatientStatus';
 import { blockingCodesForStatusChange, type PatientCompletenessCode } from '../domain/PatientCompleteness';
@@ -17,11 +18,8 @@ import { countVivasForPatient } from '../infrastructure/VacancyAllocationProbe';
  * é só (a) quem são os candidatos e (b) `blockedBy`, da completude.
  */
 
-/** `fluxo` = tem linha na FSM; `permissao` = fora da FSM, liberada pela célula do destino. */
-export type ViaDaTroca = 'fluxo' | 'permissao';
-
-/** D489/D530: o paciente tem prestador com alocação VIVA no itinerário — toda troca manual é recusada. */
-export const ACTIVE_ALLOCATION_BLOCK = 'ACTIVE_ALLOCATION' as const;
+// `ViaDaTroca` e `ACTIVE_ALLOCATION_BLOCK` moraram aqui; agora vivem em `PatientStatusBlock` (a lista de ações da F3 também os usa).
+export { ACTIVE_ALLOCATION_BLOCK, type ViaDaTroca };
 
 export interface PatientStatusOption {
   status: PatientStatus;
@@ -36,7 +34,7 @@ export interface PatientStatusOption {
 export interface PatientStatusOptions {
   current: PatientStatus | null;
   /** A origem com que a lista foi calculada — o front confere que é a mesma do PUT que vai mandar. */
-  changeSource: ManualChangeSource;
+  changeSource: OrigemDaRota;
   options: PatientStatusOption[];
 }
 
@@ -44,7 +42,7 @@ export async function loadStatusOptions(
   client: PoolClient,
   patientId: string,
   cells: readonly string[] | null,
-  changeSource: ManualChangeSource,
+  changeSource: OrigemDaRota,
 ): Promise<PatientStatusOptions> {
   const cur = await client.query<{ status: PatientStatus | null }>(
     'SELECT status FROM patients WHERE id = $1 AND deleted_at IS NULL',
@@ -96,7 +94,7 @@ export async function loadStatusOptions(
 export function listPatientStatusOptions(
   patientId: string,
   cells: readonly string[] | null,
-  changeSource: ManualChangeSource,
+  changeSource: OrigemDaRota,
 ): Promise<PatientStatusOptions> {
   return inPatientTransaction((client) => loadStatusOptions(client, patientId, cells, changeSource));
 }

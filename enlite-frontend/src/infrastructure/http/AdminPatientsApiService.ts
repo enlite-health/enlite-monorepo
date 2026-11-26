@@ -14,6 +14,9 @@ import type {
   PatientSectionName,
   PatientSectionPayload,
   UpdatePatientStatusResult,
+  PatientStatusActions,
+  PatientStatusActionPayload,
+  PatientStatusActionResult,
   PatientKanbanItem,
   PatientFunnelData,
   UpdatePatientStatusPayload,
@@ -345,6 +348,16 @@ export class AdminPatientsApiServiceClass {
     // A lista vale para a ORIGEM do PUT que vai sair: lista de outra origem nunca é usada (quem chamou trata como indisponível).
     if (r.changeSource !== changeSource) throw new Error(`status-options: origem ${String(r.changeSource)} ≠ pedida ${changeSource}`);
     return r;
+  }
+
+  /** GET /api/admin/patients/:id/status-actions — as ações humanas que o SERVIDOR aceitaria agora (F3). */
+  async getPatientStatusActions(id: string): Promise<PatientStatusActions> {
+    return this.request<PatientStatusActions>('GET', `/api/admin/patients/${id}/status-actions`);
+  }
+
+  /** POST /api/admin/patients/:id/status-actions — pausar/suspender/alta/baja/retomar/reativar. O corpo não leva destino (F3, D9). */
+  async performPatientStatusAction(id: string, payload: PatientStatusActionPayload): Promise<PatientStatusActionResult> {
+    return this.writeJson<PatientStatusActionResult>('POST', `/api/admin/patients/${id}/status-actions`, payload);
   }
 
   /** GET /api/admin/patients/:id/status-history — a aba Historial (spec 012). */

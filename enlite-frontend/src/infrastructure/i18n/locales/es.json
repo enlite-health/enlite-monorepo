@@ -5133,6 +5133,7 @@
           "system": "Sistema",
           "recruitment_activation": "Activación del reclutamiento",
           "vacancy_launch": "Lanzamiento de la vacante",
+          "resume": "Retomado",
           "admin_panel_override": "Panel (fuera del flujo)",
           "kanban_override": "Kanban (fuera del flujo)"
         },
@@ -5149,6 +5150,21 @@
         "blockedOption": "{{status}} (falta: {{items}})",
         "optionsLoadError": "No se pudieron cargar los estados disponibles.",
         "optionsRetry": "Reintentar",
+        "actions": {
+          "title": "Acciones",
+          "loadError": "No se pudieron cargar las acciones",
+          "confirm": "Confirmar",
+          "cancel": "Cancelar",
+          "willBecome": "Pasará a «{{status}}»",
+          "names": {
+            "pausar": "Pausar",
+            "suspender": "Suspender",
+            "dar_alta": "Dar de alta",
+            "dar_baja": "Dar de baja",
+            "retomar": "Retomar",
+            "reativar": "Reactivar"
+          }
+        },
         "friendly": {
           "forbidden": "No tienes permiso para pasar a este paciente a «{{status}}». Pídele a quien administra los accesos que lo habilite.",
           "notReadySearching": "Para pasar a «{{status}}», el servicio contratado tiene que estar completo. Falta: {{items}}.",

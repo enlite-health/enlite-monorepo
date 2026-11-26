@@ -10,7 +10,7 @@ jest.mock('../patientTransaction', () => ({
 jest.mock('firebase-functions', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 
 import type { PoolClient } from 'pg';
-import { MANUAL_CHANGE_SOURCES, type ManualChangeSource } from '../../domain/enums/PatientChangeSource';
+import { ROTA_CHANGE_SOURCES, type OrigemDaRota } from '../../domain/enums/PatientChangeSource';
 import { loadStatusOptions } from '../PatientStatusOptions';
 import { trocaPassaPelaGuarda, PatientStatusPermissionError, PatientStatusTransitionError } from '../PatientStatusWriter';
 import { CLINICAL_PATIENT_STATUSES, PATIENT_STATUSES, isClinicalPatientStatus, type PatientStatus } from '../../domain/enums/PatientStatus';
@@ -44,7 +44,7 @@ function banco(de: string | null, ficha: Partial<typeof FICHA_COMPLETA> = {}, ex
     return { rows: [], rowCount: 1 };
   });
 }
-const lista = (de: string | null, cells: readonly string[] | null, ficha: Partial<typeof FICHA_COMPLETA> = {}, origem: ManualChangeSource = 'admin_panel') =>
+const lista = (de: string | null, cells: readonly string[] | null, ficha: Partial<typeof FICHA_COMPLETA> = {}, origem: OrigemDaRota = 'admin_panel') =>
   (banco(de, ficha, true), loadStatusOptions(mockClient as unknown as PoolClient, PID, cells, origem));
 
 // Os conjuntos de células testados: nenhuma, cada uma das 7 sozinha, todas, e null (engine neutro).
@@ -62,7 +62,7 @@ describe('T6 — a lista de status-options é exatamente o que o PUT /status ace
   // 10 estados de origem (3 do funil + 7 clínicos) + origem NULA, × 2 origens manuais × 10 conjuntos de células.
   const ORIGENS_DE_ESTADO: Array<PatientStatus | null> = [...PATIENT_STATUSES, null];
   const casos = ORIGENS_DE_ESTADO.flatMap((atual) =>
-    MANUAL_CHANGE_SOURCES.flatMap((origem) => CONJUNTOS.map((c) => ({ atual, origem, ...c }))));
+    ROTA_CHANGE_SOURCES.flatMap((origem) => CONJUNTOS.map((c) => ({ atual, origem, ...c }))));
   const nomeDe = (s: string | null): string => s ?? 'NULO';
 
   it('a FSM da fixture tem as 36 linhas de prd; a matriz tem (10 estados + nulo) × 2 origens × 10 conjuntos = 220 casos', () => {

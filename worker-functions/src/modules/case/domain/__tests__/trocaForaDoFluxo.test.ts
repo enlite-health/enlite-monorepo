@@ -3,7 +3,7 @@
  * ao writer. `null` ≠ `[]`.
  */
 import { CLINICAL_PATIENT_STATUSES, type ClinicalPatientStatus } from '../enums/PatientStatus';
-import { INTERNAL_CHANGE_SOURCES, MANUAL_CHANGE_SOURCES, type PatientChangeSource } from '../enums/PatientChangeSource';
+import { INTERNAL_CHANGE_SOURCES, ROTA_CHANGE_SOURCES, type PatientChangeSource } from '../enums/PatientChangeSource';
 import { CELULA_DO_DESTINO, decidirTrocaForaDoFluxo } from '../trocaForaDoFluxo';
 
 const DESTINOS: readonly ClinicalPatientStatus[] = CLINICAL_PATIENT_STATUSES;
@@ -53,7 +53,7 @@ describe('decidirTrocaForaDoFluxo — tabela-verdade', () => {
         .toEqual({ resultado: 'nao_se_aplica', motivo: 'mesmo_estado' });
     });
 
-    it.each(MANUAL_CHANGE_SOURCES)('par na FSM (%s): fluxo normal, sem célula e sem override', (changeSource) => {
+    it.each(ROTA_CHANGE_SOURCES)('par na FSM (%s): fluxo normal, sem célula e sem override', (changeSource) => {
       marca();
       expect(decidirTrocaForaDoFluxo({ ...base, changeSource, naFsm: true, cells: [] }))
         .toEqual({ resultado: 'fluxo_normal' });
@@ -76,7 +76,7 @@ describe('decidirTrocaForaDoFluxo — tabela-verdade', () => {
         .toEqual({ resultado: 'recusada_por_permissao', celulaFaltante: propria });
     });
 
-    it.each(MANUAL_CHANGE_SOURCES)('fora da FSM com a célula do destino (%s): permitida por permissão', (changeSource) => {
+    it.each(ROTA_CHANGE_SOURCES)('fora da FSM com a célula do destino (%s): permitida por permissão', (changeSource) => {
       marca();
       expect(decidirTrocaForaDoFluxo({ ...base, changeSource, cells: [propria, 'patient:read'] }))
         .toEqual({ resultado: 'permitida_por_permissao', celula: propria });

@@ -45,6 +45,43 @@ export interface PatientStatusOptions {
   options: PatientStatusOption[];
 }
 
+/** As ações humanas sobre o estado (F3, D5/D9) — o servidor decide o que existe e para onde vai; a tela só lista e pede. */
+export const PATIENT_STATUS_ACTIONS = ['pausar', 'suspender', 'dar_alta', 'dar_baja', 'retomar', 'reativar'] as const;
+export type PatientStatusActionName = (typeof PATIENT_STATUS_ACTIONS)[number];
+
+/** O que a tela coleta antes de pedir a ação (motivo fechado; nunca texto clínico). */
+export type PatientStatusActionRequirement = 'onHoldReason' | 'suspensionExitReason';
+
+/** Uma ação de GET /api/admin/patients/:id/status-actions. `destino` de retomar/reativar é o RE-DERIVADO: a tela o mostra, nunca o envia. */
+export interface PatientStatusActionOption {
+  acao: PatientStatusActionName;
+  destino: PatientStatus;
+  via: 'fluxo' | 'permissao';
+  exige: PatientStatusActionRequirement[];
+  blockedBy?: Array<PatientCompletenessCode | 'ACTIVE_ALLOCATION'>;
+}
+
+export interface PatientStatusActions {
+  current: PatientStatus | null;
+  actions: PatientStatusActionOption[];
+}
+
+/** Body de POST /api/admin/patients/:id/status-actions — sem destino, de propósito (o servidor o calcula). */
+export interface PatientStatusActionPayload {
+  action: PatientStatusActionName;
+  onHoldReason?: string | null;
+  /** Texto clínico restrito (pacote D211.2) — nunca logado. */
+  onHoldNote?: string | null;
+  suspensionExitReason?: string | null;
+}
+
+export interface PatientStatusActionResult {
+  id: string;
+  action: PatientStatusActionName;
+  from: PatientStatus | null;
+  status: PatientStatus;
+}
+
 /** Uma linha de GET /api/admin/patients/:id/status-history — sem nota clínica (C7.3). */
 export interface PatientStatusHistoryEntry {
   from: string | null;

@@ -26,10 +26,13 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
 
 const updatePatientStatus = vi.fn();
 const getPatientStatusOptions = vi.fn();
+const getPatientStatusActions = vi.fn(); // F3: o controle renderiza PatientStatusActions; aqui sem ações (os testes delas: PatientStatusActions.test.tsx)
 vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
     updatePatientStatus: (...a: unknown[]) => updatePatientStatus(...a),
     getPatientStatusOptions: (...a: unknown[]) => getPatientStatusOptions(...a),
+    getPatientStatusActions: (...a: unknown[]) => getPatientStatusActions(...a),
+    performPatientStatusAction: vi.fn(),
   },
 }));
 
@@ -57,6 +60,7 @@ describe('PatientStatusControl', () => {
   beforeEach(() => {
     updatePatientStatus.mockReset().mockResolvedValue({ id: active.id, status: 'ON_HOLD' });
     getPatientStatusOptions.mockReset().mockResolvedValue(serverOptions(ALL_STATUSES));
+    getPatientStatusActions.mockReset().mockResolvedValue({ current: 'ACTIVE', actions: [] });
   });
 
   it('não renderiza para paciente ainda no funil de admissão (o caminho é Activar)', async () => {

@@ -17,6 +17,7 @@ import { AdminTerminologySearchController } from '@modules/terminology/interface
 import { AdminPatientContactRowsController } from '../controllers/AdminPatientContactRowsController';
 import { AdminPatientExternalContactsController } from '../controllers/AdminPatientExternalContactsController';
 import { AdminPatientEmergencyContactController } from '../controllers/AdminPatientEmergencyContactController';
+import { AdminPatientStatusActionsController } from '../controllers/AdminPatientStatusActionsController';
 
 /**
  * Admin patients routes — mounted at /api/admin.
@@ -85,6 +86,8 @@ export function createAdminPatientsRoutes(
   kanbanServicesController: AdminPatientKanbanServicesController = new AdminPatientKanbanServicesController(),
   // Autorização de horas do serviço (spec 056 T2.2) — default, mesmo molde; o construtor não abre banco.
   authorizationController: AdminContractedServiceAuthorizationController = new AdminContractedServiceAuthorizationController(),
+  // Ações dos estados humanos (estado-automatico-do-paciente, F3) — default, mesmo molde; o construtor não abre banco.
+  statusActionsController: AdminPatientStatusActionsController = new AdminPatientStatusActionsController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -220,6 +223,13 @@ export function createAdminPatientsRoutes(
   // célula do PUT acima (`patient:update`) — a lista nunca oferece o que o PUT negaria por falta dela.
   router.get('/patients/:id/status-options', staffOnly, perm.require('patient', 'update'), (req: Request, res: Response) =>
     controller.getPatientStatusOptions(req, res),
+  );
+  // F3: pausar, suspender, dar alta, dar baja, retomar e reativar. Mesma célula do PUT (`patient:update`); a lista sai da MESMA avaliação da escrita.
+  router.get('/patients/:id/status-actions', staffOnly, perm.require('patient', 'update'), (req: Request, res: Response) =>
+    statusActionsController.list(req, res),
+  );
+  router.post('/patients/:id/status-actions', staffOnly, perm.require('patient', 'update'), (req: Request, res: Response) =>
+    statusActionsController.perform(req, res),
   );
   // Historial (spec 012, US-B7): quando / de → para / origem — sem ator, sem on_hold_note.
   router.get('/patients/:id/status-history', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>

@@ -27,6 +27,9 @@ export const POLITICA_POR_ORIGEM = {
   admin_panel: { humana: true, aceitaNaRota: true, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente' },
   // F1-F4: o arrasto ainda sai do funil (D469); a F5 tira.
   kanban: { humana: true, aceitaNaRota: true, saiDoFunilParaSearching: true, escopoDaCompletude: 'paciente' },
+  // retomar e reativar (F3, E3): decisão de uma PESSOA (motivo de saída de SUSPENDED, trava de alocação viva), mas o servidor a
+  // põe — o corpo do PUT nunca a aceita. O destino é re-derivado pelo itinerário, nunca escolhido.
+  resume: { humana: true, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente' },
   // Origem só de LEITURA da trilha antiga (linhas gravadas pelo gancho do lançamento, que deixou de mover — D1).
   vacancy_launch: { humana: false, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente' },
   activate: { humana: false, aceitaNaRota: false, saiDoFunilParaSearching: false, escopoDaCompletude: 'paciente' },
@@ -39,6 +42,8 @@ type OrigemCom<K extends keyof PoliticaDeOrigem> = {
 }[PatientChangeSource];
 
 export type ManualChangeSource = OrigemCom<'humana'>;
+/** Origens que o zod da rota HTTP aceita (a tabela diz quais) — subconjunto das humanas. */
+export type OrigemDaRota = OrigemCom<'aceitaNaRota'>;
 export type InternalChangeSource = Exclude<PatientChangeSource, ManualChangeSource>;
 
 export const CHANGE_SOURCES = Object.keys(POLITICA_POR_ORIGEM) as PatientChangeSource[];
@@ -48,10 +53,18 @@ export const MANUAL_CHANGE_SOURCES = CHANGE_SOURCES.filter(
   (s) => POLITICA_POR_ORIGEM[s].humana,
 ) as unknown as readonly [ManualChangeSource, ...ManualChangeSource[]];
 
+/** Origens aceitas no corpo/query da rota HTTP: `aceitaNaRota` na tabela (nunca `resume`, que o servidor põe). */
+export const ROTA_CHANGE_SOURCES = CHANGE_SOURCES.filter(
+  (s) => POLITICA_POR_ORIGEM[s].aceitaNaRota,
+) as unknown as readonly [OrigemDaRota, ...OrigemDaRota[]];
+
 /** Origens internas (use cases, derivação): o zod da rota HTTP NÃO as aceita. */
 export const INTERNAL_CHANGE_SOURCES = CHANGE_SOURCES.filter(
   (s) => !POLITICA_POR_ORIGEM[s].humana,
 ) as unknown as readonly [InternalChangeSource, ...InternalChangeSource[]];
+
+export const isOrigemDaRota = (value: unknown): value is OrigemDaRota =>
+  typeof value === 'string' && (ROTA_CHANGE_SOURCES as readonly string[]).includes(value);
 
 export const isManualChangeSource = (value: unknown): value is ManualChangeSource =>
   typeof value === 'string' && (MANUAL_CHANGE_SOURCES as readonly string[]).includes(value);

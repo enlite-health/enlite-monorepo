@@ -14,6 +14,8 @@ export const SERVER_STATUS_REFUSAL = {
   SUSPENSION_EXIT_REASON_REQUIRED: 'SUSPENSION_EXIT_REASON_REQUIRED',
   TRANSITION_NOT_ALLOWED: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
   LOCKED_BY_ALLOCATION: 'PATIENT_STATUS_LOCKED_BY_ALLOCATION',
+  /** F3: a ação não existe para o estado atual (retomar fora de En espera/Suspendido, reativar fora de Baja). */
+  ACTION_NOT_AVAILABLE: 'PATIENT_STATUS_ACTION_NOT_AVAILABLE',
 } as const;
 
 /** `blockedBy` de um destino de status-options quando há alocação viva no itinerário (D489/D530). */

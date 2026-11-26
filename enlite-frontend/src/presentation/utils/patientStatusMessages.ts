@@ -43,6 +43,7 @@ export function friendlyStatusMessage(t: Translate, r: StatusRefusal): string | 
     case CODE.SUSPENSION_EXIT_REASON_REQUIRED:
       return f('suspensionExitReasonRequired');
     case CODE.TRANSITION_NOT_ALLOWED:
+    case CODE.ACTION_NOT_AVAILABLE:
     case STATUS_NOT_OFFERED:
       return f('notAvailable');
     case STATUS_OPTIONS_UNAVAILABLE:

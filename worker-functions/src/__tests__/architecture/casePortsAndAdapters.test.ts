@@ -1,7 +1,7 @@
 /**
  * Fronteira ports & adapters do módulo `case` (estado-automatico-do-paciente, D7 / E1 — teste jest, não ESLint: o ESLint não roda
  * neste pacote, F23). Os use cases da allowlist dependem só de ports: nenhum import de `infrastructure/`, de `interfaces/`, de
- * `@shared/database` nem de `pg` (inclusive `import type`). A allowlist CRESCE por fase (F3 acrescenta os use cases de ação).
+ * `@shared/database` nem de `pg` (inclusive `import type`). A allowlist CRESCE por fase (F3 acrescentou os use cases de ação: 4 arquivos).
  *
  * Limite declarado: import pelo barrel de outro módulo (`@modules/matching`) não é inspecionado transitivamente; o logger
  * `firebase-functions` é transversal e fica fora da regra.
@@ -15,6 +15,8 @@ const CASE = path.resolve(__dirname, '../../modules/case');
 export const ALLOWLIST = [
   'application/PatientStatusWriter.ts',
   'application/ActivateRecruitmentUseCase.ts',
+  'application/PatientStatusActionUseCase.ts',
+  'application/ListPatientStatusActionsUseCase.ts',
 ];
 
 /** Especificador proibido dentro de um arquivo da allowlist. */
@@ -34,8 +36,8 @@ const violacoesDe = (fonte: string): string[] => especificadoresDe(fonte).filter
 const ler = (rel: string): string => fs.readFileSync(path.join(CASE, rel), 'utf8');
 
 describe('case: ports & adapters (D7)', () => {
-  it('anti-vácuo: a allowlist resolve para ≥ 2 arquivos existentes e cada um tem ≥ 1 import lido', () => {
-    expect(ALLOWLIST.length).toBeGreaterThanOrEqual(2);
+  it('anti-vácuo: a allowlist tem os 4 arquivos (F1 + F3), todos existem e cada um tem ≥ 1 import lido', () => {
+    expect(ALLOWLIST).toHaveLength(4);
     for (const rel of ALLOWLIST) {
       expect(fs.existsSync(path.join(CASE, rel))).toBe(true);
       expect(especificadoresDe(ler(rel)).length).toBeGreaterThanOrEqual(1);

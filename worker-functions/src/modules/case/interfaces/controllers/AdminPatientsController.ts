@@ -12,7 +12,7 @@ import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
-import { canReadPatientOperational, patientContainerReadsOf, canReadPatientContainer, patientContainerCell, exposeBlockingCodes, exposeBlockingMessage } from '../../application/patientContainerAccess';
+import { canReadPatientOperational, patientContainerReadsOf, canReadPatientContainer, patientContainerCell, exposeBlockingCodes } from '../../application/patientContainerAccess';
 import { hourlyValueActorOf } from '../../application/contractedServiceHourlyValueAccess';
 import {
   toAdminPatientListItem,
@@ -31,14 +31,7 @@ import {
   type PatientGeneralSectionData,
   type PatientRelatedInput,
 } from '../../application/PatientService';
-import {
-  PatientStatusTransitionError,
-  PatientStatusPermissionError,
-  OnHoldReasonRequiredError,
-  PatientStatusNotReadyError,
-  PatientStatusLockedByAllocationError,
-  SuspensionExitReasonRequiredError,
-} from '../../application/PatientStatusWriter';
+import { respondPatientStatusError } from './patientStatusErrorResponse';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
 import { InsuranceProviderUnknownError } from '../../infrastructure/PatientInsuranceVerifiedRepository';
 import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
@@ -380,43 +373,8 @@ export class AdminPatientsController {
       });
       res.status(200).json({ success: true, data: { id: result.id, status: result.status } });
     } catch (err: unknown) {
-      // Troca fora do fluxo sem a célula do destino (spec 051): 403 ANTES de qualquer escrita.
-      // Mesmo molde do 403 de `onHoldNote` acima; `details.cell` leva o nome interno para o suporte.
-      if (err instanceof PatientStatusPermissionError) {
-        res.status(403).json({ success: false, error: 'Forbidden', code: err.code, details: { from: err.from, to: err.to, cell: err.cell } });
-        return;
-      }
-      if (err instanceof PatientStatusTransitionError) {
-        res.status(422).json({ success: false, error: err.message, code: err.code, details: { from: err.from, to: err.to } });
-        return;
-      }
-      if (err instanceof OnHoldReasonRequiredError) {
-        res.status(422).json({ success: false, error: err.message, code: err.code });
-        return;
-      }
-      if (err instanceof SuspensionExitReasonRequiredError) {
-        res.status(422).json({ success: false, error: err.message, code: err.code });
-        return;
-      }
-      // D489/D530: prestador com alocação viva no itinerário. Só a contagem — sem nome (PII).
-      if (err instanceof PatientStatusLockedByAllocationError) {
-        res.status(422).json({ success: false, error: err.message, code: err.code, details: { allocations: err.allocations } });
-        return;
-      }
-      // Decisão do Gabriel 07/09. `details.missing` tem o MESMO formato do 422 do
-      // `POST /activate` — a tela reusa as traduções do checklist para nomear o que falta.
-      if (err instanceof PatientStatusNotReadyError) {
-        // `DIAGNOSIS` (texto clínico: "sem diagnóstico" é dado clínico) sai como `CLINICAL_DATA` para quem não lê
-        // `patient_clinical` — a recusa é a mesma, só o NOME do item muda. Nunca o valor do diagnóstico.
-        const cells = clinicalCellsOf(req);
-        res.status(422).json({
-          success: false,
-          error: exposeBlockingMessage(err.message, cells),
-          code: err.code,
-          details: { to: err.to, missing: exposeBlockingCodes(err.missing, cells) },
-        });
-        return;
-      }
+      // Erro → HTTP numa função só, a mesma das rotas de ação (F3).
+      if (respondPatientStatusError(err, req, res)) return;
       const e = err instanceof Error ? err : new Error(String(err));
       if (/not found/i.test(e.message)) {
         res.status(404).json({ success: false, error: 'Patient not found' });

@@ -4,6 +4,8 @@
  * composição em `interfaces/composition/patientStatusComposition.ts`. Nada aqui importa `pg`.
  */
 import type { EscopoDaCompletude, PatientCompletenessCode } from '../../domain/PatientCompleteness';
+import type { EntradaDerivacao } from '../../domain/derivarEstadoPaciente';
+import type { PatientStatus } from '../../domain/enums/PatientStatus';
 import type { RecruitmentContext } from '../recruitmentReadinessContext';
 import type { AuditActorType } from '@shared/audit/types';
 
@@ -63,4 +65,16 @@ export interface RecruitmentActor {
 export interface VacancyAuditPort {
   vacancyCreated(tx: StatusTx, vacancyId: string, row: Record<string, unknown>, actor: RecruitmentActor): Promise<void>;
   linkableDeclined(tx: StatusTx, vacancyId: string, declinedIds: readonly string[], actor: RecruitmentActor): Promise<void>;
+}
+
+// ── ações dos estados humanos (F3: PatientStatusActionUseCase / ListPatientStatusActionsUseCase) ──────────
+
+/** As horas do itinerário do paciente (a entrada da regra pura), lidas DENTRO da transação de quem chama. `null` = paciente inexistente. */
+export interface HorasDoItinerarioPort {
+  load(tx: StatusTx, patientId: string, now: Date): Promise<EntradaDerivacao | null>;
+}
+
+/** O catálogo de transições (`patient_status_transitions`): para onde a FSM deixa sair de `from`. */
+export interface TransitionCatalogPort {
+  destinosDe(tx: StatusTx, from: PatientStatus | null): Promise<readonly PatientStatus[]>;
 }
