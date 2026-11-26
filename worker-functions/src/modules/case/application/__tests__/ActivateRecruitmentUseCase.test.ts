@@ -395,13 +395,13 @@ describe('ActivateRecruitmentUseCase', () => {
       await promise;
       const calls = (client.query as jest.Mock).mock.calls;
       // A lista de vagas do paciente (079, reusada do vínculo) faz LEFT JOIN patients SÓ para `case_number` (número do caso,
-      // não clínico): a guarda genérica de JOIN não a admite, então ela tem a guarda própria abaixo (só `p.case_number`/`p.id`).
+      // não clínico): a guarda genérica de JOIN não a admite, então ela tem a guarda própria abaixo (só `p.case_number`/`p.id`/`p.status` — estado do paciente, projeção da F2, não clínico).
       const isVacancyList = (c: unknown[]) => String(c[0]).includes('WHERE jp.patient_id = $1');
       esperaSqlSemDadoClinico(calls.filter((c) => !isVacancyList(c)));
       const listSql = String(calls.find(isVacancyList)?.[0] ?? '');
       expect(listSql).not.toBe('');
       expect(listSql).not.toMatch(/diagnosis|diagnostico|patholog|patolog/i);
-      expect(new Set(listSql.match(/\bp\.\w+/g))).toEqual(new Set(['p.case_number', 'p.id']));
+      expect(new Set(listSql.match(/\bp\.\w+/g))).toEqual(new Set(['p.case_number', 'p.id', 'p.status']));
     });
 
     it('o SELECT do serviço lê os 5 campos copiados e NÃO lê worker_attributes/daily_obs', async () => {
