@@ -4,7 +4,7 @@
  * (a) ordem: as linhas da chave rodam UMA a UMA, na ordem entregue (received_at);
  * (b) linha PROCESSED não reprocessa (nem toma lock);
  * (c) erro marca FAILED (só code/constraint), relança, e as marcas ficam duráveis (COMMIT antes do throw);
- * (d) o lock da chave ENVOLVE as transações próprias do ProcessTalentumPrescreening (log de eventos + exclusão mútua);
+ * (d) o lock da chave ENVOLVE o processamento de cada linha (log de eventos + exclusão mútua entre entregas);
  * (e) PRESCREENING (criação de vaga) → o caso de uso de vaga, sem passar pelo processador de resposta.
  * Pool, inbox e casos de uso são dublês; payload sintético.
  */
@@ -152,9 +152,10 @@ describe('ProcessTalentumInboxUseCase', () => {
     expect(JSON.stringify([...w.errorCodes])).not.toContain('sintetico');
     expect(processor.execute).toHaveBeenCalledTimes(2);
     const log = w.events.join('|');
-    expect(log).toContain('c1:ROLLBACK TO SAVEPOINT talentum_inbox_row');
-    expect(log.indexOf('mark:i2:FAILED')).toBeLessThan(log.indexOf('c1:COMMIT'));
-    expect(log).not.toContain('c1:ROLLBACK|'); // a transação externa NÃO faz rollback
+    // i2 roda na sua transação (c2: uma transação por linha): rollback só ao SAVEPOINT, marca FAILED, COMMIT
+    expect(log).toContain('c2:ROLLBACK TO SAVEPOINT talentum_inbox_row');
+    expect(log.indexOf('mark:i2:FAILED')).toBeLessThan(log.indexOf('c2:COMMIT'));
+    expect(log).not.toMatch(/c\d:ROLLBACK\|/); // a transação externa NÃO faz rollback
   });
 
   it('reentrega de linha FAILED: ela entra no lote (alsoIds) e, ao passar, vira PROCESSED', async () => {
@@ -222,19 +223,16 @@ describe('ProcessTalentumInboxUseCase', () => {
     expect(p2.execute).toHaveBeenCalledTimes(1);
   });
 
-  it('(d) o lock da chave ENVOLVE as transações do caso de uso: lock antes, COMMIT depois, e duas entregas da mesma chave não se sobrepõem', async () => {
+  it('(d) o lock da chave ENVOLVE o processamento de cada linha: lock antes, COMMIT depois, e duas entregas da mesma chave não se sobrepõem', async () => {
     const w = buildWorld([row('i1'), row('i2', { receivedAt: new Date('2026-11-25T10:00:05Z') })], {
       i1: responsePayload('1'), i2: responsePayload('2'),
     });
-    // cada execução do caso de uso abre a transação PRÓPRIA (BEGIN ... COMMIT) numa conexão que não é a do lock
     const processor = {
       execute: jest.fn(async (p: any) => {
-        const own = await w.pool.connect();
-        const tag = `own-${p.data.profile.phoneNumber}`;
-        w.events.push(`${tag}:BEGIN`);
+        const tag = p.data.profile.phoneNumber;
+        w.events.push(`proc:start:${tag}`);
         await new Promise((r) => setTimeout(r, 15));
-        w.events.push(`${tag}:COMMIT`);
-        own.release();
+        w.events.push(`proc:end:${tag}`);
       }),
     };
     const uc = new ProcessTalentumInboxUseCase(w.pool as any, w.inbox, processor, { execute: jest.fn() });
@@ -242,16 +240,18 @@ describe('ProcessTalentumInboxUseCase', () => {
     // dois pushes concorrentes da MESMA chave (Pub/Sub entrega 2x)
     await Promise.all([uc.execute('i1'), uc.execute('i2')]);
 
-    const ev = w.events.filter((e) => /:lock$|:COMMIT$|^own-.*:(BEGIN|COMMIT)$/.test(e) && !e.startsWith('mark'));
-    const lock1 = ev.findIndex((e) => e.endsWith(':lock'));
-    const firstExternalCommit = ev.findIndex((e, i) => i > lock1 && /^c\d+:COMMIT$/.test(e));
-    const ownEvents = ev.slice(lock1, firstExternalCommit).filter((e) => e.startsWith('own-'));
-    // tudo que o caso de uso fez (BEGIN/COMMIT próprios) cabe ENTRE o lock e o COMMIT externo da primeira entrega
-    expect(ownEvents.length).toBeGreaterThanOrEqual(4);
-    // o 2º lock só é tomado depois do COMMIT externo do 1º
-    const secondLock = ev.findIndex((e, i) => i > lock1 && e.endsWith(':lock'));
-    expect(secondLock).toBeGreaterThan(firstExternalCommit);
-    // a 2ª entrega encontra tudo PROCESSED (a 1ª levou as duas linhas): o caso de uso rodou 2x no total
+    const ev = w.events.filter((e) => /:lock$|:COMMIT$|^proc:/.test(e));
+    // cada linha é processada entre um lock e o COMMIT da MESMA conexão, sem outra linha no meio (exclusão mútua)
+    expect(ev.filter((e) => e.startsWith('proc:'))).toEqual(['proc:start:1', 'proc:end:1', 'proc:start:2', 'proc:end:2']);
+    for (const tag of ['1', '2']) {
+      const start = ev.indexOf(`proc:start:${tag}`);
+      const end = ev.indexOf(`proc:end:${tag}`);
+      const lock = ev.slice(0, start).map((e, i) => (e.endsWith(':lock') ? i : -1)).filter((i) => i >= 0).pop()!;
+      const conn = ev[lock].split(':')[0];
+      expect(ev.indexOf(`${conn}:COMMIT`, end)).toBeGreaterThan(end);
+      expect(ev.slice(lock, ev.indexOf(`${conn}:COMMIT`, end)).filter((e) => e.endsWith(':lock'))).toHaveLength(1);
+    }
+    // a 2ª entrega encontra tudo PROCESSED: o caso de uso rodou 2x no total (nenhuma linha em dobro)
     expect(processor.execute).toHaveBeenCalledTimes(2);
   });
 

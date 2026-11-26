@@ -9,13 +9,19 @@
  *
  * LOCK (T-095-30, escolha justificada): `pg_advisory_xact_lock` numa transação externa (`withActorContext`), e NÃO
  * `pg_advisory_lock`/`unlock` de sessão em `finally`.
- *  - O `ProcessTalentumPrescreening` abre transações PRÓPRIAS (outras conexões do pool); o lock só precisa estar
- *    tomado de ponta a ponta, e a transação externa o segura do `lockKey` até o COMMIT, envolvendo todas elas.
+ *  - O lock só precisa estar tomado de ponta a ponta da linha; a transação o segura do `lockKey` até o COMMIT.
+ *  - UMA conexão só: o `ProcessTalentumPrescreening` e o caso de uso de vaga recebem o `client` desta transação
+ *    (`txBoundPool`: BEGIN/COMMIT internos viram SAVEPOINT). Antes, cada linha pegava outras conexões do MESMO pool com
+ *    esta presa: `DB_POOL_MAX=5` e 5 pushes simultâneos travavam o pool da instância até o timeout (e as rotas todas).
  *  - Lock de sessão num client do pool vaza se o `unlock` falhar (a conexão volta ao pool ainda segurando a chave e
  *    ninguém mais a processa até o reciclo). O `xact_lock` é solto pelo próprio Postgres no COMMIT/ROLLBACK/queda.
- *  - Falha de linha NÃO desfaz as marcas: o erro da linha é capturado dentro da transação (SAVEPOINT por linha),
- *    a linha vira `FAILED`, a transação faz COMMIT (as `PROCESSED` anteriores e o `FAILED` ficam duráveis) e SÓ
- *    DEPOIS o erro original é relançado, para o Pub/Sub reentregar.
+ *  - Uma transação POR LINHA (não uma para a chave): `now()`/`created_at` valem o início da transação, e a trilha do WJA
+ *    ordena por `created_at, id` — linhas da mesma chave numa transação só empatariam e a "última linha" seria sorteada.
+ *    O lock é retomado a cada linha; quem entrar no intervalo também pega a mais antiga pendente, então a ordem se mantém.
+ *  - Falha de linha NÃO desfaz as marcas: o erro da linha é capturado dentro da transação (SAVEPOINT, que também desfaz o que
+ *    a linha gravou pela metade), a linha vira `FAILED`, a transação faz COMMIT e SÓ DEPOIS o erro original é relançado, para
+ *    o Pub/Sub reentregar. As linhas mais novas não são tentadas.
+ *  - Efeitos externos (Pub/Sub do evento qualified) saem depois do COMMIT da linha, só se ela não desfez.
  *
  * Nada aqui loga o corpo (PII): só ids, enums e contagens. `error_code` é só `code`/`constraint` do pg.
  */
@@ -84,31 +90,43 @@ export class ProcessTalentumInboxUseCase {
   ) {}
 
   async execute(inboxId: string, options: ProcessInboxOptions = {}): Promise<ProcessInboxResult> {
-    let failure: { error: unknown } | undefined;
     let processed = 0;
-    let early: ProcessInboxResult | undefined;
-    let key: { prescreeningId: string | null } | undefined;
-    const afterCommit: Array<() => Promise<void>> = [];
+    let failure: { error: unknown } | undefined;
+    let key: { prescreeningId: string | null; profileId: string | null } | undefined;
+    const seen = new Set<string>(); // linha já tratada NESTA chamada (o redrive de assentada a mantém "pendente": não repetir)
+    const reprocessIds = [inboxId];
 
-    // UMA conexão do pool de ponta a ponta (T-095-30): leitura da linha, lock, pendentes, processamento e marcas rodam no
-    // `client` desta transação. Nada aqui (nem abaixo, em `processRow`) chama `pool.connect()`/`pool.query()`.
-    // Ator do webhook vazio (evento automático): sem carimbo, `changed_by` fica ''/NULL na trilha.
-    await withActorContext(this.pool, async (client) => {
-      const row = await this.inbox.findById(client, inboxId);
-      if (!row) { early = { inboxId, outcome: 'NOT_FOUND', processed: 0 }; return; }
-      if (row.state === 'PROCESSED') { early = { inboxId, outcome: 'ALREADY_PROCESSED', processed: 0 }; return; }
-      const settled = row.state === 'UNSUPPORTED' || row.state === 'REJECTED_SCHEMA';
-      if (settled && !options.reprocess) { early = { inboxId, outcome: 'SKIPPED', processed: 0 }; return; }
-      key = { prescreeningId: row.talentumPrescreeningId };
+    // UMA transação POR LINHA (T-095-30), cada uma com UMA conexão do pool: leitura, lock da chave, processamento e marcas
+    // rodam no `client` dela; nada daqui (nem de `processRow`) chama `pool.connect()`/`pool.query()`. Por linha, e não uma
+    // transação para a chave toda, porque `now()`/`created_at` do Postgres são o INÍCIO da transação: a trilha do WJA
+    // (`ORDER BY created_at DESC, id DESC` em `lastTrailActor`/reversão) perderia a ordem entre linhas da mesma chave.
+    // O lock (`xact_lock`) é retomado no início de cada linha; entre duas linhas outro push pode entrar, mas ele também
+    // pega a MAIS ANTIGA pendente (a ordem se mantém). Ator do webhook vazio: sem carimbo, `changed_by` fica ''/NULL.
+    for (;;) {
+      const step = await withActorContext(this.pool, async (client): Promise<
+        | { kind: 'early'; result: ProcessInboxResult }
+        | { kind: 'done' }
+        | { kind: 'row'; effects: Array<() => Promise<void>>; more: boolean; failure?: { error: unknown } }
+      > => {
+        if (!key) {
+          const row = await this.inbox.findById(client, inboxId);
+          if (!row) return { kind: 'early', result: { inboxId, outcome: 'NOT_FOUND', processed: 0 } };
+          if (row.state === 'PROCESSED') return { kind: 'early', result: { inboxId, outcome: 'ALREADY_PROCESSED', processed: 0 } };
+          const settled = row.state === 'UNSUPPORTED' || row.state === 'REJECTED_SCHEMA';
+          if (settled && !options.reprocess) return { kind: 'early', result: { inboxId, outcome: 'SKIPPED', processed: 0 } };
+          key = { prescreeningId: row.talentumPrescreeningId, profileId: row.talentumProfileId };
+        }
+        await this.inbox.lockKey(client, key.prescreeningId, key.profileId);
+        const pending = await this.inbox.pendingForKey(client, key.prescreeningId, key.profileId, reprocessIds);
+        const item = pending.find((p) => !seen.has(p.id));
+        if (!item) return { kind: 'done' };
+        seen.add(item.id);
+        const more = pending.some((p) => !seen.has(p.id)); // havia outra pendente além desta: só então vale outra transação
 
-      await this.inbox.lockKey(client, row.talentumPrescreeningId, row.talentumProfileId);
-      const pending = await this.inbox.pendingForKey(client, row.talentumPrescreeningId, row.talentumProfileId, [row.id]);
-
-      for (const item of pending) {
         await client.query('SAVEPOINT talentum_inbox_row');
-        const rowEffects: Array<() => Promise<void>> = [];
+        const effects: Array<() => Promise<void>> = [];
         try {
-          const verdict = await this.processRow(item, client, (effect) => { rowEffects.push(effect); });
+          const verdict = await this.processRow(item, client, (effect) => { effects.push(effect); });
           if (verdict.kind === 'PROCESSED') {
             await this.inbox.markProcessed(client, item.id);
             processed += 1;
@@ -116,19 +134,21 @@ export class ProcessTalentumInboxUseCase {
             await this.inbox.markState(client, item.id, verdict.state, verdict.errorCode);
           }
           await client.query('RELEASE SAVEPOINT talentum_inbox_row');
-          afterCommit.push(...rowEffects); // linha que desfez não publica nada
+          return { kind: 'row', effects, more };
         } catch (err) {
+          // Desfaz o que a linha gravou pela metade, marca FAILED (durável: o COMMIT vem depois) e relança só no fim.
           await client.query('ROLLBACK TO SAVEPOINT talentum_inbox_row');
           await this.inbox.markFailed(client, item.id, describeError(err));
-          failure = { error: err };
-          break; // ordem importa: as mais novas (RECEIVED/FAILED) não são tentadas e entram na próxima entrega, depois desta
+          return { kind: 'row', effects: [], more, failure: { error: err } };
         }
-      }
-    });
-    if (early) return early;
+      });
 
-    // Já commitado: agora o consumidor do Pub/Sub enxerga o que a transação gravou.
-    for (const effect of afterCommit) await effect();
+      if (step.kind === 'early') return step.result;
+      if (step.kind === 'done') break;
+      for (const effect of step.effects) await effect(); // já commitado: o consumidor do Pub/Sub enxerga o que a linha gravou
+      if (step.failure) { failure = step.failure; break; } // ordem importa: as mais novas não são tentadas; entram na próxima entrega
+      if (!step.more) break;
+    }
 
     console.log(
       `${TAG} inboxId=${inboxId} | talentumPrescreeningId=${key?.prescreeningId ?? 'none'} | processed=${processed} | failed=${failure ? 1 : 0}`,
