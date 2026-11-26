@@ -108,3 +108,87 @@ resource "google_project_iam_member" "attendance_retention_sql_ar_db" {
     expression  = "resource.type == \"sqladmin.googleapis.com/Instance\" && resource.name == \"projects/${var.project_id}/instances/${module.sql_enlite_ar_db.name}\""
   }
 }
+
+# Alerta de 4xx do mobile-bff. Incidente: o App Check recusou 100% dos logins do app de release (401 APP_CHECK_REQUIRED) e ninguem soube.
+# Dispara quando mais de 50% das requisicoes do servico respondem 4xx numa janela de 15 min E houve mais de 10 requisicoes na janela (sem
+# trafego nao dispara). Com o log 4xx do error.filter (mobile-bff#29) o code do erro aparece no Cloud Logging. Canal: o mesmo das demais
+# politicas de prd (var.events_notification_channel). Cloud Run de prd fica fora do HCL (acima): a metrica e do servico `mobile-bff`.
+resource "google_monitoring_alert_policy" "mobile_bff_4xx_ratio" {
+  project      = var.project_id
+  display_name = "[URGENTE] mobile-bff: mais de 50% das requisicoes com 4xx em 15 min"
+  combiner     = "AND"
+  enabled      = true
+  severity     = "ERROR"
+
+  notification_channels = [var.events_notification_channel]
+
+  documentation {
+    mime_type = "text/markdown"
+    subject   = "mobile-bff recusando mais da metade das requisicoes (4xx)"
+    content   = <<-EOT
+      ## O que significa
+      Mais de 50% das requisicoes do Cloud Run `mobile-bff` (southamerica-west1) responderam 4xx nos ultimos 15 min, com mais de 10 requisicoes.
+      Caso conhecido: App Check recusando o app (401 `APP_CHECK_REQUIRED`), que derruba 100% dos logins.
+
+      ## Onde olhar
+      Logs do Cloud Run `mobile-bff`, severity WARNING, filtro:
+      `jsonPayload.message=~"^HTTP_4XX"`
+
+      A linha traz `status`, `code`, `method`, `route` e, quando enviados, `platform` e `version`. Agrupar por `code` e `version` mostra se e uma versao do app.
+
+      ## Atencao
+      O bloqueio do App Check e intencional (sem flag, bypass ou modo monitor). Corrigir a causa (app de release sem token valido), nao afrouxar o guard.
+    EOT
+  }
+
+  alert_strategy {
+    auto_close = "86400s"
+  }
+
+  conditions {
+    display_name = "4xx / total > 50% em 15 min"
+    condition_threshold {
+      filter             = "metric.type=\"run.googleapis.com/request_count\" AND resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"mobile-bff\" AND metric.labels.response_code_class=\"4xx\""
+      denominator_filter = "metric.type=\"run.googleapis.com/request_count\" AND resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"mobile-bff\""
+      comparison         = "COMPARISON_GT"
+      threshold_value    = 0.5
+      duration           = "0s"
+
+      trigger {
+        count = 1
+      }
+
+      aggregations {
+        alignment_period     = "900s"
+        per_series_aligner   = "ALIGN_DELTA"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+
+      denominator_aggregations {
+        alignment_period     = "900s"
+        per_series_aligner   = "ALIGN_DELTA"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+
+  conditions {
+    display_name = "mais de 10 requisicoes em 15 min"
+    condition_threshold {
+      filter          = "metric.type=\"run.googleapis.com/request_count\" AND resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"mobile-bff\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 10
+      duration        = "0s"
+
+      trigger {
+        count = 1
+      }
+
+      aggregations {
+        alignment_period     = "900s"
+        per_series_aligner   = "ALIGN_DELTA"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+}
