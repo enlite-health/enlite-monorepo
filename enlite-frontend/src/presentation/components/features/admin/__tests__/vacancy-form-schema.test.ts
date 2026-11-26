@@ -104,6 +104,13 @@ describe('buildVacancyPayload — status in output is canonical', () => {
       expect(result.status).toBe(value);
     }
   });
+
+  it('F4: status de sistema (a vaga do foguete nasce PENDING_ACTIVATION) não vai no payload — o PUT o recusaria com 400', () => {
+    for (const legado of ['PENDING_ACTIVATION', 'ACTIVE', 'RAPID_RESPONSE', 'SEARCHING_REPLACEMENT']) {
+      const result = buildVacancyPayload({ ...minimalFormData, status: legado }, null);
+      expect(result.status).toBeUndefined();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
