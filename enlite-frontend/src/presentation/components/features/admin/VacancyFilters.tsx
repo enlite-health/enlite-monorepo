@@ -11,6 +11,8 @@ export interface VacancyAdvancedFilters {
   city: string;
   requiredSex: string;
   days: string[];
+  /** semaforo-da-vaga F3: cores escolhidas (`red`/`yellow`/`green`); vazio = todas. O servidor filtra (`?semaphore=`). */
+  semaphore: string[];
   timeFrom: string;
   timeTo: string;
 }
@@ -26,6 +28,8 @@ interface VacancyFiltersProps {
   selectedPatientStatus: string;
   onPatientStatusChange: (value: string) => void;
   patientStatusOptions: ComboboxOption[];
+  /** As 3 cores do semáforo (`getSemaphoreOptions`); o rótulo vem do i18n, a cor do contrato. */
+  semaphoreOptions: ComboboxOption[];
   // advanced filters
   advancedFilters: VacancyAdvancedFilters;
   onAdvancedChange: (updates: Partial<VacancyAdvancedFilters>) => void;
@@ -42,6 +46,7 @@ export function VacancyFilters({
   selectedPatientStatus,
   onPatientStatusChange,
   patientStatusOptions,
+  semaphoreOptions,
   advancedFilters,
   onAdvancedChange,
   stateOptions,
@@ -83,6 +88,7 @@ export function VacancyFilters({
     advancedFilters.city !== '' ||
     advancedFilters.requiredSex !== '' ||
     advancedFilters.days.length > 0 ||
+    advancedFilters.semaphore.length > 0 ||
     advancedFilters.timeFrom !== '' ||
     advancedFilters.timeTo !== '';
 
@@ -96,6 +102,7 @@ export function VacancyFilters({
       city: '',
       requiredSex: '',
       days: [],
+      semaphore: [],
       timeFrom: '',
       timeTo: '',
     });
@@ -215,6 +222,21 @@ export function VacancyFilters({
             onChange={(v) => onAdvancedChange({ days: v })}
             placeholder={t('admin.vacancies.filters.allOption')}
             inputSize="compact"
+          />
+        </div>
+
+        <div className="w-full sm:w-[220px]">
+          <Text size="sm" weight="semibold" color="secondary" className="mb-1">
+            {t('admin.semaphore.filterLabel')}
+          </Text>
+          <Combobox
+            multiple
+            options={semaphoreOptions}
+            value={advancedFilters.semaphore}
+            onChange={(v) => onAdvancedChange({ semaphore: v })}
+            placeholder={t('admin.vacancies.filters.allOption')}
+            inputSize="compact"
+            data-testid="vacancy-filter-semaphore"
           />
         </div>
 

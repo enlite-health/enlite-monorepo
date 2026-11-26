@@ -63,6 +63,18 @@ describe('AdminVacancyListApiService', () => {
       expect(url).toContain('days=1%2C3%2C5');
     });
 
+    it('serialises the semaphore CSV (cores)', async () => {
+      stubFetch({ success: true, data: [], total: 0 });
+      await AdminVacancyListApiService.listVacancies({ semaphore: 'green,red' });
+      expect(capturedUrl()).toContain('semaphore=green%2Cred');
+    });
+
+    it('omite o semaphore vazio (sem filtro = todas as cores)', async () => {
+      stubFetch({ success: true, data: [], total: 0 });
+      await AdminVacancyListApiService.listVacancies({ semaphore: '' });
+      expect(capturedUrl()).not.toContain('semaphore');
+    });
+
     it('includes time_from and time_to when both provided', async () => {
       stubFetch({ success: true, data: [], total: 0 });
       await AdminVacancyListApiService.listVacancies({

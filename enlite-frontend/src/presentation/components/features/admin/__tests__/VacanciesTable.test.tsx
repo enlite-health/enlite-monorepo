@@ -218,13 +218,14 @@ describe('VacanciesTable — última ação (DX-3.5) e ordem das colunas', () =>
     expect(cell.textContent).not.toBe('');
   });
 
-  it('ordem dos vacancies-col-* = lista literal de 14 (tudo menos o olho; sem priority nem dias sem divulgação)', () => {
+  it('ordem dos vacancies-col-* = lista literal de 15 (tudo menos o olho, com o semáforo entre status e última ação; sem priority nem dias sem divulgação)', () => {
     render(<VacanciesTable vacancies={[base]} />);
     const headers = screen.getAllByTestId(/^vacancies-col-/);
     const ids = headers.map((el) => el.getAttribute('data-testid')!.replace('vacancies-col-', ''));
     expect(ids).toEqual([
       'case',
       'status',
+      'semaphore',
       'last-action',
       'COMPATIBLE',
       'INVITED',
@@ -262,5 +263,42 @@ describe('VacanciesTable — coluna Caso (spec 046 F2, A5/A7/A8)', () => {
   it('A7: vaga sem paciente -> "—"', () => {
     render(<VacanciesTable vacancies={[{ ...base, caseNumber: null, caseOrdinal: null }]} />);
     expect(cellOf().textContent).toBe('—');
+  });
+
+  describe('semaforo-da-vaga F3 — coluna Semáforo', () => {
+    const cor = (cell: HTMLElement) => cell.querySelector('[data-testid="vacancy-semaphore-dot"]')?.getAttribute('data-color');
+
+    it('o cabeçalho fica entre Status e Última ação, sem ordenação (o servidor não ordena por cor)', () => {
+      const { container } = render(<VacanciesTable vacancies={[]} onSort={vi.fn()} />);
+      const keys = Array.from(container.querySelectorAll('thead th[data-testid]')).map((th) => th.getAttribute('data-testid'));
+      expect(keys.indexOf('vacancies-col-semaphore')).toBe(keys.indexOf('vacancies-col-status') + 1);
+      expect(keys.indexOf('vacancies-col-last-action')).toBe(keys.indexOf('vacancies-col-semaphore') + 1);
+      expect(screen.getByTestId('vacancies-col-semaphore')).not.toHaveAttribute('aria-sort');
+      expect(screen.getByTestId('vacancies-col-semaphore')).toHaveTextContent('admin.semaphore.title');
+    });
+
+    it('mostra a cor E o n que a API mandou, por linha (n=0 com green continua verde)', () => {
+      const rows: VacancyRow[] = [
+        { ...base, id: 'sem-a', semaphore: { n: 3, color: 'red' } },
+        { ...base, id: 'sem-b', semaphore: { n: 0, color: 'green' } },
+      ];
+      render(<VacanciesTable vacancies={rows} />);
+      const c0 = screen.getByTestId(`vacancies-row-${rows[0].id}-semaphore`);
+      const c1 = screen.getByTestId(`vacancies-row-${rows[1].id}-semaphore`);
+      expect(cor(c0)).toBe('red');
+      expect(c0).toHaveTextContent('3');
+      expect(cor(c1)).toBe('green');
+      expect(c1).toHaveTextContent('0');
+    });
+
+    it('semaphore null (baixada) ou ausente mostra "—", nunca um círculo', () => {
+      const rows: VacancyRow[] = [{ ...base, id: 'sem-c', semaphore: null }, { ...base, id: 'sem-d' }];
+      render(<VacanciesTable vacancies={rows} />);
+      for (const r of rows) {
+        const cell = screen.getByTestId(`vacancies-row-${r.id}-semaphore`);
+        expect(cor(cell)).toBe('none');
+        expect(cell).toHaveTextContent('—');
+      }
+    });
   });
 });

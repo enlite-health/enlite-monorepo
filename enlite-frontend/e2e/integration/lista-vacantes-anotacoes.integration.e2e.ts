@@ -263,6 +263,7 @@ test.describe('lista de vacantes e anotações @integration', () => {
     expect(ids).toEqual([
       'vacancies-col-case',
       'vacancies-col-status',
+      'vacancies-col-semaphore',
       'vacancies-col-last-action',
       'vacancies-col-COMPATIBLE',
       'vacancies-col-INVITED',

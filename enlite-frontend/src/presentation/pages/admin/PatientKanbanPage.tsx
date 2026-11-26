@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { List, LayoutGrid } from 'lucide-react';
@@ -9,6 +9,8 @@ import { Button } from '@presentation/components/atoms/Button';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { usePatientKanban } from '@hooks/admin/usePatientKanban';
 import { getCountryOptions } from '@presentation/pages/admin/patientsData';
+import { getSemaphoreOptions } from '@presentation/pages/admin/vacanciesData';
+import { filterGroupsByWorstSemaphore } from '@presentation/pages/admin/patientKanbanSemaphoreFilter';
 import { PatientKanbanBoard } from '@presentation/components/features/admin/PatientDetail/kanban/PatientKanbanBoard';
 import { Combobox } from '@presentation/components/atoms/Combobox';
 
@@ -17,8 +19,16 @@ export function PatientKanbanPage(): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [country, setCountry] = useState('');
+  const [semaphore, setSemaphore] = useState<string[]>([]);
   const { groups, isLoading, error, servicesStatus } = usePatientKanban(country);
   const countryOptions = getCountryOptions(t);
+  const semaphoreOptions = getSemaphoreOptions(t);
+  // O filtro por cor só existe com o agregado de serviços carregado (`worstSemaphore` vem dele): em 403/erro some e não filtra.
+  const semaphoreFilterOn = servicesStatus === 'ok';
+  const visibleGroups = useMemo(
+    () => (semaphoreFilterOn ? filterGroupsByWorstSemaphore(groups, semaphore) : groups),
+    [groups, semaphore, semaphoreFilterOn],
+  );
 
   return (
     <PageContainer>
@@ -31,6 +41,18 @@ export function PatientKanbanPage(): JSX.Element {
           {t('admin.patients.kanban.readonlyHint')}
         </Text>
         <div className="flex items-center gap-2" data-testid="patients-view-toggle">
+          {semaphoreFilterOn && (
+            <div className="w-[210px]" data-testid="patient-semaphore-filter" aria-label={t('admin.semaphore.filterLabel')}>
+              <Combobox
+                multiple
+                inputSize="compact"
+                options={semaphoreOptions}
+                value={semaphore}
+                onChange={setSemaphore}
+                placeholder={t('admin.semaphore.filterLabel')}
+              />
+            </div>
+          )}
           {/* 210px: cabe "Todos los países" sem cortar (ver PatientFilters) */}
           <div className="w-[210px]" data-testid="patient-country-filter">
             <Combobox
@@ -79,7 +101,7 @@ export function PatientKanbanPage(): JSX.Element {
               {t('admin.patients.kanban.subcard.loadError')}
             </Text>
           )}
-          <PatientKanbanBoard groups={groups} />
+          <PatientKanbanBoard groups={visibleGroups} />
         </>
       )}
     </PageContainer>

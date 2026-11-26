@@ -221,4 +221,18 @@ describe('useVacanciesData', () => {
     await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(3));
     expect(listSpy).toHaveBeenLastCalledWith({ lifecycle: 'baja', patient_status: 'SEARCHING' });
   });
+
+  it('refetch quando o filtro de semáforo muda (semaphore está nas deps explícitas do efeito)', async () => {
+    const listSpy = vi.spyOn(AdminApiService, 'listVacancies').mockResolvedValue({ data: [], total: 0 });
+    vi.spyOn(AdminApiService, 'getVacanciesStats').mockResolvedValue([]);
+
+    const { rerender } = renderHook(({ f }) => useVacanciesData(f), { initialProps: { f: { semaphore: '' } } });
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(1));
+    rerender({ f: { semaphore: 'green' } });
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
+    expect(listSpy).toHaveBeenLastCalledWith({ semaphore: 'green' });
+    rerender({ f: { semaphore: 'green,red' } });
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(3));
+    expect(listSpy).toHaveBeenLastCalledWith({ semaphore: 'green,red' });
+  });
 });

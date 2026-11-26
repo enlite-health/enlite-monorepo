@@ -47,9 +47,16 @@ const INITIAL_ADVANCED: VacancyAdvancedFilters = {
   city: '',
   requiredSex: '',
   days: [],
+  semaphore: [],
   timeFrom: '',
   timeTo: '',
 };
+
+const SEMAPHORE_OPTIONS: ComboboxOption[] = [
+  { value: 'red', label: 'Rojo' },
+  { value: 'yellow', label: 'Amarillo' },
+  { value: 'green', label: 'Verde' },
+];
 
 function defaultProps(overrides: Partial<Parameters<typeof VacancyFilters>[0]> = {}) {
   return {
@@ -61,6 +68,7 @@ function defaultProps(overrides: Partial<Parameters<typeof VacancyFilters>[0]> =
     selectedPatientStatus: '',
     onPatientStatusChange: vi.fn(),
     patientStatusOptions: PATIENT_STATUS_OPTIONS,
+    semaphoreOptions: SEMAPHORE_OPTIONS,
     advancedFilters: INITIAL_ADVANCED,
     onAdvancedChange: vi.fn(),
     stateOptions: [],
@@ -230,6 +238,7 @@ describe('VacancyFilters — callbacks', () => {
       city: '',
       requiredSex: '',
       days: [],
+      semaphore: [],
       timeFrom: '',
       timeTo: '',
     });
@@ -270,6 +279,28 @@ describe('VacancyFilters — estado refletido nos selects', () => {
   });
 });
 
+
+// ── semaforo-da-vaga F3: filtro multi por cor ─────────────────────────────────────────────────────────────
+describe('VacancyFilters — filtro "Semáforo" (multi, 3 cores)', () => {
+  it('mostra o rótulo e as 3 cores, e a linha 1 continua com os mesmos comboboxes (os e2e leem por índice)', () => {
+    render(<VacancyFilters {...defaultProps()} />);
+    expect(screen.getByText('admin.semaphore.filterLabel')).toBeInTheDocument();
+    expect(comboLabels(screen.getByTestId('vacancy-filter-semaphore'))).toEqual(['Rojo', 'Amarillo', 'Verde']);
+    expect(comboLabels(screen.getAllByRole('combobox')[0])).toEqual(['Borrador', 'Abierta', 'En espera', 'Cerrada', 'Dada de baja']);
+  });
+
+  it('escolher uma cor manda { semaphore: [cor] } ao onAdvancedChange', async () => {
+    const onAdvancedChange = vi.fn();
+    render(<VacancyFilters {...defaultProps({ onAdvancedChange })} />);
+    await selectCombo(screen.getByTestId('vacancy-filter-semaphore'), 'Verde');
+    expect(onAdvancedChange).toHaveBeenCalledWith({ semaphore: ['green'] });
+  });
+
+  it('só o semáforo ativo já mostra "Limpiar filtros"', () => {
+    render(<VacancyFilters {...defaultProps({ advancedFilters: { ...INITIAL_ADVANCED, semaphore: ['red'] } })} />);
+    expect(screen.getByText('admin.vacancies.filters.clear')).toBeInTheDocument();
+  });
+});
 
 // ── E7: o filtro por estado do paciente segue o container `patient` ────────────────────────────────────────
 describe('VacancyFilters — "Estado del paciente" só existe para quem lê o container `patient` (lex P5)', () => {

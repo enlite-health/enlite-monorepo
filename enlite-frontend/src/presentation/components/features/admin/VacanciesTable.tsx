@@ -19,6 +19,8 @@ import { formatDateTime } from '@presentation/components/features/admin/VacancyD
 import { isBajaSelectable } from './bajaSelectable';
 import { VacancyLifecycleBadge } from '@presentation/components/atoms/VacancyLifecycleBadge';
 import { PatientStatusPill } from '@presentation/components/atoms/PatientStatusPill';
+import { VacancySemaphoreDot } from '@presentation/components/atoms/VacancySemaphoreDot';
+import type { VacancySemaphore } from '@domain/value-objects/vacancySemaphore';
 import type { CicloDeVida } from '@domain/value-objects/vacancyLifecycle';
 
 export interface VacancyRow {
@@ -31,6 +33,8 @@ export interface VacancyRow {
   lifecycle: CicloDeVida | null;
   /** `patients.status` por join (D3/E6); ausente/`null` = sem a célula do container `patient` (ou vaga sem paciente) → "—". */
   patientStatus?: string | null;
+  /** semaforo-da-vaga F3: cor e n que o back calcula (o front só pinta); `null`/ausente = vaga dada de baja → "—". */
+  semaphore?: VacancySemaphore | null;
   diasAberto: string;
   /** As 8 contagens do funil (DX-2.7, Fase 4: +QUICK_RESPONSE_TEAM), recorte do board — vêm prontas do backend (stageCounts). */
   stageCounts: Record<string, number>;
@@ -94,6 +98,7 @@ const LIST_FUNNEL_COLUMNS = VACANCY_FUNNEL_COLUMNS;
 const TOTAL_COLUMNS =
   1 + // coluna do olho / seleção
   STATIC_COLUMNS_BEFORE.length +
+  1 + // semáforo
   1 + // última ação
   LIST_FUNNEL_COLUMNS.length +
   STATIC_COLUMNS_AFTER.length;
@@ -130,6 +135,9 @@ export function VacanciesTable({
               {t(`admin.vacancies.table.${key}`)}
             </TableHead>
           ))}
+          <TableHead data-testid="vacancies-col-semaphore" className="whitespace-nowrap">
+            {t('admin.semaphore.title')}
+          </TableHead>
           <TableHead data-testid="vacancies-col-last-action" className="whitespace-nowrap" {...sortProps('lastActionAt')}>
             {t('admin.vacancies.table.lastAction')}
           </TableHead>
@@ -213,6 +221,9 @@ export function VacanciesTable({
                       </span>
                     )}
                   </div>
+                </TableCell>
+                <TableCell unwrapped className="whitespace-nowrap" data-testid={`vacancies-row-${row.id}-semaphore`}>
+                  <VacancySemaphoreDot value={row.semaphore ?? null} />
                 </TableCell>
                 <TableCell
                   className="whitespace-nowrap"

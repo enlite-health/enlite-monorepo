@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Rocket, ExternalLink, AlertTriangle } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
+import { VacancySemaphoreDot } from '@presentation/components/atoms/VacancySemaphoreDot';
 import { useCanActivateRecruitment } from '@presentation/hooks/useCellAccess';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientDetail';
 import { coverageHoursPair } from '@domain/entities/PatientItinerary';
@@ -57,9 +58,13 @@ export function PatientKanbanSubcards({ patientId, services }: Props): JSX.Eleme
             title={pairAria}
             aria-label={pairAria}
           >
-            <Text as="span" size="xs" color="secondary" className="flex-1 min-w-0 truncate">
-              {serviceLabel}
-            </Text>
+            <div className="flex flex-1 min-w-0 items-center gap-1.5">
+              {/* semaforo-da-vaga F3: cor + n da vaga viva do serviço (do servidor); sem vaga viva (null) = nada. */}
+              {service.semaphore && <VacancySemaphoreDot value={service.semaphore} testId="patient-kanban-subcard-semaphore" />}
+              <Text as="span" size="xs" color="secondary" className="min-w-0 truncate">
+                {serviceLabel}
+              </Text>
+            </div>
             <div className="flex items-center gap-1 shrink-0">
               {service.uncoveredDays ? (
                 <span

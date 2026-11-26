@@ -17,6 +17,7 @@ export { PageContainer } from './PageContainer';
 export { PercentageDisplay } from './PercentageDisplay';
 export { ProgressBar } from './ProgressBar';
 export { VacancyLifecycleBadge } from './VacancyLifecycleBadge';
+export { VacancySemaphoreDot } from './VacancySemaphoreDot';
 export { PatientStatusPill } from './PatientStatusPill';
 export {
   Table,

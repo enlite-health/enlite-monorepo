@@ -7746,6 +7746,17 @@
         "vacante_other": "Há {{count}} pessoas na vaga que ainda não receberam o WhatsApp.",
         "seeVacante": "Ver as {{count}}"
       }
+    },
+    "semaphore": {
+      "title": "Semáforo",
+      "filterLabel": "Semáforo",
+      "colors": {
+        "red": "Vermelho",
+        "yellow": "Amarelo",
+        "green": "Verde"
+      },
+      "dotAria": "Semáforo {{color}}: {{n}} em Selecionado e Resposta rápida (sem desvinculados)",
+      "none": "Sem semáforo"
     }
   },
   "publicVacancy": {

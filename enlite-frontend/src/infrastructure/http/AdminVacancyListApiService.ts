@@ -31,6 +31,8 @@ export interface VacancyListFilters {
   required_sex?: string;
   /** CSV of day-of-week integers 0–6 (0=domingo). */
   days?: string;
+  /** semaforo-da-vaga F3: CSV de cores (`red,yellow,green`); o servidor valida (400 `VACANCY_SEMAPHORE_INVALID`) e nunca devolve baixada. */
+  semaphore?: string;
   time_from?: string;
   time_to?: string;
   /** Chave da allowlist do backend (spec 046 F3). */

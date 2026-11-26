@@ -19,7 +19,7 @@ import { DraftVacancyChoiceDialog } from '@presentation/components/features/admi
 import { useVacanciesData } from '@hooks/admin/useVacanciesData';
 import { useTableSort } from '@hooks/useTableSort';
 import type { VacancySortKey } from '@presentation/components/features/admin/VacanciesTable';
-import { getLifecycleOptions, getPatientStatusOptions } from './vacanciesData';
+import { getLifecycleOptions, getPatientStatusOptions, getSemaphoreOptions } from './vacanciesData';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 
 const INITIAL_ADVANCED: VacancyAdvancedFilters = {
@@ -28,6 +28,7 @@ const INITIAL_ADVANCED: VacancyAdvancedFilters = {
   city: '',
   requiredSex: '',
   days: [],
+  semaphore: [],
   timeFrom: '',
   timeTo: '',
 };
@@ -37,6 +38,7 @@ export function AdminVacanciesPage(): JSX.Element {
   const { t } = useTranslation();
   const lifecycleOptions = getLifecycleOptions(t);
   const patientStatusOptions = getPatientStatusOptions(t);
+  const semaphoreOptions = getSemaphoreOptions(t);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLifecycle, setSelectedLifecycle] = useState('');
@@ -88,6 +90,7 @@ export function AdminVacanciesPage(): JSX.Element {
     if (advancedFilters.city) base.city = advancedFilters.city;
     if (advancedFilters.requiredSex) base.required_sex = advancedFilters.requiredSex;
     if (advancedFilters.days.length > 0) base.days = advancedFilters.days.join(',');
+    if (advancedFilters.semaphore.length > 0) base.semaphore = advancedFilters.semaphore.join(',');
     if (advancedFilters.timeFrom && advancedFilters.timeTo) {
       base.time_from = advancedFilters.timeFrom;
       base.time_to = advancedFilters.timeTo;
@@ -208,6 +211,7 @@ export function AdminVacanciesPage(): JSX.Element {
         caseOrdinal: (vac.caseOrdinal as number | null | undefined) ?? null,
         lifecycle: (vac.lifecycle as VacancyRow['lifecycle'] | undefined) ?? null,
         patientStatus: (vac.patient_status as string | null | undefined) ?? null,
+        semaphore: (vac.semaphore as VacancyRow['semaphore'] | undefined) ?? null,
         diasAberto: (vac.diasAberto as string) || '—',
         stageCounts: (vac.stageCounts as Record<string, number> | undefined) ?? {},
         postulados: vac.postulados != null ? String(vac.postulados) : '—',
@@ -348,6 +352,7 @@ export function AdminVacanciesPage(): JSX.Element {
           selectedPatientStatus={selectedPatientStatus}
           onPatientStatusChange={handlePatientStatusChange}
           patientStatusOptions={patientStatusOptions}
+          semaphoreOptions={semaphoreOptions}
           advancedFilters={advancedFilters}
           onAdvancedChange={handleAdvancedChange}
           stateOptions={stateOptions}
