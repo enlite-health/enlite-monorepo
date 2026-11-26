@@ -114,6 +114,7 @@ const FABRICAS = [
   'modules/inapp-notification/interfaces/routes/adminNotificationRoutes',
   'modules/integration/interfaces/routes/adminAiPromptRoutes',
   'modules/integration/interfaces/routes/adminIntegrationsRoutes',
+  'modules/integration/interfaces/routes/talentumInboxInternalRoutes',
   'modules/integration/interfaces/webhooks/routes/webhookRoutes',
   'modules/matching/interfaces/routes/adminAdmissionRoutes',
   'modules/matching/interfaces/routes/adminEnquadreEventListRoutes',
@@ -214,6 +215,6 @@ describe('T313 — cobertura de classe sobre os routers reais', () => {
       sem.push(...unclassifiedRoutes(rotas).map((r) => `${arquivo}: ${r.method} ${r.path}`));
     }
     expect(sem).toEqual([]);
-    expect(total).toBe(456);
+    expect(total).toBe(458);
   });
 });
