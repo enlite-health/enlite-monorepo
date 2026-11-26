@@ -152,6 +152,16 @@ describe('Talentum — ack rápido do webhook e rotas internas da inbox (spec 09
       expect((await api.post(WEBHOOK, A)).status).toBe(200);
       expect(await inboxRows('t4b')).toHaveLength(3); // A de novo logo depois de A: duplicata do último
     });
+
+    it('profile NULL (action PRESCREENING): A→A grava 1; A→B→A grava 3 (IS NOT DISTINCT FROM preservado)', async () => {
+      const mk = (name: string) => ({ action: 'PRESCREENING', data: { _id: PSC('t4c'), name } });
+      const [A, B] = [mk('A'), mk('B')];
+      expect((await api.post(WEBHOOK, A)).status).toBe(200);
+      expect((await api.post(WEBHOOK, A)).status).toBe(200);
+      expect(await inboxRows('t4c')).toHaveLength(1);
+      for (const p of [B, A]) expect((await api.post(WEBHOOK, p)).status).toBe(200);
+      expect(await inboxRows('t4c')).toHaveLength(3);
+    });
   });
 
   describe('T-095-31 — rotas internas', () => {

@@ -176,4 +176,47 @@ describe('TalentumInboxRepository', () => {
     expect(client.query.mock.calls[1]).toEqual([expect.stringContaining(`state = 'FAILED'`), ['i2', 'code=23505 constraint=x']]);
     expect(client.query.mock.calls[2][1]).toEqual(['i3', 'REJECTED_SCHEMA', null]);
   });
+
+  describe('predicado da chave (usa idx_talentum_webhook_inbox_key)', () => {
+    const norm = (q: string) => q.replace(/\s+/g, ' ');
+
+    it('ids preenchidos → `=` nos dois ids, nas duas consultas, sem IS NOT DISTINCT FROM', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ id: 'x' }] });
+      await new TalentumInboxRepository(makeKms() as never).insertReceived(params(body));
+      for (const [sql] of mockQuery.mock.calls) {
+        const q = norm(sql);
+        expect(q).not.toContain('IS NOT DISTINCT FROM');
+        expect(q).toMatch(/talentum_prescreening_id = \$\d::text AND talentum_profile_id = \$\d::text/);
+      }
+    });
+
+    it('id NULL (PRESCREENING / action desconhecida) → IS NOT DISTINCT FROM nas duas consultas', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [{ id: 'x' }] });
+      await new TalentumInboxRepository(makeKms() as never).insertReceived({ ...params(body), profileId: null });
+      for (const [sql] of mockQuery.mock.calls) {
+        const q = norm(sql);
+        expect(q).toContain('talentum_prescreening_id IS NOT DISTINCT FROM');
+        expect(q).toContain('talentum_profile_id IS NOT DISTINCT FROM');
+      }
+    });
+
+    it.each([
+      ['ids preenchidos', { prescreeningId: 'tp-1', profileId: 'prof-1' }],
+      ['profileId NULL', { prescreeningId: 'tp-1', profileId: null }],
+      ['os dois NULL', { prescreeningId: null, profileId: null }],
+    ])('%s: A→B→A grava 3 linhas; A→A grava 1', async (_n, ids) => {
+      const A = { ...body, n: 'A' };
+      const B = { ...body, n: 'B' };
+      const repo = new TalentumInboxRepository(makeKms() as never);
+      const rows = statefulPool();
+      const r = [await repo.insertReceived({ ...params(A), ...ids }), await repo.insertReceived({ ...params(B), ...ids }), await repo.insertReceived({ ...params(A), ...ids })];
+      expect(r.map((x) => x.duplicate)).toEqual([false, false, false]);
+      expect(rows).toHaveLength(3);
+      const rows2 = statefulPool();
+      const a1 = await repo.insertReceived({ ...params(A), ...ids });
+      const a2 = await repo.insertReceived({ ...params(A), ...ids });
+      expect(a2).toEqual({ id: a1.id, duplicate: true });
+      expect(rows2).toHaveLength(1);
+    });
+  });
 });

@@ -48,6 +48,16 @@ function mapRow(row: InboxDbRow): TalentumInboxRow {
   };
 }
 
+/**
+ * Predicado da chave (prescreening, profile). Com os dois ids preenchidos (PRESCREENING_RESPONSE, caminho quente) usa `=`,
+ * que o btree de idx_talentum_webhook_inbox_key atende; `IS NOT DISTINCT FROM` não usa o índice. Com algum id NULL
+ * (PRESCREENING e action desconhecida, raros) mantém `IS NOT DISTINCT FROM`, pois `NULL = NULL` não casa.
+ */
+export function keyPredicate(prescreeningId: string | null, profileId: string | null, pPsc: string, pProf: string): string {
+  const op = prescreeningId !== null && profileId !== null ? '=' : 'IS NOT DISTINCT FROM';
+  return `talentum_prescreening_id ${op} ${pPsc}::text AND talentum_profile_id ${op} ${pProf}::text`;
+}
+
 export class TalentumInboxRepository implements ITalentumInboxRepository {
   private pool?: Pool;
 
@@ -73,8 +83,7 @@ export class TalentumInboxRepository implements ITalentumInboxRepository {
         WHERE NOT EXISTS (
           SELECT 1 FROM (
             SELECT body_hash FROM talentum_webhook_inbox
-             WHERE talentum_prescreening_id IS NOT DISTINCT FROM $5::text
-               AND talentum_profile_id IS NOT DISTINCT FROM $6::text
+             WHERE ${keyPredicate(p.prescreeningId, p.profileId, '$5', '$6')}
              ORDER BY received_at DESC, id DESC LIMIT 1
           ) last WHERE last.body_hash = $1::text)
        RETURNING id`,
@@ -85,8 +94,7 @@ export class TalentumInboxRepository implements ITalentumInboxRepository {
     const existing = await this.getPool().query(
       `SELECT id FROM talentum_webhook_inbox
         WHERE body_hash = $1
-          AND talentum_prescreening_id IS NOT DISTINCT FROM $2::text
-          AND talentum_profile_id IS NOT DISTINCT FROM $3::text
+          AND ${keyPredicate(p.prescreeningId, p.profileId, '$2', '$3')}
         ORDER BY received_at DESC, id DESC LIMIT 1`,
       [p.bodyHash, p.prescreeningId, p.profileId],
     );
