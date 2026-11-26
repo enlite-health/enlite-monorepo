@@ -18,7 +18,7 @@
  *
  * Nada aqui loga o corpo (PII): só ids, enums e contagens. `error_code` é só `code`/`constraint` do pg.
  */
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { withActorContext } from '@shared/database/actorContext';
 import { reportError } from '@shared/logging';
 import type { ITalentumInboxRepository, TalentumInboxRow } from '../domain/TalentumInbox';
@@ -35,12 +35,19 @@ export type TalentumEnvironment = 'production' | 'test';
 
 /** Port do caso de uso de resposta de prescreening (`ProcessTalentumPrescreening`, módulo matching), sem cópia de lógica. */
 export interface ITalentumPrescreeningProcessor {
-  execute(payload: TalentumPrescreeningResponseParsed, options?: { environment?: TalentumEnvironment }): Promise<unknown>;
+  execute(
+    payload: TalentumPrescreeningResponseParsed,
+    options?: { environment?: TalentumEnvironment; client?: PoolClient; afterCommit?: AfterCommit },
+  ): Promise<unknown>;
 }
+
+/** Efeito externo (Pub/Sub) que só pode sair depois do COMMIT da transação do processador. */
+export type AfterCommit = (effect: () => Promise<void>) => void;
 
 /** Port da criação de vaga por evento `PRESCREENING` (`CreateJobPostingFromTalentumUseCase`). */
 export interface IJobPostingFromTalentumCreator {
-  execute(data: { _id: string; name: string }, environment: TalentumEnvironment): Promise<unknown>;
+  /** `client` = a transação do processador: o caso de uso roda nela, sem 2ª conexão do pool (T-095-30). */
+  execute(data: { _id: string; name: string }, environment: TalentumEnvironment, client?: PoolClient): Promise<unknown>;
 }
 
 export type ProcessInboxOutcome = 'PROCESSED' | 'ALREADY_PROCESSED' | 'NOT_FOUND' | 'SKIPPED';
@@ -76,24 +83,31 @@ export class ProcessTalentumInboxUseCase {
   ) {}
 
   async execute(inboxId: string, options: ProcessInboxOptions = {}): Promise<ProcessInboxResult> {
-    const row = await this.inbox.findById(this.pool, inboxId);
-    if (!row) return { inboxId, outcome: 'NOT_FOUND', processed: 0 };
-    if (row.state === 'PROCESSED') return { inboxId, outcome: 'ALREADY_PROCESSED', processed: 0 };
-    const settled = row.state === 'UNSUPPORTED' || row.state === 'REJECTED_SCHEMA';
-    if (settled && !options.reprocess) return { inboxId, outcome: 'SKIPPED', processed: 0 };
-
     let failure: { error: unknown } | undefined;
     let processed = 0;
+    let early: ProcessInboxResult | undefined;
+    let key: { prescreeningId: string | null } | undefined;
+    const afterCommit: Array<() => Promise<void>> = [];
 
+    // UMA conexão do pool de ponta a ponta (T-095-30): leitura da linha, lock, pendentes, processamento e marcas rodam no
+    // `client` desta transação. Nada aqui (nem abaixo, em `processRow`) chama `pool.connect()`/`pool.query()`.
     // Ator do webhook vazio (evento automático): sem carimbo, `changed_by` fica ''/NULL na trilha.
     await withActorContext(this.pool, async (client) => {
+      const row = await this.inbox.findById(client, inboxId);
+      if (!row) { early = { inboxId, outcome: 'NOT_FOUND', processed: 0 }; return; }
+      if (row.state === 'PROCESSED') { early = { inboxId, outcome: 'ALREADY_PROCESSED', processed: 0 }; return; }
+      const settled = row.state === 'UNSUPPORTED' || row.state === 'REJECTED_SCHEMA';
+      if (settled && !options.reprocess) { early = { inboxId, outcome: 'SKIPPED', processed: 0 }; return; }
+      key = { prescreeningId: row.talentumPrescreeningId };
+
       await this.inbox.lockKey(client, row.talentumPrescreeningId, row.talentumProfileId);
       const pending = await this.inbox.pendingForKey(client, row.talentumPrescreeningId, row.talentumProfileId, [row.id]);
 
       for (const item of pending) {
         await client.query('SAVEPOINT talentum_inbox_row');
+        const rowEffects: Array<() => Promise<void>> = [];
         try {
-          const verdict = await this.processRow(item);
+          const verdict = await this.processRow(item, client, (effect) => { rowEffects.push(effect); });
           if (verdict.kind === 'PROCESSED') {
             await this.inbox.markProcessed(client, item.id);
             processed += 1;
@@ -101,6 +115,7 @@ export class ProcessTalentumInboxUseCase {
             await this.inbox.markState(client, item.id, verdict.state, verdict.errorCode);
           }
           await client.query('RELEASE SAVEPOINT talentum_inbox_row');
+          afterCommit.push(...rowEffects); // linha que desfez não publica nada
         } catch (err) {
           await client.query('ROLLBACK TO SAVEPOINT talentum_inbox_row');
           await this.inbox.markFailed(client, item.id, describeError(err));
@@ -109,15 +124,19 @@ export class ProcessTalentumInboxUseCase {
         }
       }
     });
+    if (early) return early;
+
+    // Já commitado: agora o consumidor do Pub/Sub enxerga o que a transação gravou.
+    for (const effect of afterCommit) await effect();
 
     console.log(
-      `${TAG} inboxId=${inboxId} | talentumPrescreeningId=${row.talentumPrescreeningId ?? 'none'} | processed=${processed} | failed=${failure ? 1 : 0}`,
+      `${TAG} inboxId=${inboxId} | talentumPrescreeningId=${key?.prescreeningId ?? 'none'} | processed=${processed} | failed=${failure ? 1 : 0}`,
     );
     if (failure) throw failure.error;
     return { inboxId, outcome: 'PROCESSED', processed };
   }
 
-  private async processRow(item: TalentumInboxRow): Promise<RowVerdict> {
+  private async processRow(item: TalentumInboxRow, client: PoolClient, afterCommit: AfterCommit): Promise<RowVerdict> {
     const payload = await this.inbox.decryptPayload(item);
 
     // 1) Formato desconhecido (action/subtype fora do que o processador entende) → UNSUPPORTED, sem tentar o schema.
@@ -140,10 +159,10 @@ export class ProcessTalentumInboxUseCase {
 
     if (parsed.data.action === 'PRESCREENING') {
       // Criação de vaga (evento `PRESCREENING`/`CREATED`): o mesmo caso de uso que o VacancyCreatedHandler chamava.
-      await this.jobPostingCreator.execute(parsed.data.data, item.environment);
+      await this.jobPostingCreator.execute(parsed.data.data, item.environment, client);
       return { kind: 'PROCESSED' };
     }
-    await this.prescreeningProcessor.execute(parsed.data, { environment: item.environment });
+    await this.prescreeningProcessor.execute(parsed.data, { environment: item.environment, client, afterCommit });
     return { kind: 'PROCESSED' };
   }
 }

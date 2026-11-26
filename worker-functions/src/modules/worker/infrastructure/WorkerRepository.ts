@@ -76,6 +76,13 @@ export class WorkerRepository implements IWorkerRepository {
     this.pubsub = pubsub ?? null;
   }
 
+  /** Mesmo repositório (mesmos serviços KMS/blind index), outro pool: a conexão da transação do processador da inbox (T-095-30). */
+  withPool(pool: Pool): WorkerRepository {
+    const bound = Object.create(this) as WorkerRepository;
+    bound.pool = pool;
+    return bound;
+  }
+
   async create(data: CreateWorkerDTO): Promise<Result<Worker>> {
     try {
       const consentAt = data.lgpdOptIn ? new Date() : null;

@@ -92,6 +92,7 @@ import { OutboxProcessor } from '@modules/notification/infrastructure/OutboxProc
 import { BulkDispatchScheduler } from '@modules/notification/infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '@modules/notification/infrastructure/BulkDispatchTalentumScheduler';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { txBoundPool } from '@shared/database/txBoundPool';
 import { createMeAreasRouter } from '@modules/identity/interfaces/meAreasRoute';
 import { createPersonTreeRouter } from '@modules/identity/interfaces/personTreeRoute';
 import { requirePersonTreeService } from '@modules/identity/interfaces/middleware/requirePersonTreeService';
@@ -973,7 +974,7 @@ const talentumInboxProcessor = new ProcessTalentumInboxUseCase(
   dbPool,
   new TalentumInboxRepository(),
   new ProcessTalentumPrescreening(new TalentumPrescreeningRepository(), new WorkerRepository(), new JobPostingLookup(dbPool), dbPool, pubsubClient, talentumAlarmNotifier),
-  { execute: (data, environment) => new CreateJobPostingFromTalentumUseCase(dbPool, talentumPrescreeningIdResolver).execute(data, environment) },
+  { execute: (data, environment, client) => new CreateJobPostingFromTalentumUseCase(client ? txBoundPool(client) : dbPool, talentumPrescreeningIdResolver).execute(data, environment) },
 );
 app.use(
   '/api/internal',

@@ -13,8 +13,14 @@ import {
 export class TalentumPrescreeningRepository {
   private pool: Pool;
 
-  constructor() {
-    this.pool = DatabaseConnection.getInstance().getPool();
+  /** `pool` injetado = pool-fachada de uma transação já aberta (`txBoundPool`); omitido = o pool do processo. */
+  constructor(pool?: Pool) {
+    this.pool = pool ?? DatabaseConnection.getInstance().getPool();
+  }
+
+  /** Mesmo repositório, outro pool (a conexão da transação do processador da inbox, T-095-30). */
+  withPool(pool: Pool): TalentumPrescreeningRepository {
+    return new TalentumPrescreeningRepository(pool);
   }
 
   // upsertPrescreening

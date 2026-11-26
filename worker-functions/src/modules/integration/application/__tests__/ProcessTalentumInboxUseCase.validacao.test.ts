@@ -233,7 +233,7 @@ describe('aceitos: o schema deixa passar e o caso de uso chama o processador', (
 describe('roteamento por action e propagação de environment', () => {
   it('[20] PRESCREENING.CREATED chama o caso de uso de vaga (e só ele)', async () => {
     const r = await run(createdPayload());
-    expect(r.creator.execute).toHaveBeenCalledWith({ _id: 'talentum-project-001', name: 'Operario de producción' }, 'production');
+    expect(r.creator.execute).toHaveBeenCalledWith({ _id: 'talentum-project-001', name: 'Operario de producción' }, 'production', expect.anything());
     expect(r.processor.execute).not.toHaveBeenCalled();
     expect(r.inbox.markProcessed).toHaveBeenCalled();
   });
@@ -244,13 +244,13 @@ describe('roteamento por action e propagação de environment', () => {
   });
   it('[22] environment=production na linha → production no caso de uso', async () => {
     const r = await run(responsePayload(), 'production');
-    expect(r.processor.execute).toHaveBeenCalledWith(expect.anything(), { environment: 'production' });
+    expect(r.processor.execute).toHaveBeenCalledWith(expect.anything(), { environment: 'production', client: expect.anything(), afterCommit: expect.any(Function) });
   });
   it('[23] environment=test na linha → test no caso de uso (e no de vaga)', async () => {
     const r1 = await run(responsePayload(), 'test');
-    expect(r1.processor.execute).toHaveBeenCalledWith(expect.anything(), { environment: 'test' });
+    expect(r1.processor.execute).toHaveBeenCalledWith(expect.anything(), { environment: 'test', client: expect.anything(), afterCommit: expect.any(Function) });
     const r2 = await run(createdPayload(), 'test');
-    expect(r2.creator.execute).toHaveBeenCalledWith(expect.anything(), 'test');
+    expect(r2.creator.execute).toHaveBeenCalledWith(expect.anything(), 'test', expect.anything());
   });
   // [24] e [25] (partnerContext ausente / isTest indefinido → production) são do ACK: o default é gravado na coluna
   // `environment` da inbox. Cobertos em TalentumWebhookController.test.ts (test.each "propagação de environment").

@@ -110,7 +110,7 @@ describe('ProcessTalentumInboxUseCase', () => {
       'proc:start:1', 'proc:end:1', 'proc:start:2', 'proc:end:2', 'proc:start:3', 'proc:end:3',
     ]);
     expect([...w.states.values()]).toEqual(['PROCESSED', 'PROCESSED', 'PROCESSED']);
-    expect(processor.execute).toHaveBeenCalledWith(expect.anything(), { environment: 'production' });
+    expect(processor.execute).toHaveBeenCalledWith(expect.anything(), { environment: 'production', client: expect.anything(), afterCommit: expect.any(Function) });
   });
 
   it('(b) linha PROCESSED não reprocessa: nem lock, nem transação, nem caso de uso', async () => {
@@ -122,14 +122,15 @@ describe('ProcessTalentumInboxUseCase', () => {
     expect(r.outcome).toBe('ALREADY_PROCESSED');
     expect(processor.execute).not.toHaveBeenCalled();
     expect(w.inbox.lockKey).not.toHaveBeenCalled();
-    expect(w.events).toEqual([]);
+    // A leitura da linha vai pelo client (T-095-30: 0 pool.query): abre e fecha a transação, sem lock nem marca.
+    expect(w.events).toEqual(['c1:BEGIN', 'c1:COMMIT']);
   });
 
   it('linha inexistente → NOT_FOUND sem lançar (reentrega infinita não adianta)', async () => {
     const w = buildWorld([], {});
     const r = await new ProcessTalentumInboxUseCase(w.pool as any, w.inbox, { execute: jest.fn() }, { execute: jest.fn() }).execute('nada');
     expect(r.outcome).toBe('NOT_FOUND');
-    expect(w.events).toEqual([]);
+    expect(w.events).toEqual(['c1:BEGIN', 'c1:COMMIT']);
   });
 
   it('(c) erro marca FAILED só com code/constraint, relança o erro original e as marcas ficam duráveis (COMMIT antes do throw)', async () => {
@@ -220,7 +221,7 @@ describe('ProcessTalentumInboxUseCase', () => {
 
     const r = await new ProcessTalentumInboxUseCase(w.pool as any, w.inbox, processor, creator).execute('i1');
 
-    expect(creator.execute).toHaveBeenCalledWith({ _id: 'proj-1', name: 'CASO 9' }, 'test');
+    expect(creator.execute).toHaveBeenCalledWith({ _id: 'proj-1', name: 'CASO 9' }, 'test', expect.anything());
     expect(processor.execute).not.toHaveBeenCalled();
     expect(r.outcome).toBe('PROCESSED');
   });

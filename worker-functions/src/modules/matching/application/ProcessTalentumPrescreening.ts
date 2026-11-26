@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import { Pool, PoolClient } from 'pg';
+import { txBoundPool } from '@shared/database/txBoundPool';
 import { TalentumPrescreeningRepository } from '../infrastructure/TalentumPrescreeningRepository';
 import type { TalentumDivergenceKind } from '../domain/TalentumPrescreening';
 import { TalentumPrescreeningResponseParsed } from '@modules/integration';
@@ -39,6 +40,13 @@ export type WebhookEnvironment = 'production' | 'test';
 export interface ProcessTalentumPrescreeningOptions {
   environment?: WebhookEnvironment;
   dryRun?: boolean;
+  /**
+   * T-095-30: transação que o chamador (processador da inbox) já segura. Com ela, TODO acesso a banco do evento roda
+   * nessa conexão (`txBoundPool`: BEGIN/COMMIT internos viram SAVEPOINT) — nenhuma 2ª conexão do pool. Sem ela, como antes.
+   */
+  client?: PoolClient;
+  /** Com `client`: efeitos externos (Pub/Sub) só depois do COMMIT do chamador, não no meio da transação dele. */
+  afterCommit?: (effect: () => Promise<void>) => void;
 }
 
 export interface ProcessTalentumPrescreeningResult {
@@ -73,6 +81,8 @@ export interface IWorkerLookup {
    */
   findByPhoneCandidates(candidates: string[], opts?: LookupOpts): Promise<{ getValue(): { id: string } | null; ids?: string[] } | { isSuccess: boolean; getValue(): { id: string } | null; ids?: string[] }>;
   findByCuit(cuit: string): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
+  /** Mesma porta sobre outro pool (a conexão de uma transação já aberta). Ausente = não rebindável. */
+  withPool?(pool: Pool): IWorkerLookup;
 }
 
 export interface IJobPostingLookup {
@@ -80,6 +90,8 @@ export interface IJobPostingLookup {
   findByTalentumPrescreeningId(prescreeningId: string): Promise<{ id: string } | null>;
   /** Fallback por título: prefere a oficial; 2+ sem desempate oficial → null. */
   findByTitleILike(name: string): Promise<{ id: string } | null>;
+  /** Mesma porta sobre outro pool (a conexão de uma transação já aberta). Ausente = não rebindável. */
+  withPool?(pool: Pool): IJobPostingLookup;
 }
 
 /**
@@ -101,6 +113,7 @@ export class ProcessTalentumPrescreening {
     private readonly pool: Pool,
     private readonly pubsub: PubSubClient,
     private readonly conflictNotifier: ITalentumConflictNotifier = new TalentumWebhookAlarmNotifier(),
+    private readonly deferEffect?: (effect: () => Promise<void>) => void,
   ) {
     this.questionsWriter = new PrescreeningQuestionsWriter(prescreeningRepo);
   }
@@ -109,6 +122,8 @@ export class ProcessTalentumPrescreening {
     payload: TalentumPrescreeningResponseParsed,
     options?: ProcessTalentumPrescreeningOptions,
   ): Promise<ProcessTalentumPrescreeningResult> {
+    if (options?.client) return this.bindTo(options.client, options.afterCommit).execute(payload, { environment: options.environment, dryRun: options.dryRun });
+
     const environment = options?.environment ?? 'production';
     const dryRun = options?.dryRun ?? false;
 
@@ -141,6 +156,23 @@ export class ProcessTalentumPrescreening {
     await this.questionsWriter.persist(prescreening.id, payload);
 
     return this.buildResult(prescreening.id, prescreening.talentumPrescreeningId, prescreening.workerId, prescreening.jobPostingId);
+  }
+
+  /**
+   * Mesma instância, mas TODO banco (repositório, lookups, helpers, transações próprias) na conexão `client`, sem 2ª
+   * conexão do pool (T-095-30). Colaborador que não sabe se rebindar (dublê) fica como está.
+   */
+  private bindTo(client: PoolClient, deferEffect?: (effect: () => Promise<void>) => void): ProcessTalentumPrescreening {
+    const pool = txBoundPool(client);
+    return new ProcessTalentumPrescreening(
+      this.prescreeningRepo.withPool(pool),
+      this.workerLookup.withPool?.(pool) ?? this.workerLookup,
+      this.jobPostingLookup.withPool?.(pool) ?? this.jobPostingLookup,
+      pool,
+      this.pubsub,
+      this.conflictNotifier,
+      deferEffect,
+    );
   }
 
   /** `talentum_prescreenings.status` gravado antes deste evento (null se o card é novo). */
@@ -646,6 +678,16 @@ export class ProcessTalentumPrescreening {
 
   private async publishQualifiedEvent(eventId: string | null): Promise<void> {
     if (!eventId) return;
+    // Dentro da transação do processador o domain_event ainda não está commitado: publicar agora faria o consumidor
+    // do Pub/Sub não achá-lo. O chamador roda o efeito depois do COMMIT (e o descarta se a linha desfizer).
+    if (this.deferEffect) {
+      this.deferEffect(() => this.publishNow(eventId));
+      return;
+    }
+    await this.publishNow(eventId);
+  }
+
+  private async publishNow(eventId: string): Promise<void> {
     try {
       await this.pubsub.publish('talentum-prescreening-qualified', { eventId });
       console.log(`${TAG} Pub/Sub published talentum-prescreening-qualified eventId=${eventId}`);
