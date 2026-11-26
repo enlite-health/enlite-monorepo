@@ -1,6 +1,6 @@
 import http from 'http';
 import type { AddressInfo } from 'net';
-import { HttpPresenceReader } from '../HttpPresenceReader';
+import { HttpPresenceReader, presenceOptsFromEnv } from '../HttpPresenceReader';
 import { PresenceUnavailableError } from '../../application/ports/PresenceReaderPort';
 
 const OCC = '22222222-2222-4222-8222-222222222222';
@@ -74,5 +74,30 @@ describe('HttpPresenceReader', () => {
     expect(await reason(mk({ baseUrl: undefined }).statusOf(OCC))).toBe('sem_url');
     expect(await reason(mk({ idToken: async () => { throw new Error('sem ADC'); } }).statusOf(OCC))).toBe('sem_id_token');
     expect(await reason(mk({ baseUrl: 'http://127.0.0.1:1' }).statusOf(OCC))).toBe('rede');
+  });
+
+  describe('ATTENDANCE_AUTH=none (modo de auth de teste)', () => {
+    it('com authNone não pede ID token e não manda Authorization', async () => {
+      handler = reply(200, [{ occurrence_id: OCC, worker_id: 'w-1', status: 'CLOSED', exit_source: 'APP' }]);
+      const idToken = jest.fn(async () => ({ Authorization: 'Bearer nunca' }));
+      expect(await mk({ authNone: true, idToken }).statusOf(OCC)).toBe('CLOSED');
+      expect(idToken).not.toHaveBeenCalled();
+      expect(seen.auth).toBeUndefined();
+    });
+
+    it('presenceOptsFromEnv: vale com NODE_ENV=test e é IGNORADO em production (a SA é obrigatória lá)', () => {
+      expect(presenceOptsFromEnv({ ATTENDANCE_AUTH: 'none', NODE_ENV: 'test' } as NodeJS.ProcessEnv).authNone).toBe(true);
+      expect(presenceOptsFromEnv({ ATTENDANCE_AUTH: 'none', NODE_ENV: 'production' } as NodeJS.ProcessEnv).authNone).toBe(false);
+      expect(presenceOptsFromEnv({ NODE_ENV: 'test' } as NodeJS.ProcessEnv).authNone).toBe(false);
+    });
+
+    it('em production o leitor segue pedindo o ID token (o modo none não vaza para prd)', async () => {
+      handler = reply(200, [{ occurrence_id: OCC, worker_id: 'w-1', status: 'CLOSED', exit_source: 'APP' }]);
+      const idToken = jest.fn(async () => ({ Authorization: 'Bearer tok-oidc' }));
+      const opts = presenceOptsFromEnv({ ATTENDANCE_AUTH: 'none', NODE_ENV: 'production', ATTENDANCE_SERVICE_URL: url } as NodeJS.ProcessEnv);
+      await new HttpPresenceReader({ ...opts, idToken }).statusOf(OCC);
+      expect(idToken).toHaveBeenCalledTimes(1);
+      expect(seen.auth).toBe('Bearer tok-oidc');
+    });
   });
 });

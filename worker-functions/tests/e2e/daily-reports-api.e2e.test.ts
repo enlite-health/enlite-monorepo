@@ -17,6 +17,7 @@ import { occurrenceIdOf } from '../../src/modules/case/infrastructure/WorkerItin
 
 const API_URL = process.env.API_URL || 'http://localhost:8080';
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
+const ATTENDANCE_STUB_URL = process.env.ATTENDANCE_STUB_URL || 'http://localhost:59070';
 const ESPIA = 'NARRATIVA-ESPIA-092';
 const TAG = 'e2e092-api';
 
@@ -24,6 +25,10 @@ const bearer = (uid: string) =>
   `Bearer mock_${Buffer.from(JSON.stringify({ uid, email: `${uid}@e2e.local`, role: 'worker', country: 'AR' })).toString('base64')}`;
 const http = axios.create({ baseURL: API_URL, validateStatus: () => true });
 const as = (uid: string) => ({ headers: { Authorization: bearer(uid) } });
+
+/** Fixa a presença da guarda no stub do attendance (`test-fixtures/attendance-presence-stub.mjs`). Sem fixar, o stub responde `CLOSED`. */
+const setPresence = (occurrenceId: string, status: 'NONE' | 'OPEN' | 'CLOSED' | 'CLOSED_DECLARED') =>
+  axios.put(`${ATTENDANCE_STUB_URL}/_presence/${occurrenceId}`, { status }).then((r) => expect(r.status).toBe(200));
 
 function apiLog(): string {
   return process.env.E2E_API_LOG_FILE ? readFileSync(process.env.E2E_API_LOG_FILE, 'utf8') : apiContainerLogs();
@@ -192,9 +197,9 @@ describe('informe da guarda — rotas do prestador pela borda HTTP (spec 092) @i
     it('daily_report_window_closed: guarda de 2 semanas atrás (prazo + 7 dias vencido)', async () => {
       expect(await codeOf(occBClosed, ptiB)).toEqual([422, 'daily_report_window_closed']);
     });
-    it('pti_version_mismatch: versão inexistente e versão de OUTRO serviço', async () => {
-      expect(await codeOf(occB, uuidv4())).toEqual([422, 'pti_version_mismatch']);
-      expect(await codeOf(occB, ptiOutroServico)).toEqual([422, 'pti_version_mismatch']);
+    it('R-19: com PTI vigente o servidor decide; versão inexistente ou de OUTRO serviço → 409 retentável daily_report_template_outdated (não 422)', async () => {
+      expect(await codeOf(occB, uuidv4())).toEqual([409, 'daily_report_template_outdated']);
+      expect(await codeOf(occB, ptiOutroServico)).toEqual([409, 'daily_report_template_outdated']);
     });
     it('pti_version_mismatch pela vigência: PTI ANULADO e PTI VENCIDO (endDate < data) não valem; sem vigente, só relato (null) passa', async () => {
       const tenta = async (g: Guarda, occ: string, pti: string | null, answers: unknown[]) => {
@@ -207,15 +212,15 @@ describe('informe da guarda — rotas do prestador pela borda HTTP (spec 092) @i
       expect((await tenta(anul, occAnul, null, []))[0]).toBe(201); // controle: sem vigente, relato puro é aceito
       expect((await tenta(venc, occVenc, null, []))[0]).toBe(201);
     });
-    it('DC-4 offline-first: ptiVersionId null com PTI VIGENTE → 201 só relato (sem respostas)', async () => {
+    it('R-19 (revoga o DC-4 com PTI vigente): ptiVersionId null com PTI VIGENTE → 409 daily_report_template_outdated e nada gravado', async () => {
       const r = await put(dd.authUid, uuidv4(), body(occDd, null, { answers: [] }));
-      expect(r.status).toBe(201);
-      expect((await pool.query(`SELECT pti_version_id FROM daily_reports WHERE worker_id = $1`, [dd.workerId])).rows[0].pti_version_id).toBeNull();
+      expect([r.status, r.data.code]).toEqual([409, 'daily_report_template_outdated']);
+      expect(Number((await pool.query(`SELECT count(*) AS n FROM daily_reports WHERE worker_id = $1`, [dd.workerId])).rows[0].n)).toBe(0);
     });
     it('item_not_in_pti: objetivo OM, objetivo legado e atividade fora do PTI', async () => {
       expect(await codeOf(occB, ptiB, { answers: [...answersOk(), { objectiveId: cat.objOm, scaleCode: 'OM', optionCode: 'x' }] })).toEqual([422, 'item_not_in_pti']);
       expect(await codeOf(occB, ptiB, { answers: [...answersOk(), { objectiveId: cat.objSemPergunta, scaleCode: 'SN', optionCode: 'si' }] })).toEqual([422, 'item_not_in_pti']);
-      expect(await codeOf(occB, null)).toEqual([422, 'item_not_in_pti']); // null + respostas: relato não carrega resposta, mesmo com PTI vigente
+      expect(await codeOf(occB, null)).toEqual([409, 'daily_report_template_outdated']); // R-19: null com PTI vigente é molde desatualizado, antes de olhar as respostas
     });
     it('scale_mismatch, option_unknown, reason_required, reason_not_allowed', async () => {
       const trocar = (i: number, over: Record<string, unknown>) => answersOk().map((x, k) => (k === i ? { ...x, ...over } : x));
@@ -233,6 +238,40 @@ describe('informe da guarda — rotas do prestador pela borda HTTP (spec 092) @i
       const r = await put(c.authUid, uuidv4(), body(occurrenceIdOf(c.slotSegId, c.onDate, c.workerId), null, { answers: [] }));
       expect(r.status).toBe(201);
       expect((await pool.query(`SELECT pti_version_id FROM daily_reports WHERE worker_id = $1`, [c.workerId])).rows[0].pti_version_id).toBeNull();
+    });
+  });
+
+  describe('PUT — presença (emenda 077, attendance FAKE no stub)', () => {
+    let p: Guarda;
+    let ptiP: string;
+    let occP: string;
+    beforeAll(async () => {
+      p = await semearGuarda(pool, `${TAG}-presenca`);
+      const itens = { objectiveIds: [cat.objAut, cat.objSn, cat.objCnt, cat.objOm, cat.objSemPergunta], activityIds: [cat.actSn, cat.actSemEscala] };
+      ptiP = await inserirPti(pool, { patientId: p.patientId, serviceId: p.serviceId, start: '2026-01-01', end: '2027-12-31', ...itens });
+      occP = occurrenceIdOf(p.slotSegId, p.onDate, p.workerId);
+    });
+    const informes = async () => Number((await pool.query(`SELECT count(*) AS n FROM daily_reports WHERE worker_id = $1`, [p.workerId])).rows[0].n);
+
+    it('presença ABERTA (e NONE) → 409 daily_report_presence_open, nada gravado; o stub recebeu o lookup da guarda', async () => {
+      await setPresence(occP, 'OPEN');
+      const aberta = await put(p.authUid, uuidv4(), body(occP, ptiP));
+      expect([aberta.status, aberta.data.code]).toEqual([409, 'daily_report_presence_open']);
+      await setPresence(occP, 'NONE');
+      const sem = await put(p.authUid, uuidv4(), body(occP, ptiP));
+      expect([sem.status, sem.data.code]).toEqual([409, 'daily_report_presence_open']);
+      expect(await informes()).toBe(0);
+      const reqs = (await axios.get(`${ATTENDANCE_STUB_URL}/_requests`)).data as Array<{ occurrence_ids: string[]; auth: boolean }>;
+      const meus = reqs.filter((r) => r.occurrence_ids.includes(occP));
+      expect(meus.length).toBeGreaterThanOrEqual(2);
+      expect(meus.every((r) => r.auth === false)).toBe(true); // modo ATTENDANCE_AUTH=none: sem ID token
+    });
+
+    it('presença FECHADA → 201 (controle positivo: o MESMO corpo que acabou de dar 409)', async () => {
+      await setPresence(occP, 'CLOSED_DECLARED');
+      const r = await put(p.authUid, uuidv4(), body(occP, ptiP));
+      expect(r.status).toBe(201);
+      expect(await informes()).toBe(1);
     });
   });
 

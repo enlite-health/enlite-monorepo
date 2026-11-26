@@ -1,0 +1,26 @@
+# Override do e2e do informe da guarda (emenda 077 F5: `tests/e2e/daily-reports-api.e2e.test.ts`).
+#
+# O attendance não existe no CI: um stub HTTP mínimo (`test-fixtures/attendance-presence-stub.mjs`) ocupa o lugar dele na fronteira de SAÍDA do
+# worker-functions. A API aponta `ATTENDANCE_SERVICE_URL` para ele; `ATTENDANCE_AUTH=none` dispensa o ID token (só vale com NODE_ENV ≠ production:
+# `presenceOptsFromEnv`; aqui NODE_ENV=test). Nada vai ao attendance real nem a canal nenhum.
+# Vem DEPOIS de `docker-compose.test.yml` na lista de `-f`. O stub publica a porta ${ATTENDANCE_STUB_PORT:-59070} para o teste fixar o estado
+# (`PUT /_presence/:id`) e ler `GET /_requests`.
+services:
+  attendance-stub:
+    image: node:20-alpine
+    working_dir: /stub
+    volumes:
+      - ./test-fixtures/attendance-presence-stub.mjs:/stub/attendance-presence-stub.mjs:ro
+    command: ["node", "attendance-presence-stub.mjs"]
+    ports:
+      - "${ATTENDANCE_STUB_PORT:-59070}:9070"
+    networks:
+      - enlite-network
+
+  api:
+    environment:
+      ATTENDANCE_SERVICE_URL: "http://attendance-stub:9070"
+      ATTENDANCE_AUTH: "none"
+    depends_on:
+      attendance-stub:
+        condition: service_started

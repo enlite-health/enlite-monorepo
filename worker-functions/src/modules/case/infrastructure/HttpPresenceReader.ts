@@ -22,13 +22,29 @@ export interface HttpPresenceReaderOpts {
   baseUrl?: string;
   /** `ATTENDANCE_PRESENCE_TIMEOUT_MS` (default 2000). */
   timeoutMs?: number;
+  /** `ATTENDANCE_AUTH=none` só vale fora de produção (e2e/CI sem credencial GCP; mesmo padrão do `TRIAGE_PRUEBA_AUTH`). Nunca é o default. */
+  authNone?: boolean;
   idToken?: IdTokenHeaders;
   fetchImpl?: typeof fetch;
 }
 
 export function presenceOptsFromEnv(env: NodeJS.ProcessEnv = process.env): HttpPresenceReaderOpts {
   const t = Number(env.ATTENDANCE_PRESENCE_TIMEOUT_MS);
-  return { baseUrl: env.ATTENDANCE_SERVICE_URL, ...(Number.isFinite(t) && t > 0 ? { timeoutMs: t } : {}) };
+  return {
+    baseUrl: env.ATTENDANCE_SERVICE_URL,
+    authNone: env.ATTENDANCE_AUTH === 'none' && env.NODE_ENV !== 'production', // IGNORADO em produção (a SA é obrigatória lá)
+    ...(Number.isFinite(t) && t > 0 ? { timeoutMs: t } : {}),
+  };
+}
+
+/** Cabeçalho `Authorization` do attendance, compartilhado por todos os leitores dele. `authNone` (só fora de produção) dispensa o token. */
+export async function attendanceAuth(opts: Pick<HttpPresenceReaderOpts, 'authNone'>, idToken: IdTokenHeaders, audience: string): Promise<Record<string, string>> {
+  if (opts.authNone) return {};
+  try {
+    return await idToken(audience);
+  } catch {
+    throw new PresenceUnavailableError('sem_id_token');
+  }
 }
 
 /**
@@ -46,12 +62,7 @@ export class HttpPresenceReader implements PresenceReader {
     const base = this.opts.baseUrl?.replace(/\/+$/, '');
     if (!base) throw new PresenceUnavailableError('sem_url');
 
-    let auth: Record<string, string>;
-    try {
-      auth = await this.idToken(base);
-    } catch {
-      throw new PresenceUnavailableError('sem_id_token');
-    }
+    const auth = await attendanceAuth(this.opts, this.idToken, base);
 
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS);
