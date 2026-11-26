@@ -16,6 +16,8 @@ import {
   IMPORT_KINDS,
   IMPORT_REASONS,
   IMPORT_AUDIENCES,
+  TALENTUM_WEBHOOK_ALARMS,
+  type TalentumWebhookAlarmPayload,
   type AdmissionTactiqLinkPayload,
   type AdmissionTactiqExtensionPayload,
   type AdmissionImportBlockedPayload,
@@ -46,7 +48,7 @@ export interface NotificationDto {
    *  origem É o root, ou quando não há `messageId` no evento. */
   rootMessageId: string | null;
   /** spec 048: SÓ no tipo `THERAPEUTIC_PROJECT_CONTACTS_PENDING` (4 chaves, ids + nome de campo); `null` nos de conversa. */
-  payload: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | null;
+  payload: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | TalentumWebhookAlarmPayload | null;
   /** spec 048: número do Caso (`patients.case_number`) do tipo do PT — o sino NUNCA mostra o nome do paciente nele. */
   patientCaseNumber: number | null;
   /** Item 2 (card com trecho, F7/F8): MESMO gate de `patientDisplayName` — só resolvido quando o
@@ -128,7 +130,7 @@ const isSystemPtType = (code: NotificationTypeCode): boolean => code === 'THERAP
 function payloadOf(
   code: NotificationTypeCode,
   raw: Record<string, unknown> | null,
-): PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | null {
+): PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | TalentumWebhookAlarmPayload | null {
   if (isSystemPtType(code)) return ptPayloadOf(raw);
   if (code === 'ADMISSION_TACTIQ_LINK_REQUIRED') {
     const reason = raw?.reason;
@@ -137,11 +139,21 @@ function payloadOf(
   if (code === 'ITINERARY_UNCOVERED_SHIFTS') return itineraryPayloadOf(raw);
   if (code === 'PEDIDO_IA_APLICAR') return pedidoAplicarPayloadOf(raw);
   if (code === 'ADMISSION_IMPORT_BLOCKED') return importBlockedPayloadOf(raw);
+  if (code === 'TALENTUM_WEBHOOK_ALARM') return talentumAlarmPayloadOf(raw);
   if (code === 'ADMISSION_TACTIQ_EXTENSION_CHANGED') {
     const state = raw?.state;
     return state === 'installed' || state === 'missing' || state === 'disabled' ? { state } : null;
   }
   return null;
+}
+
+/** Spec 095 §3.5: as 3 chaves do contrato (`alarme` do conjunto fechado, `quantidade` inteira >= 1, `desde` string); chave extra não passa; malformado = sem payload. */
+function talentumAlarmPayloadOf(raw: Record<string, unknown> | null): TalentumWebhookAlarmPayload | null {
+  if (!raw) return null;
+  const { alarme, quantidade, desde } = raw;
+  if (typeof alarme !== 'string' || !(TALENTUM_WEBHOOK_ALARMS as readonly string[]).includes(alarme)) return null;
+  if (typeof quantidade !== 'number' || !Number.isInteger(quantidade) || quantidade < 1 || typeof desde !== 'string') return null;
+  return { alarme: alarme as TalentumWebhookAlarmPayload['alarme'], quantidade, desde };
 }
 
 /** Spec 083 D-7: lê chave a chave (enums conferidos); linha malformada = sem payload; `hostName` só se for string não vazia. */

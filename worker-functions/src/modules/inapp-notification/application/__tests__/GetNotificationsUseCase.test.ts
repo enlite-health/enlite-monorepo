@@ -349,3 +349,22 @@ describe('GetNotificationsUseCase — importação bloqueada (spec 083): payload
     }
   });
 });
+
+describe('GetNotificationsUseCase — alarme do webhook do Talentum (spec 095 §3.5): payload fechado', () => {
+  const tw = (payload: Record<string, unknown> | null): NotificationEventRow =>
+    row({ id: 'tw1', typeCode: 'TALENTUM_WEBHOOK_ALARM', actorUid: 'system:talentum-webhook', actorDisplayName: null, patientId: null, conversationId: null, messageId: null, patientCaseNumber: null, payload });
+  const ok = { alarme: 'inbox_falha', quantidade: 2, desde: '2026-11-25T12:00:00.000Z' };
+
+  it('payload completo é entregue; chave extra não é repassada', async () => {
+    const [a] = await new GetNotificationsUseCase(repoWith([tw({ ...ok, email: 'a@b.c', workerId: 'w1' })])).execute({ recipientUid: 'me', limit: 20 });
+    expect(a.payload).toEqual(ok);
+    expect(JSON.stringify(a)).not.toContain('a@b.c');
+  });
+
+  it('alarme fora do conjunto, quantidade inválida, desde ausente ou payload nulo viram null', async () => {
+    for (const p of [{ ...ok, alarme: 'x' }, { ...ok, quantidade: 0 }, { ...ok, quantidade: 1.5 }, { ...ok, quantidade: '2' }, { alarme: 'silencio', quantidade: 1 }, null]) {
+      const [d] = await new GetNotificationsUseCase(repoWith([tw(p)])).execute({ recipientUid: 'me', limit: 20 });
+      expect(d.payload).toBeNull();
+    }
+  });
+});
