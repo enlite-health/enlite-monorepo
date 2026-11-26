@@ -63,7 +63,7 @@ const LIST_VACANCIES_BASE = `
     jp.status,
     jp.is_draft,
     -- estado-automatico-do-paciente F2 (D3): o ciclo de vida sai da tabela do dono (vacancyLifecycle.ts) e o estado do paciente
-    -- é p.status lido por join AGORA — nunca coluna cópia em job_postings. O controller projeta sob o container patient (E6).
+    -- é p.status lido por junção no momento da leitura — nunca coluna cópia em job_postings. O controller projeta sob o container patient (E6).
     jp.patient_id,
     p.status AS patient_status,
     ${cicloDeVidaSql('jp')} AS lifecycle,
