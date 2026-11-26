@@ -1,6 +1,6 @@
 import { HttpAttendancePresenceReviewGateway } from '../HttpAttendancePresenceReviewGateway';
 import { PresenceUnavailableError } from '../../application/ports/PresenceReaderPort';
-import { PresenceReviewUpstreamError } from '../../application/ports/PresenceReviewPorts';
+import { PresenceReviewUpstreamError, type DecideExceptionInput } from '../../application/ports/PresenceReviewPorts';
 
 const UUID_A = 'a1b2c3d4-0000-4000-8000-000000000001';
 const UUID_B = 'a1b2c3d4-0000-4000-8000-000000000002';
@@ -51,15 +51,15 @@ describe('HttpAttendancePresenceReviewGateway (emenda 077 §4.6)', () => {
 
   it('decide: POST com decision, resolution_code e decided_by_uid; devolve o resultado', async () => {
     const f = jest.fn().mockResolvedValue(json(200, { event_id: UUID_A, decision: 'REFUSED', resolution_code: 'NOT_AT_PATIENT' }));
-    const r = await build(f).decide({ eventId: UUID_A, decision: 'REFUSED', resolutionCode: 'NOT_AT_PATIENT', decidedByUid: 'u1' });
+    const r = await build(f).decide({ eventId: UUID_A, decision: 'REFUSED', resolutionCode: 'NOT_AT_PATIENT', decidedByUid: 'u1', countries: ['AR', 'BR'] });
     expect(f).toHaveBeenCalledWith(`http://att/internal/v1/presence/exceptions/${UUID_A}/decision`, expect.objectContaining({
-      method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer tok' }, body: JSON.stringify({ decision: 'REFUSED', resolution_code: 'NOT_AT_PATIENT', decided_by_uid: 'u1' }),
+      method: 'POST', headers: { 'content-type': 'application/json', Authorization: 'Bearer tok' }, body: JSON.stringify({ decision: 'REFUSED', resolution_code: 'NOT_AT_PATIENT', decided_by_uid: 'u1', countries: ['AR', 'BR'] }),
     }));
     expect(r).toEqual({ eventId: UUID_A, decision: 'REFUSED', resolutionCode: 'NOT_AT_PATIENT' });
   });
 
   it('decide: 409 e 404 repassados com código fechado (corpo desconhecido cai no código do status); resposta fora do contrato → resposta_invalida', async () => {
-    const input = { eventId: UUID_A, decision: 'APPROVED', resolutionCode: 'INDOOR_CONFIRMED', decidedByUid: 'u1' } as const;
+    const input: DecideExceptionInput = { eventId: UUID_A, decision: 'APPROVED', resolutionCode: 'INDOOR_CONFIRMED', decidedByUid: 'u1', countries: ['AR'] };
     await expect(build(jest.fn().mockResolvedValue(json(409, { code: 'EXCEPTION_ALREADY_DECIDED', message: 'x' }))).decide(input)).rejects.toEqual(new PresenceReviewUpstreamError(409, 'EXCEPTION_ALREADY_DECIDED'));
     await expect(build(jest.fn().mockResolvedValue(json(404, { code: 'QUALQUER', message: 'Fulana' }))).decide(input)).rejects.toEqual(new PresenceReviewUpstreamError(404, 'EXCEPTION_NOT_FOUND'));
     const semCorpo = { ok: false, status: 409, json: async () => { throw new Error('vazio'); } } as unknown as Response;

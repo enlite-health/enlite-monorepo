@@ -39,6 +39,8 @@ export interface DecideExceptionInput {
   decision: ExceptionDecision;
   resolutionCode: ResolutionCode;
   decidedByUid: string;
+  /** Países efetivos do ator: o attendance só aceita evento de um deles (outro país = 404 EXCEPTION_NOT_FOUND, nada gravado). */
+  countries: string[];
 }
 
 export interface DecideExceptionResult {

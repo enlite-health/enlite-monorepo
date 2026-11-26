@@ -137,7 +137,7 @@ describe('PresenceReviewController — decisão', () => {
   it('grava com decided_by_uid = o uid do ATOR autenticado (nunca o do corpo)', async () => {
     const { app, gateway } = harness({ cells: [CELL] });
     await request(app).post(`/api/admin/presence/exceptions/${EVENT}/decision`).send(decision).expect(200);
-    expect(gateway.decide).toHaveBeenCalledWith({ eventId: EVENT, decision: 'APPROVED', resolutionCode: 'INDOOR_CONFIRMED', decidedByUid: UID });
+    expect(gateway.decide).toHaveBeenCalledWith({ eventId: EVENT, decision: 'APPROVED', resolutionCode: 'INDOOR_CONFIRMED', decidedByUid: UID, countries: ['AR'] });
     await request(app).post(`/api/admin/presence/exceptions/${EVENT}/decision`).send({ ...decision, decided_by_uid: 'outro' }).expect(400);
   });
 
@@ -157,6 +157,44 @@ describe('PresenceReviewController — decisão', () => {
     expect(r409.body).toEqual({ success: false, code: 'EXCEPTION_ALREADY_DECIDED' });
     const semExcecao = harness({ cells: [CELL], gateway: { decide: jest.fn().mockRejectedValue(new PresenceReviewUpstreamError(404, 'EXCEPTION_NOT_FOUND')) } });
     await request(semExcecao.app).post(`/api/admin/presence/exceptions/${EVENT}/decision`).send(decision).expect(404);
+  });
+});
+
+describe('PresenceReviewController — decisão só no país do coordenador', () => {
+  // Attendance falso com o contrato real: o evento tem país; fora de `countries` = 404 EXCEPTION_NOT_FOUND (nada gravado).
+  const attendance = (eventCountry: string) => {
+    const gravadas: string[] = [];
+    const decide = jest.fn().mockImplementation(async (i: { eventId: string; countries: string[] }) => {
+      if (!i.countries.includes(eventCountry)) throw new PresenceReviewUpstreamError(404, 'EXCEPTION_NOT_FOUND');
+      gravadas.push(i.eventId);
+      return { eventId: i.eventId, decision: 'APPROVED', resolutionCode: 'INDOOR_CONFIRMED' };
+    });
+    return { decide, gravadas };
+  };
+  const url = `/api/admin/presence/exceptions/${EVENT}/decision`;
+
+  it('ator só AR decidindo evento BR → 404 e nada gravado; controle positivo: evento AR → 200', async () => {
+    const br = attendance('BR');
+    const r = await request(harness({ cells: [CELL], countries: ['AR'], gateway: { decide: br.decide } }).app).post(url).send(decision).expect(404);
+    expect(r.body).toEqual({ success: false, code: 'EXCEPTION_NOT_FOUND' });
+    expect(br.gravadas).toEqual([]);
+    const ar = attendance('AR');
+    await request(harness({ cells: [CELL], countries: ['AR'], gateway: { decide: ar.decide } }).app).post(url).send(decision).expect(200);
+    expect(ar.gravadas).toEqual([EVENT]);
+  });
+
+  it('manda TODOS os países efetivos do ator (ordenados), o mesmo conjunto da leitura da fila; ator com os dois decide o evento BR', async () => {
+    const br = attendance('BR');
+    const { app, gateway } = harness({ cells: [CELL], countries: ['BR', 'AR'], gateway: { decide: br.decide } });
+    await request(app).post(url).send(decision).expect(200);
+    expect((gateway.decide as jest.Mock).mock.calls[0][0].countries).toEqual(['AR', 'BR']);
+  });
+
+  it('ator sem nenhum país efetivo → 403 COUNTRY_SCOPE_REQUIRED e o attendance nem é chamado', async () => {
+    const { app, gateway } = harness({ cells: [CELL], countries: [] });
+    const r = await request(app).post(url).send(decision).expect(403);
+    expect(r.body.code).toBe('COUNTRY_SCOPE_REQUIRED');
+    expect(gateway.decide).not.toHaveBeenCalled();
   });
 });
 

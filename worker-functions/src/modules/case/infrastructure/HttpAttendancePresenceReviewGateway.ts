@@ -49,6 +49,7 @@ export class HttpAttendancePresenceReviewGateway implements PresenceReviewGatewa
       decision: input.decision,
       resolution_code: input.resolutionCode,
       decided_by_uid: input.decidedByUid,
+      countries: input.countries,
     })) as { event_id?: unknown; decision?: unknown; resolution_code?: unknown } | null;
     if (!body || !isUuid(body.event_id) || (body.decision !== 'APPROVED' && body.decision !== 'REFUSED') || typeof body.resolution_code !== 'string') {
       throw new PresenceUnavailableError('resposta_invalida');

@@ -52,7 +52,10 @@ export class PresenceReviewUseCase {
     return { country, countries, items, nextCursor: page.nextCursor };
   }
 
-  decide(input: { actorUid: string; eventId: string; decision: ExceptionDecision; resolutionCode: ResolutionCode }): Promise<DecideExceptionResult> {
-    return this.gateway.decide({ eventId: input.eventId, decision: input.decision, resolutionCode: input.resolutionCode, decidedByUid: input.actorUid });
+  /** Os países são os efetivos do ator (os mesmos da fila): o attendance confere que o evento é de um deles, senão 404. Sem país = 403. */
+  async decide(input: { actorUid: string; eventId: string; decision: ExceptionDecision; resolutionCode: ResolutionCode }): Promise<DecideExceptionResult> {
+    const countries = [...(await this.countriesOf(input.actorUid))].sort();
+    if (countries.length === 0) throw new PresenceReviewScopeError();
+    return this.gateway.decide({ eventId: input.eventId, decision: input.decision, resolutionCode: input.resolutionCode, decidedByUid: input.actorUid, countries });
   }
 }
