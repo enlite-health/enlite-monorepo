@@ -19,8 +19,8 @@ export class ShortLinkService {
   private readonly client: ShortIoClient;
   private readonly domain: string;
 
-  constructor(apiKey: string, domain: string) {
-    this.client = new ShortIoClient({ apiKey, domain });
+  constructor(apiKey: string, domain: string, baseUrl?: string) {
+    this.client = new ShortIoClient({ apiKey, domain, baseUrl });
     this.domain = domain;
   }
 
@@ -28,7 +28,7 @@ export class ShortLinkService {
     const apiKey = process.env.SHORT_IO_API_KEY;
     const domain = process.env.SHORT_IO_DOMAIN;
     if (!apiKey || !domain) return null;
-    return new ShortLinkService(apiKey, domain);
+    return new ShortLinkService(apiKey, domain, process.env.SHORT_IO_BASE_URL || undefined);
   }
 
   async buildAndCreate(input: BuildShortLinkInput): Promise<BuildShortLinkResult> {

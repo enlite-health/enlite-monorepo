@@ -27,6 +27,8 @@ import {
   type AuditActorType,
 } from '../../matching/infrastructure/JobPostingAuditRepository';
 import { guardedPrescreeningIdSql, logPrescreeningIdCollision } from './talentumPrescreeningIdGuard';
+import type { VacancyPublishedPort } from '../ports/VacancyPublishedPort';
+import { reportError } from '@shared/logging';
 
 // ─────────────────────────────────────────────────────────────────
 // Input / Output types
@@ -61,7 +63,8 @@ export class PublishVacancyToTalentumUseCase {
   private db: Pool;
   private auditRepo: JobPostingAuditRepository;
 
-  constructor() {
+  /** `afterPublish` (opcional): roda DEPOIS do commit que lança a vaga — o short link do feed. Sem ele, nada. */
+  constructor(private readonly afterPublish?: VacancyPublishedPort) {
     this.db = DatabaseConnection.getInstance().getPool();
     this.auditRepo = new JobPostingAuditRepository();
   }
@@ -217,6 +220,13 @@ export class PublishVacancyToTalentumUseCase {
     console.log(
       `[PublishVacancy] Published vacancy ${jobPostingId} → Talentum project ${projectId}`,
     );
+
+    // Depois do COMMIT, por porta: a vaga lançada vira publicável e o feed exige o link `site`. Nunca rejeita.
+    try {
+      await this.afterPublish?.onPublished(jobPostingId);
+    } catch (err) {
+      reportError(err instanceof Error ? err : new Error(String(err)), { source: 'PublishVacancyToTalentumUseCase:afterPublish', jobPostingId });
+    }
 
     return { projectId, publicId, whatsappUrl };
   }

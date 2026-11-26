@@ -4,7 +4,7 @@
  * `pcs.id` que o adapter pede — ignorar o `serviceId` faz o serviço completo herdar a falta do outro (a recusa que o foguete
  * levava). A prova com SQL real está em `tests/e2e/foguete-unico-gatilho.e2e.test.ts`.
  */
-import { PgCompletenessReader } from '../PgPatientStatusAdapters';
+import { PgCompletenessReader, PgTalentumPauseMarker } from '../PgPatientStatusAdapters';
 import type { StatusTx } from '../../application/ports/patientStatusPorts';
 
 const PID = '11111111-1111-4111-8111-111111111111';
@@ -59,5 +59,31 @@ describe('PgCompletenessReader — escopo da completude', () => {
     const [sql, params] = (tx.query as jest.Mock).mock.calls[0];
     expect(String(sql)).not.toContain(SERVICO_COMPLETO);
     expect(params).toEqual([PID, SERVICO_COMPLETO, false]);
+  });
+});
+
+describe('PgTalentumPauseMarker (P6, semaforo-da-vaga F4): a pergunta é a regra do dono SEM a cláusula do paciente', () => {
+  const tx = (ids: string[]) => ({ query: jest.fn(async () => ({ rows: ids.map((id) => ({ id })), rowCount: ids.length })) });
+
+  it('pause marca PENDING_PAUSE nas vagas publicáveis-sem-paciente com projeto; devolve os ids', async () => {
+    const t = tx(['v1', 'v2']);
+    const ids = await new PgTalentumPauseMarker().mark(t as never, 'pat-1', 'pause');
+    expect(ids).toEqual(['v1', 'v2']);
+    const [sql, params] = t.query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(sql).toContain("talentum_pause_state = 'PENDING_PAUSE'");
+    expect(sql).toContain('jp.talentum_project_id IS NOT NULL');
+    expect(sql).toContain("jp.talentum_pause_state IS NULL OR jp.talentum_pause_state IN ('PENDING_RESUME', 'MANUAL_RESUME')"); // MANUAL_PAUSE nunca é re-marcada
+    expect(sql).toContain("jp.status NOT IN ('DE_BAJA', 'CLOSED', 'ON_HOLD', 'SUSPENDED')"); // vaga baixada nunca entra
+    expect(sql).not.toMatch(/\bp\.status/); // SEM a cláusula do paciente (ele acabou de pausar)
+    expect(params).toEqual(['pat-1']);
+  });
+
+  it("resume marca PENDING_RESUME só quem estava PAUSED/PENDING_PAUSE: MANUAL_PAUSE e o resto ficam intactos", async () => {
+    const t = tx([]);
+    expect(await new PgTalentumPauseMarker().mark(t as never, 'pat-1', 'resume')).toEqual([]);
+    const [sql] = t.query.mock.calls[0] as unknown as [string];
+    expect(sql).toContain("talentum_pause_state = 'PENDING_RESUME'");
+    expect(sql).toContain("jp.talentum_pause_state IN ('PAUSED', 'PENDING_PAUSE')");
+    expect(sql).not.toContain('MANUAL_PAUSE');
   });
 });

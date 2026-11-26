@@ -28,7 +28,7 @@ import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
 import { workerNotTestSql, excludeTestVacancySql } from '@shared/database/testRealmSql';
 import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
 import { INICIAIS_REDIGIDAS, PATIENT_CONTAINER_CELL, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
-import { cicloDeVidaSql, isCicloDeVida, CICLO_POR_STATUS, type CicloDeVida, type VacancyStatusValue } from '../../domain/vacancyLifecycle';
+import { cicloDeVidaSql, isCicloDeVida, CICLO_POR_STATUS, CICLOS_DE_VIDA, type CicloDeVida, type VacancyStatusValue } from '../../domain/vacancyLifecycle';
 import { CORES, corDoSemaforo, corDoSemaforoSql, parseCoresCsv, type CorDoSemaforo } from '../../domain/vacancySemaphore';
 import { semaforoContagemSql } from '../../infrastructure/vacancySemaphoreSql';
 import {
@@ -219,6 +219,21 @@ export class VacancySemaphoreFilterError extends Error {
   }
 }
 
+/**
+ * Filtro `lifecycle` inválido (semaforo-da-vaga F4): o selo só tem `rascunho` e `baja`. `aberta|pausada|cerrada` saíram
+ * junto com o estado manual — 400 `VACANCY_LIFECYCLE_INVALID` (es + pt-BR) em vez de ignorar em silêncio.
+ */
+export class VacancyLifecycleFilterError extends Error {
+  readonly code = 'VACANCY_LIFECYCLE_INVALID';
+  readonly messages = {
+    es: `El filtro de ciclo solo acepta: ${CICLOS_DE_VIDA.join(', ')}. La vacante ya no tiene estado manual.`,
+    'pt-BR': `O filtro de ciclo só aceita: ${CICLOS_DE_VIDA.join(', ')}. A vaga não tem mais estado manual.`,
+  };
+  constructor() {
+    super('Invalid lifecycle filter');
+  }
+}
+
 export function buildListVacanciesQuery(
   filters: ListVacanciesFilters,
   opts: { searchByPatientName?: boolean; canFilterByPatientStatus?: boolean } = {},
@@ -249,6 +264,8 @@ export function buildListVacanciesQuery(
     paramIndex++;
   }
 
+  const pediuCiclo = filters.lifecycle !== undefined && filters.lifecycle !== '';
+  if (pediuCiclo && !isCicloDeVida(filters.lifecycle)) throw new VacancyLifecycleFilterError();
   const lifecycle: CicloDeVida | undefined = isCicloDeVida(filters.lifecycle) ? filters.lifecycle : undefined;
   if (lifecycle) {
     baseQuery += ` AND ${cicloDeVidaSql('jp')} = $${paramIndex}`;

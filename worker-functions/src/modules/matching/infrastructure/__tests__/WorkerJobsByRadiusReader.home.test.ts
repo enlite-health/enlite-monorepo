@@ -1,6 +1,6 @@
 /**
  * WorkerJobsByRadiusReader — spec 096 (CA-1, CA-3, CA-6): `view=home` é aditivo. Sem perfil, o SQL é IDÊNTICO ao de origin/main
- * (fixture colada de `buildJobsByRadiusSql('W-ID', 15)` na main a0af49d28). Ids sintéticos.
+ * (fixture colada de `buildJobsByRadiusSql('W-ID', 15)`; regerada na F4 do semaforo-da-vaga porque o filtro de "publicável" passou a ser o do dono). Ids sintéticos.
  */
 import fixture from './fixtures/jobsByRadiusSql.origin-main.json';
 import {
@@ -13,7 +13,7 @@ import {
 const W = '11111111-1111-4111-8111-111111111111';
 
 describe('WorkerJobsByRadiusReader — view=home', () => {
-  it('CA-1 sem perfil: texto do SQL e params idênticos aos de origin/main', () => {
+  it('CA-1 sem perfil: texto do SQL e params idênticos aos da fixture (regerada na F4 do semaforo-da-vaga: o feed lê `vagaPublicavelSql`)', () => {
     const { sql, params } = buildJobsByRadiusSql('W-ID', 15);
     expect(sql).toBe(fixture.sql);
     expect(params).toEqual(fixture.params);

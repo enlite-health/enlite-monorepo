@@ -12,6 +12,7 @@ import type { Acao } from '../../domain/acoesDeEstado';
 import type { OnHoldReason } from '../../domain/enums/OnHoldReason';
 import type { SuspensionExitReason } from '../../domain/enums/SuspensionExitReason';
 import { buildListPatientStatusActionsUseCase, buildPatientStatusActionUseCase } from '../composition/patientStatusActionComposition';
+import { dispatchPatientTalentumPause } from './dispatchPatientTalentumPause';
 
 /**
  * AdminPatientStatusActionsController — as ações dos estados humanos (estado-automatico-do-paciente, F3, D5/D9).
@@ -86,6 +87,7 @@ export class AdminPatientStatusActionsController {
         // Spec 051: a célula do ator chega ao escritor. `null` (engine neutro) NÃO vira `[]`.
         cells: clinicalCellsOf(req),
       });
+      dispatchPatientTalentumPause(result.talentum, 'AdminPatientStatusActionsController');
       res.status(200).json({ success: true, data: { id: result.id, action: result.acao, from: result.from, status: result.status } });
     } catch (err: unknown) {
       if (respondPatientStatusError(err, req, res)) return;

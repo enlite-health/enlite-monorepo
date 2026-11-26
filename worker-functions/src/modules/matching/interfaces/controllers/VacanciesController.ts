@@ -7,6 +7,7 @@ import {
   loadVacancyActivity,
   PatientStatusFilterForbiddenError,
   VacancySemaphoreFilterError,
+  VacancyLifecycleFilterError,
   VacancyListRow,
 } from './vacancyListHelpers';
 import { buildVacancyListItem, parseVacancySort, sortVacancyItems } from './vacancyListSort';
@@ -21,7 +22,8 @@ import { sameRealmAsVacancySql, excludeTestVacancySql } from '@shared/database/t
 import { resolveCountriesOrRespond } from '@modules/identity';
 import { cellsOfRequest, projectWorkerFields, ProjecaoSemDecryptorError } from '@modules/identity/permissions';
 import { canReadPatientStatus, canSearchVacanciesByPatientName, projectPatientInVacancy } from '../../application/patientInVacancyProjection';
-import { cicloDeVidaSql, statusDeRetomada } from '../../domain/vacancyLifecycle';
+import { cicloDeVidaSql } from '../../domain/vacancyLifecycle';
+import { vagaPublicavelSql } from '../../domain/vacancyPublication';
 import { loadVacancyPatientDiagnoses } from '../../application/vacancyPatientDiagnoses';
 import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
 import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
@@ -160,6 +162,10 @@ export class VacanciesController {
         res.status(400).json({ success: false, code: error.code, error: error.messages['pt-BR'], messages: error.messages });
         return;
       }
+      if (error instanceof VacancyLifecycleFilterError) {
+        res.status(400).json({ success: false, code: error.code, error: error.messages['pt-BR'], messages: error.messages });
+        return;
+      }
       if (error instanceof PatientStatusFilterForbiddenError) {
         res.status(403).json({ success: false, error: 'Forbidden', details: { field: error.field, cell: error.cell } });
         return;
@@ -177,17 +183,19 @@ export class VacanciesController {
     const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'VacanciesController:getVacanciesStats');
     if (!countries) return;
     try {
+      // P7 (semaforo-da-vaga F4): "aberta" = publicável, pelo dono (`vacancyPublication.ts`), como o feed e o painel de gestão.
+      const publicavel = vagaPublicavelSql('jp', 'p');
       const result = await this.db.query(`
         SELECT
           COUNT(*) FILTER (
-            WHERE search_start_date IS NOT NULL
-              AND EXTRACT(DAY FROM NOW() - search_start_date) > 7
-              AND status IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')
+            WHERE jp.search_start_date IS NOT NULL
+              AND EXTRACT(DAY FROM NOW() - jp.search_start_date) > 7
+              AND ${publicavel}
           ) as mais_7_dias,
           COUNT(*) FILTER (
-            WHERE search_start_date IS NOT NULL
-              AND EXTRACT(DAY FROM NOW() - search_start_date) > 24
-              AND status IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')
+            WHERE jp.search_start_date IS NOT NULL
+              AND EXTRACT(DAY FROM NOW() - jp.search_start_date) > 24
+              AND ${publicavel}
           ) as mais_24_dias,
           COUNT(DISTINCT jp.id) FILTER (
             WHERE EXISTS (
@@ -195,18 +203,19 @@ export class VacanciesController {
             )
           ) as em_selecao,
           COUNT(*) FILTER (
-            WHERE status IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')
+            WHERE ${publicavel}
           ) as total_vacantes,
           AVG(
             CASE
-              WHEN search_start_date IS NOT NULL
-                AND status NOT IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')
-              THEN EXTRACT(EPOCH FROM (updated_at - search_start_date)) / 3600
+              WHEN jp.search_start_date IS NOT NULL
+                AND NOT ${publicavel}
+              THEN EXTRACT(EPOCH FROM (jp.updated_at - jp.search_start_date)) / 3600
               ELSE NULL
             END
           ) as tempo_medio_fechamento
         FROM job_postings jp
-        WHERE case_number IS NOT NULL AND deleted_at IS NULL AND ${excludeTestVacancySql('jp')}
+        LEFT JOIN patients p ON p.id = jp.patient_id
+        WHERE jp.case_number IS NOT NULL AND jp.deleted_at IS NULL AND ${excludeTestVacancySql('jp')}
       AND jp.country = ANY($1::bpchar[])`, [countries]);
 
       const stats = result.rows[0];
@@ -385,8 +394,6 @@ export class VacanciesController {
       const normalized = projectPatientInVacancy({
         ...rowWithoutAuthorizedPeriod,
         weekly_hours: weeklyHours,
-        // E8: o valor de ESCRITA que "Reanudar" envia (calculado aqui, no dono do ciclo; o editor só o repete).
-        resumeStatus: statusDeRetomada(row.status_before_hold as string | null | undefined),
         encuadres,
         schedule: normalizeSchedule(row.schedule),
         locked_fields: lockedFields,

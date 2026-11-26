@@ -9,7 +9,7 @@
  *       lote com vaga de serviço → recusado inteiro; baixar de novo → recusado.
  *   R17 PUT de status em vaga baixada → 409 e segue baixada; a reativação do serviço devolve SÓ a baixada por ele.
  *   F2  lista esconde as baixadas; include_baja=true e filtro de status as mostram.
- *   F5  "En espera" (ON_HOLD) é aceito e retoma ao status anterior; encerrar vaga de serviço ativo → 409; sem serviço encerra.
+ *   F5  (F4 do semaforo-da-vaga) PUT com qualquer status → 400 VACANCY_STATUS_NOT_WRITABLE; a vaga sem serviço sai por "Dar de baja".
  *   F6  o #NN é a ordem do serviço; vaga sem serviço sem número; vaga nova do mesmo serviço repete o número (R12).
  *   leaks  Match recusa em vaga baixada; o Kanban abre em leitura.
  */
@@ -211,38 +211,38 @@ describe('Spec 084 — baixa de vaga antiga, volta só pelo serviço @integratio
     });
   });
 
-  describe('F5 — pausar com "En espera"', () => {
-    it('FELIZ: ON_HOLD aceito (guarda o status anterior) e retomar volta a ele', async () => {
+  describe('F5 — o estado da vaga não se edita (semaforo-da-vaga F4: o "En espera" manual saiu)', () => {
+    it('FELIZ: PUT com ON_HOLD ou SEARCHING → 400 VACANCY_STATUS_NOT_WRITABLE (es + pt-BR); a vaga segue como estava, sem status_before_hold', async () => {
       const patientId = await criarPaciente('hold', 884006);
       const serviceId = await criarServico(patientId);
       const vagaId = await criarVaga({ patientId, caseNumber: 884006, status: 'SEARCHING', serviceId });
 
-      const pausa = await api.put(`/api/admin/vacancies/${vagaId}`, { status: 'ON_HOLD' }, asAdmin);
-      expect(pausa.status).toBe(200);
-      let row = await linha(vagaId);
-      expect(row.status).toBe('ON_HOLD');
-      expect(row.status_before_hold).toBe('SEARCHING');
-
-      const retoma = await api.put(`/api/admin/vacancies/${vagaId}`, { status: 'SEARCHING' }, asAdmin);
-      expect(retoma.status).toBe(200);
-      row = await linha(vagaId);
+      for (const status of ['ON_HOLD', 'SEARCHING']) {
+        const r = await api.put(`/api/admin/vacancies/${vagaId}`, { status }, asAdmin);
+        expect(r.status).toBe(400);
+        expect(r.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
+        expect(r.data.messages.es).toBeTruthy();
+        expect(r.data.messages['pt-BR']).toBeTruthy();
+      }
+      const row = await linha(vagaId);
       expect(row.status).toBe('SEARCHING');
       expect(row.status_before_hold).toBeNull();
     });
 
-    it('ALTERNATIVO: encerrar vaga de serviço ATIVO → 409 pelo servidor; vaga SEM serviço ainda encerra', async () => {
+    it('ALTERNATIVO: CLOSED também é 400 (vaga de serviço ATIVO ou sem serviço); a vaga sem serviço sai por "Dar de baja", não por PUT', async () => {
       const patientId = await criarPaciente('close', 884007);
       const serviceId = await criarServico(patientId);
       const comServico = await criarVaga({ patientId, caseNumber: 884007, serviceId });
       const semServico = await criarVaga({ patientId, caseNumber: 884007 });
 
-      const recusa = await api.put(`/api/admin/vacancies/${comServico}`, { status: 'CLOSED' }, asAdmin);
-      expect(recusa.status).toBe(409);
-      expect(recusa.data.code).toBe('CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED');
-      expect((await linha(comServico)).status).toBe('SEARCHING');
-
-      expect((await api.put(`/api/admin/vacancies/${semServico}`, { status: 'CLOSED' }, asAdmin)).status).toBe(200);
-      expect((await linha(semServico)).status).toBe('CLOSED');
+      for (const id of [comServico, semServico]) {
+        const r = await api.put(`/api/admin/vacancies/${id}`, { status: 'CLOSED' }, asAdmin);
+        expect(r.status).toBe(400);
+        expect(r.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
+        expect((await linha(id)).status).toBe('SEARCHING');
+      }
+      expect((await api.post('/api/admin/vacancies/baja', { vacancyIds: [semServico] }, asAdmin)).status).toBe(200);
+      expect((await linha(semServico)).status).toBe('DE_BAJA');
     });
   });
 

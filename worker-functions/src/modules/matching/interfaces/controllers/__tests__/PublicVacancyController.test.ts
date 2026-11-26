@@ -29,6 +29,7 @@ jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: (...a: unknown[]) => mockLoggerWarn(...a), error: jest.fn() },
 }));
 
+import { vagaPublicavelSql } from '../../../domain/vacancyPublication';
 import { PublicVacancyController } from '../PublicVacancyController';
 import { Request, Response } from 'express';
 import { TEXTO_CLINICO, esperaSemVazamentoClinico } from '../../../__tests__/guardaVazamentoClinico';
@@ -49,14 +50,11 @@ function mockReqRes(params: Record<string, string> = {}): [Request, Response] {
 
 const VACANCY_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
-/** Status que tornam uma vaga publicável (candidatável) — vai como parâmetro, não literal no SQL. */
-const STATUS_PUBLICAVEL = ['ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE'];
 /**
- * Change baja-vacante-por-servico: a lista que o ENDPOINT usa para não dar 404 é maior que a
- * candidatável — DE_BAJA entra aqui (a página segue servindo, desativada), mas fica fora do
- * feed (`PublicJobsQueryBuilder`, que não muda).
+ * semaforo-da-vaga F4: "publicável" tem um dono (`vacancyPublication.ts`) e a página serve "publicável OU DE_BAJA". Nenhuma lista de
+ * status vai como parâmetro: o SQL carrega a regra gerada, e a única lista literal aqui é a do que o dono tira do ar.
  */
-const STATUS_DETALHE_PUBLICO = [...STATUS_PUBLICAVEL, 'DE_BAJA'];
+const DONO_DE_PUBLICAVEL = vagaPublicavelSql('jp', 'p');
 
 /**
  * A LISTA DE PERMISSÃO da resposta pública, escrita por extenso de propósito.
@@ -149,7 +147,7 @@ describe('PublicVacancyController.getById', () => {
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain('jp.id = $1');
     expect(sql).toContain('jp.deleted_at IS NULL');
-    expect(params).toEqual([VACANCY_ID, STATUS_DETALHE_PUBLICO]);
+    expect(params).toEqual([VACANCY_ID]);
 
     expect(res.status).toHaveBeenCalledWith(200);
     const data = (res.json as jest.Mock).mock.calls[0][0].data;
@@ -172,7 +170,7 @@ describe('PublicVacancyController.getById', () => {
     expect(sql).toContain('jp.case_number = $1');
     expect(sql).toContain('jp.vacancy_number = $2');
     expect(sql).toContain('jp.deleted_at IS NULL');
-    expect(params).toEqual([42, 1, STATUS_DETALHE_PUBLICO]);
+    expect(params).toEqual([42, 1]);
 
     expect(res.status).toHaveBeenCalledWith(200);
     const data = (res.json as jest.Mock).mock.calls[0][0].data;
@@ -196,7 +194,7 @@ describe('PublicVacancyController.getById', () => {
       const [sql, params] = mockQuery.mock.calls[0];
       expect(sql).toContain('jp.case_number = $1');
       expect(sql).toContain('jp.vacancy_number = $2');
-      expect(params).toEqual([729, 5568, STATUS_DETALHE_PUBLICO]);
+      expect(params).toEqual([729, 5568]);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(mockLoggerWarn).not.toHaveBeenCalled();
     });
@@ -215,7 +213,7 @@ describe('PublicVacancyController.getById', () => {
       const [sql, params] = mockQuery.mock.calls[0];
       expect(sql).toContain('jp.case_number = $1');
       expect(sql).toContain('jp.vacancy_number = $2');
-      expect(params).toEqual([1234, 1, STATUS_DETALHE_PUBLICO]);
+      expect(params).toEqual([1234, 1]);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(mockLoggerWarn).not.toHaveBeenCalled();
     });
@@ -228,7 +226,7 @@ describe('PublicVacancyController.getById', () => {
       await controller.getById(req, res);
 
       const [, params] = mockQuery.mock.calls[0];
-      expect(params).toEqual([729, 3, STATUS_DETALHE_PUBLICO]);
+      expect(params).toEqual([729, 3]);
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
@@ -255,7 +253,7 @@ describe('PublicVacancyController.getById', () => {
       // A query foi pelo ramo "id cru" (uuid), não pelo par case_number/vacancy_number
       const [sql, params] = mockQuery.mock.calls[0];
       expect(sql).toContain('jp.id = $1');
-      expect(params).toEqual(['casoXX-01', STATUS_DETALHE_PUBLICO]);
+      expect(params).toEqual(['casoXX-01']);
     });
 
     it('id que NÃO parece slug (uuid real) não loga o aviso do T066, mesmo em 404', async () => {
@@ -295,13 +293,13 @@ describe('PublicVacancyController.getById', () => {
       expect(data.is_disabled).toBe(false);
     });
 
-    it('o WHERE permite DE_BAJA sem exigir NOT EXISTS quando o status já é DE_BAJA (OR jp.status = \'DE_BAJA\')', async () => {
+    it('o WHERE permite DE_BAJA SEM passar pela regra de publicável (OR jp.status = \'DE_BAJA\' fica antes dela)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow({ status: 'DE_BAJA' })] });
       const [req, res] = mockReqRes({ id: VACANCY_ID });
       await controller.getById(req, res);
 
       const [sql] = mockQuery.mock.calls[0];
-      expect(sql).toContain("jp.status = 'DE_BAJA' OR NOT EXISTS");
+      expect(sql).toContain("jp.status = 'DE_BAJA' OR (jp.deleted_at IS NULL");
     });
   });
 
@@ -533,31 +531,28 @@ describe('PublicVacancyController.getById', () => {
       expect(sql).not.toMatch(/dependency_level/);
     });
 
-    it('a rota só responde por vaga publicável — rascunho e status fechado não saem', async () => {
+    it('a rota só responde por vaga publicável OU DE_BAJA — o SQL carrega a regra do dono, não uma lista de status', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
       const [req, res] = mockReqRes({ id: VACANCY_ID });
       await controller.getById(req, res);
 
       const [sql, params] = mockQuery.mock.calls[0];
       expect(sql).toMatch(/is_draft\s*=\s*false/);
-      expect(sql).toMatch(/status\s*=\s*ANY/);
-      // A lista de status vai como PARÂMETRO — se virar literal no SQL, este teste segue
-      // passando por engano, então checo o parâmetro e não só o texto. DE_BAJA entra aqui
-      // desde a change baja-vacante-por-servico (a página segue servindo, desativada) — CLOSED
-      // e SUSPENDED continuam de fora, é isso que o nome do teste protege.
-      expect(params[params.length - 1]).toEqual(
-        ['ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'DE_BAJA'],
-      );
+      expect(sql).toContain(`(jp.status = 'DE_BAJA' OR ${DONO_DE_PUBLICAVEL})`);
+      // CLOSED, ON_HOLD, SUSPENDED e o paciente pausado saem pela regra do dono; nada vai como parâmetro de status.
+      expect(sql).toContain("jp.status NOT IN ('DE_BAJA', 'CLOSED', 'ON_HOLD', 'SUSPENDED')");
+      expect(sql).toContain("COALESCE(p.status, '') NOT IN ('ON_HOLD', 'SUSPENDED', 'ALTA', 'DISCHARGED')");
+      expect(params).toEqual([VACANCY_ID]);
     });
 
-    it('o placeholder do status acompanha o formato do id (slug tem 2 params, uuid tem 1)', async () => {
+    it('o número de params acompanha o formato do id (slug tem 2, uuid tem 1): sem placeholder de status', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
       const [req, res] = mockReqRes({ id: 'caso42-1' });
       await controller.getById(req, res);
 
       const [sql, params] = mockQuery.mock.calls[0];
-      expect(params).toHaveLength(3);          // case_number, vacancy_number, status[]
-      expect(sql).toMatch(/\$3::text\[\]/);
+      expect(params).toEqual([42, 1]);          // case_number, vacancy_number
+      expect(sql).not.toMatch(/\$3/);
     });
 
     // Spec 013, bloco C (lex C-b2/C-c.3): professional_profile (perfil buscado, texto clínico
@@ -593,8 +588,8 @@ describe('PublicVacancyController.getById', () => {
       for (const ref of pcsRefs) {
         expect(ref).not.toMatch(/professional_profile|hourly_value|SELECT \*/);
       }
-      expect(sql).toContain('pcs.id = jp.contracted_service_id');
-      expect(sql).toContain('pcs.active = false');
+      expect(sql).toContain('pcs_pub.id = jp.contracted_service_id');
+      expect(sql).toContain('pcs_pub.active = false');
     });
   });
   // ══════════════════════════════════════════════════════════════════════════

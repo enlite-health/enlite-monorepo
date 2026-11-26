@@ -1,12 +1,12 @@
 import { registry, z } from '../registry';
 import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
-import { CICLOS_DE_VIDA, STATUS_GRAVAVEIS } from '@modules/matching/domain/vacancyLifecycle';
+import { CICLOS_DE_VIDA } from '@modules/matching/domain/vacancyLifecycle';
 import { CORES } from '@modules/matching/domain/vacancySemaphore';
 
 const VacancyListQuery = z.object({
   search: z.string().optional().openapi({ description: 'Busca textual por título ou caso.', example: 'Caso 766' }),
   status: z.string().optional().openapi({ description: 'Filtro por valor de banco da vaga (inclui `DE_BAJA`). Aceito só por compatibilidade: a tela usa `lifecycle`.', example: 'SEARCHING' }),
-  lifecycle: z.enum(CICLOS_DE_VIDA).optional().openapi({ description: 'Filtro por ciclo de vida da vaga (tabela do dono).', example: 'aberta' }),
+  lifecycle: z.enum(CICLOS_DE_VIDA).optional().openapi({ description: 'Filtro pelo selo da vaga (`rascunho` ou `baja`; tabela do dono). `aberta|pausada|cerrada` saíram: 400 `VACANCY_LIFECYCLE_INVALID`.', example: 'baja' }),
   patient_status: z.string().optional().openapi({ description: 'Filtro por estado do paciente (`patients.status`). Sem `patient:read` → 403 `{ field: patientStatus, cell: patient:read }`.', example: 'SEARCHING' }),
   include_baja: z.enum(['true', 'false']).optional().openapi({
     description: 'Spec 084 F2: `true` mostra as vagas dadas de baja (só consulta, com selo). Ausente = escondidas.',
@@ -42,21 +42,13 @@ const CreateVacancyBody = z.object({
   patient_address_id: z.string().uuid().optional().openapi({ description: 'UUID do endereço do paciente.', example: '6f7c1d4a-9b2e-4c8a-9d5e-1f3b8a2c7e91' }),
   required_professions: z.array(z.string()).optional().openapi({ description: 'Profissões requeridas.', example: ['AT', 'CUIDADOR'] }),
   required_sex: z.string().optional().openapi({ description: 'Sexo do worker preferido.', example: 'FEMALE' }),
-  status: z.enum(STATUS_GRAVAVEIS).optional().openapi({ description: 'Status inicial da vaga (só o ciclo de vida; ausente = nasce PENDING_ACTIVATION, escrita de sistema).', example: 'SEARCHING' }),
   salary_text: z.string().optional().openapi({ description: 'Descrição textual do salário.', example: 'R$ 3.000/mês' }),
   work_schedule: z.string().optional().openapi({ description: 'Jornada de trabalho.', example: '8h às 18h, Seg-Sex' }),
 });
 
 const UpdateVacancyBody = z.object({
-  // Spec 084: `DE_BAJA` NÃO é aceito aqui — nem para entrar (a baixa é `POST /vacancies/baja`) nem para sair (R17: vaga
-  // baixada só volta pela reativação do serviço; PUT em vaga DE_BAJA responde 409 `VACANCY_DE_BAJA_NO_REACTIVATION`).
-  // `ON_HOLD` ("En espera", R18) é a pausa da vaga de serviço ativo; encerrar (`CLOSED`) vaga de serviço ativo → 409.
-  // estado-automatico-do-paciente F2 (D3/E5): o cliente só grava o ciclo de vida (`STATUS_GRAVAVEIS`, dono em matching/domain);
-  // qualquer outro valor → 400 `VACANCY_STATUS_NOT_LIFECYCLE` (es + pt-BR em `messages`).
-  status: z.enum(STATUS_GRAVAVEIS).optional().openapi({
-    description: 'Novo status da vaga (só o ciclo de vida: SEARCHING, ON_HOLD, SUSPENDED, CLOSED).',
-    example: 'SEARCHING',
-  }),
+  // semaforo-da-vaga F4: `status` NÃO é aceito (nem aqui, nem no POST): 400 `VACANCY_STATUS_NOT_WRITABLE` (es + pt-BR em `messages`).
+  // A vaga baixada segue só consulta (spec 084 R17: PUT → 409 `VACANCY_DE_BAJA_NO_REACTIVATION`).
   patient_address_id: z.string().uuid().optional().openapi({ description: 'Novo endereço do paciente.', example: '6f7c1d4a-9b2e-4c8a-9d5e-1f3b8a2c7e91' }),
   salary_text: z.string().optional().openapi({ description: 'Descrição de salário.', example: 'R$ 3.500/mês' }),
   work_schedule: z.string().optional().openapi({ description: 'Jornada atualizada.', example: 'Integral' }),
@@ -91,7 +83,7 @@ registry.registerPath({
   request: { query: VacancyListQuery },
   responses: {
     200: { description: 'Lista paginada de vagas.', content: { 'application/json': { schema: OkMessage } } },
-    400: { description: '`sort` fora da allowlist, `order` inválido ou `semaphore` fora das cores (`VACANCY_SEMAPHORE_INVALID`).', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    400: { description: '`sort` fora da allowlist, `order` inválido, `semaphore` fora das cores (`VACANCY_SEMAPHORE_INVALID`) ou `lifecycle` fora de `rascunho|baja` (`VACANCY_LIFECYCLE_INVALID`).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },

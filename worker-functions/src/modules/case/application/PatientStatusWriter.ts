@@ -12,6 +12,7 @@ import type { OnHoldReason } from '../domain/enums/OnHoldReason';
 import type { SuspensionExitReason } from '../domain/enums/SuspensionExitReason';
 import { blockingCodesForStatusChange } from '../domain/PatientCompleteness';
 import { decidirTrocaForaDoFluxo } from '../domain/trocaForaDoFluxo';
+import { acaoTalentumDaTransicao, type AcaoTalentum } from '../domain/talentumPausaDoPaciente';
 import type { EscopoDaCompletude } from '../domain/PatientCompleteness';
 import type { PatientStatusPorts, StatusTx } from './ports/patientStatusPorts';
 
@@ -245,12 +246,23 @@ export const escopoDaTroca = (opts: Pick<MoveStatusOptions, 'changeSource' | 'es
   return escopoDaOrigem === 'servico' && opts.escopo?.kind === 'servico' ? opts.escopo : PACIENTE_INTEIRO;
 };
 
+/**
+ * O que o escritor devolve. `talentum` (P6): as vagas que a transição marcou PENDING_PAUSE/PENDING_RESUME na mesma transação
+ * (`null` = a transição não cruza o conjunto que pausa). Quem chama o escritor ENVIA ao Talentum depois do COMMIT
+ * (`dispatchTalentumPause`); se o envio se perder, a marcação segue visível na lista manual.
+ */
+export interface PatientStatusMoved {
+  id: string;
+  status: PatientStatus;
+  talentum: { acao: AcaoTalentum; vacancyIds: string[] } | null;
+}
+
 export type MovePatientStatus = (
   patientId: string,
   status: PatientStatus,
   opts: MoveStatusOptions,
   txClient?: StatusTx,
-) => Promise<{ id: string; status: PatientStatus }>;
+) => Promise<PatientStatusMoved>;
 
 /** Monta o escritor sobre os ports (E2: a composição na borda entrega o real; os testes entregam dublês). */
 export function createPatientStatusWriter(ports: PatientStatusPorts): MovePatientStatus {
@@ -267,7 +279,7 @@ export function createPatientStatusWriter(ports: PatientStatusPorts): MovePatien
       throw new OnHoldReasonRequiredError();
     }
 
-    const body = async (client: StatusTx): Promise<{ id: string; status: PatientStatus }> => {
+    const body = async (client: StatusTx): Promise<PatientStatusMoved> => {
       const current = await client.query<{ status: PatientStatus | null }>(
         'SELECT status FROM patients WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
         [patientId],
@@ -379,7 +391,10 @@ export function createPatientStatusWriter(ports: PatientStatusPorts): MovePatien
         patientId, from, to: status, onHoldReason: goingOnHold ? opts.onHoldReason : null, changeSource: changeSourceGravado,
         suspensionExitReason: statusReasonToRecord,
       });
-      return { id: patientId, status };
+      // P6: a pausa/retomada no Talentum acompanha a transição, na MESMA transação (o feed segue o paciente por join).
+      const acao = acaoTalentumDaTransicao(from, status);
+      const vacancyIds = acao ? await ports.talentum.mark(client, patientId, acao) : [];
+      return { id: patientId, status, talentum: acao ? { acao, vacancyIds } : null };
     };
     return txClient ? body(txClient) : ports.transaction.run(body);
   };

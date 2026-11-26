@@ -5,7 +5,7 @@ import { GetFunnelByWorkerUseCase } from './GetFunnelByWorkerUseCase';
 import { COUNTRY_CODES, type CountryCode } from '@shared/domain/countryCodes';
 import type { ServiceHoursSummaryPort } from './ServiceHoursSummaryPort';
 import {
-  jobStatusCountsQuery,
+  vacantesAbiertasQuery,
   patientsActiveCountQuery,
   pacienteEstadosQuery,
   ubicacionesActivasQuery,
@@ -92,7 +92,7 @@ export class GetManagementDashboardUseCase {
 
     const [
       funnelPorPrestador,
-      jobRows,
+      abiertasRow,
       patientRows,
       pacienteEstadosRow,
       ubicacionesRow,
@@ -106,7 +106,7 @@ export class GetManagementDashboardUseCase {
       await Promise.all([
         // Funil por PRESTADOR, recortado à operação viva (ver GetFunnelByWorkerUseCase).
         new GetFunnelByWorkerUseCase(this.db).execute(options?.funnelPeriodDays, countries),
-        jobStatusCountsQuery(this.db, countries),
+        vacantesAbiertasQuery(this.db, countries),
         patientsActiveCountQuery(this.db, countries),
         pacienteEstadosQuery(this.db, armed.armadaCaseIds, countries),
         ubicacionesActivasQuery(this.db, countries),
@@ -118,7 +118,6 @@ export class GetManagementDashboardUseCase {
         encuadresSemanaQuery(this.db, countries),
       ]);
 
-    const jobs = toRecord(jobRows.rows);
     const funnel = toRecord(funnelRows.rows);
 
     const patient = patientRows.rows[0] ?? { activos: 0 };
@@ -138,11 +137,6 @@ export class GetManagementDashboardUseCase {
     const blocked = blockedRow.rows[0]?.bloqueados ?? 0;
     const encuadre = encuadreRow.rows[0]?.agendados ?? 0;
 
-    // Vagas abertas POR STATUS — conceito distinto de "equipe por armar" (bucket).
-    // Mantido como estava para não quebrar vacantesAbiertas (teste de regressão).
-    const openByStatus =
-      pick(jobs, 'SEARCHING') + pick(jobs, 'SEARCHING_REPLACEMENT') + pick(jobs, 'RAPID_RESPONSE');
-
     const data: ManagementDashboardData = {
       // PR-9 (`lex` #9, FR-734): o seletor do front lista `scope.countries`
       // (nunca COUNTRY_CODES inteiro) — nunca uma string livre, só enum de país.
@@ -155,8 +149,8 @@ export class GetManagementDashboardUseCase {
         equiposArmados: armed.armados,
         equiposPorArmar: armed.porArmar,
         pacientesActivos: patient.activos,
-        vacantesAbiertas: openByStatus + pick(jobs, 'PENDING_ACTIVATION'),
-        vacantesPausadas: pick(jobs, 'SUSPENDED'),
+        // P7: as publicáveis (dono: vacancyPublication.ts). "Vacantes pausadas" saiu: a vaga não tem mais estado manual.
+        vacantesAbiertas: abiertasRow.rows[0]?.abiertas ?? 0,
       },
       equipoArmada: {
         armados: armed.armados,
