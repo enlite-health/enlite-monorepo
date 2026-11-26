@@ -96,3 +96,15 @@ describe('ListPatientStatusActionsUseCase', () => {
     await expect(uc.execute({ patientId: PID, cells: null })).rejects.toThrow(/not found/i);
   });
 });
+
+// Cobertura 100% de `avaliarTroca`: a guarda D469 (funil → SEARCHING fora do foguete) recusa ANTES da FSM — o ramo que só este
+// ponto de entrada exercita desde que a lista de destinos saiu (F5).
+describe('avaliarTroca — guarda D469 antes da FSM', () => {
+  it('funil → SEARCHING por admin_panel é recusa_de_transicao, mesmo com o par na FSM', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { avaliarTroca } = require('../PatientStatusWriter');
+    expect(avaliarTroca({ from: 'ADMISSION', to: 'SEARCHING', naFsm: true, cells: null, changeSource: 'admin_panel' })).toEqual({
+      resultado: 'recusa_de_transicao',
+    });
+  });
+});

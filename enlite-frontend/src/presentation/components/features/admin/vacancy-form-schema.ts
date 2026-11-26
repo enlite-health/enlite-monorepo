@@ -227,7 +227,7 @@ export function buildVacancyPayload(
     salary_text: data.salary_text || 'A convenir',
     payment_day: data.payment_day || null,
     daily_obs: data.daily_obs || null,
-    // Só o ciclo de vida é gravável (D3/E5): a vaga do foguete nasce `PENDING_ACTIVATION` (sistema) e o form a devolvia no PUT → 400.
+    // Só o ciclo de vida é gravável (D3/E5): a vaga do foguete nasce com status de sistema (não gravável) e o form o devolvia no PUT → 400.
     // Valor que o cliente não pode gravar fica de fora (a vaga mantém o que tem).
     status: (STATUS_GRAVAVEIS as readonly string[]).includes(data.status ?? '') ? data.status : undefined,
     // Backend coalesces null published_at to NOW(); empty string is treated as
