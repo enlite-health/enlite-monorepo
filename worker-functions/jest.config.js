@@ -6,9 +6,6 @@ module.exports = {
   testEnvironment: 'node',
   // Fora do CI: 2 workers (10 × ~1,7 GB derrubavam a máquina de 18 GB, 30/10). No CI, o default do jest.
   ...(process.env.CI ? {} : { maxWorkers: 2 }),
-  // Recicla só o worker que realmente inchou (>2 GB, abaixo do teto de heap de 4 GB do CI). Com 1 GB reciclava quase todo
-  // arquivo e a suíte passou de 8-9 min para >15 min (PR #936, rodada 1). Origem: OOM/SIGTERM no PR #932, run 45887702277.
-  workerIdleMemoryLimit: '2GB',
   // R-16 (spec 050): a guarda de rede entra ANTES de qualquer teste; terceiro não conecta. Controle: tests/unit/__tests__/rede-bloqueada.controle.test.ts
   setupFiles: ['<rootDir>/../scripts/rede-bloqueada-em-teste.cjs'],
   // `scripts` entra aqui porque script que escreve em produção (o sync de
