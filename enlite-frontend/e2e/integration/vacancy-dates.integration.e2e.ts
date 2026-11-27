@@ -61,7 +61,6 @@ interface CreateVacancyBody {
   salary_text: string;
   payment_day: string | null;
   daily_obs: string | null;
-  status: string;
   published_at: string | null;
   closes_at: string | null;
 }
@@ -87,7 +86,6 @@ function buildBody(
     salary_text: 'A convenir',
     payment_day: null,
     daily_obs: null,
-    status: 'SEARCHING',
     published_at: null,
     closes_at: null,
     ...overrides,

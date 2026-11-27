@@ -242,10 +242,14 @@ test.describe('Permissões criar × editar — prova humana contra o backend rea
     const novaBtn = page.getByTestId('new-vacancy-btn');
     await expect(novaBtn).toBeVisible({ timeout: 10_000 });
 
-    // Abre o detalhe da vaga existente: sem `vacancy:update`, o editor de STATUS não existe.
+    // Abre o detalhe da vaga existente: sem `vacancy:update`, o "Guardar horário" não existe (o editor de estado saiu na F4 — nunca existe).
     // (o lápis de horário, `vacancy-edit-schedule-trigger`, é um `<button>` sem gate — achado fora
     // do escopo do PR-8b, `VacancyProfessionCard.tsx` não tem `ActionButton`/`useActionGate` nenhum.)
     await page.goto(`/admin/vacancies/${vacancyId}`);
+    await expect(page.getByTestId('vacancy-edit-schedule-trigger')).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId('vacancy-edit-schedule-trigger').click();
+    await expect(page.getByTestId('vacancy-schedule-save')).toHaveCount(0);
+    await page.getByTestId('vacancy-schedule-modal-backdrop').click({ force: true });
     await expect(page.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
 
     // Interação HUMANA real: volta à lista e clica em "Nueva vacante" para digitar no formulário
@@ -276,7 +280,12 @@ test.describe('Permissões criar × editar — prova humana contra o backend rea
     await expect(page.getByTestId('new-vacancy-btn')).toHaveCount(0);
 
     await page.goto(`/admin/vacancies/${vacancyId}`);
-    await expect(page.getByTestId('vacancy-status-editor-trigger')).toBeVisible({ timeout: 15_000 });
+    // F4: o editor de estado saiu. A prova de `vacancy:update` é o "Guardar horário", que só existe com a célula.
+    await expect(page.getByTestId('vacancy-edit-schedule-trigger')).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId('vacancy-edit-schedule-trigger').click();
+    await expect(page.getByTestId('vacancy-schedule-save')).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId('vacancy-schedule-modal-backdrop').click({ force: true });
+    await expect(page.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
 
     // Spec 052 (Fase 4): o card de links de Meet da aba Links saiu — era por ele que este caso EDITAVA e SALVAVA um link
     // para provar `vacancy:update`. A prova de escrita agora precisa passar pelo formulário de edição da vaga

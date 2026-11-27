@@ -171,7 +171,6 @@ describe('Fluxo A — convite automático pós-criação de vaga (templates Twil
         case_number: CASE_NUMBER,
         patient_id: patientId,
         patient_address_id: patientAddressId,
-        status: 'SEARCHING',
       },
       { headers: { Authorization: `Bearer ${adminToken}` } },
     );
@@ -313,7 +312,6 @@ describe('Fluxo A — convite automático pós-criação de vaga (templates Twil
         case_number: CASE_NUMBER,
         patient_id: patientId,
         patient_address_id: patientAddressId,
-        status: 'SEARCHING',
         is_test: true,
       },
       { headers: { Authorization: `Bearer ${adminToken}` } },

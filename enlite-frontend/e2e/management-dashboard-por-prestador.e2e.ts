@@ -58,7 +58,6 @@ const PROD_PAYLOAD = {
     equiposPorArmar: 134,
     pacientesActivos: 190,
     vacantesAbiertas: 144,
-    vacantesPausadas: 21,
   },
   equipoArmada: { armados: 0, porArmar: 134, semConfig: 5, pendenteClasificacao: 135, pctRespostaRapidaArmado: { num: 0, den: 84, excluidos: 60, pct: 0 } },
   pacientes: {

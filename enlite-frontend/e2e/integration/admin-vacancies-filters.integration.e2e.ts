@@ -44,7 +44,7 @@ const MOCK_VACANCIES = [
   {
     id: 'v-f001',
     caseNumber: 300, caseOrdinal: 1,
-    lifecycle: 'aberta',
+    lifecycle: null,
     patient_status: 'ACTIVE',
     statusRaw: 'ACTIVE',
     priority: 'NORMAL',

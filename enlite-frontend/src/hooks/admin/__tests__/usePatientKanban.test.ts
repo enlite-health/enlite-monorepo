@@ -164,4 +164,33 @@ describe('usePatientKanban — patients.status', () => {
     expect(Object.keys(result.current).sort()).toEqual(['error', 'groups', 'isLoading', 'refetch', 'servicesStatus']);
     expect(updatePatientStatus).not.toHaveBeenCalled();
   });
+
+  // semaforo-da-vaga F3: a pior cor vem PRONTA do agregado (`worstSemaphore`) — o hook só a repassa ao item, sem escolher.
+  it('agregado ok → cada item ganha worstSemaphore do agregado (null quando o paciente não tem serviço com vaga); o semáforo do serviço passa intacto', async () => {
+    const svc = (id: string, semaphore: PatientKanbanServiceSummary['semaphore']): PatientKanbanServiceSummary => ({
+      contractedServiceId: id, serviceCode: 'AT', scheduleHours: 10, reserve: null, cobertas: 0, liveVacancyId: null, semaphore,
+    });
+    listKanbanServices.mockReset().mockResolvedValueOnce({
+      patients: [
+        { patientId: 'a', asOf: 'x', worstSemaphore: 'red', services: [svc('s1', { n: 0, color: 'red' }), svc('s2', { n: 12, color: 'green' })] },
+        { patientId: 'c', asOf: 'x', worstSemaphore: null, services: [svc('s3', null)] },
+      ],
+    });
+    const { result } = renderHook(() => usePatientKanban());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const a = result.current.groups.ADMISSION.find((p) => p.id === 'a')!;
+    expect(a.worstSemaphore).toBe('red');
+    expect(a.services!.map((s) => s.semaphore)).toEqual([{ n: 0, color: 'red' }, { n: 12, color: 'green' }]);
+    expect(result.current.groups.ACTIVE.find((p) => p.id === 'c')!.worstSemaphore).toBeNull();
+    expect(result.current.groups.ON_HOLD.find((p) => p.id === 'b')!.worstSemaphore).toBeNull(); // fora do agregado = sem serviço = null
+  });
+
+  it('agregado 403/erro → worstSemaphore undefined (o filtro some e nada é filtrado)', async () => {
+    listKanbanServices.mockReset().mockRejectedValueOnce(new ContractedServiceApiError('Forbidden', 403));
+    const { result } = renderHook(() => usePatientKanban());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    for (const key of PATIENT_KANBAN_STATUSES) {
+      for (const p of result.current.groups[key]) expect(p.worstSemaphore).toBeUndefined();
+    }
+  });
 });

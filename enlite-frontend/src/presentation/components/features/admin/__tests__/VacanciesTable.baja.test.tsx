@@ -4,7 +4,7 @@ import { VacanciesTable, type VacancyRow } from '../VacanciesTable';
 import { isBajaSelectable } from '../bajaSelectable';
 
 const base = (o: Partial<VacancyRow>): VacancyRow => ({
-  id: 'v', caseNumber: 817, caseOrdinal: null, lifecycle: 'aberta', diasAberto: '01', stageCounts: {},
+  id: 'v', caseNumber: 817, caseOrdinal: null, lifecycle: null, diasAberto: '01', stageCounts: {},
   postulados: '00', faltantes: '00', isDraft: false, lastActionAt: null, statusRaw: 'SEARCHING', hasService: false,
   talentumPauseState: null, ...o,
 });

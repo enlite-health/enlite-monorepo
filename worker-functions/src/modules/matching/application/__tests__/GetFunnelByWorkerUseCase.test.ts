@@ -130,7 +130,7 @@ describe('GetFunnelByWorkerUseCase', () => {
       scope: { countries: ['AR'], requested: 'ALL' },
       bigNumbers: {
         equiposArmados: 0, equiposPorArmar: 0, pacientesActivos: 0,
-        vacantesAbiertas: 0, vacantesPausadas: 0,
+        vacantesAbiertas: 0,
       },
       equipoArmada: {
         armados: 0, porArmar: 0, semConfig: 0, pendenteClasificacao: 0,

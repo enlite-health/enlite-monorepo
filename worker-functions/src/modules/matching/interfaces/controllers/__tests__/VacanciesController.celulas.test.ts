@@ -138,15 +138,16 @@ describe('GET /vacancies/:id — estado do paciente por join sob o container `pa
     const sql = String(mockQuery.mock.calls[0][0]);
     expect(sql).toContain('p.status as patient_status');
     expect(sql).not.toMatch(/jp\.status\s+as\s+patient_status/i);
-    expect(sql).toContain("WHEN jp.status IN ('SEARCHING', 'SEARCHING_REPLACEMENT'");
+    expect(sql).toContain("WHEN jp.status IN ('DE_BAJA') THEN 'baja'"); // o selo encolheu: só rascunho e baja (F4)
     expect(sql).not.toMatch(/on_hold_note/i);
   });
 
-  it('com patient:read: patient_status + lifecycle; resumeStatus do legado = SEARCHING (E8)', async () => {
+  it('com patient:read: patient_status + lifecycle; o `resumeStatus` do "Reanudar" saiu da resposta (F4)', async () => {
     mockQuery.mockResolvedValue({ rows: [linha()] });
     const [req, res] = reqRes(['vacancy:read', 'patient:read']);
     await new VacanciesController().getVacancyById(req, res);
-    expect(dado(res)).toMatchObject({ patient_status: 'SEARCHING', lifecycle: 'rascunho', resumeStatus: 'SEARCHING' });
+    expect(dado(res)).toMatchObject({ patient_status: 'SEARCHING', lifecycle: 'rascunho' });
+    expect(dado(res)).not.toHaveProperty('resumeStatus');
     expect(dado(res)).not.toHaveProperty('redacted');
   });
 

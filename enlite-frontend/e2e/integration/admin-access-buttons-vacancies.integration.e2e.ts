@@ -263,7 +263,7 @@ test.describe('Botões da família vagas — desabilitar em vez de sumir (D269) 
   const RECRUTADORA: MockUser = { uid: RECRUTADORA_UID, email: RECRUTADORA_EMAIL, role: 'recruiter', country: 'AR' };
   const SEM_GRUPO: MockUser = { uid: SEM_GRUPO_UID, email: SEM_GRUPO_EMAIL, role: 'recruiter', country: 'AR' };
 
-  test('1. só vacancy:read: "Nueva", "Sincronizar Talentum", editor de status, "Guardar horário" e switch Talentum NÃO EXISTEM no DOM', async ({ page }) => {
+  test('1. só vacancy:read: "Nueva", "Sincronizar Talentum", "Guardar horário" e switch Talentum NÃO EXISTEM no DOM (e o editor de estado não existe para ninguém — semaforo-da-vaga F4)', async ({ page }) => {
     await loginAs(page, RECRUTADORA);
     await page.goto('/admin/vacancies');
     await expect(page.getByRole('heading', { name: 'Vacantes', exact: true })).toBeVisible({ timeout: 15_000 });
@@ -283,7 +283,7 @@ test.describe('Botões da família vagas — desabilitar em vez de sumir (D269) 
 
     await page.goto(`/admin/vacancies/${vacancyId}`);
     await expect(page.getByTestId('vacancy-edit-schedule-trigger')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
+    await expect(page.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0); // F4: não existe nem com permissão (ver o caso 2)
 
     await page.getByTestId('vacancy-edit-schedule-trigger').click();
     await expect(page.getByTestId('vacancy-schedule-save')).toHaveCount(0);
@@ -333,7 +333,9 @@ test.describe('Botões da família vagas — desabilitar em vez de sumir (D269) 
     await expect(page.getByTestId('sync-talentum-btn')).toBeVisible();
 
     await page.goto(`/admin/vacancies/${vacancyId}`);
-    await expect(page.getByTestId('vacancy-status-editor-trigger')).toBeVisible({ timeout: 15_000 });
+    // F4: o editor de estado saiu — nem COM `vacancy:update` ele existe; o que a permissão libera é o "Guardar horário" (abaixo).
+    await expect(page.getByTestId('vacancy-edit-schedule-trigger')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
 
     await page.getByTestId('vacancy-edit-schedule-trigger').click();
     await expect(page.getByTestId('vacancy-schedule-save')).toBeVisible({ timeout: 10_000 });

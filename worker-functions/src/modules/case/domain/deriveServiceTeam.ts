@@ -21,6 +21,7 @@
  * a `selected` por derivação (nenhuma escrita, DX-13.4).
  */
 import { isVigente, type ItineraryAssignmentStatus } from './ServiceCoverageCalculator';
+import { FILLED_POSITION_STAGES } from '../../matching/domain/applicationFunnelStages';
 
 /** A etapa do quadro B que faz um prestador entrar como candidato do quadro C (DX-10.4). */
 export const SERVICE_TEAM_ENTRY_STAGE = 'QUICK_RESPONSE_TEAM' as const;
@@ -216,7 +217,8 @@ export function deriveServiceReserve(input: DeriveServiceTeamInput): ServiceRese
 // `deriveServiceTeam` (quadro C) NÃO muda: `selected` segue sendo só `QUICK_RESPONSE_TEAM` não alocado.
 
 /** As colunas do funil da vacante que alimentam o pool (`WorkerJobApplication.ts:47-48`). */
-export const ALLOCATION_POOL_STAGES = ['SELECTED', 'QUICK_RESPONSE_TEAM'] as const;
+/** Reexport do dono (`FILLED_POSITION_STAGES`): o par {SELECTED, QRT} tem UMA declaração (contrato `semaforoEtapas`). */
+export const ALLOCATION_POOL_STAGES = FILLED_POSITION_STAGES;
 
 export type AllocationPoolStatus = 'IN_SERVICE' | 'QUICK_RESPONSE' | 'SELECTED';
 

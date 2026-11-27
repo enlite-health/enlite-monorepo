@@ -23,7 +23,6 @@ export const MANAGEMENT_HELP_KEYS = [
   'equiposArmados',
   'equiposPorArmar',
   'vacantesAbiertas',
-  'vacantesPausadas',
   // Equipo armado y horas
   'horasTotais',
   'horasAPreencher',

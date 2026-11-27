@@ -19,8 +19,6 @@ export interface VacancyListFilters {
   client?: string;
   /** Valor de banco: aceito pelo servidor só por compatibilidade; a tela não o oferece mais (E7). */
   status?: string;
-  /** E7: ciclo de vida da vaga (`rascunho`|`aberta`|`pausada`|`cerrada`|`baja`). */
-  lifecycle?: string;
   /** E7: estado do paciente (`p.status`) — o servidor recusa com 403 sem `patient:read`. */
   patient_status?: string;
   limit?: string;
@@ -31,6 +29,8 @@ export interface VacancyListFilters {
   required_sex?: string;
   /** CSV of day-of-week integers 0–6 (0=domingo). */
   days?: string;
+  /** semaforo-da-vaga F3: CSV de cores (`red,yellow,green`); o servidor valida (400 `VACANCY_SEMAPHORE_INVALID`) e nunca devolve baixada. */
+  semaphore?: string;
   time_from?: string;
   time_to?: string;
   /** Chave da allowlist do backend (spec 046 F3). */

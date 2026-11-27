@@ -61,8 +61,8 @@ interface MockVacancy {
   vacancy_number: number;
   title: string;
   status: string;
-  /** Ciclo de vida que o back calcula (D3) — o mock o recalcula no PUT pela mesma tabela de 4 valores graváveis. */
-  lifecycle: string;
+  /** Selo que o back calcula (semaforo-da-vaga F4): só `rascunho` | `baja`; vaga no ar = `null`. */
+  lifecycle: string | null;
   country: string;
   providers_needed: number;
   worker_profile_sought: string;
@@ -87,7 +87,7 @@ const baseVacancy: MockVacancy = {
   vacancy_number: 1,
   title: 'Caso 22002 — Vacante Operacional',
   status: 'SEARCHING',
-  lifecycle: 'aberta',
+  lifecycle: null,
   country: 'Argentina',
   providers_needed: 1,
   worker_profile_sought: 'AT',
@@ -174,8 +174,6 @@ async function mockVacancyApi(
           (merged as unknown as Record<string, unknown>)[key] = value;
         }
       }
-      // o ciclo é derivado no back (SEARCHING→aberta, ON_HOLD/SUSPENDED→pausada, CLOSED→cerrada)
-      merged.lifecycle = ({ SEARCHING: 'aberta', ON_HOLD: 'pausada', SUSPENDED: 'pausada', CLOSED: 'cerrada' } as Record<string, string>)[merged.status] ?? merged.lifecycle;
       currentVacancy = merged;
       await route.fulfill({
         status: 200,
@@ -196,7 +194,6 @@ async function mockVacancyApi(
 
 // Locators reutilizados
 const statusEditorTrigger = (page: Page) => page.getByTestId('vacancy-status-editor-trigger');
-const statusDropdown = (page: Page) => page.getByTestId('vacancy-status-editor-dropdown');
 const editScheduleTrigger = (page: Page) => page.getByTestId('vacancy-edit-schedule-trigger');
 const scheduleModal = (page: Page) => page.getByTestId('vacancy-schedule-modal');
 
@@ -209,7 +206,7 @@ test.describe('VacancyDetailPage — edição localizada (validação visual)', 
     await page.setViewportSize({ width: 1440, height: 900 });
   });
 
-  test('estado inicial: badge editável + ícone de lápis visíveis, sem botão "Editar Vaga"', async ({ page }) => {
+  test('estado inicial: sem seletor de estado (F4), ícone de lápis visível, sem botão "Editar Vaga"', async ({ page }) => {
     await mockVacancyApi(page);
     await loginAndMockApi(page);
 
@@ -217,7 +214,7 @@ test.describe('VacancyDetailPage — edição localizada (validação visual)', 
     await expect(page.locator('text=22002').first()).toBeVisible({ timeout: 15000 });
 
     // Garantias funcionais
-    await expect(statusEditorTrigger(page)).toBeVisible();
+    await expect(statusEditorTrigger(page)).toHaveCount(0);
     await expect(editScheduleTrigger(page)).toBeVisible();
     await expect(page.getByRole('button', { name: /^Editar$/i })).not.toBeVisible();
     await expect(page.getByRole('button', { name: /Editar Vacante|Editar Vaga/i })).not.toBeVisible();
@@ -229,67 +226,20 @@ test.describe('VacancyDetailPage — edição localizada (validação visual)', 
     });
   });
 
-  test('badge close-up: chevron presente e dropdown abre com 6 opções editáveis', async ({ page }) => {
-    await mockVacancyApi(page);
+  test('semaforo-da-vaga F4: a ficha não tem seletor de estado, dropdown nem "Reanudar", e abrir a ficha não grava nada', async ({ page }) => {
+    const spy = await mockVacancyApi(page);
     await loginAndMockApi(page);
 
     await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
     await expect(page.locator('text=22002').first()).toBeVisible({ timeout: 15000 });
 
-    const trigger = statusEditorTrigger(page);
-    await expect(trigger).toBeVisible();
-
-    // Close-up do badge fechado (mostra que tem chevron-down ao lado, indicando editável)
-    await expect(trigger).toHaveScreenshot('02-badge-status-fechado-closeup.png', {
-      maxDiffPixelRatio: 0.02,
-    });
-
-    await trigger.click();
-    await expect(statusDropdown(page)).toBeVisible();
-
-    // Confirma as 4 opções editáveis do CICLO DE VIDA (D3/E5) — nenhum valor legado que fingia ser estado do paciente
-    await expect(page.getByTestId('vacancy-status-option-SEARCHING')).toBeVisible();
-    await expect(page.getByTestId('vacancy-status-option-ON_HOLD')).toBeVisible();
-    await expect(page.getByTestId('vacancy-status-option-SUSPENDED')).toBeVisible();
-    await expect(page.getByTestId('vacancy-status-option-CLOSED')).toBeVisible();
-    for (const legado of ['SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'ACTIVE', 'PENDING_ACTIVATION']) {
-      await expect(page.getByTestId(`vacancy-status-option-${legado}`)).toHaveCount(0);
-    }
-
-    // Snapshot do dropdown aberto na sua área completa
-    await expect(statusDropdown(page)).toHaveScreenshot('03-status-dropdown-aberto.png', {
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-
-  test('salvar status mostra loader e depois badge muda visualmente', async ({ page }) => {
-    // Delay artificial de 600ms no PUT pra dar tempo de capturar o estado "saving"
-    const spy = await mockVacancyApi(page, { putDelayMs: 600 });
-    await loginAndMockApi(page);
-
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
-    await expect(page.locator('text=22002').first()).toBeVisible({ timeout: 15000 });
-
-    const trigger = statusEditorTrigger(page);
-    await trigger.click();
-    await page.getByTestId('vacancy-status-option-SUSPENDED').click();
-
-    // Estado "saving" — Loader2 spinning no lugar do chevron, botão desabilitado
-    await expect(trigger).toBeDisabled();
-    await expect(trigger).toHaveScreenshot('04-status-saving-loader.png', {
-      maxDiffPixelRatio: 0.05, // loader pode ter pequena variação de rotação
-      animations: 'disabled',
-    });
-
-    // Espera o PUT completar
-    await expect.poll(() => spy.putBodies.length, { timeout: 5000 }).toBeGreaterThan(0);
-    expect(spy.putBodies[0]).toEqual({ status: 'SUSPENDED' });
-
-    // Estado final — badge agora reflete o ciclo `pausada`
-    await expect(trigger).not.toBeDisabled({ timeout: 5000 });
-    await expect(trigger).toHaveScreenshot('05-status-apos-salvar-suspendido.png', {
-      maxDiffPixelRatio: 0.02,
-    });
+    await expect(statusEditorTrigger(page)).toHaveCount(0);
+    await expect(page.getByTestId('vacancy-status-editor-dropdown')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="vacancy-status-option-"]')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Reanudar/ })).toHaveCount(0);
+    // vaga no ar não tem selo (F15)
+    await expect(page.getByTestId('vacancy-case-card').getByTestId('vacancy-lifecycle-badge')).toHaveCount(0);
+    expect(spy.putBodies).toHaveLength(0);
   });
 
   test('ícone de lápis abre modal de horários com schedule pré-carregado', async ({ page }) => {
@@ -381,7 +331,7 @@ test.describe('VacancyDetailPage — edição localizada (validação visual)', 
     await expect(scheduleModal(page)).not.toBeVisible({ timeout: 5000 });
     await expect(page.locator('text=09:00h - 13:00h').first()).toBeVisible();
 
-    // Snapshot final da página com schedule visível e nada mais editável além de status+horário
+    // Snapshot final da página com schedule visível e nada mais editável além do horário
     await expect(page).toHaveScreenshot('10-pagina-apos-salvar-schedule.png', {
       clip: { x: 0, y: 0, width: 1440, height: 700 },
       maxDiffPixelRatio: 0.02,

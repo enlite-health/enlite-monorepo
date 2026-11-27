@@ -2,7 +2,7 @@ import { ACOES, acaoDisponivelDe, type Acao } from '../domain/acoesDeEstado';
 import type { OnHoldReason } from '../domain/enums/OnHoldReason';
 import type { SuspensionExitReason } from '../domain/enums/SuspensionExitReason';
 import type { PatientStatus } from '../domain/enums/PatientStatus';
-import type { MovePatientStatus } from './PatientStatusWriter';
+import type { MovePatientStatus, PatientStatusMoved } from './PatientStatusWriter';
 import type { HorasDoItinerarioPort, TransactionRunnerPort } from './ports/patientStatusPorts';
 
 /**
@@ -43,6 +43,8 @@ export interface PatientStatusActionResult {
   acao: Acao;
   from: PatientStatus | null;
   status: PatientStatus;
+  /** P6: vagas marcadas PENDING_PAUSE/PENDING_RESUME na transação; o controller envia ao Talentum DEPOIS do commit. */
+  talentum: PatientStatusMoved['talentum'];
 }
 
 export interface PatientStatusActionPorts {
@@ -77,7 +79,7 @@ export class PatientStatusActionUseCase {
         },
         tx,
       );
-      return { id: moved.id, acao: input.acao, from, status: moved.status };
+      return { id: moved.id, acao: input.acao, from, status: moved.status, talentum: moved.talentum };
     });
   }
 }

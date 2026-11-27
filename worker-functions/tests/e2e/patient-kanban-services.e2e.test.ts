@@ -223,7 +223,7 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
     });
 
     const servicoEsperado = (uncoveredDays: number) => [
-      { contractedServiceId: serviceAr, serviceCode: 'AT', scheduleHours: 4, cobertas: 0, liveVacancyId: null, uncoveredDays, reserve: null },
+      { contractedServiceId: serviceAr, serviceCode: 'AT', scheduleHours: 4, cobertas: 0, liveVacancyId: null, uncoveredDays, reserve: null, semaphore: null },
     ];
     const lerAr = async () => {
       const res = await getKanbanServices('AR');
@@ -237,6 +237,7 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
     const patientArSemMontagem = semMontagem.data.data.patients.find((p: { patientId: string }) => p.patientId === ar.patientId);
     expect(patientArSemMontagem).toBeTruthy();
     expect(patientArSemMontagem.services).toEqual(servicoEsperado(0));
+    expect(patientArSemMontagem.worstSemaphore).toBeNull(); // sem vaga viva → sem semáforo (F2)
 
     // spec 069 (FR-12/P7): montado, a faixa de segunda SEM ninguém alocado é "Sin cubrir" e a segunda cai UMA vez em qualquer janela
     // de 7 dias — `uncoveredDays` conta DIAS no horizonte (antes só contava falta sem substituto, 0 aqui).
@@ -245,6 +246,7 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
     const patientAr = res.data.data.patients.find((p: { patientId: string }) => p.patientId === ar.patientId);
     expect(patientAr).toBeTruthy();
     expect(patientAr.services).toEqual(servicoEsperado(1));
+    expect(patientAr.worstSemaphore).toBeNull();
     expect(res.data.data.patients.some((p: { patientId: string }) => p.patientId === br.patientId)).toBe(false);
   });
 

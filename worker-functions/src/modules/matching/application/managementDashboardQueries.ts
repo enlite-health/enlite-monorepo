@@ -15,6 +15,7 @@
 
 import type { Pool } from 'pg';
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
+import { vagaPublicavelSql } from '../domain/vacancyPublication';
 import {
   liveWorkerJoinSql,
   liveBlockedReasonSql,
@@ -50,14 +51,17 @@ export interface CountRow {
   count: number;
 }
 
-/** `job_postings` por status (não-draft, não-deletada). */
-export function jobStatusCountsQuery(db: Pool, countries: CountryCode[]) {
-  return db.query<CountRow>(
-    `SELECT status AS k, COUNT(*)::int AS count
-       FROM job_postings
-      WHERE deleted_at IS NULL AND is_draft = false
-        AND ${countryPredicateSql('job_postings', 1)}
-      GROUP BY status`,
+/**
+ * Vagas ABERTAS = as publicáveis, pelo dono (`vacancyPublication.ts`; semaforo-da-vaga F4, P7): é o mesmo número que o feed
+ * público oferece. Antes somava status à mão (e contava `PENDING_ACTIVATION` aqui e não ali).
+ */
+export function vacantesAbiertasQuery(db: Pool, countries: CountryCode[]) {
+  return db.query<{ abiertas: number }>(
+    `SELECT COUNT(*)::int AS abiertas
+       FROM job_postings jp
+       LEFT JOIN patients p ON p.id = jp.patient_id
+      WHERE ${vagaPublicavelSql('jp', 'p')}
+        AND ${countryPredicateSql('jp', 1)}`,
     [countries],
   );
 }
