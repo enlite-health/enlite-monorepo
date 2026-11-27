@@ -143,7 +143,21 @@
     "noCatalogAt": "Sin catálogo para este diagnóstico y servicio al {{date}}",
     "catalogChanged": "El catálogo de este diagnóstico cambió. Revisá los objetivos y actividades marcados.",
     "formatMismatch": "Esta versión usa otro formato de objetivos. Recargá la página e intentá de nuevo.",
-    "cascadeError": "No pudimos cargar el catálogo. Intentá de nuevo."
+    "cascadeError": "No pudimos cargar el catálogo. Intentá de nuevo.",
+    "stepObjectivesAndActivities": "Paso 3 · Objetivos y actividades",
+    "stepObjectivesHelp": "Marcá un objetivo para ver y elegir sus actividades.",
+    "activitiesOfObjective": "Actividades de este objetivo",
+    "objectivesCount_one": "{{count}} objetivo",
+    "objectivesCount_other": "{{count}} objetivos",
+    "activitiesCount_one": "{{count}} actividad",
+    "activitiesCount_other": "{{count}} actividades",
+    "activitiesPicked": "{{picked}} de {{total}} elegidas",
+    "noObjectivesToPick": "Sin objetivos para elegir",
+    "pillComplete": "Completo",
+    "pillMissingActivity": "Falta una actividad",
+    "pillNoneChosen": "Sin elegir",
+    "pillNoCatalog": "Sin catálogo",
+    "diagnosesProgress": "{{done}} de {{total}} diagnósticos con catálogo completos"
   },
   "topNavbar": {
     "greeting": "Hola",

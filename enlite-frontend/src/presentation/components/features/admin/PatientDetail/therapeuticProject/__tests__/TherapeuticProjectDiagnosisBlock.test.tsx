@@ -4,14 +4,21 @@
  * que o operador vê e clica, com a cascata REAL (sem mock da regra) e o i18n pt-BR real.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, cleanup } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { TherapeuticCascade } from '@domain/entities/TherapeuticCascade';
 import type { CascadeBlock, DiagnosisPlanSnapshot } from '@domain/entities/TherapeuticProject';
 
 const translations = ptBR as Record<string, any>;
+const lookup = (key: string): unknown => key.split('.').reduce<any>((acc, part) => acc?.[part], translations);
+/** Plural como o i18next: `_zero` quando count=0 e existir; senão `_one`/`_other` pelo Intl.PluralRules do pt-BR. */
+function pluralKey(key: string, count: number): string {
+  if (count === 0 && typeof lookup(`${key}_zero`) === 'string') return `${key}_zero`;
+  return `${key}_${new Intl.PluralRules('pt-BR').select(count)}`;
+}
 function t(key: string, opts?: Record<string, unknown>): string {
-  const value = key.split('.').reduce<any>((acc, part) => acc?.[part], translations);
+  const resolved = typeof opts?.count === 'number' && typeof lookup(key) !== 'string' ? pluralKey(key, opts.count) : key;
+  const value = lookup(resolved);
   if (typeof value !== 'string') return key;
   return opts ? value.replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => String(opts[k] ?? _)) : value;
 }
@@ -33,7 +40,7 @@ const OK: CascadeBlock = {
 const cascadeOf = (block: CascadeBlock): TherapeuticCascade =>
   TherapeuticCascade.empty().chooseService('AT').withCatalog({ serviceCode: 'AT', serviceHasCatalog: true, blocks: [block] });
 
-const montar = (block: CascadeBlock, cascade = cascadeOf(block), showIncomplete = false) => {
+const montar = (block: CascadeBlock, cascade = cascadeOf(block), showIncomplete = false, defaultOpen = true) => {
   const onToggleObjective = vi.fn();
   const onToggleActivity = vi.fn();
   render(
@@ -42,6 +49,7 @@ const montar = (block: CascadeBlock, cascade = cascadeOf(block), showIncomplete 
       block={block}
       cascade={cascade}
       showIncomplete={showIncomplete}
+      defaultOpen={defaultOpen}
       onToggleObjective={onToggleObjective}
       onToggleActivity={onToggleActivity}
     />,
@@ -49,38 +57,101 @@ const montar = (block: CascadeBlock, cascade = cascadeOf(block), showIncomplete 
   return { onToggleObjective, onToggleActivity };
 };
 
+const pill = () => screen.getByTestId(`tp-block-pill-${URI}`);
+const tf = ptBR.therapeuticProjectForm;
+
+describe('TherapeuticProjectDiagnosisBlock — acordeão (099)', () => {
+  it('`defaultOpen`: abre com `aria-expanded=true` e mostra os cartões; fechado não monta o corpo; o clique alterna', () => {
+    montar(OK);
+    expect(screen.getByTestId(`tp-block-toggle-${URI}`)).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId(`tp-obj-${URI}-o1`)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId(`tp-block-toggle-${URI}`));
+
+    expect(screen.getByTestId(`tp-block-toggle-${URI}`)).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId(`tp-obj-${URI}-o1`)).not.toBeInTheDocument();
+  });
+
+  it('sem `defaultOpen` nasce fechado (só o 1º diagnóstico é aberto pelo formulário)', () => {
+    montar(OK, cascadeOf(OK), false, false);
+
+    expect(screen.getByTestId(`tp-block-toggle-${URI}`)).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId(`tp-obj-${URI}-o1`)).not.toBeInTheDocument();
+  });
+});
+
 describe('TherapeuticProjectDiagnosisBlock — bloco com catálogo (`ok`)', () => {
-  it('mostra o título do diagnóstico e cada objetivo com título + descrição, nenhum marcado', () => {
+  it('mostra o título, o contador e cada objetivo como cartão-botão (título + descrição + N atividades), nenhum marcado', () => {
     montar(OK);
 
     expect(screen.getByTestId(`tp-block-title-${URI}`)).toHaveTextContent('Diagnóstico X');
+    expect(screen.getByTestId(`tp-block-counter-${URI}`)).toHaveTextContent('0 objetivos · 0 atividades');
     expect(screen.getByText('Objetivo um')).toBeInTheDocument();
     expect(screen.getByText('Descrição um')).toBeInTheDocument();
-    expect(screen.getByText(ptBR.therapeuticProjectForm.stepObjectives)).toBeInTheDocument();
-    expect((screen.getByTestId(`tp-obj-${URI}-o1`) as HTMLInputElement).checked).toBe(false);
+    const cartao = screen.getByTestId(`tp-obj-${URI}-o1`);
+    expect(cartao.tagName).toBe('BUTTON');
+    expect(cartao).toHaveAttribute('aria-pressed', 'false');
+    expect(cartao).toHaveTextContent('1 atividade');
   });
 
-  it('Paso 4 desabilitado sem objetivo marcado: `pickObjectiveFirst`, nenhuma atividade, fieldset disabled', () => {
+  it('a pílula mostra os 4 estados: Sem elegir, Falta una actividad, Completo e Sem catálogo', () => {
+    montar(OK);
+    expect(pill()).toHaveTextContent(tf.pillNoneChosen);
+    cleanup();
+
+    montar(OK, cascadeOf(OK).toggleObjective(URI, 'o1'));
+    expect(pill()).toHaveTextContent(tf.pillMissingActivity);
+    cleanup();
+
+    montar(OK, cascadeOf(OK).toggleObjective(URI, 'o1').toggleActivity(URI, 'a1'));
+    expect(pill()).toHaveTextContent(tf.pillComplete);
+    cleanup();
+
+    montar({ diagnosisUri: URI, categoryCode: null, status: 'no_catalog', objectives: [] });
+    expect(pill()).toHaveTextContent(tf.pillNoCatalog);
+  });
+
+  it('sem objetivo marcado NENHUMA atividade aparece (nada vem pré-marcado, DD-13)', () => {
     montar(OK);
 
-    expect(screen.getByTestId(`tp-activities-${URI}`)).toBeDisabled();
-    expect(screen.getByTestId(`tp-pick-objective-${URI}`)).toHaveTextContent(ptBR.therapeuticProjectForm.pickObjectiveFirst);
     expect(screen.queryByText('Atividade um')).not.toBeInTheDocument();
+    expect(screen.queryByText(tf.activitiesOfObjective)).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('button', { pressed: true })).toHaveLength(0);
   });
 
-  it('com o objetivo um marcado: habilita o Paso 4 e mostra SÓ as atividades dele, agrupadas, com descrição e frecuencia', () => {
+  it('com o objetivo um marcado: as atividades dele aparecem DENTRO do cartão, empilhadas, com descrição e frecuencia; as do dois não', () => {
     montar(OK, cascadeOf(OK).toggleObjective(URI, 'o1'));
 
     const grupo = screen.getByTestId(`tp-activity-group-${URI}-o1`);
-    expect(screen.getByTestId(`tp-activities-${URI}`)).not.toBeDisabled();
+    expect(grupo.parentElement).toContainElement(screen.getByTestId(`tp-obj-${URI}-o1`));
+    expect(within(grupo).getByText(tf.activitiesOfObjective)).toBeInTheDocument();
     expect(within(grupo).getByText('Atividade um')).toBeInTheDocument();
     expect(within(grupo).getByText('Descrição da atividade')).toBeInTheDocument();
     expect(within(grupo).getByText('Frequência: diária')).toBeInTheDocument();
+    expect(grupo.querySelector('.grid')).toBeNull(); // coluna, não grade
     expect(screen.queryByText('Atividade dois')).not.toBeInTheDocument();
-    expect(screen.queryByTestId(`tp-pick-objective-${URI}`)).not.toBeInTheDocument();
+    expect(screen.getByTestId(`tp-obj-${URI}-o1`)).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId(`tp-act-${URI}-o1-a1`)).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('clicar delega ao pai com o id do objetivo / da atividade (o bloco não guarda estado)', () => {
+  it('"N de M elegidas" no cartão marcado e "N actividad(es)" no desmarcado; contador do cabeçalho segue', () => {
+    montar(OK, cascadeOf(OK).toggleObjective(URI, 'o1').toggleActivity(URI, 'a1'));
+
+    expect(screen.getByTestId(`tp-obj-${URI}-o1`)).toHaveTextContent('1 de 1 escolhidas');
+    expect(screen.getByTestId(`tp-obj-${URI}-o2`)).toHaveTextContent('1 atividade');
+    expect(screen.getByTestId(`tp-act-${URI}-o1-a1`)).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId(`tp-block-counter-${URI}`)).toHaveTextContent('1 objetivo · 1 atividade');
+  });
+
+  it('desmarcar o objetivo tira as atividades dele da tela (a regra é da cascata)', () => {
+    const marcado = cascadeOf(OK).toggleObjective(URI, 'o1').toggleActivity(URI, 'a1');
+    montar(OK, marcado.toggleObjective(URI, 'o1'));
+
+    expect(screen.queryByText('Atividade um')).not.toBeInTheDocument();
+    expect(screen.getByTestId(`tp-obj-${URI}-o1`)).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('clicar delega ao pai com o id do objetivo / da atividade (o bloco não guarda estado de seleção)', () => {
     const { onToggleObjective, onToggleActivity } = montar(OK, cascadeOf(OK).toggleObjective(URI, 'o1'));
 
     fireEvent.click(screen.getByTestId(`tp-obj-${URI}-o2`));
@@ -90,10 +161,11 @@ describe('TherapeuticProjectDiagnosisBlock — bloco com catálogo (`ok`)', () =
     expect(onToggleActivity).toHaveBeenCalledWith('a1');
   });
 
-  it('`planIncomplete` só aparece quando o pai manda mostrar', () => {
+  it('`planIncomplete` só aparece quando o pai manda mostrar (role=alert)', () => {
     montar(OK, cascadeOf(OK), true);
 
-    expect(screen.getByTestId(`tp-plan-incomplete-${URI}`)).toHaveTextContent(ptBR.therapeuticProjectForm.planIncomplete);
+    expect(screen.getByTestId(`tp-plan-incomplete-${URI}`)).toHaveTextContent(tf.planIncomplete);
+    expect(screen.getByRole('alert')).toBe(screen.getByTestId(`tp-plan-incomplete-${URI}`));
   });
 
   it('sem `showIncomplete`, nenhum aviso de plano', () => {
@@ -104,11 +176,13 @@ describe('TherapeuticProjectDiagnosisBlock — bloco com catálogo (`ok`)', () =
 });
 
 describe('TherapeuticProjectDiagnosisBlock — bloco sem catálogo', () => {
-  it.each([['no_catalog'], ['no_category']] as const)('`%s`: aviso `noCatalog`, nenhuma escolha (nem objetivo, nem atividade)', (status) => {
+  it.each([['no_catalog'], ['no_category']] as const)('`%s`: aviso `noCatalog`, contador "Sem objetivos", nenhuma escolha', (status) => {
     montar({ diagnosisUri: URI, categoryCode: null, status, objectives: [] });
 
-    expect(screen.getByTestId(`tp-no-catalog-${URI}`)).toHaveTextContent(ptBR.therapeuticProjectForm.noCatalog);
-    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    expect(screen.getByTestId(`tp-no-catalog-${URI}`)).toHaveTextContent(tf.noCatalog);
+    expect(screen.getByTestId(`tp-block-counter-${URI}`)).toHaveTextContent(tf.noObjectivesToPick);
+    expect(pill()).toHaveTextContent(tf.pillNoCatalog);
+    expect(screen.queryAllByRole('button', { pressed: false })).toHaveLength(0);
     expect(screen.getByTestId(`tp-block-${URI}`)).toHaveAttribute('data-status', status);
   });
 });

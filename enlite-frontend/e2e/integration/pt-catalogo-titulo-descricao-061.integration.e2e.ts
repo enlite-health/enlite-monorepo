@@ -26,7 +26,7 @@ import {
   psql, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, ABAC_TENANT, type MockUser,
 } from '../helpers/abac-stack-helper';
 import { escolherNoCombo } from '../helpers/combobox';
-import { CATEGORIA_NA_PLANILHA, primeiroPlano, escolherDiagnostico, marcar, semEspaco, semearCatalogoSintetico, type Plano } from '../helpers/pti-cascata-091';
+import { CATEGORIA_NA_PLANILHA, primeiroPlano, escolherDiagnostico, abrirBloco, marcar, semEspaco, semearCatalogoSintetico, type Plano } from '../helpers/pti-cascata-091';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 /** Só letras: sequência longa de dígitos é lida como documento/telefone e recusada (guarda de PII do servidor). */
@@ -175,10 +175,11 @@ test.describe('spec 061 — atividade do catálogo com título + descrição: do
     expect(await digitar(page, '#tp-generalObjective', 'Objetivo general digitado por humano 061')).toBe('Objetivo general digitado por humano 061');
 
     // Paso 3 e 4: o objetivo do plano e a atividade NOVA do catálogo (a ligação por categoria foi semeada no teste 1) — marcados pelo mouse.
+    await abrirBloco(page, ICD_URI);
     await marcar(page, `tp-obj-${ICD_URI}-${plano.objetivo.id}`);
     const atividade = page.getByTestId(`tp-act-${ICD_URI}-${plano.objetivo.id}-${itemId}`);
     await expect(page.getByTestId(`tp-activity-group-${ICD_URI}-${plano.objetivo.id}`)).toContainText(TITULO);
-    await expect(page.locator('label', { has: atividade })).toContainText(DESCRICAO); // o Paso 4 mostra título + descrição
+    await expect(atividade).toContainText(DESCRICAO); // a atividade (cartão-botão dentro do objetivo marcado) mostra título + descrição
     await marcar(page, `tp-act-${ICD_URI}-${plano.objetivo.id}-${itemId}`);
 
     await page.locator('#tp-startDate').click();

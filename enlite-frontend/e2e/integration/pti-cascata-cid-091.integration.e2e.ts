@@ -21,7 +21,7 @@ import { loginComoStaffMock } from '../helpers/login-mock-staff';
 import type { MockUser } from '../helpers/abac-stack-helper';
 import { escolherNoCombo } from '../helpers/combobox';
 import { travarReleaseCorrente, semearRelease, restaurarRelease } from '../helpers/catalogo-cid-091-seed';
-import { CATEGORIA_NA_PLANILHA, SERVICO_AT, SERVICO_CUIDADOR, semEspaco, primeiroPlano, escolherServico, escolherDiagnostico, marcar } from '../helpers/pti-cascata-091';
+import { CATEGORIA_NA_PLANILHA, SERVICO_AT, SERVICO_CUIDADOR, semEspaco, primeiroPlano, escolherServico, escolherDiagnostico, abrirBloco, marcar } from '../helpers/pti-cascata-091';
 
 const STAMP = Date.now().toString(36);
 const STAFF: MockUser = { uid: `e2e-pti091-${Date.now()}`, email: `e2e.pti091.${Date.now()}@enlite.health`, role: 'admin', country: 'AR' };
@@ -145,16 +145,24 @@ test.describe('spec 091 — formulário em cascata do PTI: um HUMANO escolhe ser
     const bloco = page.getByTestId(`tp-block-${URI_COM}`);
     await expect(bloco).toBeVisible();
     await expect(page.getByTestId(`tp-block-title-${URI_COM}`)).toHaveText(TITULO_COM_CATALOGO);
-    await expect(bloco).toContainText('Paso 3 · Objetivos específicos');
-    await expect(bloco).toContainText('Paso 4 · Actividades');
-    await expect(page.getByTestId(`tp-obj-${URI_COM}-${objetivo.id}`)).not.toBeChecked();
-    await expect(page.getByTestId(`tp-pick-objective-${URI_COM}`)).toBeVisible(); // Paso 4 desabilitado sem objetivo marcado
+    // 099: Paso 3 único ("Objetivos y actividades"), o 1º acordeão nasce aberto, a pílula diz "Sin elegir" e nada vem marcado (DD-13).
+    await expect(page.getByTestId('tp-step-objectives-title')).toHaveText('Paso 3 · Objetivos y actividades');
+    await expect(page.getByTestId(`tp-block-toggle-${URI_COM}`)).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByTestId(`tp-block-pill-${URI_COM}`)).toHaveText('Sin elegir');
+    await expect(page.getByTestId(`tp-obj-${URI_COM}-${objetivo.id}`)).toHaveAttribute('aria-pressed', 'false');
+    await expect(bloco.locator('[aria-pressed="true"]')).toHaveCount(0);
+    await expect(page.getByTestId(`tp-activity-group-${URI_COM}-${objetivo.id}`)).toHaveCount(0); // as atividades só aparecem dentro do objetivo marcado
+    await expect(page.getByTestId('tp-progress-footer')).toHaveText('0 de 1 diagnósticos con catálogo completos');
     await expect(page.getByTestId('tp-save')).toBeDisabled();
 
+    await abrirBloco(page, URI_COM);
     await marcar(page, `tp-obj-${URI_COM}-${objetivo.id}`);
-    await expect(page.getByTestId(`tp-pick-objective-${URI_COM}`)).toHaveCount(0);
-    await expect(page.getByTestId(`tp-activity-group-${URI_COM}-${objetivo.id}`)).toContainText(objetivo.label);
+    await expect(page.getByTestId(`tp-block-pill-${URI_COM}`)).toHaveText('Falta una actividad');
+    await expect(page.getByTestId(`tp-obj-${URI_COM}-${objetivo.id}`)).toContainText(objetivo.label);
+    await expect(page.getByTestId(`tp-activity-group-${URI_COM}-${objetivo.id}`)).toContainText('Actividades de este objetivo');
     await marcar(page, `tp-act-${URI_COM}-${objetivo.id}-${atividade.id}`);
+    await expect(page.getByTestId(`tp-block-pill-${URI_COM}`)).toHaveText('Completo');
+    await expect(page.getByTestId('tp-progress-footer')).toHaveText('1 de 1 diagnósticos con catálogo completos');
     await preencherRestoEDatas(page);
     await expect(page.getByTestId('tp-save')).toBeEnabled();
 
@@ -187,7 +195,8 @@ test.describe('spec 091 — formulário em cascata do PTI: um HUMANO escolhe ser
     await expect(bloco).toBeVisible();
     await expect(bloco).toHaveAttribute('data-status', /no_catalog|no_category/);
     await expect(page.getByTestId(`tp-no-catalog-${URI_SEM}`)).toHaveText('No hay catálogo para este diagnóstico y servicio. Usá Objetivo general y Contexto clínico.');
-    await expect(bloco.locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(page.getByTestId(`tp-block-pill-${URI_SEM}`)).toHaveText('Sin catálogo');
+    await expect(bloco.locator('[aria-pressed]')).toHaveCount(0); // nenhum objetivo/atividade para escolher
     await preencherRestoEDatas(page);
     await expect(page.getByTestId('tp-save')).toBeEnabled();
 
@@ -209,6 +218,7 @@ test.describe('spec 091 — formulário em cascata do PTI: um HUMANO escolhe ser
     const cuidado = primeiroPlano('CAREGIVER', CAT_NA_PLANILHA);
     expect(cuidado.objetivo.label).not.toBe(at.objetivo.label); // controle de não-vacuidade: os dois serviços têm títulos diferentes
     await abrirNuevo(page, pacienteB.patientId, SERVICO_AT, TITULO_COM_CATALOGO, 'cascada 091');
+    await abrirBloco(page, URI_COM);
     await marcar(page, `tp-obj-${URI_COM}-${at.objetivo.id}`);
     await marcar(page, `tp-act-${URI_COM}-${at.objetivo.id}-${at.atividade.id}`);
     await expect(page.getByTestId(`tp-objectives-${URI_COM}`)).toContainText(at.objetivo.label);
@@ -229,9 +239,8 @@ test.describe('spec 091 — formulário em cascata do PTI: um HUMANO escolhe ser
     await expect(objetivos).toContainText(cuidado.objetivo.label);
     await expect(objetivos).not.toContainText(at.objetivo.label);
     await expect(page.getByTestId(`tp-obj-${URI_COM}-${at.objetivo.id}`)).toHaveCount(0);
-    await expect(page.getByTestId(`tp-obj-${URI_COM}-${cuidado.objetivo.id}`)).not.toBeChecked();
-    await expect(objetivos.locator('input[type="checkbox"]:checked')).toHaveCount(0);
-    await expect(page.getByTestId(`tp-pick-objective-${URI_COM}`)).toBeVisible(); // sem objetivo marcado, as atividades voltam a travar
+    await expect(page.getByTestId(`tp-obj-${URI_COM}-${cuidado.objetivo.id}`)).toHaveAttribute('aria-pressed', 'false');
+    await expect(objetivos.locator('[aria-pressed="true"]')).toHaveCount(0); // 0 marcados; sem objetivo marcado não há atividade na tela
     await expect(page.getByTestId(`tp-activity-group-${URI_COM}-${cuidado.objetivo.id}`)).toHaveCount(0);
     await preencherRestoEDatas(page);
     await expect(page.getByTestId('tp-save')).toBeDisabled(); // o salvar trava de novo: o plano do bloco está vazio
