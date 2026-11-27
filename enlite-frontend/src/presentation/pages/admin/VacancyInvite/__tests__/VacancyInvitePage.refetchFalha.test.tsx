@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import VacancyInvitePage from '../VacancyInvitePage';
 import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
+import { dayInZone } from '../inviteBoardCore';
 
 const tr = vi.hoisted(() => ({ t: (k: string, o?: unknown) => (o && typeof o === 'object' ? `${k}${JSON.stringify(o)}` : k) }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: tr.t, i18n: { language: 'es' } }) }));
@@ -29,7 +30,7 @@ const cand = (id: string, d: number) => ({
 });
 const ready = (refetch: () => Promise<boolean>) => ({
   status: 'ready', error: null, isRefreshing: false, refetch, reload: vi.fn(), currentIds: new Set(['a', 'b']),
-  results: { jobPostingId: 'v1', operationDate: new Date().toISOString().slice(0, 10), service: { lat: -34.6, lng: -58.4, addressLabel: 'X' }, candidates: [cand('a', 2), cand('b', 3)] },
+  results: { jobPostingId: 'v1', operationDate: dayInZone(new Date().toISOString()) as string, service: { lat: -34.6, lng: -58.4, addressLabel: 'X' }, candidates: [cand('a', 2), cand('b', 3)] },
 });
 
 async function inviteAndFinish(): Promise<void> {
