@@ -14,6 +14,7 @@ export const WorkerJobByRadiusItem = z.object({
   schedule: z.unknown().openapi({ description: 'Horário efetivo da vaga (serviço contratado quando há), como o banco o guarda; null quando não há.' }),
   worker_type: z.array(z.string()).openapi({ description: 'Profissões requeridas efetivas; [] quando nenhuma.' }),
   distance_km: z.number().openapi({ description: 'Distância da zona do prestador ao ponto da vaga, em km com 1 casa, calculada no servidor.' }),
+  applied_at: z.string().datetime().nullable().openapi({ description: 'Quando o próprio prestador se candidatou a esta vaga (ISO 8601); null quando não se candidatou. Derivado em leitura de worker_job_applications.applied_at.' }),
   already_applied: z.boolean().openapi({ description: 'true quando o prestador já tem candidatura nesta vaga (derivado em leitura).' }),
 });
 

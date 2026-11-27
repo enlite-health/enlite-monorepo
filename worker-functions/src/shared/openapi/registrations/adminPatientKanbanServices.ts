@@ -17,7 +17,9 @@ registry.registerPath({
     'faixas vigentes, horas/semana (D516: autorização não entra). Só pacientes com >= 1 serviço ativo. Uma ' +
     'chamada por carga do board inteiro, nunca uma por card (sem N+1). `uncoveredDays: integer` ' +
     '(fase 13): dias vigentes (data ≥ hoje, Buenos Aires) com ausência sem substituto no serviço. ' +
-    '`reserve: { count, minimum } | null` (056): Equipe de Resposta Rápida da vaga viva, sem alocados nem rejeitados; `null` = sem vaga viva.',
+    '`reserve: { count, minimum } | null` (056): Equipe de Resposta Rápida da vaga viva, sem alocados nem rejeitados; `null` = sem vaga viva. ' +
+    '`semaphore: { n, color: red|yellow|green } | null` (semaforo-da-vaga): o mesmo `n` da lista de vagas; `null` = sem vaga viva. ' +
+    '`worstSemaphore` (por paciente): a pior cor entre os serviços com semáforo; `null` = nenhum serviço com semáforo.',
   security: [{ firebaseAuth: [] }],
   request: { query: z.object({ country: z.enum(['AR', 'BR']).optional() }) },
   responses: {

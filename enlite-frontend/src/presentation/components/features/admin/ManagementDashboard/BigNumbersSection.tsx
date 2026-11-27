@@ -4,7 +4,6 @@ import {
   Hammer,
   HeartPulse,
   Briefcase,
-  PauseCircle,
   LayoutGrid,
   MapPin,
   Clock,
@@ -132,15 +131,13 @@ export function BigNumbersSection({
       </div>
 
       {/* 4 — Vagas e equipes (cards pré-existentes) */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <MetricCard icon={ShieldCheck} accent="success" title={t(`${p}equiposArmados`)}
           {...helpProps('equiposArmados')} value={data.equiposArmados} subtitle={t(`${p}equiposArmadosSub`)} />
         <MetricCard icon={Hammer} accent="learn" title={t(`${p}equiposPorArmar`)}
           {...helpProps('equiposPorArmar')} value={data.equiposPorArmar} subtitle={t(`${p}equiposPorArmarSub`)} />
         <MetricCard icon={Briefcase} accent="clinic" title={t(`${p}vacantesAbiertas`)}
           {...helpProps('vacantesAbiertas')} value={data.vacantesAbiertas} subtitle={t(`${p}vacantesAbiertasSub`)} />
-        <MetricCard icon={PauseCircle} accent="neutral" title={t(`${p}vacantesPausadas`)}
-          {...helpProps('vacantesPausadas')} value={data.vacantesPausadas} subtitle={t(`${p}vacantesPausadasSub`)} />
       </div>
 
       {helpDrawer}

@@ -55,6 +55,7 @@ import { GeocodingService } from '../../../../infrastructure/services/GeocodingS
 import { projectPatientStatus } from '@modules/matching/application/patientInVacancyProjection';
 import { fetchPatientVacancies } from '../../infrastructure/PatientVacanciesQueryHelper';
 import { insertPatientAddress, fetchPatientAddresses } from '../../infrastructure/PatientAddressQueryHelper';
+import { dispatchPatientTalentumPause } from './dispatchPatientTalentumPause';
 
 const createPatientAddressSchema = z.object({
   address_formatted: z.string().min(1),
@@ -371,6 +372,7 @@ export class AdminPatientsController {
         // Spec 051: SÓ aqui a célula do ator chega ao writer. `null` (engine neutro) NÃO vira `[]`.
         cells: clinicalCellsOf(req),
       });
+      dispatchPatientTalentumPause(result.talentum, 'AdminPatientsController:updatePatientStatus', result.id);
       res.status(200).json({ success: true, data: { id: result.id, status: result.status } });
     } catch (err: unknown) {
       // Erro → HTTP numa função só, a mesma das rotas de ação (F3).

@@ -1,6 +1,10 @@
 import { ApplyToVacancyUseCase } from '../ApplyToVacancyUseCase';
 import { poolMockWithConnect } from '@shared/database/poolMockSupport';
 
+/** Linha que o dono de publicável devolve (`vagaPublicavelSql ... AS publicavel`); o resto do SQL do use case cai no `rows` padrão. */
+const publicavelRow = (status: string, publicavel: boolean) => ({ rows: [{ status, publicavel }] });
+const ehConsultaDePublicavel = (sql: unknown): boolean => String(sql).includes('AS publicavel');
+
 const LINK = 'http://talentum.invalid/public/pre-screening/00000000-0000-4000-8000-000000000067/chat';
 
 describe('ApplyToVacancyUseCase', () => {
@@ -31,7 +35,8 @@ describe('ApplyToVacancyUseCase', () => {
   it('spec 067 FR-16: vaga SEM link → ok:true com prescreeningUrl null', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
     mockQuery.mockImplementation(async (sql: string) =>
-      String(sql).includes('talentum_whatsapp_url') ? { rows: [{ url: null }] } : { rows: [] });
+      ehConsultaDePublicavel(sql) ? publicavelRow('SEARCHING', true)
+        : String(sql).includes('talentum_whatsapp_url') ? { rows: [{ url: null }] } : { rows: [] });
 
     const result = await useCase.execute(mockDb as any, PARAMS);
 
@@ -40,8 +45,7 @@ describe('ApplyToVacancyUseCase', () => {
 
   it('spec 084 (P4/R6/F10): vaga DE_BAJA recusa a candidatura (app e Luz) — 409, nada é criado', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }); // assertWorkerCanApply
-    mockQuery.mockImplementation(async (sql: string) =>
-      String(sql).includes('SELECT status FROM job_postings') ? { rows: [{ status: 'DE_BAJA' }] } : { rows: [] });
+    mockQuery.mockImplementation(async (sql: string) => (ehConsultaDePublicavel(sql) ? publicavelRow('DE_BAJA', false) : { rows: [] }));
 
     const result = await useCase.execute(mockDb as any, PARAMS);
 
@@ -51,10 +55,43 @@ describe('ApplyToVacancyUseCase', () => {
     expect(mockCreateWja.execute).not.toHaveBeenCalled();
   });
 
+  it('semaforo-da-vaga F4 (I4): vaga NÃO publicável pelo dono (paciente SUSPENDED, serviço inativo, rascunho...) recusa — 409 VACANCY_NOT_PUBLISHABLE, nada é criado', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }); // assertWorkerCanApply
+    mockQuery.mockImplementation(async (sql: string) => (ehConsultaDePublicavel(sql) ? publicavelRow('PENDING_ACTIVATION', false) : { rows: [] }));
+
+    const result = await useCase.execute(mockDb as any, PARAMS);
+
+    expect(result).toEqual({
+      ok: false, code: 'VACANCY_NOT_PUBLISHABLE', httpStatus: 409, reason: 'vacancy_not_publishable', workerStatus: null, missingFields: [],
+    });
+    expect(mockCreateWja.execute).not.toHaveBeenCalled();
+  });
+
+  it('vaga inexistente/apagada (nenhuma linha) também é não publicável — nada é criado', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockImplementation(async () => ({ rows: [] }));
+
+    expect(await useCase.execute(mockDb as any, PARAMS)).toMatchObject({ ok: false, code: 'VACANCY_NOT_PUBLISHABLE' });
+    expect(mockCreateWja.execute).not.toHaveBeenCalled();
+  });
+
+  it('a decisão vem do DONO de publicável, com a opção incluirTeste (a jornada de vaga de teste em prd não quebra): SQL com is_draft/paciente e SEM is_test', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    mockQuery.mockImplementation(async (sql: string) => (ehConsultaDePublicavel(sql) ? publicavelRow('SEARCHING', true) : { rows: [{ url: null }] }));
+
+    await useCase.execute(mockDb as any, PARAMS);
+
+    const sql = String(mockQuery.mock.calls.map((c: unknown[]) => String(c[0])).find(ehConsultaDePublicavel));
+    expect(sql).toContain('jp.is_draft = false');
+    expect(sql).toMatch(/\bp\.status/);
+    expect(sql).not.toContain('is_test');
+  });
+
   it('worker REGISTERED → cria WJA+encuadre com os MESMOS params do app e retorna wjaId', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }); // assertWorkerCanApply
     mockQuery.mockImplementation(async (sql: string) =>
-      String(sql).includes('talentum_whatsapp_url') ? { rows: [{ url: LINK }] } : { rows: [] }); // link da vaga (spec 067 FR-16)
+      ehConsultaDePublicavel(sql) ? publicavelRow('SEARCHING', true)
+        : String(sql).includes('talentum_whatsapp_url') ? { rows: [{ url: LINK }] } : { rows: [] }); // link da vaga (spec 067 FR-16)
 
     const result = await useCase.execute(mockDb as any, PARAMS);
 
@@ -118,7 +155,8 @@ describe('ApplyToVacancyUseCase', () => {
 
   it('idempotência delega ao ON CONFLICT do CreateManualWjaWithEncuadre (repete → mesma chamada, sem erro)', async () => {
     mockQuery.mockImplementation(async (sql: string) =>
-      String(sql).includes('talentum_whatsapp_url') ? { rows: [{ url: LINK }] } : { rows: [{ status: 'REGISTERED' }] });
+      ehConsultaDePublicavel(sql) ? publicavelRow('SEARCHING', true)
+        : String(sql).includes('talentum_whatsapp_url') ? { rows: [{ url: LINK }] } : { rows: [{ status: 'REGISTERED' }] });
 
     const first = await useCase.execute(mockDb as any, PARAMS);
     const second = await useCase.execute(mockDb as any, PARAMS);

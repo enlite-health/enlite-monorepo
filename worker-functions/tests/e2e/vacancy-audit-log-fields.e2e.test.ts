@@ -775,7 +775,7 @@ describe('Vacancy Audit Log — Cobertura por Campo (20 campos)', () => {
 
   // ── Campo: status → STATUS_CHANGED ────────────────────────────────────────
 
-  describe('campo: status (STATUS_CHANGED)', () => {
+  describe('campo: status (recusado — não há mais STATUS_CHANGED por PUT)', () => {
     let vacancyId: string;
 
     beforeAll(async () => {
@@ -787,22 +787,19 @@ describe('Vacancy Audit Log — Cobertura por Campo (20 campos)', () => {
       );
     });
 
-    it('status → STATUS_CHANGED com before=PENDING_ACTIVATION after=SEARCHING', async () => {
+    it('status → recusado 400 VACANCY_STATUS_NOT_WRITABLE: nenhuma linha STATUS_CHANGED e o status segue PENDING_ACTIVATION', async () => {
       const res = await api.put(
         `/api/admin/vacancies/${vacancyId}`,
         { status: 'SEARCHING' },
         auth(),
       );
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(400);
+      expect(res.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
 
       const rows = await getAuditRows(pool, vacancyId);
-      const row = rows.find(r => r.field_name === 'status');
-      expect(row).toBeDefined();
-      expect(row!.event_type).toBe('STATUS_CHANGED');
-      expect(row!.changes.before).toBe('PENDING_ACTIVATION');
-      expect(row!.changes.after).toBe('SEARCHING');
-      expect(row!.actor_type).toBe('HUMAN');
-      expect(row!.actor_user_id).toBe(ADMIN_UID);
+      expect(rows.find(r => r.field_name === 'status')).toBeUndefined();
+      const { rows: db } = await pool.query(`SELECT status FROM job_postings WHERE id = $1`, [vacancyId]);
+      expect(db[0].status).toBe('PENDING_ACTIVATION');
     });
   });
 

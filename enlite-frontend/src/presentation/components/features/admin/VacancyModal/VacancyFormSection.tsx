@@ -190,7 +190,6 @@ export function VacancyFormSection({
     if (mode === 'edit' && existingVacancy) {
       reset({
         title: existingVacancy.title ?? '',
-        status: existingVacancy.status ?? 'SEARCHING',
         required_professions: existingVacancy.required_professions ?? [],
         required_sex: existingVacancy.required_sex ?? '',
         age_range_min: existingVacancy.age_range_min ?? undefined,

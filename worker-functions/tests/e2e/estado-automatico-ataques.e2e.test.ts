@@ -5,7 +5,7 @@
  * `patient_status_history`, as vagas), nunca só o código HTTP. Um `it` por ataque do `a-testar/2026-11-25-remover-botao-manual-de-status.md`:
  *   A1  foguete em serviço INCOMPLETO (sem horário; sem diagnóstico) → 422 PATIENT_NOT_READY, 0 vaga nova, paciente e trilha intactos;
  *   A2  `PUT /vacancies/:id` com cada um dos 4 valores de estado derivado (SEARCHING_REPLACEMENT, RAPID_RESPONSE, ACTIVE, PENDING_ACTIVATION)
- *       → 400 VACANCY_STATUS_NOT_LIFECYCLE, vaga e paciente intactos (4 casos);
+ *       → 400 VACANCY_STATUS_NOT_WRITABLE, vaga e paciente intactos (4 casos);
  *   A3  envio à Talentum (STUB) com o paciente devolvido ao funil por SQL → o estado continua no funil (o lançamento não move) — com controle
  *       positivo: o stub RECEBEU o projeto;
  *   A4  `PUT /vacancies/:id` com campos do ciclo de vida (título, `ON_HOLD`, de volta a `SEARCHING`) → 200 e `patients.status` + trilha do
@@ -214,7 +214,7 @@ describe('Ataques ao fluxo automático do estado do paciente (D807) @integration
   });
 
   describe.each(LEGADOS)('A2: PUT /vacancies/:id com status derivado %s', (legado) => {
-    it('→ 400 VACANCY_STATUS_NOT_LIFECYCLE; vaga e paciente intactos, trilha do paciente sem linha nova', async () => {
+    it('→ 400 VACANCY_STATUS_NOT_WRITABLE; vaga e paciente intactos, trilha do paciente sem linha nova', async () => {
       const { patientId, vacancyId } = await pacienteComVaga(`a2-${legado.toLowerCase()}`);
       const vagaAntes = await statusDaVaga(vacancyId);
       const trilhaAntes = await trilha(patientId);
@@ -222,7 +222,7 @@ describe('Ataques ao fluxo automático do estado do paciente (D807) @integration
 
       const r = await api.put(`/api/admin/vacancies/${vacancyId}`, { status: legado }, asAdmin);
       expect(r.status).toBe(400);
-      expect(r.data.code).toBe('VACANCY_STATUS_NOT_LIFECYCLE');
+      expect(r.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
       expect(await statusDaVaga(vacancyId)).toBe(vagaAntes);
       expect(await statusDe(patientId)).toBe('SEARCHING');
       expect(await trilha(patientId)).toBe(trilhaAntes);
@@ -255,18 +255,19 @@ describe('Ataques ao fluxo automático do estado do paciente (D807) @integration
     }
   });
 
-  it('A4: PUT /vacancies/:id com campos do ciclo de vida (título, ON_HOLD, de volta a SEARCHING) → 200 e patients.status + trilha com a MESMA contagem', async () => {
+  it('A4: PUT /vacancies/:id — o título passa (200); ON_HOLD e SEARCHING dão 400 (F4: ninguém grava status); patients.status, trilha e vaga com a MESMA contagem', async () => {
     const { patientId, vacancyId } = await pacienteComVaga('a4');
     const trilhaAntes = await trilha(patientId);
     expect(await statusDe(patientId)).toBe('SEARCHING');
+    const vagaAntes = await statusDaVaga(vacancyId);
 
-    for (const corpo of [{ title: `${TAG}a4 titulo novo` }, { status: 'ON_HOLD' }, { status: 'SEARCHING' }]) {
+    for (const [corpo, esperado] of [[{ title: `${TAG}a4 titulo novo` }, 200], [{ status: 'ON_HOLD' }, 400], [{ status: 'SEARCHING' }, 400]] as const) {
       const r = await api.put(`/api/admin/vacancies/${vacancyId}`, corpo, asAdmin);
-      expect({ corpo, status: r.status }).toEqual({ corpo, status: 200 }); // controle: o ator e a rota funcionam, então "intacto" abaixo é medida
+      expect({ corpo, status: r.status }).toEqual({ corpo, status: esperado }); // controle: o ator e a rota funcionam (o título passa), então "intacto" abaixo é medida
       expect(await statusDe(patientId)).toBe('SEARCHING');
       expect(await trilha(patientId)).toBe(trilhaAntes);
     }
-    expect(await statusDaVaga(vacancyId)).toBe('SEARCHING'); // a vaga SE moveu (ciclo de vida é dela); o paciente não
+    expect(await statusDaVaga(vacancyId)).toBe(vagaAntes); // nem a vaga se move mais: o estado dela não é editável
   });
 
   it('A5: a derivação não toca estado humano — ON_HOLD com o itinerário quase cheio + evento de alocação continua ON_HOLD (controle: SEARCHING deriva ACTIVE)', async () => {

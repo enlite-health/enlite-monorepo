@@ -1,5 +1,5 @@
 /**
- * VacancyCrudController.updateVacancy — D3 c/d (propagação ao Talentum) e D4 (campo aditivo `talentumSync`).
+ * VacancyCrudController.updateVacancy — D3 c (propagação ao Talentum; o ramo de status saiu na F4 do semaforo-da-vaga) e D4 (campo aditivo `talentumSync`).
  * Talentum, Gemini e pause service são dublês: nenhuma chamada sai para a rede.
  */
 import type { Request, Response } from 'express';
@@ -98,45 +98,31 @@ describe('VacancyCrudController.updateVacancy → Talentum (D3 c/d, D4)', () => 
 
   it('rascunho / sem projeto no Talentum: grava e NÃO chama Gemini, cliente nem pause', async () => {
     mockAuthorize.mockResolvedValue({ kind: 'ok', isDraft: false, currentStatus: 'ACTIVE' });
-    db({ id: 'jp-1', status: 'ACTIVE', schedule: SCHED_A }, { id: 'jp-1', status: 'ON_HOLD', schedule: SCHED_B, talentum_project_id: null });
+    db({ id: 'jp-1', status: 'ACTIVE', schedule: SCHED_A }, { id: 'jp-1', status: 'ACTIVE', schedule: SCHED_B, talentum_project_id: null });
     const r = res();
-    await controller.updateVacancy(req({ schedule: SCHED_B, status: 'ON_HOLD' }), r);
+    await controller.updateVacancy(req({ schedule: SCHED_B }), r);
     expect([mockGenerate, mockPropagate, mockPause, mockResume].map((f) => f.mock.calls.length)).toEqual([0, 0, 0, 0]);
     expect(r.status).toHaveBeenCalledWith(200);
     expect((r.json as jest.Mock).mock.calls[0][0]).not.toHaveProperty('talentumSync');
   });
 
-  it.each([
-    ['ACTIVE', 'ON_HOLD', 'pause'], ['SEARCHING', 'CLOSED', 'pause'], ['ACTIVE', 'SUSPENDED', 'pause'],
-    ['ON_HOLD', 'ACTIVE', 'resume'], ['CLOSED', 'SEARCHING', 'resume'],
-  ])('(d) status %s → %s: %s', async (from, to, action) => {
-    mockAuthorize.mockResolvedValue({ kind: 'ok', isDraft: false, currentStatus: from });
-    db({ id: 'jp-1', status: from }, { id: 'jp-1', status: to, talentum_project_id: 'proj-1' });
-    const r = res();
-    await controller.updateVacancy(req({ status: to }), r);
-    expect(action === 'pause' ? mockPause : mockResume).toHaveBeenCalledWith(['jp-1']);
-    expect(action === 'pause' ? mockResume : mockPause).not.toHaveBeenCalled();
-    expect(mockGenerate).not.toHaveBeenCalled();
-    expect((r.json as jest.Mock).mock.calls[0][0]).toMatchObject({ talentumSync: { status: 'OK' } });
-  });
-
-  it('(d) mudança dentro do mesmo grupo (ON_HOLD → CLOSED, ACTIVE → SEARCHING): nada é chamado', async () => {
-    for (const [from, to] of [['ON_HOLD', 'CLOSED'], ['ACTIVE', 'SEARCHING']]) {
+  it('semaforo-da-vaga F4: pausa/retomada NÃO nascem mais do PUT — as dependências de pause nem são montadas, qualquer que seja a transição', async () => {
+    for (const [from, to] of [['ACTIVE', 'ON_HOLD'], ['SEARCHING', 'CLOSED'], ['ON_HOLD', 'ACTIVE'], ['CLOSED', 'SEARCHING']]) {
       mockAuthorize.mockResolvedValue({ kind: 'ok', isDraft: false, currentStatus: from });
       db({ id: 'jp-1', status: from }, { id: 'jp-1', status: to, talentum_project_id: 'proj-1' });
       const r = res();
-      await controller.updateVacancy(req({ status: to }), r);
+      await controller.updateVacancy(req({}), r);
       expect((r.json as jest.Mock).mock.calls[0][0]).not.toHaveProperty('talentumSync');
     }
     expect(mockPause.mock.calls.length + mockResume.mock.calls.length).toBe(0);
   });
 
-  it('(D4) o Talentum recusa: a gravação local fica (200) e talentumSync = FAILED', async () => {
+  it('(D4) o Talentum recusa o conteúdo: a gravação local fica (200) e talentumSync = FAILED', async () => {
     mockAuthorize.mockResolvedValue({ kind: 'ok', isDraft: false, currentStatus: 'ACTIVE' });
-    db({ id: 'jp-1', status: 'ACTIVE' }, { id: 'jp-1', status: 'ON_HOLD', talentum_project_id: 'proj-1' });
-    mockPause.mockResolvedValue([{ vacancyId: 'jp-1', state: 'MANUAL_PAUSE', attempted: true }]);
+    db({ id: 'jp-1', status: 'ACTIVE', schedule: SCHED_A }, { id: 'jp-1', status: 'ACTIVE', schedule: SCHED_B, talentum_project_id: 'proj-1' });
+    mockPropagate.mockResolvedValue({ status: 'FAILED', message: 'recusado' });
     const r = res();
-    await controller.updateVacancy(req({ status: 'ON_HOLD' }), r);
+    await controller.updateVacancy(req({ schedule: SCHED_B }), r);
     expect(r.status).toHaveBeenCalledWith(200);
     expect((r.json as jest.Mock).mock.calls[0][0]).toMatchObject({ success: true, talentumSync: { status: 'FAILED' } });
   });

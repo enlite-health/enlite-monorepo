@@ -1131,16 +1131,9 @@
         "vacantesAbiertas": {
           "title": "Vacantes abiertas",
           "que": "Puestos de trabajo que están buscando prestador ahora.",
-          "origen": "• Cuenta las vacantes en estado de búsqueda: búsqueda normal, búsqueda de reemplazo, respuesta rápida y pendiente de activación.\n• Descarta borradores y vacantes borradas.",
-          "cambia": "• Publicar una vacante nueva: sube.\n• Cerrar, suspender o borrar la vacante: baja.",
+          "origen": "• Cuenta las vacantes publicables: lanzadas (no borradores), no dadas de baja ni borradas, de un servicio que sigue activo y cuyo paciente no está en pausa (en espera, suspendido, de alta o de baja).\n• Nadie elige el estado de la vacante: sale solo de lo que pasa con el paciente y el servicio.",
+          "cambia": "• Publicar una vacante nueva: sube.\n• Pausar, suspender o dar de alta al paciente, desactivar el servicio o dar de baja la vacante: baja.\n• Retomar al paciente: vuelve a subir.",
           "ojo": "Mover tarjetas en el Kanban NO mueve este número: eso cambia el embudo de candidatos, no el estado de la vacante. Es el comportamiento correcto."
-        },
-        "vacantesPausadas": {
-          "title": "Vacantes pausadas",
-          "que": "Vacantes que existen pero están frenadas a propósito (suspendidas temporalmente).",
-          "origen": "• Cuenta las vacantes en estado Suspendida, sin borradores ni borradas.",
-          "cambia": "• Suspender una vacante: sube.\n• Reactivarla o cerrarla: baja.",
-          "ojo": "Vacante pausada es demanda represada: si este número crece, hay trabajo que no aparece en \"Vacantes abiertas\" ni en la fila del reclutamiento."
         },
         "horasTotais": {
           "title": "Horas semanales totales",
@@ -1364,8 +1357,6 @@
         "pacientesActivosSub": "Pacientes en atención hoy",
         "vacantesAbiertas": "Vacantes abiertas",
         "vacantesAbiertasSub": "Puestos buscando prestador",
-        "vacantesPausadas": "Vacantes pausadas",
-        "vacantesPausadasSub": "Puestos en pausa temporal",
         "ubicaciones": "Ubicaciones",
         "pctRespostaRapida": "% grupo de respuesta rápida armado",
         "pctRespostaRapidaSub": "{{num}} de {{den}} casos medibles · {{excluidos}} sin clasificar quedan fuera",
@@ -2218,9 +2209,6 @@
       "filters": {
         "allOption": "Todos",
         "clear": "Limpiar filtros",
-        "lifecycle": {
-          "label": "Ciclo de vida"
-        },
         "patientStatus": {
           "label": "Estado del paciente"
         },
@@ -2277,7 +2265,7 @@
         "done": "{{count}} vacantes dadas de baja",
         "error": "No se pudo dar de baja",
         "errors": {
-          "VACANCY_HAS_SERVICE": "Una vacante de un servicio contratado no se da de baja a mano: usá \"Pausar\" (En espera).",
+          "VACANCY_HAS_SERVICE": "Una vacante de un servicio contratado no se da de baja a mano: pausá o suspendé al paciente, o desactivá el servicio.",
           "VACANCY_ALREADY_DE_BAJA": "La vacante ya está dada de baja.",
           "VACANCY_NOT_FOUND": "Vacante no encontrada."
         },
@@ -2586,7 +2574,6 @@
         "caseNumber": "Número de Caso",
         "vacancyNumber": "Número de Vacante",
         "title": "Título",
-        "status": "Estado",
         "selectPlaceholder": "Seleccionar...",
         "hintSelectCase": "Seleccioná un caso primero para habilitar los campos del paciente.",
         "sectionCaseInfo": "Información del Caso",
@@ -2651,12 +2638,6 @@
           "full-time": "Full-time",
           "part-time": "Part-time",
           "flexible": "Flexible"
-        },
-        "statusOptions": {
-          "SEARCHING": "Abierta",
-          "ON_HOLD": "En espera",
-          "SUSPENDED": "Suspendida",
-          "CLOSED": "Cerrada"
         },
         "cancel": "Cancelar",
         "create": "Crear Vacante",
@@ -2772,9 +2753,6 @@
       },
       "lifecycle": {
         "rascunho": "Borrador",
-        "aberta": "Abierta",
-        "pausada": "En espera",
-        "cerrada": "Cerrada",
         "baja": "Dada de baja"
       },
       "caseCard": {
@@ -2815,22 +2793,6 @@
           "thursday": "Jueves:",
           "friday": "Viernes:",
           "saturday": "Sábado:"
-        }
-      },
-      "statusEditor": {
-        "editLabel": "Editar estado de la vacante",
-        "resume": "Reanudar",
-        "options": {
-          "SEARCHING": "Abierta",
-          "ON_HOLD": "En espera",
-          "SUSPENDED": "Suspendida",
-          "CLOSED": "Cerrada"
-        },
-        "pauseHint": "En espera mantiene el tablero, el historial y el link corto.",
-        "errors": {
-          "VACANCY_STATUS_NOT_LIFECYCLE": "El estado de la vacante solo admite: Abierta, En espera, Suspendida o Cerrada. El estado del paciente lo define el flujo automático.",
-          "VACANCY_DE_BAJA_NO_REACTIVATION": "Una vacante dada de baja no se reactiva: solo vuelve cuando se reactiva el servicio que la dio de baja.",
-          "CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED": "Una vacante de un servicio activo no se cierra: usá \"Pausar\" (En espera)."
         }
       },
       "scheduleEditor": {
@@ -3048,7 +3010,6 @@
       "sectionConditions": "Condiciones de la vacante",
       "publishDate": "Fecha de publicación",
       "closingDate": "Fecha de encerramento",
-      "status": "Estado",
       "serviceType": "Tipo de servicio",
       "location": "Localización",
       "serviceAddress": "Dirección donde se presta el servicio",
@@ -3066,7 +3027,6 @@
       "professionalTypePlaceholder": "Seleccionar...",
       "sexPlaceholder": "Seleccionar...",
       "ageRangePlaceholder": "Seleccionar...",
-      "statusPlaceholder": "Seleccionar...",
       "serviceTypePlaceholder": "Seleccionar...",
       "caseSelectStep": {
         "caseLabel": "Caso",
@@ -7923,6 +7883,17 @@
         "vacante_other": "Hay {{count}} personas en la vacante que todavía no recibieron el WhatsApp.",
         "seeVacante": "Ver las {{count}}"
       }
+    },
+    "semaphore": {
+      "title": "Semáforo",
+      "filterLabel": "Semáforo",
+      "colors": {
+        "red": "Rojo",
+        "yellow": "Amarillo",
+        "green": "Verde"
+      },
+      "dotAria": "Semáforo {{color}}: {{n}} en Seleccionado y Respuesta rápida (sin desvinculados)",
+      "none": "Sin semáforo"
     }
   },
   "publicVacancy": {

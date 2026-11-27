@@ -143,12 +143,15 @@ describe('A vaga mostra o estado do paciente (D3) @integration', () => {
   it('(iii) linha antiga com status legado SEARCHING_REPLACEMENT publicada → lifecycle = aberta (lista e ficha)', async () => {
     const { patientId, caseNumber } = await novoPaciente('legado', 'REPLACEMENT');
     const vagaId = await novaVaga(patientId, caseNumber, 'SEARCHING_REPLACEMENT', false, 'legado');
-    expect((await lista(A.completo.uid, caseNumber)).linha).toMatchObject({ id: vagaId, lifecycle: 'aberta', statusRaw: 'SEARCHING_REPLACEMENT' });
-    expect((await ficha(A.completo.uid, vagaId)).body.data).toMatchObject({ lifecycle: 'aberta', status: 'SEARCHING_REPLACEMENT' });
+    expect((await lista(A.completo.uid, caseNumber)).linha).toMatchObject({ id: vagaId, lifecycle: null, statusRaw: 'SEARCHING_REPLACEMENT' });
+    expect((await ficha(A.completo.uid, vagaId)).body.data).toMatchObject({ lifecycle: null, status: 'SEARCHING_REPLACEMENT' });
 
-    // o filtro "Ciclo de vida" usa o SQL gerado da mesma tabela: aberta acha o legado; baja acha a baixada (que a lista esconde por padrão)
-    expect((await lista(A.completo.uid, caseNumber, '&lifecycle=aberta')).linha?.id).toBe(vagaId);
-    expect((await lista(A.completo.uid, caseNumber, '&lifecycle=pausada')).linha).toBeUndefined();
+    // o selo encolheu (F4 do semaforo-da-vaga): aberta|pausada|cerrada saíram do filtro e dão 400; baja acha a baixada (que a lista esconde por padrão)
+    for (const velho of ['aberta', 'pausada', 'cerrada']) {
+      const r = await lista(A.completo.uid, caseNumber, `&lifecycle=${velho}`);
+      expect(r.status).toBe(400);
+      expect(r.body.code).toBe('VACANCY_LIFECYCLE_INVALID');
+    }
     const { caseNumber: casoBaja, patientId: pBaja } = await novoPaciente('baja', 'ACTIVE');
     const baixada = await novaVaga(pBaja, casoBaja, 'DE_BAJA', false, 'baixada');
     expect((await lista(A.completo.uid, casoBaja)).linha).toBeUndefined();
@@ -161,7 +164,7 @@ describe('A vaga mostra o estado do paciente (D3) @integration', () => {
 
     const l = await lista(A.semPaciente.uid, caseNumber);
     expect(l.status).toBe(200);
-    expect(l.linha).toMatchObject({ patient_status: null, redacted: { patient: true }, lifecycle: 'aberta' });
+    expect(l.linha).toMatchObject({ patient_status: null, redacted: { patient: true }, lifecycle: null });
     expect(JSON.stringify(l.linha)).not.toContain('"patient_status":"SEARCHING"'); // o valor não vaza em nenhum lugar da linha
     const f = await ficha(A.semPaciente.uid, vagaId);
     expect(f.body.data).toMatchObject({ patient_status: null, redacted: { patient: true } });
@@ -177,7 +180,7 @@ describe('A vaga mostra o estado do paciente (D3) @integration', () => {
     }
     const cardCompleto = await chamar(app, 'GET', `/api/admin/patients/${patientId}/vacancies`, A.completo.uid);
     expect(cardCompleto.status).toBe(200);
-    expect(cardCompleto.body.data[0]).toMatchObject({ patientStatus: 'SEARCHING', lifecycle: 'aberta' });
+    expect(cardCompleto.body.data[0]).toMatchObject({ patientStatus: 'SEARCHING', lifecycle: null });
 
     // filtrar por estado do paciente sem a célula é oráculo: 403 nomeando o campo; com a célula, 200 e só as vagas daquele estado
     const recusado = await chamar(app, 'GET', `/api/admin/vacancies?search=${caseNumber}&patient_status=SEARCHING`, A.semPaciente.uid);
@@ -199,35 +202,26 @@ describe('A vaga mostra o estado do paciente (D3) @integration', () => {
       expect(linha).not.toHaveProperty('patient_status');
       expect(linha).not.toHaveProperty('redacted');
       expect(linha.patient_id).toBeNull();
-      expect(linha.lifecycle).toBe('aberta');
+      expect(linha.lifecycle).toBeNull();
     }
   });
 
-  it('(vi) ATAQUE: PUT status legado → 400 e o paciente intacto; "Reanudar" de pausa que veio do legado grava SEARCHING e a vaga volta a aberta', async () => {
+  it('(vi) ATAQUE: PUT com qualquer status → 400 VACANCY_STATUS_NOT_WRITABLE e a vaga e o paciente ficam intactos (não há mais "Reanudar")', async () => {
     const { patientId, caseNumber } = await novoPaciente('ataque', 'SEARCHING');
     const vagaId = await novaVaga(patientId, caseNumber, 'SEARCHING', false, 'ataque');
 
-    for (const legado of ['SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'ACTIVE', 'PENDING_ACTIVATION']) {
-      const r = await chamar(app, 'PUT', `/api/admin/vacancies/${vagaId}`, A.completo.uid, { status: legado });
+    for (const status of ['SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'ACTIVE', 'PENDING_ACTIVATION', 'ON_HOLD', 'CLOSED']) {
+      const r = await chamar(app, 'PUT', `/api/admin/vacancies/${vagaId}`, A.completo.uid, { status });
       expect(r.status).toBe(400);
-      expect(r.body.code).toBe('VACANCY_STATUS_NOT_LIFECYCLE');
-      expect(r.body.messages.es).toMatch(/flujo automático/);
-      expect(r.body.messages['pt-BR']).toMatch(/fluxo automático/);
+      expect(r.body.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
+      expect(r.body.messages.es).toMatch(/no se edita/);
+      expect(r.body.messages['pt-BR']).toMatch(/não é editável/);
       expect(await statusDoPaciente(patientId)).toBe('SEARCHING');
       expect(await statusDaVaga(vagaId)).toBe('SEARCHING');
     }
     expect(Number((await pool.query(`SELECT COUNT(*) AS n FROM patient_status_history WHERE patient_id = $1 AND change_source = 'admin_panel'`, [patientId])).rows[0].n)).toBe(0);
-
-    // controle positivo do MESMO ator/rota: o valor do ciclo de vida passa
-    expect((await chamar(app, 'PUT', `/api/admin/vacancies/${vagaId}`, A.completo.uid, { status: 'ON_HOLD' })).status).toBe(200);
-    // Reanudar de vaga legada: a pausa guardou SEARCHING_REPLACEMENT (linha antiga) e o back devolve o valor de escrita
-    await pool.query(`UPDATE job_postings SET status_before_hold = 'SEARCHING_REPLACEMENT' WHERE id = $1`, [vagaId]);
-    const pausada = await ficha(A.completo.uid, vagaId);
-    expect(pausada.body.data).toMatchObject({ status: 'ON_HOLD', lifecycle: 'pausada', resumeStatus: 'SEARCHING' });
-    const retomada = await chamar(app, 'PUT', `/api/admin/vacancies/${vagaId}`, A.completo.uid, { status: pausada.body.data.resumeStatus });
-    expect(retomada.status).toBe(200);
-    expect((await ficha(A.completo.uid, vagaId)).body.data).toMatchObject({ status: 'SEARCHING', lifecycle: 'aberta' });
-    expect(await statusDoPaciente(patientId)).toBe('SEARCHING'); // o paciente nunca foi tocado
+    // a ficha não carrega mais o valor de escrita do "Reanudar"
+    expect((await ficha(A.completo.uid, vagaId)).body.data).not.toHaveProperty('resumeStatus');
   });
 
   it('(vii) a página pública mostra SÓ o ciclo de vida: lifecycle sim, patient_status nunca', async () => {
@@ -235,7 +229,7 @@ describe('A vaga mostra o estado do paciente (D3) @integration', () => {
     const vagaId = await novaVaga(patientId, caseNumber, 'SEARCHING_REPLACEMENT', false, 'publica');
     const r = await chamar(app, 'GET', `/api/vacancies/${vagaId}`, A.completo.uid);
     expect(r.status).toBe(200);
-    expect(r.body.data).toMatchObject({ id: vagaId, lifecycle: 'aberta' });
+    expect(r.body.data).toMatchObject({ id: vagaId, lifecycle: null });
     expect(r.body.data).not.toHaveProperty('patient_status');
     expect(r.body.data).not.toHaveProperty('patientStatus');
     expect(r.body.data).not.toHaveProperty('redacted');

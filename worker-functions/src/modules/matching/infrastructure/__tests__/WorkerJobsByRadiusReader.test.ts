@@ -19,7 +19,7 @@ function fakeClient(opts: { zone: boolean; rows?: Array<Record<string, unknown>>
 const ROW = {
   id: JOB, case_number: 1301, vacancy_number: 6309, title: 'CASO 1301', service: 'AT', neighborhood: null,
   city: 'Mar del Plata', state: 'Buenos Aires', schedule: [{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }],
-  worker_type: ['AT'], distance_km: '3.0', already_applied: false,
+  worker_type: ['AT'], distance_km: '3.0', applied_at: null, already_applied: false,
 };
 
 describe('WorkerJobsByRadiusReader', () => {
@@ -48,7 +48,7 @@ describe('WorkerJobsByRadiusReader', () => {
   it('T-F2a-33 realm (D665, DT-20): mesmo realm pela peça testRealmSql; vaga de teste sem o filtro público, vaga real com ele', () => {
     const { sql } = buildJobsByRadiusSql(W, 10);
     expect(sql).toContain('COALESCE((SELECT w_realm_chk.is_test FROM workers w_realm_chk WHERE w_realm_chk.id = w.id), false)');
-    expect(sql).toContain('AND (NOT (COALESCE(jp.is_test, false) = false) OR (jp.status IN');
+    expect(sql).toContain('AND (NOT (COALESCE(jp.is_test, false) = false) OR ((jp.deleted_at IS NULL');
     expect(sql).toContain("jp.social_short_links ? 'site'");
     expect(sql).toContain('jp.is_draft = false');
     expect(sql).toContain('jp.country = $1');
@@ -77,7 +77,7 @@ describe('WorkerJobsByRadiusReader', () => {
     expect(item.distance_km).toBe(3);
     expect(item.worker_type).toEqual([]);
     expect(Object.keys(item).sort()).toEqual(
-      ['already_applied', 'case_number', 'city', 'distance_km', 'id', 'neighborhood', 'schedule', 'service', 'state', 'title', 'vacancy_number', 'worker_type'].sort(),
+      ['already_applied', 'applied_at', 'case_number', 'city', 'distance_km', 'id', 'neighborhood', 'schedule', 'service', 'state', 'title', 'vacancy_number', 'worker_type'].sort(),
     );
     expect(client.query.mock.calls[1][1]).toEqual(['AR', W, 5]);
   });
@@ -88,6 +88,26 @@ describe('WorkerJobsByRadiusReader', () => {
       'EXISTS (SELECT 1 FROM worker_job_applications wja WHERE wja.worker_id = $2 AND wja.job_posting_id = jp.id) AS already_applied',
     );
     expect(sql).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/i);
+  });
+
+  it('077 applied_at: lido SÓ da candidatura do próprio prestador ($2) e da vaga da linha, sem escrita', () => {
+    const { sql } = buildJobsByRadiusSql(W, 10);
+    expect(sql).toContain(
+      '(SELECT wja.applied_at FROM worker_job_applications wja WHERE wja.worker_id = $2 AND wja.job_posting_id = jp.id) AS applied_at',
+    );
+  });
+
+  it('077 applied_at sai em ISO 8601 quando há candidatura e null quando não há (nunca data inventada)', async () => {
+    const client = fakeClient({
+      zone: true,
+      rows: [
+        { ...ROW, already_applied: true, applied_at: new Date('2026-11-10T15:30:00.000Z') },
+        { ...ROW, applied_at: null },
+        { ...ROW, applied_at: 'lixo' },
+      ],
+    });
+    const out = (await readJobsByRadius(client, { workerId: W, radiusKm: 10 })) ?? [];
+    expect(out.map((i) => i.applied_at)).toEqual(['2026-11-10T15:30:00.000Z', null, null]);
   });
 
   it('T-F2a-34 mapeia already_applied: true só quando o banco diz true', async () => {

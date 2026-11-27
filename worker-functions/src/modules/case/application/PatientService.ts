@@ -14,7 +14,7 @@ import { createNativePatient } from './PatientNativeCreator';
 import { inPatientTransaction, CaseNumberConflictRetry, rethrowAsCaseNumberRetry } from './patientTransaction';
 import type { AttentionReason } from '../domain/enums/AttentionReason';
 import type { PatientStatus } from '../domain/enums/PatientStatus';
-import type { MovePatientStatus, MoveStatusOptions } from './PatientStatusWriter';
+import type { MovePatientStatus, MoveStatusOptions, PatientStatusMoved } from './PatientStatusWriter';
 import { movePatientStatus as compositionMovePatientStatus } from '../interfaces/composition/patientStatusComposition';
 import { PatientDeviceTypeRepository } from '../infrastructure/PatientDeviceTypeRepository';
 import { PatientInsuranceVerifiedRepository } from '../infrastructure/PatientInsuranceVerifiedRepository';
@@ -290,7 +290,7 @@ export class PatientService {
     patientId: string,
     status: PatientStatus,
     opts: MoveStatusOptions = { changeSource: 'admin_panel' },
-  ): Promise<{ id: string; status: PatientStatus }> {
+  ): Promise<PatientStatusMoved> {
     return this.moveStatusWriter(patientId, status, opts);
   }
 }

@@ -38,7 +38,7 @@ const FAKE_ID_TOKEN =
 
 // Payload com o shape vivo de produção (04/08/2026), valores fixos p/ screenshot.
 const MOCK_DASHBOARD = {
-  bigNumbers: { equiposArmados: 0, equiposPorArmar: 86, pacientesActivos: 193, vacantesAbiertas: 145, vacantesPausadas: 21 },
+  bigNumbers: { equiposArmados: 0, equiposPorArmar: 86, pacientesActivos: 193, vacantesAbiertas: 145 },
   equipoArmada: { armados: 0, porArmar: 86, semConfig: 3, pendenteClasificacao: 56, pctRespostaRapidaArmado: { num: 0, den: 86, excluidos: 59, pct: 0 } },
   pacientes: { activos: 193, ubicacionesActivas: 341, solicitudes: 2, entrevistaAgendada: 0, enAdmision: 5, enBusca: 113, sobrepoe: true },
   horas: { totais: 3866.2, aPreencher: 2317.5, coberturaConSchedule: 119, coberturaSinSchedule: 26, ativas: 941.1, ativasConSchedule: 40, ativasSinSchedule: 13 },

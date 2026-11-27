@@ -250,8 +250,8 @@ export async function createVacancyFixture(
 
   const caseNumber = Math.floor(Math.random() * 900000) + 99000;
   const { rows: vRows } = await pool.query<{ id: string }>(
-    `INSERT INTO job_postings (title, country, status, patient_id, case_number)
-     VALUES ($1, 'AR', 'SEARCHING', $2, $3)
+    `INSERT INTO job_postings (title, country, status, patient_id, case_number, is_draft)
+     VALUES ($1, 'AR', 'SEARCHING', $2, $3, false)
      RETURNING id`,
     [`Vaga E2E Journey ${tag}`, patientId, caseNumber],
   );

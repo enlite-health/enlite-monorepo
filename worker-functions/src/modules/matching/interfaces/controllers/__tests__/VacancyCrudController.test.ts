@@ -133,7 +133,8 @@ jest.mock('@shared/database/requestDbSession', () => ({
   withSystemDbContext: (_label: string, fn: () => Promise<unknown>) => fn(),
 }));
 
-import { VacancyCrudController, tryEnsureShortLink } from '../VacancyCrudController';
+import { VacancyCrudController } from '../VacancyCrudController';
+import { tryEnsureShortLink } from '../../../application/vacancyShortLinks';
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -424,7 +425,7 @@ describe('VacancyCrudController', () => {
       expect((res.json as jest.Mock).mock.calls[0][0].error).toBe('No valid fields to update');
     });
 
-    it('is_draft=false → só campos OPERATIONAL_EDITABLE_FIELDS (schedule/status) são aceitos, resto ignorado', async () => {
+    it('is_draft=false → só campos OPERATIONAL_EDITABLE_FIELDS (schedule) são aceitos, resto (inclusive status) ignorado', async () => {
       mockAuthorizeVacancyUpdate.mockResolvedValueOnce({ kind: 'ok', isDraft: false, currentStatus: 'SEARCHING' });
       mockClientQuery
         .mockResolvedValueOnce({})                                              // BEGIN
@@ -432,14 +433,15 @@ describe('VacancyCrudController', () => {
         .mockResolvedValueOnce({ rows: [{ id: 'jp-1', status: 'ACTIVE', is_test: false }] }) // UPDATE
         .mockResolvedValue({ rows: [] });                                       // COMMIT
 
-      const req = makeReq({ params: { id: 'jp-1' }, body: { status: 'ACTIVE', title: 'Tentativa de burlar' } });
+      const req = makeReq({ params: { id: 'jp-1' }, body: { status: 'ACTIVE', schedule: [], title: 'Tentativa de burlar' } });
       const res = makeRes();
 
       await controller.updateVacancy(req, res);
 
       expect(res.status).toHaveBeenCalledWith(200);
       const updateCall = mockClientQuery.mock.calls[2];
-      expect(updateCall[0]).toContain('status = $1');
+      expect(updateCall[0]).toContain('schedule = $1');
+      expect(updateCall[0].split('RETURNING')[0]).not.toMatch(/\bstatus\b/);
       // só o SET (o RETURNING lista todas as colunas da vaga, `title` inclusa)
       expect(updateCall[0].split('RETURNING')[0]).not.toContain('title');
     });
@@ -487,7 +489,7 @@ describe('VacancyCrudController', () => {
         .mockResolvedValueOnce({ rows: [] }) // SELECT before — vazio
         .mockResolvedValue({});              // ROLLBACK
 
-      const req = makeReq({ params: { id: 'jp-sumiu' }, body: { status: 'ACTIVE' } });
+      const req = makeReq({ params: { id: 'jp-sumiu' }, body: { schedule: [] } });
       const res = makeRes();
 
       await controller.updateVacancy(req, res);
@@ -504,7 +506,7 @@ describe('VacancyCrudController', () => {
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValue({});
 
-      const req = makeReq({ params: { id: 'jp-1' }, body: { status: 'ACTIVE' } });
+      const req = makeReq({ params: { id: 'jp-1' }, body: { schedule: [] } });
       await controller.updateVacancy(req, makeRes());
 
       expect(String(mockClientQuery.mock.calls[1][0])).toContain('deleted_at IS NULL');
@@ -519,7 +521,7 @@ describe('VacancyCrudController', () => {
         .mockResolvedValueOnce({ rows: [] })                // UPDATE — race, sumiu
         .mockResolvedValue({});
 
-      const req = makeReq({ params: { id: 'jp-1' }, body: { status: 'ACTIVE' } });
+      const req = makeReq({ params: { id: 'jp-1' }, body: { schedule: [] } });
       const res = makeRes();
 
       await controller.updateVacancy(req, res);
@@ -527,26 +529,7 @@ describe('VacancyCrudController', () => {
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
-    it('status final em INACTIVE_STATUSES (CLOSED/SUSPENDED) → pós-commit chama purge, não ensure', async () => {
-      mockAuthorizeVacancyUpdate.mockResolvedValueOnce({ kind: 'ok', isDraft: false, currentStatus: 'SEARCHING' });
-      mockShortLinkFromEnv.mockReturnValue({}); // Short.io "configurado" pra provar que purge É chamado
-      mockClientQuery
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-1' }] })
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-1', status: 'CLOSED', is_test: false }] })
-        .mockResolvedValue({ rows: [] });
-
-      const req = makeReq({ params: { id: 'jp-1' }, body: { status: 'CLOSED' } });
-      const res = makeRes();
-
-      await controller.updateVacancy(req, res);
-      await flushImmediates();
-
-      expect(mockPurgeExecute).toHaveBeenCalledWith('jp-1');
-      expect(mockEnsureExecute).not.toHaveBeenCalled();
-    });
-
-    it('status final ATIVO/público → pós-commit chama tryEnsureShortLink, não purge', async () => {
+    it('PUT → pós-commit chama tryEnsureShortLink (que só cria se a vaga é publicável) e NUNCA purge por status (ninguém muda status aqui)', async () => {
       mockAuthorizeVacancyUpdate.mockResolvedValueOnce({ kind: 'ok', isDraft: false, currentStatus: 'PENDING_ACTIVATION' });
       mockShortLinkFromEnv.mockReturnValue({});
       mockClientQuery
@@ -554,8 +537,9 @@ describe('VacancyCrudController', () => {
         .mockResolvedValueOnce({ rows: [{ id: 'jp-1' }] })
         .mockResolvedValueOnce({ rows: [{ id: 'jp-1', status: 'ACTIVE', is_test: false }] })
         .mockResolvedValue({ rows: [] });
+      mockQuery.mockResolvedValue({ rows: [{ '?column?': 1 }] }); // a pergunta "publicável?" do dono responde sim
 
-      const req = makeReq({ params: { id: 'jp-1' }, body: { status: 'ACTIVE' } });
+      const req = makeReq({ params: { id: 'jp-1' }, body: { schedule: [] } });
       const res = makeRes();
 
       await controller.updateVacancy(req, res);
@@ -574,7 +558,7 @@ describe('VacancyCrudController', () => {
         .mockResolvedValue({});
       mockAuditVacancyUpdated.mockRejectedValueOnce(new Error('audit trail broke'));
 
-      const req = makeReq({ params: { id: 'jp-1' }, body: { status: 'SEARCHING' } });
+      const req = makeReq({ params: { id: 'jp-1' }, body: { schedule: [] } });
       const res = makeRes();
 
       await controller.updateVacancy(req, res);
@@ -784,32 +768,38 @@ describe('VacancyCrudController', () => {
 
   // ── tryEnsureShortLink (exportada) ──────────────────────────
 
-  describe('tryEnsureShortLink', () => {
-    it('is_test=true → nunca cria short link (mesmo com status público)', async () => {
-      await tryEnsureShortLink({} as never, 'jp-1', 'SEARCHING', true);
+  describe('tryEnsureShortLink (application/vacancyShortLinks — o link nasce quando a vaga é publicável, dono: vacancyPublication)', () => {
+    const poolCom = (rows: unknown[]) => ({ query: jest.fn().mockResolvedValue({ rows }) }) as never;
 
-      expect(mockShortLinkFromEnv).not.toHaveBeenCalled();
-    });
-
-    it('status ausente (null) → não cria', async () => {
-      await tryEnsureShortLink({} as never, 'jp-1', null, false);
-      expect(mockShortLinkFromEnv).not.toHaveBeenCalled();
-    });
-
-    it('status não-público (ex: PENDING_ACTIVATION) → não cria', async () => {
-      await tryEnsureShortLink({} as never, 'jp-1', 'PENDING_ACTIVATION', false);
-      expect(mockShortLinkFromEnv).not.toHaveBeenCalled();
-    });
-
-    it('ShortLinkService indisponível (fromEnv=null) → não cria', async () => {
+    it('ShortLinkService indisponível (fromEnv=null) → nem consulta o banco, não cria', async () => {
       mockShortLinkFromEnv.mockReturnValue(null);
-      await tryEnsureShortLink({} as never, 'jp-1', 'SEARCHING', false);
+      const pool = poolCom([{ '?column?': 1 }]);
+      await tryEnsureShortLink(pool, 'jp-1');
+      expect((pool as unknown as { query: jest.Mock }).query).not.toHaveBeenCalled();
       expect(mockEnsureExecute).not.toHaveBeenCalled();
     });
 
-    it('status público + service disponível → cria o short link', async () => {
+    it('vaga NÃO publicável (a consulta do dono não devolve linha: rascunho, teste, legado pausado, paciente pausado…) → não cria', async () => {
       mockShortLinkFromEnv.mockReturnValue({});
-      await tryEnsureShortLink({} as never, 'jp-1', 'SEARCHING', false);
+      await tryEnsureShortLink(poolCom([]), 'jp-1');
+      expect(mockEnsureExecute).not.toHaveBeenCalled();
+    });
+
+    it('a pergunta é a regra do dono, gerada: is_test, rascunho, status fora do ar e paciente que pausa', async () => {
+      mockShortLinkFromEnv.mockReturnValue({});
+      const pool = poolCom([]);
+      await tryEnsureShortLink(pool, 'jp-1');
+      const [sql, params] = (pool as unknown as { query: jest.Mock }).query.mock.calls[0];
+      expect(sql).toContain('jp.is_test = false');
+      expect(sql).toContain('jp.is_draft = false');
+      expect(sql).toContain("jp.status NOT IN ('DE_BAJA', 'CLOSED', 'ON_HOLD', 'SUSPENDED')");
+      expect(sql).toContain("COALESCE(p.status, '') NOT IN ('ON_HOLD', 'SUSPENDED', 'ALTA', 'DISCHARGED')");
+      expect(params).toEqual(['jp-1']);
+    });
+
+    it('vaga publicável + service disponível → cria o short link', async () => {
+      mockShortLinkFromEnv.mockReturnValue({});
+      await tryEnsureShortLink(poolCom([{ '?column?': 1 }]), 'jp-1');
       expect(mockEnsureExecute).toHaveBeenCalledWith('jp-1', 'site');
     });
 
@@ -817,7 +807,7 @@ describe('VacancyCrudController', () => {
       mockShortLinkFromEnv.mockReturnValue({});
       mockEnsureExecute.mockRejectedValueOnce(new Error('Short.io indisponível'));
 
-      await expect(tryEnsureShortLink({} as never, 'jp-1', 'SEARCHING', false)).resolves.toBeUndefined();
+      await expect(tryEnsureShortLink(poolCom([{ '?column?': 1 }]), 'jp-1')).resolves.toBeUndefined();
 
       expect(mockReportError).toHaveBeenCalledWith(
         expect.any(Error),
@@ -825,11 +815,19 @@ describe('VacancyCrudController', () => {
       );
     });
 
+    it('a consulta ao banco lança → reportError, não propaga (nunca rejeita)', async () => {
+      mockShortLinkFromEnv.mockReturnValue({});
+      const pool = { query: jest.fn().mockRejectedValue(new Error('db down')) } as never;
+      await expect(tryEnsureShortLink(pool, 'jp-1')).resolves.toBeUndefined();
+      expect(mockEnsureExecute).not.toHaveBeenCalled();
+      expect(mockReportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ source: 'tryEnsureShortLink' }));
+    });
+
     it('execute() lança valor NÃO-Error (ex: string crua) → normalizado em Error antes do reportError', async () => {
       mockShortLinkFromEnv.mockReturnValue({});
       mockEnsureExecute.mockRejectedValueOnce('short.io 503 raw');
 
-      await tryEnsureShortLink({} as never, 'jp-1', 'SEARCHING', false);
+      await tryEnsureShortLink(poolCom([{ '?column?': 1 }]), 'jp-1');
 
       const [err] = mockReportError.mock.calls[0];
       expect(err).toBeInstanceOf(Error);
@@ -963,7 +961,7 @@ describe('VacancyCrudController', () => {
     it('updateVacancy: authorizeVacancyUpdate rejeita com string crua → 500 com details=string', async () => {
       mockAuthorizeVacancyUpdate.mockRejectedValueOnce('raw auth string');
 
-      const req = makeReq({ params: { id: 'jp-1' }, body: { status: 'ACTIVE' } });
+      const req = makeReq({ params: { id: 'jp-1' }, body: { schedule: [] } });
       const res = makeRes();
 
       await controller.updateVacancy(req, res);

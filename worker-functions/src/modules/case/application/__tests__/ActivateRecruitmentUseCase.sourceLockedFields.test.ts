@@ -54,7 +54,6 @@ function fogueteArgs(overrides: Partial<VacancyInsertParams> = {}): VacancyInser
     salary_text: null,
     payment_day: null,
     daily_obs: null,
-    status: undefined,
     published_at: null,
     closes_at: null,
     is_test: false,

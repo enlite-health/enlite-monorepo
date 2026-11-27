@@ -65,20 +65,20 @@ describe('D489/D530 — writer: troca manual com alocação viva', () => {
 
   it('manual SEM alocação viva (itinerário montado sem prestador) → troca normal', async () => {
     banco('SEARCHING', 0);
-    await expect(movePatientStatus(PID, 'ON_HOLD', { changeSource: 'admin_panel', onHoldReason: 'SCHOOL' })).resolves.toEqual({ id: PID, status: 'ON_HOLD' });
+    await expect(movePatientStatus(PID, 'ON_HOLD', { changeSource: 'admin_panel', onHoldReason: 'SCHOOL' })).resolves.toMatchObject({ id: PID, status: 'ON_HOLD' });
     expect(gravou()).toBe(true);
   });
 
   it('CONTROLE: a derivação (changeSource system) com alocação viva continua movendo — e nem consulta o itinerário', async () => {
     banco('SEARCHING', 3);
-    await expect(movePatientStatus(PID, 'ACTIVE', { changeSource: 'system' })).resolves.toEqual({ id: PID, status: 'ACTIVE' });
+    await expect(movePatientStatus(PID, 'ACTIVE', { changeSource: 'system' })).resolves.toMatchObject({ id: PID, status: 'ACTIVE' });
     expect(gravou()).toBe(true);
     expect(consultouItinerario()).toBe(false);
   });
 
   it('manual reenviando o estado ATUAL com alocação viva não é troca: passa e nem consulta o itinerário', async () => {
     banco('SUSPENDED', 3);
-    await expect(movePatientStatus(PID, 'SUSPENDED', { changeSource: 'admin_panel' })).resolves.toEqual({ id: PID, status: 'SUSPENDED' });
+    await expect(movePatientStatus(PID, 'SUSPENDED', { changeSource: 'admin_panel' })).resolves.toMatchObject({ id: PID, status: 'SUSPENDED' });
     expect(consultouItinerario()).toBe(false);
   });
 });

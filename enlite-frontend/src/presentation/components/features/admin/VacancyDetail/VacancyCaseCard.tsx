@@ -4,24 +4,15 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { VacancyLifecycleBadge } from '@presentation/components/atoms/VacancyLifecycleBadge';
 import { PatientStatusPill } from '@presentation/components/atoms/PatientStatusPill';
-import type { CicloDeVida, StatusGravavel } from '@domain/value-objects/vacancyLifecycle';
+import type { CicloDeVida } from '@domain/value-objects/vacancyLifecycle';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
-import { useActionGate } from '@presentation/hooks/useCellAccess';
-import {
-  VacancyStatusEditor,
-  type EditableVacancyStatus,
-} from './VacancyStatusEditor';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface VacancyCaseCardProps {
-  /** Valor gravado (só para o editor marcar a opção atual); a tela mostra `lifecycle` e `patientStatus`. */
-  status: string;
-  /** Ciclo de vida calculado pelo back (D3). */
+  /** Selo calculado pelo back (`rascunho` | `baja`); `null` = vaga sem selo. Ninguém escolhe estado para a vaga (semaforo-da-vaga F4). */
   lifecycle?: CicloDeVida | null;
   /** `patients.status` por join na resposta (D3/E6); `null`/ausente = sem a célula do container `patient`, ou vaga sem paciente → "—". */
   patientStatus?: string | null;
-  /** E8: o valor que "Reanudar" envia, calculado pelo back. */
-  resumeStatus?: StatusGravavel;
   caseNumber: number | null;
   dependencyLevel: string | null;
   profession: string | null;
@@ -35,10 +26,6 @@ interface VacancyCaseCardProps {
   providersNeeded: number | null;
   publishedAt: string | null;
   closedAt: string | null;
-  onStatusChange?: (next: EditableVacancyStatus) => void | Promise<void>;
-  isStatusSaving?: boolean;
-  /** Spec 084 F5: vaga de serviço contratado → o seletor não oferece "Cerrado" (só pausar). */
-  hasService?: boolean;
 }
 
 function formatDateAR(dateStr: string | null): string {
@@ -85,10 +72,8 @@ function DateRow({
 }
 
 export function VacancyCaseCard({
-  status,
   lifecycle,
   patientStatus,
-  resumeStatus,
   caseNumber,
   dependencyLevel,
   profession,
@@ -102,16 +87,8 @@ export function VacancyCaseCard({
   providersNeeded,
   publishedAt,
   closedAt,
-  onStatusChange,
-  isStatusSaving,
-  hasService,
 }: VacancyCaseCardProps) {
   const { t } = useTranslation();
-  // PUT /vacancies/:id → updateVacancy → vacancy:write. O dropdown de status
-  // (inclusive "CLOSED", o equivalente a arquivar) não é `<Button>`, então
-  // usa `useActionGate` direto — mesma leitura do `ActionButton` (D269).
-  const vacancyWriteGate = useActionGate('vacancy', 'update');
-
   const sexLabel = sex
     ? t(`admin.vacancyDetail.vacancyForm.sexOptions.${sex}`, sex)
     : null;
@@ -145,22 +122,11 @@ export function VacancyCaseCard({
         <Heading level={2} color="primary" weight="medium">
           {t('admin.vacancyDetail.caseCard.caseLabel')} {formatCaseNumber(caseNumber) ?? '—'}
         </Heading>
-        {/* D269 — sem vacancy:write o valor vira TEXTO (o badge), sem os
-            controles do editor (nem dropdown, nem gatilho clicável). */}
+        {/* O estado da vaga não é escolhido por ninguém: a tela mostra o estado do PACIENTE e, só quando existe, o selo
+            (Borrador | De baja). Vaga no ar não tem selo. */}
         <div className="flex items-center gap-3">
           <PatientStatusPill status={patientStatus} />
-          {onStatusChange && !vacancyWriteGate.denied ? (
-            <VacancyStatusEditor
-              status={status}
-              lifecycle={lifecycle}
-              hasService={hasService}
-              resumeStatus={resumeStatus}
-              isSaving={isStatusSaving}
-              onChange={onStatusChange}
-            />
-          ) : (
-            <VacancyLifecycleBadge lifecycle={lifecycle} />
-          )}
+          <VacancyLifecycleBadge lifecycle={lifecycle} />
         </div>
       </div>
 

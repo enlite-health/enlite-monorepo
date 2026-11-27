@@ -53,7 +53,6 @@ const baseVacancy: PublicVacancyDetail = {
   vacancy_number: 2208,
   title: 'CASO 797-2208',
   status: 'BUSQUEDA',
-  lifecycle: 'aberta',
   is_disabled: false,
   required_professions: ['AT'],
   required_sex: 'BOTH',

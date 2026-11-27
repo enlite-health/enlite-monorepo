@@ -15,7 +15,7 @@ const BASE_DATA: VacancySummaryData = {
   vacancyNumber: 3,
   patientFirstName: 'Juan',
   patientLastName: 'Pérez',
-  lifecycle: 'aberta',
+  lifecycle: null,
   publishedAt: null,
   closedAt: null,
 };
@@ -42,10 +42,16 @@ describe('VacancySummaryCard', () => {
     expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('mostra SÓ o ciclo de vida (D3): o badge é o do ciclo, não um valor de banco', () => {
+  it('vaga no ar (sem selo) não mostra badge nem valor de banco (F15)', () => {
     renderCard(BASE_DATA);
-    expect(screen.getByText('admin.vacancyDetail.lifecycle.aberta')).toBeInTheDocument();
+    expect(screen.queryByTestId('vacancy-lifecycle-badge')).not.toBeInTheDocument();
+    expect(screen.queryByText(/admin\.vacancyDetail\.lifecycle\./)).not.toBeInTheDocument();
     expect(screen.queryByTestId('patient-status-pill')).not.toBeInTheDocument();
+  });
+
+  it('vaga dada de baja mostra o selo "baja"', () => {
+    renderCard({ ...BASE_DATA, lifecycle: 'baja' });
+    expect(screen.getByText('admin.vacancyDetail.lifecycle.baja')).toBeInTheDocument();
   });
 
   it('sem ciclo na resposta, nenhum badge (nunca o valor cru)', () => {
