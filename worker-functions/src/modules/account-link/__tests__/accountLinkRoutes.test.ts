@@ -13,6 +13,28 @@ import { ipKey, createAccountLinkRoutes, LOOKUP_UID_MAX, LOOKUP_IP_MAX } from '.
 import type { AccountLinkController } from '../AccountLinkController';
 import type { AuthMiddleware } from '../../identity/interfaces/middleware/AuthMiddleware';
 
+/** Store em memória que CONTA as chamadas por prefix: prova que o limitador por uid usa o store compartilhado (o real é o Postgres). */
+const mockStoreCalls: string[] = [];
+jest.mock('@shared/rateLimit/PgRateLimitStore', () => {
+  class MemStore {
+    private windowMs = 15 * 60 * 1000;
+    private hits = new Map<string, { n: number; reset: number }>();
+    constructor(readonly prefix: string) {}
+    init(o: { windowMs: number }) { this.windowMs = o.windowMs; }
+    async increment(key: string) {
+      mockStoreCalls.push(this.prefix);
+      const now = Date.now();
+      const cur = this.hits.get(key);
+      const e = cur && cur.reset > now ? { n: cur.n + 1, reset: cur.reset } : { n: 1, reset: now + this.windowMs };
+      this.hits.set(key, e);
+      return { totalHits: e.n, resetTime: new Date(e.reset) };
+    }
+    async decrement(key: string) { const c = this.hits.get(key); if (c) c.n = Math.max(c.n - 1, 0); }
+    async resetKey(key: string) { this.hits.delete(key); }
+  }
+  return { createPgRateLimitStore: (prefix: string) => new MemStore(prefix) };
+});
+
 function reqComIp(ip: string | undefined): Request {
   return { headers: {}, ip } as unknown as Request;
 }
@@ -347,5 +369,32 @@ describe('createAccountLinkRoutes — lookup: limite por conta e por IP', () => 
     expect(bloqueado.body).toMatchObject({ success: false, code: 'RATE_LIMITED' });
     expect(Number(bloqueado.headers['retry-after'])).toBeGreaterThan(0);
     expect(controller.lookup).not.toHaveBeenCalled();
+  });
+});
+
+describe('createAccountLinkRoutes — lookup: limite por conta usa o store compartilhado (B2)', () => {
+  it('o limitador por uid do lookup chama o store com o prefix link-lookup-uid', async () => {
+    const controller = {
+      lookup: jest.fn((_req: Request, res: Response) => { res.status(200).json({ m: 'lookup' }); }),
+    } as unknown as AccountLinkController;
+    const auth = {
+      requireAuth: () => (req: Request, _res: Response, next: () => void) => {
+        (req as Request & { user?: { uid: string } }).user = { uid: 'uid-teste-store' };
+        next();
+      },
+      requirePermission: () => (_req: Request, _res: Response, next: () => void) => next(),
+    } as unknown as AuthMiddleware;
+    const server = appDeRota('accountLinkLookupStore', '/api', () => createAccountLinkRoutes(controller, auth));
+    const antes = process.env.ACCOUNT_LINK_ENABLED;
+    process.env.ACCOUNT_LINK_ENABLED = 'true';
+    try {
+      mockStoreCalls.length = 0;
+      const r = await request(server).post('/api/workers/me/account-link/lookup').set('X-Forwarded-For', '9.9.9.9').send({ phone: '+000' });
+      expect(r.status).toBe(200);
+      expect(mockStoreCalls).toEqual(['link-lookup-uid']);
+    } finally {
+      if (antes === undefined) delete process.env.ACCOUNT_LINK_ENABLED;
+      else process.env.ACCOUNT_LINK_ENABLED = antes;
+    }
   });
 });

@@ -3,6 +3,7 @@ import type { AuthMiddleware } from '@modules/identity/interfaces/middleware/Aut
 import { routeClass } from '@modules/identity/permissions';
 import { selfUid } from '@shared/http/selfUid';
 import type { PhoneVerificationController } from '../controllers/PhoneVerificationController';
+import { createPgRateLimitStore } from '@shared/rateLimit/PgRateLimitStore';
 import { claimIpKey, otpRateLimit } from './claimRoutes';
 
 /**
@@ -16,7 +17,8 @@ import { claimIpKey, otpRateLimit } from './claimRoutes';
  *     envio + 2 reenvios; confirm 5/15 min — o do claim/confirm (acomoda erro de digitação, trava força bruta do código).
  *
  * Bloqueio: 429 `{ success: false, code: 'RATE_LIMITED' }` + `Retry-After` (standardHeaders), sem chegar ao controller.
- * Store em memória por instância, como os irmãos: com N instâncias o teto efetivo é até N× o valor.
+ * Por IP: store em memória por instância (1ª camada barata, antes do auth): com N instâncias o teto efetivo é até N× o valor.
+ * Por CONTA (uid): contado no banco (`PgRateLimitStore`), compartilhado entre instâncias — o teto vale como escrito.
  */
 export const PHONE_VERIFICATION_IP_MAX = 30;
 export const PHONE_VERIFICATION_START_UID_MAX = 3;
@@ -27,10 +29,11 @@ const CONFIRM_ERROR = 'Too many confirmation attempts. Try again in 15 minutes.'
 
 const uidKey = (req: Request): string => `uid:${selfUid(req) ?? claimIpKey(req)}`;
 
-function limit(max: number, error: string, byAccount: boolean) {
+/** `uidStorePrefix` presente = limitador por conta (uid), contado no banco com esse prefixo; ausente = por IP, em memória. */
+function limit(max: number, error: string, uidStorePrefix?: string) {
   return otpRateLimit(max, error, {
     message: { success: false, code: 'RATE_LIMITED', error },
-    ...(byAccount ? { keyGenerator: uidKey } : {}),
+    ...(uidStorePrefix ? { keyGenerator: uidKey, store: createPgRateLimitStore(uidStorePrefix) } : {}),
   });
 }
 
@@ -43,11 +46,11 @@ export function createPhoneVerificationRoutes(
 
   // O servidor decide a finalidade; `confirm` é a única rota que troca um telefone já gravado.
   router.post('/workers/me/phone-verification/start', routeClass('client-policy'),
-    limit(PHONE_VERIFICATION_IP_MAX, START_ERROR, false), ...auth, limit(PHONE_VERIFICATION_START_UID_MAX, START_ERROR, true),
+    limit(PHONE_VERIFICATION_IP_MAX, START_ERROR), ...auth, limit(PHONE_VERIFICATION_START_UID_MAX, START_ERROR, 'pv-start-uid'),
     (req: Request, res: Response) => void controller.start(req, res));
 
   router.post('/workers/me/phone-verification/confirm', routeClass('client-policy'),
-    limit(PHONE_VERIFICATION_IP_MAX, CONFIRM_ERROR, false), ...auth, limit(PHONE_VERIFICATION_CONFIRM_UID_MAX, CONFIRM_ERROR, true),
+    limit(PHONE_VERIFICATION_IP_MAX, CONFIRM_ERROR), ...auth, limit(PHONE_VERIFICATION_CONFIRM_UID_MAX, CONFIRM_ERROR, 'pv-confirm-uid'),
     (req: Request, res: Response) => void controller.confirm(req, res));
 
   return router;
