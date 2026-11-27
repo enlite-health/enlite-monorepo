@@ -17,17 +17,19 @@ describe('E2: limite por uid compartilhado entre instâncias (pv-start-uid)', ()
   it('N starts = 200 alternando instâncias; a N+1 = 429 RATE_LIMITED; o contador está no banco sem o uid', async () => {
     const instancias = [a, b];
     const statuses: number[] = [];
-    let ultimo: { body: any } | null = null;
+    let ultimo: { body: any; headers: Record<string, string> } | null = null;
     for (let i = 0; i <= PHONE_VERIFICATION_START_UID_MAX; i++) {
       const res = await instancias[i % 2].http.post('/api/workers/me/phone-verification/start')
         .set('Authorization', tokenDe(UID)).send({ phone: '+5491100000000' });
       statuses.push(res.status);
-      ultimo = { body: res.body };
+      ultimo = { body: res.body, headers: res.headers as Record<string, string> };
     }
     console.info('E2 statuses', JSON.stringify(statuses));
     expect(statuses.slice(0, PHONE_VERIFICATION_START_UID_MAX).every((s) => s === 200)).toBe(true);
     expect(statuses[PHONE_VERIFICATION_START_UID_MAX]).toBe(429);
     expect(ultimo!.body.code).toBe('RATE_LIMITED');
+    // O limite por ficha do OTP (PgOtpChallengeService) também devolve 429 RATE_LIMITED na 4ª; só o limitador por uid traz `retry-after`.
+    expect(ultimo!.headers['retry-after']).toBeDefined();
 
     const porPrefixo = await pool().query(`SELECT count(*)::int AS n FROM rate_limit_counters WHERE key LIKE 'pv-start-uid:%'`);
     const comUid = await pool().query(`SELECT count(*)::int AS n FROM rate_limit_counters WHERE key LIKE '%uid-teste-e2%'`);
