@@ -8,6 +8,10 @@ import { MessageTemplate, TemplateButton } from '../domain/MessageTemplate';
 import { MessageTemplateRepository } from './MessageTemplateRepository';
 import { ChatwootClient } from './ChatwootClient';
 
+// Texto fixo (sem o telefone): vai para messaging_outbox.error, logs e resposta HTTP.
+// Mantém o prefixo `Invalid phone number:` — messagingFailureReason classifica por ele (INVALID_PHONE).
+const INVALID_PHONE_ERROR = 'Invalid phone number: (E.164 required)';
+
 // Único arquivo que importa 'twilio'. Para migrar para Cloud Function,
 // apenas este arquivo é substituído — nada mais muda.
 export class TwilioMessagingService implements IMessagingService {
@@ -53,7 +57,7 @@ export class TwilioMessagingService implements IMessagingService {
 
     const to = this.normalizeNumber(options.to);
     if (!to) {
-      return Result.fail<MessageSentResult>(`Invalid phone number: ${options.to}`);
+      return Result.fail<MessageSentResult>(INVALID_PHONE_ERROR);
     }
 
     const guard = this.guardUnresolvedTokens(options.variables);
@@ -76,8 +80,9 @@ export class TwilioMessagingService implements IMessagingService {
       let message;
       if (template.contentSid) {
         const mappedVars = this.mapToContentVariables(template.body, options.variables ?? {});
+        // PII: nenhum VALOR de variável (nome do prestador) vai pro log — só a contagem.
         console.log(
-          `[Twilio] Content API — slug=${options.templateSlug} contentSid=${template.contentSid} contentVariables=${JSON.stringify(mappedVars)}`,
+          `[Twilio] Content API — slug=${options.templateSlug} contentSid=${template.contentSid} variableCount=${Object.keys(mappedVars).length}`,
         );
         message = await this.client.messages.create({
           from: `whatsapp:${this.fromNumber}`,
@@ -138,7 +143,7 @@ export class TwilioMessagingService implements IMessagingService {
 
     const normalizedTo = this.normalizeNumber(to);
     if (!normalizedTo) {
-      return Result.fail<MessageSentResult>(`Invalid phone number: ${to}`);
+      return Result.fail<MessageSentResult>(INVALID_PHONE_ERROR);
     }
 
     const guard = this.guardUnresolvedTokens(contentVariables);

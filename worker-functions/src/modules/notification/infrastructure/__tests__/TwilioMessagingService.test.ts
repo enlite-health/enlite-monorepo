@@ -22,6 +22,7 @@
  */
 
 import { TwilioMessagingService } from '../TwilioMessagingService';
+import { classifyMessagingFailureReason } from '../../domain/messagingFailureReason';
 
 // Mock twilio
 const mockCreate = jest.fn();
@@ -569,6 +570,57 @@ describe('TwilioMessagingService', () => {
       const oldArgs = warnSpy.mock.calls[0];
       expect(String(oldArgs[0])).toContain(SENSITIVE_PHONE); // confirma: o formato antigo vazava
       warnSpy.mockRestore();
+    });
+  });
+
+  // ─── PII: nenhum valor de variável nem telefone em log/erro ─────
+  describe('PII — log do envio e erro de telefone inválido', () => {
+    const NAME_SENTINEL = 'ZZSENTINELA Prestador';
+    const INVALID_PHONE_SENTINEL = '987654321'; // 9 dígitos → normalizeNumber devolve null
+
+    it('log do envio não carrega valor de variável nem telefone (nome sentinela)', async () => {
+      const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map(m =>
+        jest.spyOn(console, m).mockImplementation(),
+      );
+      mockTemplateRepo.findBySlug.mockResolvedValue({
+        slug: 'talentum_incomplete_reminder',
+        body: 'Hola {{worker_name}}',
+        contentSid: 'HXabc',
+      });
+      mockCreate.mockResolvedValue({ sid: 'SMok', status: 'queued' });
+
+      const result = await service.sendWhatsApp({
+        to: '+5491155550000',
+        templateSlug: 'talentum_incomplete_reminder',
+        variables: { worker_name: NAME_SENTINEL },
+      });
+
+      expect(result.isSuccess).toBe(true);
+      const logged = JSON.stringify(spies.flatMap(s => s.mock.calls));
+      expect(logged).toContain('talentum_incomplete_reminder'); // o log ainda existe e traz o slug
+      expect(logged).not.toContain('ZZSENTINELA');
+      expect(logged).not.toContain('5491155550000');
+      spies.forEach(s => s.mockRestore());
+    });
+
+    it('telefone inválido (sendWhatsApp) → error não contém o telefone e segue classificado INVALID_PHONE', async () => {
+      const result = await service.sendWhatsApp({
+        to: INVALID_PHONE_SENTINEL,
+        templateSlug: 'x',
+        variables: { worker_name: NAME_SENTINEL },
+      });
+
+      expect(result.isFailure).toBe(true);
+      expect(result.error).not.toContain(INVALID_PHONE_SENTINEL);
+      expect(classifyMessagingFailureReason(result.error)).toBe('INVALID_PHONE');
+    });
+
+    it('telefone inválido (sendWithContentSid) → error não contém o telefone e segue classificado INVALID_PHONE', async () => {
+      const result = await service.sendWithContentSid(INVALID_PHONE_SENTINEL, 'HXabc', { '1': 'a' });
+
+      expect(result.isFailure).toBe(true);
+      expect(result.error).not.toContain(INVALID_PHONE_SENTINEL);
+      expect(classifyMessagingFailureReason(result.error)).toBe('INVALID_PHONE');
     });
   });
 
