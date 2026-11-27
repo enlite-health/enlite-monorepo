@@ -622,6 +622,23 @@ describe('TwilioMessagingService', () => {
       expect(result.error).not.toContain(INVALID_PHONE_SENTINEL);
       expect(classifyMessagingFailureReason(result.error)).toBe('INVALID_PHONE');
     });
+
+    it('erro do SDK que ecoa o telefone → redigido, e a classificação não muda (PROVIDER_ERROR)', async () => {
+      const raw = "The 'To' number +5491112345678 is not a valid phone number. (21211)";
+      mockTemplateRepo.findBySlug.mockResolvedValue({ slug: 's', body: 'Hola', contentSid: 'HXabc' });
+      mockCreate.mockRejectedValue(new Error(raw));
+
+      const result = await service.sendWhatsApp({ to: '+5491155550000', templateSlug: 's' });
+      const viaContentSid = await service.sendWithContentSid('+5491155550000', 'HXabc', { '1': 'a' });
+
+      for (const r of [result, viaContentSid]) {
+        expect(r.isFailure).toBe(true);
+        expect(r.error).not.toContain('5491112345678');
+        expect(r.error).toContain('21211');
+        expect(classifyMessagingFailureReason(r.error)).toBe(classifyMessagingFailureReason(`Twilio error: ${raw}`));
+        expect(classifyMessagingFailureReason(r.error)).toBe('PROVIDER_ERROR');
+      }
+    });
   });
 
   // ─── Guard de tokens PII não-resolvidos ───────────────────────

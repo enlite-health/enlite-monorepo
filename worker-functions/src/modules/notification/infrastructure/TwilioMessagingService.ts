@@ -12,6 +12,12 @@ import { ChatwootClient } from './ChatwootClient';
 // Mantém o prefixo `Invalid phone number:` — messagingFailureReason classifica por ele (INVALID_PHONE).
 const INVALID_PHONE_ERROR = 'Invalid phone number: (E.164 required)';
 
+// O SDK da Twilio costuma ecoar o número no message ("The 'To' number +54911... is not a valid...").
+// Redige só a sequência de telefone; códigos de 5 dígitos (63049, 21211) sobrevivem.
+function redactPhones(message: unknown): string {
+  return String(message ?? '').replace(/\+?\d[\d\s-]{7,}\d/g, '[phone]');
+}
+
 // Único arquivo que importa 'twilio'. Para migrar para Cloud Function,
 // apenas este arquivo é substituído — nada mais muda.
 export class TwilioMessagingService implements IMessagingService {
@@ -118,7 +124,7 @@ export class TwilioMessagingService implements IMessagingService {
 
       return Result.ok<MessageSentResult>(result);
     } catch (error: any) {
-      return Result.fail<MessageSentResult>(`Twilio error: ${error.message}`);
+      return Result.fail<MessageSentResult>(`Twilio error: ${redactPhones(error.message)}`);
     }
   }
 
@@ -166,7 +172,7 @@ export class TwilioMessagingService implements IMessagingService {
         to: normalizedTo,
       });
     } catch (error: any) {
-      return Result.fail<MessageSentResult>(`Twilio error: ${error.message}`);
+      return Result.fail<MessageSentResult>(`Twilio error: ${redactPhones(error.message)}`);
     }
   }
 
