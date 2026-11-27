@@ -207,9 +207,8 @@ test.describe('Jornada worker — FATIA 3 (postularse → WJA INVITED, vaga is_t
     // PENDING_ACTIVATION + is_draft=true (fixture nascia draft e o PASSO 8 batia 404 em prod).
     // Agora: `is_draft: false` só é honrado pelo backend porque `is_test: true` também está
     // presente (ver header, "FIDELIDADE request↔DOM") — vaga real nunca teria esse efeito.
-    // `status: 'SEARCHING'` é o membro de STATUS_PUBLICAVEL mais fiel ao estado real de uma
-    // vaga recém-criada (procurando candidato) — ACTIVE sugere já ocupada/em atendimento,
-    // RAPID_RESPONSE e SEARCHING_REPLACEMENT sugerem urgência/substituição que não é o caso.
+    // semaforo-da-vaga F4: o POST NÃO aceita `status` (400 VACANCY_STATUS_NOT_WRITABLE): a vaga nasce PENDING_ACTIVATION, que é publicável
+    // (dono: vacancyPublication.ts). A página pública e a candidatura servem a vaga `is_test` (opção `incluirTeste` do dono); o feed não.
     const uniqueAttrs = `E2E-PERFIL-${Date.now()}`;
     const createRes = await adminCtx.post('/api/admin/vacancies', {
       data: {
@@ -219,7 +218,6 @@ test.describe('Jornada worker — FATIA 3 (postularse → WJA INVITED, vaga is_t
         patient_id: patient.id,
         is_test: true,
         is_draft: false,
-        status: 'SEARCHING',
         // SEGURANÇA: profissão que o worker (CAREGIVER) NÃO tem → o auto-invite (vivo, sem
         // skip de is_test) NÃO casa o nosso worker → 0 WhatsApp. Ver header. Postularse é
         // manual e não checa profissão, então a WJA é criada mesmo assim.

@@ -107,9 +107,10 @@ export class WorkerApplicationsController {
         workerPhone: worker.phone,
       });
 
-      if (!applyResult.ok && applyResult.code === 'VACANCY_DE_BAJA') {
-        // Spec 084 (P4/R6): vaga dada de baja só se consulta — não é problema de cadastro do prestador.
-        res.status(409).json({ success: false, error: 'vacancy_de_baja', code: applyResult.code, reason: applyResult.reason });
+      if (!applyResult.ok && (applyResult.code === 'VACANCY_DE_BAJA' || applyResult.code === 'VACANCY_NOT_PUBLISHABLE')) {
+        // Spec 084 (P4/R6): vaga dada de baja só se consulta; semaforo-da-vaga F4 (I4): vaga não publicável não recebe candidatura —
+        // nenhuma das duas é problema de cadastro do prestador. O formato do erro é o mesmo (`error` = `reason`).
+        res.status(409).json({ success: false, error: applyResult.reason, code: applyResult.code, reason: applyResult.reason });
         return;
       }
 

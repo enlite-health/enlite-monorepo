@@ -102,7 +102,7 @@ describe('Vacancy Audit Log — Onda B', () => {
     beforeAll(async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { patient_id: patientId, case_number: 88801, status: 'SEARCHING' },
+        { patient_id: patientId, case_number: 88801 },
         auth(),
       );
       expect(res.status).toBe(201);
@@ -149,22 +149,19 @@ describe('Vacancy Audit Log — Onda B', () => {
       createdVacancyIds.push(vacancyId);
     });
 
-    it('PUT with status change produces STATUS_CHANGED row with before/after', async () => {
+    it('PUT with status is refused (400 VACANCY_STATUS_NOT_WRITABLE): no STATUS_CHANGED row, status untouched', async () => {
       const res = await api.put(
         `/api/admin/vacancies/${vacancyId}`,
         { status: 'SEARCHING' },
         auth(),
       );
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(400);
+      expect(res.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
 
       const rows = await getAuditRows(pool, vacancyId);
-      const statusRow = rows.find(r => r.event_type === 'STATUS_CHANGED');
-      expect(statusRow).toBeDefined();
-      expect(statusRow!.field_name).toBe('status');
-      expect(statusRow!.changes.before).toBe('PENDING_ACTIVATION');
-      expect(statusRow!.changes.after).toBe('SEARCHING');
-      expect(statusRow!.actor_type).toBe('HUMAN');
-      expect(statusRow!.actor_user_id).toBe(ADMIN_UID);
+      expect(rows.find(r => r.event_type === 'STATUS_CHANGED')).toBeUndefined();
+      const { rows: db } = await pool.query(`SELECT status FROM job_postings WHERE id = $1`, [vacancyId]);
+      expect(db[0].status).toBe('PENDING_ACTIVATION');
     });
 
     it('PUT with non-status field produces UPDATED row', async () => {
@@ -226,7 +223,7 @@ describe('Vacancy Audit Log — Onda B', () => {
     beforeAll(async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { patient_id: patientId, case_number: 88804, status: 'SEARCHING' },
+        { patient_id: patientId, case_number: 88804 },
         auth(),
       );
       expect(res.status).toBe(201);

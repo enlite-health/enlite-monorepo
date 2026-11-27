@@ -5,12 +5,13 @@
  */
 import { createPatientStatusWriter, type MovePatientStatus } from '../../PatientStatusWriter';
 import type { StatusTx } from '../../ports/patientStatusPorts';
-import { PgCompletenessReader, PgLiveAllocation } from '../../../infrastructure/PgPatientStatusAdapters';
+import { PgCompletenessReader, PgLiveAllocation, PgTalentumPauseMarker } from '../../../infrastructure/PgPatientStatusAdapters';
 
 export function writerSobreClient(client: unknown): MovePatientStatus {
   return createPatientStatusWriter({
     transaction: { run: (fn) => fn(client as StatusTx) },
     completeness: new PgCompletenessReader(),
     allocation: new PgLiveAllocation(),
+    talentum: new PgTalentumPauseMarker(),
   });
 }

@@ -9,7 +9,7 @@ import {
 } from '../domain/WorkerApplicationEligibility';
 import { RecordBlockedAttemptUseCase } from './RecordBlockedAttemptUseCase';
 import { CreateManualWjaWithEncuadreUseCase } from './CreateManualWjaWithEncuadreUseCase';
-import { vacancyIsDeBaja } from '../interfaces/controllers/vacancyDeBajaGuard';
+import { readVacancyApplicability } from '../infrastructure/vacancyApplicabilityReader';
 
 export interface ApplyToVacancyParams {
   workerId: string;
@@ -53,6 +53,15 @@ export type ApplyToVacancyResult =
       code: 'VACANCY_DE_BAJA';
       httpStatus: 409;
       reason: 'vacancy_de_baja';
+      workerStatus: null;
+      missingFields: string[];
+    }
+  | {
+      /** semaforo-da-vaga F4 (I4): vaga que o dono de publicável não publica (paciente pausado, serviço inativo, rascunho...) não recebe candidatura. */
+      ok: false;
+      code: 'VACANCY_NOT_PUBLISHABLE';
+      httpStatus: 409;
+      reason: 'vacancy_not_publishable';
       workerStatus: null;
       missingFields: string[];
     };
@@ -105,10 +114,14 @@ export class ApplyToVacancyUseCase {
       throw err;
     }
 
-    // Spec 084 (P4/R6/F10): o recrutamento não trabalha vaga sem serviço contratado — candidatura em vaga baixada é recusada
-    // (mesma regra para o app e para a Luz, que usam este use case).
-    if (await vacancyIsDeBaja(db, jobPostingId)) {
+    // Spec 084 (P4/R6/F10) + semaforo-da-vaga F4 (I4): candidata-se SÓ a vaga que o dono de publicável publica (com `incluirTeste`),
+    // a mesma regra da página pública — não há regra própria aqui. Baixada mantém o código da 084; as demais, `VACANCY_NOT_PUBLISHABLE`.
+    const applicability = await readVacancyApplicability(db, jobPostingId);
+    if (applicability === 'DE_BAJA') {
       return { ok: false, code: 'VACANCY_DE_BAJA', httpStatus: 409, reason: 'vacancy_de_baja', workerStatus: null, missingFields: [] };
+    }
+    if (applicability === 'NOT_PUBLISHABLE') {
+      return { ok: false, code: 'VACANCY_NOT_PUBLISHABLE', httpStatus: 409, reason: 'vacancy_not_publishable', workerStatus: null, missingFields: [] };
     }
 
     // Transação com carimbo de ator: o trigger de histórico grava quem postulou

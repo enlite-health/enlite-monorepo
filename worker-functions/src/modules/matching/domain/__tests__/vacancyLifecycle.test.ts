@@ -1,12 +1,12 @@
 /**
- * vacancyLifecycle — a tabela do ciclo de vida é o dono (estado-automatico-do-paciente, F2, D3/E5).
+ * vacancyLifecycle — a tabela do selo é o dono (semaforo-da-vaga F4: o selo encolheu para `rascunho | baja | null`).
  * Lê o CHECK da migration 483 do arquivo: valor novo no CHECK sem linha na tabela reprova aqui.
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
   CICLO_POR_STATUS, CICLOS_DE_VIDA, STATUS_GRAVAVEIS, VACANCY_STATUS_VALUES,
-  cicloDeVidaDaVaga, cicloDeVidaSql, isStatusGravavel, statusDeRetomada,
+  cicloDeVidaDaVaga, cicloDeVidaSql, isCicloDeVida,
   type VacancyStatusValue,
 } from '../vacancyLifecycle';
 
@@ -27,11 +27,11 @@ describe('vacancyLifecycle — tabela × CHECK da 483', () => {
     expect(Object.keys(CICLO_POR_STATUS).sort()).toEqual([...check].sort());
   });
 
-  it.each<[VacancyStatusValue, string]>([
-    ['SEARCHING', 'aberta'], ['SEARCHING_REPLACEMENT', 'aberta'], ['RAPID_RESPONSE', 'aberta'],
-    ['ACTIVE', 'aberta'], ['PENDING_ACTIVATION', 'aberta'], ['ON_HOLD', 'pausada'],
-    ['SUSPENDED', 'pausada'], ['CLOSED', 'cerrada'], ['DE_BAJA', 'baja'],
-  ])('%s publicada é %s', (status, ciclo) => {
+  it.each<[VacancyStatusValue, string | null]>([
+    ['SEARCHING', null], ['SEARCHING_REPLACEMENT', null], ['RAPID_RESPONSE', null],
+    ['ACTIVE', null], ['PENDING_ACTIVATION', null], ['ON_HOLD', null],
+    ['SUSPENDED', null], ['CLOSED', null], ['DE_BAJA', 'baja'],
+  ])('%s publicada tem selo %s (só a baixa tem selo; o legado pausado/fechado fica sem selo, D6)', (status, ciclo) => {
     expect(cicloDeVidaDaVaga({ status, isDraft: false })).toBe(ciclo);
   });
 
@@ -39,30 +39,22 @@ describe('vacancyLifecycle — tabela × CHECK da 483', () => {
     for (const status of VACANCY_STATUS_VALUES) expect(cicloDeVidaDaVaga({ status, isDraft: true })).toBe('rascunho');
   });
 
-  it('o legado SEARCHING_REPLACEMENT publicado é lido como "aberta" (spec: linha antiga com valor legado)', () => {
-    expect(cicloDeVidaDaVaga({ status: 'SEARCHING_REPLACEMENT', isDraft: false })).toBe('aberta');
+  it('o selo tem exatamente 2 marcadores, e `aberta|pausada|cerrada` não são mais ciclo (o filtro os recusa)', () => {
+    expect([...CICLOS_DE_VIDA]).toEqual(['rascunho', 'baja']);
+    for (const velho of ['aberta', 'pausada', 'cerrada']) expect(isCicloDeVida(velho)).toBe(false);
+    for (const novo of CICLOS_DE_VIDA) expect(isCicloDeVida(novo)).toBe(true);
   });
 
-  it('o SQL gerado cobre os 9 valores do CHECK, em um único ciclo cada, e o rascunho vem primeiro', () => {
+  it('o SQL gerado: rascunho primeiro, só `DE_BAJA` vira baja, o resto cai em NULL (sem selo)', () => {
     const sql = cicloDeVidaSql('jp');
     expect(sql.startsWith(`(CASE WHEN jp.is_draft IS TRUE THEN 'rascunho'`)).toBe(true);
-    for (const s of valoresDoCheck()) expect(sql.match(new RegExp(`'${s}'`, 'g'))).toHaveLength(1);
-    for (const c of CICLOS_DE_VIDA) expect(sql).toContain(`'${c}'`);
+    expect(sql).toContain(`WHEN jp.status IN ('DE_BAJA') THEN 'baja'`);
+    for (const s of valoresDoCheck().filter((v) => v !== 'DE_BAJA')) expect(sql).not.toContain(`'${s}'`);
+    for (const velho of ['aberta', 'pausada', 'cerrada']) expect(sql).not.toContain(`'${velho}'`);
   });
 
-  it('STATUS_GRAVAVEIS são exatamente os 4 do ciclo (E5) e o legado não é gravável', () => {
-    expect([...STATUS_GRAVAVEIS]).toEqual(['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED']);
-    for (const legado of ['SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'ACTIVE', 'PENDING_ACTIVATION', 'DE_BAJA']) {
-      expect(isStatusGravavel(legado)).toBe(false);
-    }
-  });
-
-  it('E8: "Reanudar" de pausa que veio de valor legado grava SEARCHING; sem registro, SEARCHING', () => {
-    expect(statusDeRetomada('SEARCHING_REPLACEMENT')).toBe('SEARCHING');
-    expect(statusDeRetomada('RAPID_RESPONSE')).toBe('SEARCHING');
-    expect(statusDeRetomada(null)).toBe('SEARCHING');
-    expect(statusDeRetomada('VALOR_FORA_DA_TABELA')).toBe('SEARCHING');
-    expect(statusDeRetomada('CLOSED')).toBe('CLOSED');
+  it('STATUS_GRAVAVEIS é vazio: o cliente não grava estado nenhum', () => {
+    expect([...STATUS_GRAVAVEIS]).toEqual([]);
   });
 
   it('zero `if` no arquivo do dono', () => {

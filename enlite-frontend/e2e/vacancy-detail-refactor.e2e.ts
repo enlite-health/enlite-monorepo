@@ -35,7 +35,7 @@ const MOCK_VACANCY = {
   vacancy_number: 1,
   title: 'Caso 226-1 — Acompañante Terapéutico',
   status: 'SEARCHING',
-  lifecycle: 'aberta',
+  lifecycle: null,
   patient_status: 'SEARCHING',
   country: 'ARG',
   patient_first_name: 'Santiago',
@@ -497,7 +497,7 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     ).toBeVisible();
   });
 
-  test('A2 — VacancyCaseCard exibe o ciclo de vida "Abierta" e o estado do paciente "Búsqueda" (D3)', async ({
+  test('A2 — VacancyCaseCard exibe o estado do paciente "Búsqueda" e NENHUM selo/seletor de estado da vaga (semaforo-da-vaga F4)', async ({
     page,
   }) => {
     await loginAsAdmin(page);
@@ -509,7 +509,9 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     });
 
     const card = page.getByTestId('vacancy-case-card');
-    await expect(card.getByTestId('vacancy-status-editor-trigger')).toContainText('Abierta');
+    await expect(card.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
+    await expect(card.getByTestId('vacancy-lifecycle-badge')).toHaveCount(0);
+    await expect(card.getByText('Abierta', { exact: true })).toHaveCount(0);
     await expect(card.getByTestId('patient-status-pill')).toContainText('Búsqueda');
   });
 
@@ -524,9 +526,9 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       timeout: 15_000,
     });
 
-    // Triggers de edição (status + horarios) — o card de profissão não tem
-    // mais botão "Editar" próprio; era stub removido em refactor anterior.
-    await expect(page.getByTestId('vacancy-status-editor-trigger')).toBeVisible();
+    // Trigger de edição (horarios) — o card de profissão não tem mais botão "Editar"
+    // próprio; o seletor de estado saiu na F4 do semáforo.
+    await expect(page.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
     await expect(page.getByTestId('vacancy-edit-schedule-trigger')).toBeVisible();
 
     // Sexo requerido

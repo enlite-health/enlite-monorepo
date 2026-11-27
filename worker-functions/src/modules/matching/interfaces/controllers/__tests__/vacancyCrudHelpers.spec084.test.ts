@@ -3,38 +3,31 @@
  * e o número #NN vem da ordem do serviço (nunca MAX+1).
  */
 import { authorizeVacancyUpdate, buildInsertQuery, buildInsertParams } from '../vacancyCrudHelpers';
-import { isStatusGravavel } from '../../../domain/vacancyLifecycle';
+import { BAJA_REFUSAL_MESSAGES } from '../../../domain/VacancyBajaPolicy';
 
 const dbCom = (row: Record<string, unknown>) => ({ query: jest.fn(async () => ({ rows: [row] })) }) as never;
 const VAGA = { status: 'SEARCHING', is_draft: false, patient_id: 'p', contracted_service_id: null, service_active: null };
 
-describe('F5 — pausar com "En espera" (ON_HOLD)', () => {
-  it('o servidor aceita ON_HOLD (antes: 400 "Invalid status")', async () => {
-    expect(isStatusGravavel('ON_HOLD')).toBe(true);
-    expect(await authorizeVacancyUpdate(dbCom(VAGA), 'v', { status: 'ON_HOLD' })).toMatchObject({ kind: 'ok' });
-  });
-
-  it('encerrar (CLOSED) vaga de serviço ATIVO → 409 pelo SERVIDOR, com código e es/pt-BR (R4/P1)', async () => {
-    const out = await authorizeVacancyUpdate(
-      dbCom({ ...VAGA, contracted_service_id: 'svc-1', service_active: true }), 'v', { status: 'CLOSED' },
-    );
-    expect(out).toMatchObject({ kind: 'error', status: 409, code: 'CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED' });
-    const msg = (out as { messages: { es: string; 'pt-BR': string } }).messages;
-    expect(msg.es).toMatch(/Pausar/);
-    expect(msg['pt-BR']).toMatch(/Pausar/);
-  });
-
-  it('vaga de serviço ATIVO pode pausar e retomar (status operacional)', async () => {
+describe('F5 — o estado da vaga não se edita (semaforo-da-vaga F4): ON_HOLD/CLOSED/SEARCHING → 400 do servidor', () => {
+  it('ON_HOLD, CLOSED e SEARCHING no PUT → 400 VACANCY_STATUS_NOT_WRITABLE, mesmo em vaga de serviço ATIVO', async () => {
     const ativo = { ...VAGA, contracted_service_id: 'svc-1', service_active: true };
-    expect(await authorizeVacancyUpdate(dbCom(ativo), 'v', { status: 'ON_HOLD' })).toMatchObject({ kind: 'ok' });
-    expect(await authorizeVacancyUpdate(dbCom({ ...ativo, status: 'ON_HOLD' }), 'v', { status: 'SEARCHING' })).toMatchObject({ kind: 'ok' });
+    for (const status of ['ON_HOLD', 'CLOSED', 'SEARCHING']) {
+      expect(await authorizeVacancyUpdate(dbCom(VAGA), 'v', { status })).toMatchObject({ kind: 'error', status: 400, code: 'VACANCY_STATUS_NOT_WRITABLE' });
+      expect(await authorizeVacancyUpdate(dbCom(ativo), 'v', { status })).toMatchObject({ kind: 'error', status: 400, code: 'VACANCY_STATUS_NOT_WRITABLE' });
+    }
   });
 
-  it('vaga SEM serviço ainda encerra; vaga de serviço INATIVO também (alternativos da F5)', async () => {
-    expect(await authorizeVacancyUpdate(dbCom(VAGA), 'v', { status: 'CLOSED' })).toMatchObject({ kind: 'ok' });
-    expect(
-      await authorizeVacancyUpdate(dbCom({ ...VAGA, contracted_service_id: 'svc-1', service_active: false }), 'v', { status: 'CLOSED' }),
-    ).toMatchObject({ kind: 'ok' });
+  it('as mensagens de recusa (P8) apontam a ação do paciente ou o serviço, não mais "Pausar"', () => {
+    for (const code of ['VACANCY_HAS_SERVICE', 'CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED'] as const) {
+      expect(BAJA_REFUSAL_MESSAGES[code].es).toMatch(/pausá o suspendé al paciente, o desactivá el servicio/);
+      expect(BAJA_REFUSAL_MESSAGES[code]['pt-BR']).toMatch(/pause ou suspenda o paciente, ou desative o serviço/);
+      expect(BAJA_REFUSAL_MESSAGES[code].es).not.toMatch(/Pausar/);
+      expect(BAJA_REFUSAL_MESSAGES[code]['pt-BR']).not.toMatch(/Pausar/);
+    }
+  });
+
+  it('sem `status` no corpo a edição de horário segue (nada a recusar)', async () => {
+    expect(await authorizeVacancyUpdate(dbCom(VAGA), 'v', { schedule: [] })).toMatchObject({ kind: 'ok' });
   });
 });
 

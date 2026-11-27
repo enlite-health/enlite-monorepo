@@ -158,6 +158,13 @@ services:
       TALENTUM_API_BASE_URL: ${TALENTUM_API_BASE_URL:-http://host.docker.internal:9914}
       TALENTUM_API_EMAIL: ${TALENTUM_API_EMAIL:-stub-user-e2e-only}
       TALENTUM_API_PASSWORD: ${TALENTUM_API_PASSWORD:-stub-key-e2e-only}
+      # Short.io (semaforo-da-vaga F4) — mesmo precedente do Talentum acima: `SHORT_IO_BASE_URL` aponta para o STUB local (porta 9915, medida livre em
+      # 26/11: 9911 Periskope, 9912 Axonico, 9913 AnaCare, 9914 Talentum), nunca para api.short.io (default do cliente). Antes a chave vazia deixava
+      # `tryEnsureShortLink` em no-op mudo e nenhum e2e provava o link; agora o e2e que pede sobe o stub (`ShortIoStub`) e lê as chamadas. Sem o stub no
+      # ar, a chamada falha rápido (conexão recusada), `tryEnsureShortLink` reporta e segue: nunca sai para a rede real. Chave e domínio FALSOS.
+      SHORT_IO_BASE_URL: ${SHORT_IO_BASE_URL:-http://host.docker.internal:9915}
+      SHORT_IO_API_KEY: ${SHORT_IO_API_KEY:-stub-key-e2e-only}
+      SHORT_IO_DOMAIN: ${SHORT_IO_DOMAIN:-go.stub-e2e.local}
       # Roster de atendentes de admissão (change agenda-admissao-atendentes).
       #
       # LIGADO aqui, que é arquivo só de teste, pelo mesmo motivo do bloco

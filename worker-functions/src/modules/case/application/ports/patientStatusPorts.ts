@@ -6,6 +6,7 @@
 import type { EscopoDaCompletude, PatientCompletenessCode } from '../../domain/PatientCompleteness';
 import type { EntradaDerivacao } from '../../domain/derivarEstadoPaciente';
 import type { PatientStatus } from '../../domain/enums/PatientStatus';
+import type { AcaoTalentum } from '../../domain/talentumPausaDoPaciente';
 import type { RecruitmentContext } from '../recruitmentReadinessContext';
 import type { AuditActorType } from '@shared/audit/types';
 
@@ -30,10 +31,21 @@ export interface LiveAllocationPort {
   countLive(tx: StatusTx, patientId: string): Promise<number>;
 }
 
+/**
+ * P6 (semaforo-da-vaga F4): marca `talentum_pause_state` = PENDING_PAUSE / PENDING_RESUME nas vagas publicadas do paciente, DENTRO
+ * da transação do escritor, e devolve os ids marcados. O envio ao Talentum é depois do COMMIT, de quem chama o escritor.
+ */
+export interface TalentumPauseMarkerPort {
+  mark(tx: StatusTx, patientId: string, acao: AcaoTalentum): Promise<string[]>;
+  /** I1: a vaga recém-lançada (publish) cujo paciente JÁ está pausado nasce PENDING_PAUSE, na transação do publish. Devolve o id marcado (ou `[]`). */
+  markVacancyIfPatientPaused(tx: StatusTx, vacancyId: string): Promise<string[]>;
+}
+
 export interface PatientStatusPorts {
   transaction: TransactionRunnerPort;
   completeness: CompletenessReaderPort;
   allocation: LiveAllocationPort;
+  talentum: TalentumPauseMarkerPort;
 }
 
 // ── foguete (ActivateRecruitmentUseCase) ─────────────────────────────────────

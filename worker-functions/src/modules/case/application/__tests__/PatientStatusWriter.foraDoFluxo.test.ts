@@ -98,7 +98,7 @@ describe('T0 — PATIENT_STATUS_NOT_MANUAL: quem pode pedir cada destino vem da 
     banco('ADMISSION');
     await expect(movePatientStatus(PID, 'ACTIVE', { changeSource: 'recruitment_activation' })).rejects.toBeInstanceOf(PatientStatusNotManualError);
     await expect(movePatientStatus(PID, 'REPLACEMENT', { changeSource: 'recruitment_activation' })).rejects.toBeInstanceOf(PatientStatusNotManualError);
-    await expect(movePatientStatus(PID, 'SEARCHING', { changeSource: 'recruitment_activation' })).resolves.toEqual({ id: PID, status: 'SEARCHING' });
+    await expect(movePatientStatus(PID, 'SEARCHING', { changeSource: 'recruitment_activation' })).resolves.toMatchObject({ id: PID, status: 'SEARCHING' });
   });
 });
 
@@ -144,10 +144,10 @@ describe('T1 — matriz A1: 42 pares × {com a célula do destino, cells=[], cel
       expect(mockClient.query).not.toHaveBeenCalled();
     } else if (dentro) {
       // Na FSM: passa da guarda nas 3 colunas e grava a origem normal.
-      await expect(mover()).resolves.toEqual({ id: PID, status: para });
+      await expect(mover()).resolves.toMatchObject({ id: PID, status: para });
       expect(changeSourceGravado()).toBe('admin_panel');
     } else if (coluna === 'com_celula') {
-      await expect(mover()).resolves.toEqual({ id: PID, status: para });
+      await expect(mover()).resolves.toMatchObject({ id: PID, status: para });
       expect(changeSourceGravado()).toBe('admin_panel_override');
     } else if (coluna === 'celulas_vazias') {
       await expect(mover()).rejects.toMatchObject({
@@ -164,7 +164,7 @@ describe('T1 — matriz A1: 42 pares × {com a célula do destino, cells=[], cel
     banco('ON_HOLD');
     expect(naFsm('ON_HOLD', 'SUSPENDED')).toBe(false);
     await expect(movePatientStatus(PID, 'SUSPENDED', base({ cells: ['patient:update', CELULA_DO_DESTINO.SUSPENDED] })))
-      .resolves.toEqual({ id: PID, status: 'SUSPENDED' });
+      .resolves.toMatchObject({ id: PID, status: 'SUSPENDED' });
     jest.clearAllMocks(); banco('ON_HOLD');
     await expect(movePatientStatus(PID, 'SUSPENDED', base({ cells: ['patient:update'] }))).rejects.toBeInstanceOf(PatientStatusPermissionError);
   });
@@ -293,7 +293,7 @@ describe('T5 — retomar (resume) para SEARCHING pelo par NA FSM cobra só o que
   it('ON_HOLD → SEARCHING com paciente SEM serviço ativo passa, como hoje (e grava resume)', async () => {
     banco('ON_HOLD', { active_service_count: '0', services_without_address_count: '0' });
     expect(naFsm('ON_HOLD', 'SEARCHING')).toBe(true);
-    await expect(movePatientStatus(PID, 'SEARCHING', resume())).resolves.toEqual({ id: PID, status: 'SEARCHING' });
+    await expect(movePatientStatus(PID, 'SEARCHING', resume())).resolves.toMatchObject({ id: PID, status: 'SEARCHING' });
     expect(changeSourceGravado()).toBe('resume');
   });
 

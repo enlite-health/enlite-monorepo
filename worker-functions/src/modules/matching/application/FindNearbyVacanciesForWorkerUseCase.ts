@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { vagaPublicavelSql } from '../domain/vacancyPublication';
 import {
   vacancyEffectiveJoinSql,
   vacancyEffectiveRequiredProfessionsSql,
@@ -27,17 +28,10 @@ export interface FindNearbyVacanciesResult {
   vacancies: NearbyVacancy[];
 }
 
-const ACTIVE_STATUSES = [
-  'SEARCHING',
-  'ACTIVE',
-  'SEARCHING_REPLACEMENT',
-  'RAPID_RESPONSE',
-  'PENDING_ACTIVATION',
-];
 const DEFAULT_RADIUS_KM = 30;
 
 /**
- * Quase-match (F1, nível 2): vagas ativas que o worker QUASE cobre — batem em
+ * Quase-match (F1, nível 2): vagas publicáveis (dono: `vacancyPublication.ts`; a Luz oferece o que o feed oferece) que o worker QUASE cobre — batem em
  * profissão e zona, ele NÃO está aplicado, e faltam 0 < N ≤ maxMissingDays dias da
  * disponibilidade dele. A Luz mostra isso como "oportunidades cerca de tus días" e
  * pode oferecer adaptar a disponibilidade. De-identificado (sem paciente, sem monto).
@@ -80,10 +74,10 @@ export class FindNearbyVacanciesForWorkerUseCase {
                 ) AS missing_days
          FROM job_postings jp
          ${vacancyEffectiveJoinSql('jp')}
+         LEFT JOIN patients p ON p.id = jp.patient_id
          CROSS JOIN w
-         WHERE jp.deleted_at IS NULL
+         WHERE ${vagaPublicavelSql('jp', 'p')}
            AND jp.is_covered = false
-           AND jp.status = ANY($2::text[])
            AND w.occupation = ANY(${vacancyEffectiveRequiredProfessionsSql('jp')})
            AND NOT EXISTS (
              SELECT 1 FROM worker_job_applications wja
@@ -96,15 +90,15 @@ export class FindNearbyVacanciesForWorkerUseCase {
                   cos(radians(w.latitude)) * cos(radians(jp.service_lat))
                     * cos(radians(jp.service_lng) - radians(w.longitude))
                   + sin(radians(w.latitude)) * sin(radians(jp.service_lat))
-                ))) <= $3
+                ))) <= $2
            )
        )
        SELECT missing.id, missing.case_number, missing.patient_zone, missing.timezone, missing.schedule, missing.missing_days
        FROM missing
-       WHERE cardinality(missing_days) BETWEEN 1 AND $4
+       WHERE cardinality(missing_days) BETWEEN 1 AND $3
        ORDER BY cardinality(missing_days) ASC, case_number DESC
-       LIMIT $5`,
-      [workerId, ACTIVE_STATUSES, radiusKm, maxMissingDays, limit],
+       LIMIT $4`,
+      [workerId, radiusKm, maxMissingDays, limit],
     );
 
     const vacancies: NearbyVacancy[] = rows.map((r) => ({

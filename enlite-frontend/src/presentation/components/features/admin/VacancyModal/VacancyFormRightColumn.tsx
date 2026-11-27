@@ -26,13 +26,11 @@ import { MapPin } from 'lucide-react';
 import type { PatientAddressRow } from '@domain/entities/PatientAddress';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { FormField } from '@presentation/components/molecules/FormField/FormField';
-import { Combobox } from '@presentation/components/atoms/Combobox';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon/InputWithIcon';
 import { ServiceAreaMap } from '@presentation/components/molecules/ServiceAreaMap';
 import { VacancyDaySchedulePicker } from './VacancyDaySchedulePicker';
 import { LockedFieldBadgeLink } from './LockedFieldBadgeLink';
 import type { VacancyFormData } from '../vacancy-form-schema';
-import { STATUS_OPTIONS } from '../vacancy-form-schema';
 import { weeklyHoursOf } from '@domain/scheduleHours';
 import { scheduleValueToShifts } from '../vacancyScheduleUtils';
 import { READONLY_CLS } from './vacancyFormShared';
@@ -103,29 +101,6 @@ export function VacancyFormRightColumn({
       {/* Spec 014 (US-D6): título de seção — os 22 campos do formulário (11+11 nas duas
           colunas) agrupados visualmente, em vez de uma lista plana sem hierarquia. */}
       <Heading level={4} weight="semibold" color="secondary">{tp('sectionStatusAndLocation')}</Heading>
-
-      {/* 1. Status */}
-      <div className={patientDis}>
-        <FormField label={tp('status')}>
-          <Controller
-            name="status"
-            control={control}
-            render={({ field }) => (
-              <Combobox
-                value={field.value ?? ''}
-                onChange={(v) => field.onChange(v)}
-                options={STATUS_OPTIONS.map((o) => ({
-                  value: o,
-                  label: tf(`statusOptions.${o}`),
-                }))}
-                placeholder={tp('statusPlaceholder')}
-                clearLabel={tp('statusPlaceholder')}
-                data-testid="status-select"
-              />
-            )}
-          />
-        </FormField>
-      </div>
 
       {/* 2. Service type — read-only from patient.serviceType (ClickUp "Servicio").
           Profession[] is joined+translated to the Spanish ClickUp label

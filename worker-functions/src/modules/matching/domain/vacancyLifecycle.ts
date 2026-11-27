@@ -1,9 +1,9 @@
 /**
- * vacancyLifecycle — o DONO do ciclo de vida da vaga (estado-automatico-do-paciente, F2, D3/E5).
+ * vacancyLifecycle — o DONO do selo da vaga (semaforo-da-vaga F4; antes: estado-automatico-do-paciente, F2).
  *
- * A vaga não tem "estado do paciente": ela mostra `patients.status` por join na hora. O que ela TEM é um
- * ciclo de vida de 5 valores — `rascunho`, `aberta`, `pausada`, `cerrada`, `baja` — calculado aqui, por UMA
- * tabela, e nunca por lista solta em outro arquivo. A versão SQL (`cicloDeVidaSql`) é GERADA da mesma tabela.
+ * Ninguém escolhe estado para a vaga: "no ar" é `vacancyPublication.ts`. O que sobra aqui é o MARCADOR de publicação,
+ * 2 valores — `rascunho` (`is_draft`) e `baja` (`DE_BAJA`) — e `null` para o resto (sem selo; D6: o legado pausado ou
+ * fechado fica sem selo e fora do ar). Calculado por UMA tabela; a versão SQL (`cicloDeVidaSql`) é GERADA dela.
  *
  * Valor novo no CHECK de `job_postings.status` sem linha na tabela = erro de compilação (Record exaustivo) e
  * teste vermelho (`vacancyLifecycle.test.ts` lê o CHECK da migration 483). Zero `if` neste arquivo.
@@ -16,52 +16,36 @@ export const VACANCY_STATUS_VALUES = [
 ] as const;
 export type VacancyStatusValue = (typeof VACANCY_STATUS_VALUES)[number];
 
-export const CICLOS_DE_VIDA = ['rascunho', 'aberta', 'pausada', 'cerrada', 'baja'] as const;
+export const CICLOS_DE_VIDA = ['rascunho', 'baja'] as const;
 export type CicloDeVida = (typeof CICLOS_DE_VIDA)[number];
 
-/** Ciclo de cada valor do CHECK. O valor legado (`SEARCHING_REPLACEMENT`, `RAPID_RESPONSE`, `ACTIVE`, `PENDING_ACTIVATION`) é lido como `aberta`. */
-export const CICLO_POR_STATUS: Readonly<Record<VacancyStatusValue, Exclude<CicloDeVida, 'rascunho'>>> = {
-  SEARCHING: 'aberta',
-  SEARCHING_REPLACEMENT: 'aberta',
-  RAPID_RESPONSE: 'aberta',
-  ACTIVE: 'aberta',
-  PENDING_ACTIVATION: 'aberta',
-  ON_HOLD: 'pausada',
-  SUSPENDED: 'pausada',
-  CLOSED: 'cerrada',
+/** O marcador de cada valor do CHECK; `null` = sem selo. Só `DE_BAJA` tem selo próprio; `rascunho` vem de `is_draft`. */
+export const CICLO_POR_STATUS: Readonly<Record<VacancyStatusValue, Exclude<CicloDeVida, 'rascunho'> | null>> = {
+  SEARCHING: null,
+  SEARCHING_REPLACEMENT: null,
+  RAPID_RESPONSE: null,
+  ACTIVE: null,
+  PENDING_ACTIVATION: null,
+  ON_HOLD: null,
+  SUSPENDED: null,
+  CLOSED: null,
   DE_BAJA: 'baja',
 };
 
 /** `is_draft` manda; senão a tabela. Ternário único, sem `if`. */
-export const cicloDeVidaDaVaga = (v: { status: VacancyStatusValue; isDraft: boolean }): CicloDeVida =>
+export const cicloDeVidaDaVaga = (v: { status: VacancyStatusValue; isDraft: boolean }): CicloDeVida | null =>
   (v.isDraft ? 'rascunho' : CICLO_POR_STATUS[v.status]);
 
 /**
- * O que o CLIENTE (editor da vaga, wizard) pode gravar em `job_postings.status` (E5): só o ciclo de vida.
+ * O que o CLIENTE pode gravar em `job_postings.status`: NADA. `POST`/`PUT` com `status` dão 400 `VACANCY_STATUS_NOT_WRITABLE`.
  * Escritores de sistema (default de criação `PENDING_ACTIVATION`, baja por serviço, corte legado) não passam por aqui.
+ * O contrato `vacancyWritableStatuses` iguala esta lista à do front.
  */
-export const STATUS_GRAVAVEIS = ['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED'] as const;
-export type StatusGravavel = (typeof STATUS_GRAVAVEIS)[number];
-
-export const isStatusGravavel = (s: unknown): s is StatusGravavel =>
-  (STATUS_GRAVAVEIS as readonly unknown[]).includes(s);
-
-/** E8 — "Reanudar": o valor de ESCRITA do ciclo de vida do status de antes da pausa (legado vira `SEARCHING`). */
-export const STATUS_DE_RETOMADA_POR_CICLO: Readonly<Record<CicloDeVida, StatusGravavel>> = {
-  rascunho: 'SEARCHING',
-  aberta: 'SEARCHING',
-  pausada: 'SEARCHING',
-  cerrada: 'CLOSED',
-  baja: 'SEARCHING',
-};
-
-/** Sem registro de pausa (ou valor fora da tabela) → `aberta` → `SEARCHING`. `??` não é `if`. */
-export const statusDeRetomada = (statusBeforeHold: string | null | undefined): StatusGravavel =>
-  STATUS_DE_RETOMADA_POR_CICLO[CICLO_POR_STATUS[statusBeforeHold as VacancyStatusValue] ?? 'aberta'];
+export const STATUS_GRAVAVEIS = [] as const;
 
 /**
- * Versão SQL do mesmo ciclo, GERADA da tabela (molde `patientIncompleteAdmissionSql`). `alias` = alias de `job_postings`.
- * Rascunho primeiro; um `WHEN … IN (…)` por ciclo; valor fora da tabela fica NULL (nunca "desconhecido" silencioso).
+ * Versão SQL do mesmo marcador, GERADA da tabela (molde `patientIncompleteAdmissionSql`). `alias` = alias de `job_postings`.
+ * Rascunho primeiro; um `WHEN … IN (…)` por marcador com valores; o resto fica NULL (sem selo).
  */
 export function cicloDeVidaSql(alias = 'jp'): string {
   const porCiclo = CICLOS_DE_VIDA.filter((c) => c !== 'rascunho').map((ciclo) => {

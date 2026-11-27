@@ -13,6 +13,7 @@ import {
   GeminiApiError,
 } from '@modules/integration';
 import { loggingAls, reportError } from '@shared/logging';
+import { buildVacancyPublishedPort } from './vacancyPublishedPortAdapter';
 import {
   JobPostingAuditRepository,
 } from '../../infrastructure/JobPostingAuditRepository';
@@ -82,7 +83,7 @@ export class VacancyTalentumController {
         return;
       }
       const actor = this.extractActor(req);
-      const useCase = new PublishVacancyToTalentumUseCase();
+      const useCase = new PublishVacancyToTalentumUseCase(buildVacancyPublishedPort(this.db));
       const result = await useCase.publish({ jobPostingId: id }, actor);
       res.status(200).json({ success: true, data: result });
     } catch (error: unknown) {

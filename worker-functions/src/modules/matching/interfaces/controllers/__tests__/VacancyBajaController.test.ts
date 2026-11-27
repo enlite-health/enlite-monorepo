@@ -55,8 +55,8 @@ describe('VacancyBajaController', () => {
     expect(res.status).toHaveBeenCalledWith(409);
     const body = (res.json as jest.Mock).mock.calls[0][0];
     expect(body.code).toBe('BAJA_REFUSED');
-    expect(body.refused[0].messages.es).toMatch(/Pausar/);
-    expect(body.refused[0].messages['pt-BR']).toMatch(/Pausar/);
+    expect(body.refused[0].messages.es).toMatch(/pausá o suspendé al paciente/);
+    expect(body.refused[0].messages['pt-BR']).toMatch(/pause ou suspenda o paciente/);
     expect(body.refused[1].messages.es).toMatch(/no encontrada/);
     expect(side.pause).not.toHaveBeenCalled();
   });

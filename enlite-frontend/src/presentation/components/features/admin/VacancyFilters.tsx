@@ -11,6 +11,8 @@ export interface VacancyAdvancedFilters {
   city: string;
   requiredSex: string;
   days: string[];
+  /** semaforo-da-vaga F3: cores escolhidas (`red`/`yellow`/`green`); vazio = todas. O servidor filtra (`?semaphore=`). */
+  semaphore: string[];
   timeFrom: string;
   timeTo: string;
 }
@@ -18,14 +20,12 @@ export interface VacancyAdvancedFilters {
 interface VacancyFiltersProps {
   searchQuery: string;
   onSearchChange: (value: string) => void;
-  /** E7: ciclo de vida da vaga (os 5 valores do dono). */
-  selectedLifecycle: string;
-  onLifecycleChange: (value: string) => void;
-  lifecycleOptions: ComboboxOption[];
   /** E7: estado do paciente (`p.status`) — o filtro só existe para quem lê o container `patient` (sem a célula o servidor recusa, 403). */
   selectedPatientStatus: string;
   onPatientStatusChange: (value: string) => void;
   patientStatusOptions: ComboboxOption[];
+  /** As 3 cores do semáforo (`getSemaphoreOptions`); o rótulo vem do i18n, a cor do contrato. */
+  semaphoreOptions: ComboboxOption[];
   // advanced filters
   advancedFilters: VacancyAdvancedFilters;
   onAdvancedChange: (updates: Partial<VacancyAdvancedFilters>) => void;
@@ -36,12 +36,10 @@ interface VacancyFiltersProps {
 export function VacancyFilters({
   searchQuery,
   onSearchChange,
-  selectedLifecycle,
-  onLifecycleChange,
-  lifecycleOptions,
   selectedPatientStatus,
   onPatientStatusChange,
   patientStatusOptions,
+  semaphoreOptions,
   advancedFilters,
   onAdvancedChange,
   stateOptions,
@@ -76,19 +74,18 @@ export function VacancyFilters({
 
   const hasAnyFilter =
     searchQuery !== '' ||
-    selectedLifecycle !== '' ||
     selectedPatientStatus !== '' ||
     advancedFilters.workerType !== '' ||
     advancedFilters.state !== '' ||
     advancedFilters.city !== '' ||
     advancedFilters.requiredSex !== '' ||
     advancedFilters.days.length > 0 ||
+    advancedFilters.semaphore.length > 0 ||
     advancedFilters.timeFrom !== '' ||
     advancedFilters.timeTo !== '';
 
   const handleClearAll = () => {
     onSearchChange('');
-    onLifecycleChange('');
     onPatientStatusChange('');
     onAdvancedChange({
       workerType: '',
@@ -96,6 +93,7 @@ export function VacancyFilters({
       city: '',
       requiredSex: '',
       days: [],
+      semaphore: [],
       timeFrom: '',
       timeTo: '',
     });
@@ -114,18 +112,6 @@ export function VacancyFilters({
           className="w-full sm:w-[400px]"
         />
         <div className="flex items-end gap-4 flex-wrap ml-auto">
-          <div className="w-full sm:w-[200px]" data-testid="vacancy-filter-lifecycle">
-            <Text size="sm" weight="semibold" color="secondary" className="mb-1">
-              {t('admin.vacancies.filters.lifecycle.label')}
-            </Text>
-            <Combobox
-              inputSize="compact"
-              options={lifecycleOptions}
-              value={selectedLifecycle}
-              onChange={onLifecycleChange}
-              placeholder={t('admin.vacancies.filters.allOption')}
-            />
-          </div>
           {podeFiltrarPorEstadoDoPaciente && (
             <div className="w-full sm:w-[200px]" data-testid="vacancy-filter-patient-status">
               <Text size="sm" weight="semibold" color="secondary" className="mb-1">
@@ -215,6 +201,21 @@ export function VacancyFilters({
             onChange={(v) => onAdvancedChange({ days: v })}
             placeholder={t('admin.vacancies.filters.allOption')}
             inputSize="compact"
+          />
+        </div>
+
+        <div className="w-full sm:w-[220px]">
+          <Text size="sm" weight="semibold" color="secondary" className="mb-1">
+            {t('admin.semaphore.filterLabel')}
+          </Text>
+          <Combobox
+            multiple
+            options={semaphoreOptions}
+            value={advancedFilters.semaphore}
+            onChange={(v) => onAdvancedChange({ semaphore: v })}
+            placeholder={t('admin.vacancies.filters.allOption')}
+            inputSize="compact"
+            data-testid="vacancy-filter-semaphore"
           />
         </div>
 

@@ -40,8 +40,8 @@ export type VacancyGuardCode =
 
 export const BAJA_REFUSAL_MESSAGES: Record<VacancyGuardCode, { es: string; 'pt-BR': string }> = {
   VACANCY_HAS_SERVICE: {
-    es: 'Una vacante de un servicio contratado no se da de baja a mano: usá "Pausar" (En espera).',
-    'pt-BR': 'Vaga de serviço contratado não recebe baixa manual: use "Pausar" (Em espera).',
+    es: 'Una vacante de un servicio contratado no se da de baja a mano: pausá o suspendé al paciente, o desactivá el servicio.',
+    'pt-BR': 'Vaga de serviço contratado não recebe baixa manual: pause ou suspenda o paciente, ou desative o serviço.',
   },
   VACANCY_ALREADY_DE_BAJA: {
     es: 'La vacante ya está dada de baja.',
@@ -60,8 +60,8 @@ export const BAJA_REFUSAL_MESSAGES: Record<VacancyGuardCode, { es: string; 'pt-B
     'pt-BR': 'Vaga dada de baixa nunca é apagada: fica guardada para consulta.',
   },
   CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED: {
-    es: 'Una vacante de un servicio activo no se cierra: usá "Pausar" (En espera).',
-    'pt-BR': 'Vaga de serviço ativo não é encerrada: use "Pausar" (Em espera).',
+    es: 'Una vacante de un servicio activo no se cierra: pausá o suspendé al paciente, o desactivá el servicio.',
+    'pt-BR': 'Vaga de serviço ativo não é encerrada: pause ou suspenda o paciente, ou desative o serviço.',
   },
 };
 

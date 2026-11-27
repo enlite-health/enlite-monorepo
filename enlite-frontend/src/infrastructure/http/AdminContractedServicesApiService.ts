@@ -12,6 +12,7 @@ import type {
   UpdateContractedServiceBody,
 } from '@domain/entities/PatientContractedService';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientLifecycle';
+import type { SemaphoreColor } from '@domain/value-objects/vacancySemaphore';
 import type {
   ItineraryAbsenceResult,
   ItineraryRemoveResult,
@@ -363,7 +364,7 @@ export interface ActivateRecruitmentResult {
 
 /** Result of GET /api/admin/patients/kanban/services (fase 8, DX-8.1/8.5). */
 export interface KanbanServicesResult {
-  patients: Array<{ patientId: string; asOf: string; services: PatientKanbanServiceSummary[] }>;
+  patients: Array<{ patientId: string; asOf: string; worstSemaphore?: SemaphoreColor | null; services: PatientKanbanServiceSummary[] }>;
 }
 
 /** Result of GET .../contracted-services/:sid/allocation-options (Fase 11/12). */

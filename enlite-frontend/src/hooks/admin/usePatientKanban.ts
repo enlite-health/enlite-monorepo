@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { AdminContractedServicesApiService, ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
 import type { PatientKanbanItem, PatientKanbanServiceSummary } from '@domain/entities/PatientDetail';
+import type { SemaphoreColor } from '@domain/value-objects/vacancySemaphore';
 import { ADMISSION_FUNNEL_STATUSES } from '@domain/entities/patientEnums';
 
 /**
@@ -86,19 +87,23 @@ export function usePatientKanban(country?: string) {
       if (list.status === 'rejected') throw list.reason;
 
       let status: 'ok' | 'forbidden' | 'error';
-      const servicesByPatient = new Map<string, PatientKanbanServiceSummary[]>();
+      const servicesByPatient = new Map<string, { services: PatientKanbanServiceSummary[]; worstSemaphore: SemaphoreColor | null }>();
       if (agg.status === 'fulfilled') {
         status = 'ok';
-        for (const p of agg.value.patients) servicesByPatient.set(p.patientId, p.services);
+        for (const p of agg.value.patients) servicesByPatient.set(p.patientId, { services: p.services, worstSemaphore: p.worstSemaphore ?? null });
       } else {
         status = agg.reason instanceof ContractedServiceApiError && agg.reason.status === 403 ? 'forbidden' : 'error';
       }
       setServicesStatus(status);
 
-      const items = list.value.map((item) => ({
-        ...item,
-        services: status === 'ok' ? (servicesByPatient.get(item.id) ?? []) : undefined,
-      }));
+      const items = list.value.map((item) => {
+        const agg = servicesByPatient.get(item.id);
+        return {
+          ...item,
+          services: status === 'ok' ? (agg?.services ?? []) : undefined,
+          worstSemaphore: status === 'ok' ? (agg?.worstSemaphore ?? null) : undefined,
+        };
+      });
       setGroups(groupByStatus(items));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load patients');
