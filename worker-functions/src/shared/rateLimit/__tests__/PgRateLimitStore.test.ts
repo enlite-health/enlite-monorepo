@@ -1,6 +1,9 @@
 import { createHash } from 'crypto';
 import type { Options } from 'express-rate-limit';
-import { PgRateLimitStore } from '../PgRateLimitStore';
+import { PgRateLimitStore, createPgRateLimitStore } from '../PgRateLimitStore';
+import { DatabaseConnection } from '../../database/DatabaseConnection';
+
+jest.mock('../../database/DatabaseConnection', () => ({ DatabaseConnection: { getInstance: jest.fn() } }));
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const UID = 'uid-teste-001';
@@ -54,5 +57,17 @@ describe('PgRateLimitStore', () => {
     await new PgRateLimitStore(a.pool, 'a').increment('k');
     await new PgRateLimitStore(b.pool, 'b').increment('k');
     expect(a.query.mock.calls[0][1][0]).not.toBe(b.query.mock.calls[0][1][0]);
+  });
+
+  it('createPgRateLimitStore NÃO resolve o pool na criação; resolve na 1ª consulta', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [{ hits: 1, reset_at: new Date() }] });
+    const getPool = jest.fn().mockReturnValue({ query });
+    const getInstance = (DatabaseConnection.getInstance as jest.Mock).mockReturnValue({ getPool });
+    const store = createPgRateLimitStore('x');
+    expect(getInstance).not.toHaveBeenCalled();
+    expect(getPool).not.toHaveBeenCalled();
+    await store.increment('k');
+    expect(getPool).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(1);
   });
 });

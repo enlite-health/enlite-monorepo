@@ -47,5 +47,10 @@ export class PgRateLimitStore implements Store {
 }
 
 export function createPgRateLimitStore(prefix: string): PgRateLimitStore {
-  return new PgRateLimitStore(DatabaseConnection.getInstance().getPool(), prefix);
+  // Pool resolvido na consulta, não na criação: as rotas criam o store no carregamento do módulo (sem DB configurado em teste).
+  const lazyPool: Pick<Pool, 'query'> = {
+    query: ((...args: unknown[]) =>
+      (DatabaseConnection.getInstance().getPool().query as (...a: unknown[]) => unknown)(...args)) as Pool['query'],
+  };
+  return new PgRateLimitStore(lazyPool, prefix);
 }
