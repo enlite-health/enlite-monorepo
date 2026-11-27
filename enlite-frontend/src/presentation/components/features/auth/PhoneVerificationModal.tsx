@@ -37,6 +37,7 @@ const ERROR_KEY_MAP: Record<string, string> = {
   OTP_ALREADY_USED: 'phoneVerification.modal.errorUsed',
   RATE_LIMITED: 'phoneVerification.modal.errorRateLimited',
   OTP_CHANNEL_UNAVAILABLE: 'phoneVerification.modal.errorChannel',
+  PHONE_COUNTRY_NOT_SUPPORTED: 'phoneVerification.modal.errorCountryNotSupported',
 };
 
 const GENERIC_ERROR_KEY = 'phoneVerification.modal.errorGeneric';
