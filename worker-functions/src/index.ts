@@ -48,6 +48,10 @@ import {
   createTherapeuticContactRemindersInternalRoutes,
   ItineraryDailyInternalController,
   createItineraryDailyInternalRoutes,
+  PresenceAlertsInternalController,
+  PresenceReviewController,
+  createAdminPresenceReviewRoutes,
+  createPresenceAlertsInternalRoutes,
   createAdminPatientsRoutes,
   createAdminInsuranceRoutes,
   AdminInsuranceProviderContactsController,
@@ -821,6 +825,9 @@ app.use(
 // ========== Admin informes da guarda (spec 092) — leitura, com redação do texto por célula ==========
 app.use('/api/admin', createAdminDailyReportRoutes(buildAdminDailyReportController(), authMiddleware, permissionMiddleware));
 
+// ========== Fila de revisão de presença da coordenação (emenda 077 §6) — célula presence_exception:review ==========
+app.use('/api/admin', createAdminPresenceReviewRoutes(new PresenceReviewController(), authMiddleware, permissionMiddleware));
+
 // ========== Quadro C — time do serviço contratado (cadeia Fase 10) ==========
 app.use('/api/admin', createAdminServiceTeamRoutes(new AdminServiceTeamController(), authMiddleware, permissionMiddleware));
 app.use('/api/admin', createAdminServiceTeamContactRoutes(new AdminServiceTeamContactController(), authMiddleware, permissionMiddleware));
@@ -968,6 +975,14 @@ app.use(
   systemContextMiddleware('job:itinerary-daily'),
   internalAuthMiddleware,
   createItineraryDailyInternalRoutes(new ItineraryDailyInternalController()),
+);
+
+// emenda 077 §5 (F6): alerta de presença à coordenação (turno sem saída 4 h depois do fim; entrada recusada sem entrada aceita). Cloud Scheduler a cada 15 min.
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:presence-alerts'),
+  internalAuthMiddleware,
+  createPresenceAlertsInternalRoutes(new PresenceAlertsInternalController()),
 );
 
 // spec 095 T-095-31: processador da inbox do Talentum (push do Pub/Sub, só com o inboxId) + redrive manual. Mesmo guard dos jobs internos.
