@@ -157,7 +157,7 @@ export async function limpar(): Promise<void> {
   await p.query('DELETE FROM otp_send_events');
   await p.query('DELETE FROM rate_limit_counters');
   await p.query('DELETE FROM otp_challenges');
-  await p.query(`DELETE FROM workers WHERE auth_uid LIKE 'uid-teste-%' OR auth_uid LIKE 'import_uid-teste-%'`);
+  await p.query(`DELETE FROM workers WHERE auth_uid LIKE 'uid-teste-%' OR auth_uid LIKE 'candidatoimport_uid-teste-%'`);
   twilioDuble.lastCode = '';
   twilioDuble.lastTo = '';
   twilioDuble.messagesCalls = 0;
