@@ -56,7 +56,6 @@ export const managementDashboardSchema = z.object({
     /** status IN (SEARCHING, SEARCHING_REPLACEMENT, RAPID_RESPONSE, PENDING_ACTIVATION). */
     vacantesAbiertas: nonNegInt,
     /** job_postings.status = 'SUSPENDED'. */
-    vacantesPausadas: nonNegInt,
   }),
   /**
    * Classificação honesta da "Equipe Armada" (nunca um 0 falso). armados/porArmar

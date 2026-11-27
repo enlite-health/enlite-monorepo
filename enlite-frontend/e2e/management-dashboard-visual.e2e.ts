@@ -46,7 +46,6 @@ const MOCK_DASHBOARD = {
     equiposPorArmar: 148,
     pacientesActivos: 193,
     vacantesAbiertas: 152,
-    vacantesPausadas: 15,
   },
   equipoArmada: {
     armados: 12,

@@ -13,6 +13,7 @@
  *   9. Params array length matches placeholder count
  */
 
+import { vagaPublicavelSql } from '../../domain/vacancyPublication';
 import { vacancyEffectiveRequiredProfessionsSql, vacancyEffectiveRequiredSexSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 import { buildPublicJobsWhere } from '../PublicJobsQueryBuilder';
 
@@ -27,11 +28,19 @@ describe('buildPublicJobsWhere', () => {
   it('includes fixed base conditions regardless of filters', () => {
     const { whereClause } = buildPublicJobsWhere({ country: 'AR' });
 
-    expect(whereClause).toContain("jp.status IN ('ACTIVE','SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')");
+    // F4 (semaforo-da-vaga): o feed lê a regra de "publicável" do dono — nada de allowlist de status própria.
+    expect(whereClause).toContain(vagaPublicavelSql('jp', 'p'));
+    expect(whereClause).toContain("jp.status NOT IN ('DE_BAJA', 'CLOSED', 'ON_HOLD', 'SUSPENDED')");
+    expect(whereClause).not.toContain('SEARCHING');
     expect(whereClause).toContain('jp.deleted_at IS NULL');
     expect(whereClause).toContain('jp.is_draft = false');
     expect(whereClause).toContain("jp.social_short_links ? 'site'");
     expect(whereClause).toContain('jp.is_test = false');
+  });
+
+  it('P6: paciente pausado/suspenso/de alta/de baja tira a vaga do feed (regra do dono, lida por join em `p`)', () => {
+    const { whereClause } = buildPublicJobsWhere({ country: 'AR' });
+    expect(whereClause).toContain("COALESCE(p.status, '') NOT IN ('ON_HOLD', 'SUSPENDED', 'ALTA', 'DISCHARGED')");
   });
 
   it('hides is_test (QA/monitor) vacancies from the public feed — non-negotiable guard', () => {
@@ -130,14 +139,14 @@ describe('buildPublicJobsWhere', () => {
 
   // Cinto de segurança (change baja-vacante-por-servico): vaga não vaza no feed se o serviço
   // ligado estiver inativo, mesmo que `jp.status` não tenha sido atualizado a tempo — não
-  // depende só de DE_BAJA estar fora de ACTIVE_STATUSES (allow-list, já cobre o caso normal).
+  // depende só de DE_BAJA estar fora do que o dono de publicável permite (já cobre o caso normal).
   it('exclui por EXISTS quando o serviço contratado ligado está inativo (cinto de segurança, independente de status)', () => {
     const { whereClause } = buildPublicJobsWhere({ country: 'AR' });
 
     expect(whereClause).toContain('NOT EXISTS');
-    expect(whereClause).toContain('FROM patient_contracted_services pcs');
-    expect(whereClause).toContain('pcs.id = jp.contracted_service_id');
-    expect(whereClause).toContain('pcs.active = false');
+    expect(whereClause).toContain('FROM patient_contracted_services pcs_pub');
+    expect(whereClause).toContain('pcs_pub.id = jp.contracted_service_id');
+    expect(whereClause).toContain('pcs_pub.active = false');
   });
 
   // A EXISTS não usa placeholder — não pode empurrar a numeração dos filtros opcionais.

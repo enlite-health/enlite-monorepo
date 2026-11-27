@@ -12,11 +12,14 @@ import { withActorContext } from '@shared/database/actorContext';
 import { loadPatientCompleteness } from './PatientCompletenessLoader';
 import { countVivasForPatient } from './VacancyAllocationProbe';
 import type { EscopoDaCompletude } from '../domain/PatientCompleteness';
+import type { AcaoTalentum } from '../domain/talentumPausaDoPaciente';
+import { pacientePausadoSql, vagaPublicavelSql } from '../../matching/domain/vacancyPublication';
 import type {
   CompletenessReaderPort,
   LiveAllocationPort,
   PatientStatusPorts,
   StatusTx,
+  TalentumPauseMarkerPort,
   TransactionRunnerPort,
 } from '../application/ports/patientStatusPorts';
 
@@ -48,8 +51,62 @@ export class PgLiveAllocation implements LiveAllocationPort {
   }
 }
 
+/**
+ * As vagas do paciente que ERAM publicáveis (a regra do dono SEM a cláusula do paciente) e têm projeto no Talentum. `pause` marca
+ * PENDING_PAUSE; `resume` marca PENDING_RESUME as que ESTAVAM pausadas (PAUSED / PENDING_PAUSE / MANUAL_PAUSE da falha da pausa);
+ * vaga baixada ou legado ON_HOLD/CLOSED nunca volta (ficam fora de "publicável"). Uma só regra: `vagaPublicavelSql`.
+ */
+const ESTADO_PARA_MARCAR: Readonly<Record<AcaoTalentum, { novo: string; deQuem: string }>> = {
+  // pausa: só quem NÃO está pausado por outro caminho (MANUAL_PAUSE/PAUSED/PENDING_PAUSE ficam como estão)
+  pause: { novo: 'PENDING_PAUSE', deQuem: `(jp.talentum_pause_state IS NULL OR jp.talentum_pause_state IN ('PENDING_RESUME', 'MANUAL_RESUME'))` },
+  // retomada: PAUSED/PENDING_PAUSE e também MANUAL_PAUSE — numa vaga publicável-sem-paciente (DE_BAJA e legado ON_HOLD/CLOSED ficam fora
+  // pelo próprio filtro de publicável), MANUAL_PAUSE só nasce da falha da pausa do paciente; sem isto ela ficava pausada para sempre.
+  resume: { novo: 'PENDING_RESUME', deQuem: `jp.talentum_pause_state IN ('PAUSED', 'PENDING_PAUSE', 'MANUAL_PAUSE')` },
+};
+
+export class PgTalentumPauseMarker implements TalentumPauseMarkerPort {
+  async mark(tx: StatusTx, patientId: string, acao: AcaoTalentum): Promise<string[]> {
+    const { novo, deQuem } = ESTADO_PARA_MARCAR[acao];
+    const { rows } = await tx.query<{ id: string }>(
+      `UPDATE job_postings jp
+          SET talentum_pause_state = '${novo}', updated_at = NOW()
+        WHERE jp.patient_id = $1
+          AND jp.talentum_project_id IS NOT NULL
+          AND ${deQuem}
+          AND ${vagaPublicavelSql('jp', 'p', { semPaciente: true })}
+        RETURNING jp.id`,
+      [patientId],
+    );
+    return rows.map((r) => r.id);
+  }
+
+  /**
+   * I1: a vaga que ACABA de ser lançada (dentro da transação do publish, com `talentum_project_id` já gravado) com o paciente já
+   * pausado nasce PENDING_PAUSE — senão o projeto ficava ativo no Talentum enquanto o feed já a escondia. Mesmo marcador, mesma
+   * regra (`vagaPublicavelSql` sem a cláusula do paciente + a tabela do dono `PACIENTE_QUE_PAUSA_A_VAGA`), escopo de UMA vaga.
+   */
+  async markVacancyIfPatientPaused(tx: StatusTx, vacancyId: string): Promise<string[]> {
+    const { novo, deQuem } = ESTADO_PARA_MARCAR.pause;
+    const { rows } = await tx.query<{ id: string }>(
+      `UPDATE job_postings jp
+          SET talentum_pause_state = '${novo}', updated_at = NOW()
+         FROM patients p
+        WHERE jp.id = $1
+          AND p.id = jp.patient_id
+          AND ${pacientePausadoSql('p')}
+          AND jp.talentum_project_id IS NOT NULL
+          AND ${deQuem}
+          AND ${vagaPublicavelSql('jp', 'p', { semPaciente: true })}
+        RETURNING jp.id`,
+      [vacancyId],
+    );
+    return rows.map((r) => r.id);
+  }
+}
+
 export const buildPgPatientStatusPorts = (): PatientStatusPorts => ({
   transaction: new PgTransactionRunner(),
   completeness: new PgCompletenessReader(),
   allocation: new PgLiveAllocation(),
+  talentum: new PgTalentumPauseMarker(),
 });

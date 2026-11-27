@@ -221,6 +221,27 @@ describe('Vacancies API', () => {
       const res = await api.get('/api/admin/vacancies/stats');
       expect(res.status).toBe(401);
     });
+
+    // semaforo-da-vaga F4: o tempo médio de fechamento mantém a semântica LEGADA (`status NOT IN abertas`), fora do escopo da mudança.
+    // Um rascunho com status SEARCHING (is_draft=true) NÃO entra no cálculo; com `NOT publicável` ele entraria e o médio dispararia.
+    it('tempo_medio_fechamento: vaga rascunho com status SEARCHING NÃO entra no cálculo (semântica legada)', async () => {
+      const tempo = async () => {
+        const r = await api.get('/api/admin/vacancies/stats', authHeaders(adminToken));
+        expect(r.status).toBe(200);
+        return (r.data.data as Array<{ label: string; value: string }>)[3].value; // 4º indicador = tempo_medio_fechamento (rótulo legado 'Total de Vacantes')
+      };
+      const antes = await tempo();
+      const ins = await pool.query<{ id: string }>(
+        `INSERT INTO job_postings (case_number, vacancy_number, title, status, is_draft, search_start_date, updated_at, country)
+         VALUES (99933, nextval('job_postings_vacancy_number_seq'), 'tempo-medio-rascunho-QA', 'SEARCHING', true, NOW() - INTERVAL '100000 days', NOW(), 'AR')
+         RETURNING id`,
+      );
+      try {
+        expect(await tempo()).toBe(antes);
+      } finally {
+        await pool.query(`DELETE FROM job_postings WHERE id = $1`, [ins.rows[0].id]);
+      }
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -363,16 +384,29 @@ describe('Vacancies API', () => {
         );
       });
 
-      it('aceita update de schedule + status → 200', async () => {
+      it('aceita update de schedule → 200 e NÃO escreve status (F4 do semaforo-da-vaga)', async () => {
         if (!opVacancyId) return;
         const schedule = [{ dayOfWeek: 1, startTime: '09:00', endTime: '13:00' }];
         const res = await api.put(
           `/api/admin/vacancies/${opVacancyId}`,
-          { schedule, status: 'SUSPENDED' },
+          { schedule },
           authHeaders(adminToken),
         );
         expect(res.status).toBe(200);
-        expect(res.data.data.status).toBe('SUSPENDED');
+        expect(res.data.data.status).toBe('SEARCHING');
+      });
+
+      it('schedule + status juntos → 400 VACANCY_STATUS_NOT_WRITABLE e o status do banco não muda', async () => {
+        if (!opVacancyId) return;
+        const res = await api.put(
+          `/api/admin/vacancies/${opVacancyId}`,
+          { schedule: [{ dayOfWeek: 1, startTime: '09:00', endTime: '13:00' }], status: 'SUSPENDED' },
+          authHeaders(adminToken),
+        );
+        expect(res.status).toBe(400);
+        expect(res.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
+        const { rows } = await pool.query<{ status: string }>('SELECT status FROM job_postings WHERE id = $1', [opVacancyId]);
+        expect(rows[0].status).toBe('SEARCHING');
       });
 
       it('rejeita edição de title em vaga operacional → 403', async () => {
@@ -609,7 +643,7 @@ describe('Vacancies API', () => {
         // Antes do fix: 500 com check constraint violation do banco
         expect(res.status).toBe(400);
         expect(res.data.success).toBe(false);
-        expect(res.data.error).toMatch(/BUSQUEDA/);
+        expect(res.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
       });
 
       it("PUT /:id com status 'REEMPLAZO' → 400", async () => {
@@ -713,68 +747,51 @@ describe('Vacancies API', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Short-link auto-publish hook — Phase 3
+  // Short-link hook — semaforo-da-vaga F4
   //
-  // When a vacancy is created or updated to a public status (ACTIVE, SEARCHING,
-  // SEARCHING_REPLACEMENT, RAPID_RESPONSE), tryEnsureShortLink runs in a
-  // setImmediate background callback.
-  //
-  // In the E2E environment SHORT_IO_API_KEY is not set, so the hook logs a warn
-  // and exits without generating a real link. The tests below verify:
-  //   - Non-blocking: 201/200 is returned regardless of SHORT_IO state
-  //   - Server stays healthy after the hook runs (no unhandled exception)
-  //   - CLOSED vacancy does NOT trigger the hook (social_short_links stays null)
-  //   - ACTIVE vacancy with pre-existing site link: use case is idempotent
+  // Ninguém grava status: POST/PUT com `status` → 400. O short link nasce quando a vaga é PUBLICÁVEL (dono: vacancyPublication.ts),
+  // no publish no Talentum e no PUT, depois do commit (o e2e `vaga-sem-estado-manual` prova o link pedido ao stub do Short.io).
+  // Aqui: a recusa, o não-bloqueio e a idempotência. A vaga criada nasce rascunho (fora do ar) e NÃO ganha link.
   // ─────────────────────────────────────────────────────────────────────────────
-  describe('Short-link auto-publish hook (Phase 3)', () => {
-    it('criar vaga com status SEARCHING retorna 201 (hook roda sem bloquear)', async () => {
-      const res = await api.post(
-        '/api/admin/vacancies',
-        { patient_id: defaultPatientId, case_number: 66601, title: 'Short-link hook SEARCHING', status: 'SEARCHING' },
-        authHeaders(adminToken),
-      );
-      expect(res.status).toBe(201);
-      expect(res.data.success).toBe(true);
+  describe('Short-link hook (F4)', () => {
+    it('criar vaga COM status → 400 VACANCY_STATUS_NOT_WRITABLE (es + pt-BR) e nenhuma vaga é criada', async () => {
+      for (const status of ['SEARCHING', 'CLOSED']) {
+        const res = await api.post(
+          '/api/admin/vacancies',
+          { patient_id: defaultPatientId, case_number: 66601, title: `Short-link hook ${status}`, status },
+          authHeaders(adminToken),
+        );
+        expect(res.status).toBe(400);
+        expect(res.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
+        expect(res.data.messages.es).toBeTruthy();
+        expect(res.data.messages['pt-BR']).toBeTruthy();
+      }
+      const { rows } = await pool.query(`SELECT 1 FROM job_postings WHERE title LIKE 'Short-link hook %'`);
+      expect(rows).toHaveLength(0);
     });
 
-    it('servidor permanece saudável após criar vaga SEARCHING sem SHORT_IO configurado', async () => {
+    it('criar vaga sem status → 201, nasce rascunho PENDING_ACTIVATION, o servidor segue saudável e NÃO há site link', async () => {
       const createRes = await api.post(
         '/api/admin/vacancies',
-        { patient_id: defaultPatientId, case_number: 66602, title: 'Short-link hook resilience', status: 'SEARCHING' },
-        authHeaders(adminToken),
-      );
-      expect(createRes.status).toBe(201);
-
-      // Give setImmediate time to complete
-      await new Promise(r => setTimeout(r, 300));
-
-      const healthRes = await api.get('/health');
-      expect(healthRes.status).toBe(200);
-    });
-
-    it('criar vaga com status CLOSED não popula social_short_links', async () => {
-      const createRes = await api.post(
-        '/api/admin/vacancies',
-        { patient_id: defaultPatientId, case_number: 66603, title: 'Short-link hook CLOSED', status: 'CLOSED' },
+        { patient_id: defaultPatientId, case_number: 66602, title: 'Short-link hook resilience' },
         authHeaders(adminToken),
       );
       expect(createRes.status).toBe(201);
       const id = createRes.data.data.id as string;
 
-      // Allow any background work to settle
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 300));
+      expect((await api.get('/health')).status).toBe(200);
 
-      const { rows } = await pool.query<{ social_short_links: Record<string, unknown> | null }>(
-        `SELECT social_short_links FROM job_postings WHERE id = $1`,
+      const { rows } = await pool.query<{ status: string; is_draft: boolean; social_short_links: Record<string, unknown> | null }>(
+        `SELECT status, is_draft, social_short_links FROM job_postings WHERE id = $1`,
         [id],
       );
-      // CLOSED → hook is skipped → no site link written.
-      // Column DEFAULT is '{}' (migration 115), so it's never NULL —
-      // the meaningful assertion is that no 'site' key was populated.
+      expect(rows[0]).toMatchObject({ status: 'PENDING_ACTIVATION', is_draft: true });
+      // Column DEFAULT is '{}' (migration 115), so it's never NULL — the meaningful assertion is that no 'site' key was populated.
       expect(rows[0].social_short_links?.['site']).toBeUndefined();
     });
 
-    it('atualizar vaga PENDING_ACTIVATION → SEARCHING retorna 200 (hook roda sem bloquear)', async () => {
+    it('PUT com status → 400; PUT de campo de rascunho → 200 (hook roda sem bloquear, rascunho não ganha link)', async () => {
       const createRes = await api.post(
         '/api/admin/vacancies',
         { patient_id: defaultPatientId, case_number: 66604, title: 'Short-link update hook' },
@@ -783,11 +800,11 @@ describe('Vacancies API', () => {
       expect(createRes.status).toBe(201);
       const id = createRes.data.data.id as string;
 
-      const updateRes = await api.put(
-        `/api/admin/vacancies/${id}`,
-        { status: 'SEARCHING' },
-        authHeaders(adminToken),
-      );
+      const recusa = await api.put(`/api/admin/vacancies/${id}`, { status: 'SEARCHING' }, authHeaders(adminToken));
+      expect(recusa.status).toBe(400);
+      expect(recusa.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
+
+      const updateRes = await api.put(`/api/admin/vacancies/${id}`, { salary_text: 'A convenir' }, authHeaders(adminToken));
       expect(updateRes.status).toBe(200);
       expect(updateRes.data.success).toBe(true);
     });

@@ -5,7 +5,6 @@ import { MapPin, CheckCircle2 } from 'lucide-react';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { VacancyLifecycleBadge } from '@presentation/components/atoms/VacancyLifecycleBadge';
 import { Logo } from '@presentation/components/shared/Logo';
 import { PublicApiService, VacancyNotFoundError } from '@infrastructure/http/PublicApiService';
 import { usePostularseAction } from '@presentation/hooks/usePostularseAction';
@@ -66,14 +65,13 @@ function VacancyCaseCard({
       </div>
 
       <div className="px-8 py-6 flex flex-col gap-5">
-        {/* Título + Status badge */}
+        {/* Título. Estado da vaga não aparece aqui: só o aviso de `is_disabled` mais abaixo (semaforo-da-vaga F4). */}
         <div className="flex items-center justify-between w-full gap-3">
           <Heading level={2} weight="semibold" color="primary" className="leading-[1.3]">
             {vacancy.case_number != null
               ? `CASO ${formatCaseNumber(vacancy.case_number)}-${vacancy.vacancy_number}`
               : `CASO ${vacancy.vacancy_number}`}
           </Heading>
-          <VacancyLifecycleBadge lifecycle={vacancy.lifecycle} className="shrink-0" />
         </div>
 
         {/* Endereço */}

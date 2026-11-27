@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { ScheduleValue } from './vacancyScheduleUtils';
 import { parseScheduleString, LABEL_TO_KEY } from './vacancyScheduleUtils';
-import { STATUS_GRAVAVEIS } from '@domain/value-objects/vacancyLifecycle';
 
 // ---------------------------------------------------------------------------
 // Zod Schema
@@ -16,7 +15,6 @@ export function buildVacancyFormSchema(professionsLocked = false, providersLocke
   return z
   .object({
     title: z.string().min(3),
-    status: z.string().optional(),
     required_professions: professionsLocked ? z.array(z.string()) : z.array(z.string()).min(1),
     required_sex: z.string().optional(),
     age_range_min: z.number().min(18).optional(),
@@ -66,9 +64,6 @@ export type VacancyFormData = z.infer<typeof vacancyFormSchema>;
 // ---------------------------------------------------------------------------
 // Option constants
 // ---------------------------------------------------------------------------
-
-/** O wizard grava só o ciclo de vida (D3/E5): os mesmos 4 do dono (`STATUS_GRAVAVEIS`), conferidos por contrato contra o back. */
-export const STATUS_OPTIONS = STATUS_GRAVAVEIS;
 
 /**
  * Profession options exposed in the create-vacancy form. Operations only
@@ -227,9 +222,7 @@ export function buildVacancyPayload(
     salary_text: data.salary_text || 'A convenir',
     payment_day: data.payment_day || null,
     daily_obs: data.daily_obs || null,
-    // Só o ciclo de vida é gravável (D3/E5): a vaga do foguete nasce com status de sistema (não gravável) e o form o devolvia no PUT → 400.
-    // Valor que o cliente não pode gravar fica de fora (a vaga mantém o que tem).
-    status: (STATUS_GRAVAVEIS as readonly string[]).includes(data.status ?? '') ? data.status : undefined,
+    // Sem `status`: ninguém grava estado da vaga (o servidor responde 400 VACANCY_STATUS_NOT_WRITABLE a qualquer `status`).
     // Backend coalesces null published_at to NOW(); empty string is treated as
     // null too. closes_at stays null when blank.
     published_at: data.published_at?.trim() ? data.published_at : null,
@@ -256,7 +249,6 @@ function todayIsoDate(): string {
 
 export const DEFAULT_FORM_VALUES: VacancyFormData = {
   title: '',
-  status: 'SEARCHING',
   required_professions: [],
   required_sex: '',
   age_range_min: undefined,

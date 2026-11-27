@@ -42,7 +42,6 @@ const PROD_PAYLOAD: ManagementDashboardData = {
     equiposPorArmar: 84,
     pacientesActivos: 190,
     vacantesAbiertas: 144,
-    vacantesPausadas: 21,
   },
   equipoArmada: {
     armados: 0, porArmar: 84, semConfig: 3, pendenteClasificacao: 57,

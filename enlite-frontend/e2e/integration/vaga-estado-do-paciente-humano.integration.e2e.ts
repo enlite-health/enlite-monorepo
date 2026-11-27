@@ -1,6 +1,7 @@
 /**
- * vaga-estado-do-paciente-humano.integration.e2e.ts @integration — estado-automatico-do-paciente, F2 (D3): a vaga mostra o estado do
- * PACIENTE (lido na hora, por join) ao lado do CICLO DE VIDA da vaga, e o editor da vaga só grava o ciclo de vida.
+ * vaga-estado-do-paciente-humano.integration.e2e.ts @integration — estado-automatico-do-paciente, F2 (D3), reescrito na F4 do
+ * semaforo-da-vaga: a vaga mostra o estado do PACIENTE (lido na hora, por join) e só o selo "Borrador" quando é rascunho. Não existe
+ * mais ciclo "Abierta/En espera", filtro de ciclo de vida nem editor de estado da vaga.
  *
  * Stack real (Vite + API docker com o engine ABAC LIGADO + Postgres), SEM `page.route` de dado (o login só intercepta o Identity Toolkit, como
  * `loginAs`); identidade por `loginAs` (token mock) com as células que cada cenário exige. Régua HUMANA: click + keyboard.type + texto lido da
@@ -10,10 +11,11 @@
  * O estado "depois do foguete" (paciente em Búsqueda + vaga em rascunho com status de sistema) é semeado por SQL como o foguete o deixa; o
  * foguete de verdade, pela borda, é provado em `worker-functions/tests/e2e/vaga-mostra-estado-do-paciente.e2e.test.ts` (caso i).
  *
- *  feliz  — a lista e a ficha mostram "Búsqueda" (estado do paciente) + "Borrador"/"Abierta" (ciclo de vida); o estado muda no paciente e a
- *           vaga acompanha ao recarregar, sem escrita nela.
- *  alt 1  — operador SEM `patient:read`: a lista e a ficha mostram "—" no estado do paciente, e o filtro "Estado del paciente" não existe.
- *  alt 2  — o editor oferece EXATAMENTE as 4 opções do ciclo de vida, e "Reanudar" de vaga legada em pausa volta a "Abierta".
+ *  feliz  — a lista e a ficha mostram "Búsqueda" (estado do paciente) + "Borrador" só no rascunho (a vaga publicada não tem selo); o estado muda
+ *           no paciente e a vaga acompanha ao recarregar, sem escrita nela.
+ *  alt 1  — operador SEM `patient:read`: a lista e a ficha mostram "—" no estado do paciente, e o filtro "Estado del paciente" não existe
+ *           (nem o de ciclo de vida, que saiu).
+ *  alt 2  — vaga legada em pausa (`ON_HOLD`): a ficha não tem seletor de estado nem "Reanudar", não mostra "En espera" como selo e abrir não grava nada.
  */
 import { test, expect, type Page } from '@playwright/test';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
@@ -112,7 +114,7 @@ test.describe('Vaga mostra o estado do paciente (D3) @integration', () => {
     await expect(filaRascunho.getByTestId('patient-status-pill')).toHaveText('Búsqueda');
     await expect(filaRascunho.getByTestId('vacancy-lifecycle-badge')).toHaveText('Borrador');
     await expect(filaLegada.getByTestId('patient-status-pill')).toHaveText('Búsqueda');
-    await expect(filaLegada.getByTestId('vacancy-lifecycle-badge')).toHaveText('Abierta'); // o legado SEARCHING_REPLACEMENT é lido como aberta
+    await expect(filaLegada.getByTestId('vacancy-lifecycle-badge')).toHaveCount(0); // o legado SEARCHING_REPLACEMENT é vaga no ar: sem selo (F15)
     await expect(page.getByTestId('vacancies-table-region')).toHaveScreenshot('vaga-estado-lista.png', { maxDiffPixelRatio: 0.05 });
 
     // a ficha da vaga publicada
@@ -120,7 +122,8 @@ test.describe('Vaga mostra o estado do paciente (D3) @integration', () => {
     await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${S.vLegada}`), { timeout: 15_000 });
     const card = page.getByTestId('vacancy-case-card');
     await expect(card.getByTestId('patient-status-pill')).toHaveText('Búsqueda', { timeout: 15_000 });
-    await expect(card.getByTestId('vacancy-status-editor-trigger')).toContainText('Abierta');
+    await expect(card.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
+    await expect(card.getByTestId('vacancy-lifecycle-badge')).toHaveCount(0);
     await expect(card).toHaveScreenshot('vaga-estado-ficha.png', { maxDiffPixelRatio: 0.05 });
 
     // o paciente muda (a derivação/o foguete são do paciente): a vaga acompanha SEM escrita nela
@@ -137,8 +140,8 @@ test.describe('Vaga mostra o estado do paciente (D3) @integration', () => {
     const fila = page.getByTestId(`vacancy-row-${S.vLegada}`);
     await expect(fila).toBeVisible({ timeout: 15_000 });
     await expect(fila.getByTestId('patient-status-pill')).toHaveText('—');
-    await expect(fila.getByTestId('vacancy-lifecycle-badge')).toHaveText('Abierta'); // o ciclo de vida não é do paciente: segue visível
-    await expect(page.getByTestId('vacancy-filter-lifecycle')).toBeVisible();
+    await expect(fila.getByTestId('vacancy-lifecycle-badge')).toHaveCount(0); // vaga no ar não tem selo, com ou sem célula
+    await expect(page.getByTestId('vacancy-filter-lifecycle')).toHaveCount(0);
     await expect(page.getByTestId('vacancy-filter-patient-status')).toHaveCount(0);
     await expect(page.getByTestId('vacancies-table-region')).toHaveScreenshot('vaga-estado-lista-sem-celula.png', { maxDiffPixelRatio: 0.05 });
 
@@ -149,28 +152,20 @@ test.describe('Vaga mostra o estado do paciente (D3) @integration', () => {
     await expect(card.getByTestId('patient-status-pill')).not.toContainText('Búsqueda');
   });
 
-  test('alt 2 — o editor oferece EXATAMENTE as 4 opções do ciclo de vida, e "Reanudar" de vaga legada volta a "Abierta"', async ({ page }) => {
+  test('alt 2 — vaga legada em pausa: a ficha não tem seletor de estado nem "Reanudar", e abrir não grava nada', async ({ page }) => {
+    const antes = scalar(`SELECT updated_at FROM job_postings WHERE id = '${S.vPausada}'`);
     await abrirFicha(page, USER_COM, S.vPausada);
-    const gatilho = page.getByTestId('vacancy-status-editor-trigger');
-    await expect(gatilho).toContainText('En espera', { timeout: 15_000 });
-    await gatilho.click();
-
-    const opcoes = page.locator('[data-testid^="vacancy-status-option-"]:not([data-testid="vacancy-status-option-RESUME"])');
-    await expect(opcoes).toHaveCount(4);
-    await expect(opcoes.nth(0)).toHaveText('Abierta');
-    await expect(opcoes.nth(1)).toHaveText('En espera');
-    await expect(opcoes.nth(2)).toHaveText('Suspendida');
-    await expect(opcoes.nth(3)).toHaveText('Cerrada');
-    for (const legado of ['SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'ACTIVE', 'PENDING_ACTIVATION']) {
-      await expect(page.getByTestId(`vacancy-status-option-${legado}`)).toHaveCount(0);
-    }
-    await expect(page.getByTestId('vacancy-status-editor-dropdown')).toHaveScreenshot('vaga-estado-editor-4-opcoes.png', { maxDiffPixelRatio: 0.05 });
-
-    // "Reanudar": o back calculou resumeStatus (SEARCHING, do legado) e o PUT NÃO é recusado
-    await expect(page.getByTestId('vacancy-status-option-RESUME')).toContainText('Abierta');
-    await page.getByTestId('vacancy-status-option-RESUME').click();
-    await expect(gatilho).toContainText('Abierta', { timeout: 15_000 });
-    expect(scalar(`SELECT status FROM job_postings WHERE id = '${S.vPausada}'`)).toBe('SEARCHING');
+    const card = page.getByTestId('vacancy-case-card');
+    await expect(card.getByTestId('patient-status-pill')).toHaveText('Búsqueda', { timeout: 15_000 });
+    await expect(page.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
+    await expect(page.getByTestId('vacancy-status-editor-dropdown')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="vacancy-status-option-"]')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Reanudar/ })).toHaveCount(0);
+    await expect(card.getByTestId('vacancy-lifecycle-badge')).toHaveCount(0); // o legado ON_HOLD nunca vira selo "En espera"
+    await expect(card.getByText('En espera', { exact: true })).toHaveCount(0);
+    await expect(card).toHaveScreenshot('vaga-estado-ficha-legada-sem-editor.png', { maxDiffPixelRatio: 0.05 });
+    expect(scalar(`SELECT status FROM job_postings WHERE id = '${S.vPausada}'`)).toBe('ON_HOLD'); // nada foi gravado
+    expect(scalar(`SELECT updated_at FROM job_postings WHERE id = '${S.vPausada}'`)).toBe(antes);
     expect(scalar(`SELECT status FROM patients WHERE id = '${S.patientId}'`)).toBe('SEARCHING'); // o paciente nunca foi tocado
   });
 });

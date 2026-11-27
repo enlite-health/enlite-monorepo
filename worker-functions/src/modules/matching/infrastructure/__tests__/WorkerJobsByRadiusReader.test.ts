@@ -48,7 +48,7 @@ describe('WorkerJobsByRadiusReader', () => {
   it('T-F2a-33 realm (D665, DT-20): mesmo realm pela peça testRealmSql; vaga de teste sem o filtro público, vaga real com ele', () => {
     const { sql } = buildJobsByRadiusSql(W, 10);
     expect(sql).toContain('COALESCE((SELECT w_realm_chk.is_test FROM workers w_realm_chk WHERE w_realm_chk.id = w.id), false)');
-    expect(sql).toContain('AND (NOT (COALESCE(jp.is_test, false) = false) OR (jp.status IN');
+    expect(sql).toContain('AND (NOT (COALESCE(jp.is_test, false) = false) OR ((jp.deleted_at IS NULL');
     expect(sql).toContain("jp.social_short_links ? 'site'");
     expect(sql).toContain('jp.is_draft = false');
     expect(sql).toContain('jp.country = $1');

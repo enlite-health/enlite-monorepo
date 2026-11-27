@@ -65,9 +65,17 @@ export {
 } from './interfaces/controllers/vacancyCrudHelpers';
 export {
   VACANCY_STATUS_VALUES, CICLOS_DE_VIDA, CICLO_POR_STATUS, STATUS_GRAVAVEIS,
-  cicloDeVidaDaVaga, cicloDeVidaSql, isStatusGravavel, isCicloDeVida, statusDeRetomada,
+  cicloDeVidaDaVaga, cicloDeVidaSql, isCicloDeVida,
 } from './domain/vacancyLifecycle';
-export type { VacancyStatusValue, CicloDeVida, StatusGravavel } from './domain/vacancyLifecycle';
+export type { VacancyStatusValue, CicloDeVida } from './domain/vacancyLifecycle';
+export {
+  PACIENTE_QUE_PAUSA_A_VAGA, STATUS_QUE_TIRAM_DO_FEED, vagaPublicavel, vagaPublicavelSql,
+} from './domain/vacancyPublication';
+export type { VagaPublicacaoFatos } from './domain/vacancyPublication';
+export { CORES, FAIXAS_DO_SEMAFORO, GRAVIDADE_DA_COR, corDoSemaforo, corDoSemaforoSql, piorCor } from './domain/vacancySemaphore';
+export type { CorDoSemaforo, FaixaDoSemaforo } from './domain/vacancySemaphore';
+export { semaforoContagemSql } from './infrastructure/vacancySemaphoreSql';
+export { VacancySemaphoreReader } from './infrastructure/VacancySemaphoreReader';
 export type { VacancyInsertParams, SourceLockedField } from './interfaces/controllers/vacancyCrudHelpers';
 export { VacancyAddressReviewController } from './interfaces/controllers/VacancyAddressReviewController';
 export { VacancySocialLinksController } from './interfaces/controllers/VacancySocialLinksController';

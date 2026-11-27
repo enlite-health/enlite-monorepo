@@ -186,7 +186,7 @@ describe('Estado derivado sem troca manual (F5) @integration', () => {
       expect(Number((await pool.query('SELECT count(*) AS n FROM job_postings WHERE patient_id = $1', [patientId])).rows[0].n)).toBe(1);
     });
 
-    it.each(LEGADOS)('P6. PUT /vacancies/:id com o estado %s → 400 VACANCY_STATUS_NOT_LIFECYCLE; vaga e paciente intactos (repete A2)', async (legado) => {
+    it.each(LEGADOS)('P6. PUT /vacancies/:id com o estado %s → 400 VACANCY_STATUS_NOT_WRITABLE; vaga e paciente intactos (repete A2)', async (legado) => {
       const { patientId, serviceId } = await criarPaciente('ADMISSION', { servico: true });
       const f = await foguete(patientId, serviceId as string);
       expect(f.status).toBe(201);
@@ -196,7 +196,7 @@ describe('Estado derivado sem troca manual (F5) @integration', () => {
 
       const r = await api.put(`/api/admin/vacancies/${vacancyId}`, { status: legado }, asAdmin);
       expect(r.status).toBe(400);
-      expect(r.data.code).toBe('VACANCY_STATUS_NOT_LIFECYCLE');
+      expect(r.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
       expect((await pool.query<{ status: string }>('SELECT status FROM job_postings WHERE id = $1', [vacancyId])).rows[0].status).toBe(vagaAntes);
       expect(await estado(patientId)).toEqual(antes);
     });

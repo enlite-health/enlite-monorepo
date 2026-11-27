@@ -227,7 +227,6 @@ export class ActivateRecruitmentUseCase {
       worker_attributes: null,
       salary_text: null,
       daily_obs: null,
-      status: undefined,
       published_at: null,
       closes_at: null,
       is_test: false,

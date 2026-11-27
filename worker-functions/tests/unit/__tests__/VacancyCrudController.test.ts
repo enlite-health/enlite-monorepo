@@ -96,7 +96,8 @@ jest.mock('../../../src/modules/matching/application/EnsureVacancyShortLinkUseCa
   })),
 }));
 
-import { VacancyCrudController, tryEnsureShortLink } from '../../../src/modules/matching/interfaces/controllers/VacancyCrudController';
+import { VacancyCrudController } from '../../../src/modules/matching/interfaces/controllers/VacancyCrudController';
+import { tryEnsureShortLink } from '../../../src/modules/matching/application/vacancyShortLinks';
 import { EnsureVacancyShortLinkUseCase } from '../../../src/modules/matching/application/EnsureVacancyShortLinkUseCase';
 
 // Flush setImmediate callbacks from background matching
@@ -913,7 +914,6 @@ describe('VacancyCrudController', () => {
           salary_text: '1000',
           payment_day: 'Dia 5',
           daily_obs: 'obs',
-          status: 'SEARCHING',
           patient_id: PATIENT_ID,
           worker_profile_sought: 'algo',
         };
@@ -935,14 +935,13 @@ describe('VacancyCrudController', () => {
         expect(sql).toContain('title =');
         expect(sql).toContain('required_professions =');
         expect(sql).toContain('schedule =');
-        expect(sql).toContain('status =');
+        expect(sql).not.toMatch(/\bstatus =/);
         expect(res.status).toHaveBeenCalledWith(200);
       });
 
       it('does NOT include state, city, pathology_types, dependency_level, service_device_types in UPDATE', async () => {
         const updates = {
           title: 'CASO 200',
-          status: 'SEARCHING',
           state: 'CABA',
           city: 'Palermo',
           pathology_types: 'TEA',
@@ -1020,12 +1019,12 @@ describe('VacancyCrudController', () => {
 
     describe('operational mode (status ≠ PENDING_ACTIVATION)', () => {
       it.each(['SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'ACTIVE', 'SUSPENDED', 'CLOSED'])(
-        'allows schedule + status update when current status is %s',
+        'allows schedule update when current status is %s (e não escreve status)',
         async (currentStatus) => {
           const schedule = [{ dayOfWeek: 2, startTime: '09:00', endTime: '17:00' }];
           mockOperationalSelect(currentStatus);
-          mockClientForUpdate({ id: 'uuid-123', schedule, status: 'SEARCHING' });
-          const req = mockReq({ schedule, status: 'SEARCHING' }, { id: 'uuid-123' });
+          mockClientForUpdate({ id: 'uuid-123', schedule, status: currentStatus });
+          const req = mockReq({ schedule }, { id: 'uuid-123' });
           const res = mockRes();
 
           await controller.updateVacancy(req as never, res as never);
@@ -1035,9 +1034,10 @@ describe('VacancyCrudController', () => {
             (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('UPDATE job_postings SET'),
           );
           expect(updateCall).toBeDefined();
-          const sql = updateCall![0] as string;
+          const sql = (updateCall![0] as string).split('RETURNING')[0];
           expect(sql).toContain('schedule =');
-          expect(sql).toContain('status =');
+          expect(sql).not.toMatch(/\bstatus\b/);
+          expect(sql).not.toContain('status_before_hold');
         },
       );
 
@@ -1069,7 +1069,6 @@ describe('VacancyCrudController', () => {
         mockOperationalSelect('ACTIVE');
         const req = mockReq({
           schedule: [],
-          status: 'SUSPENDED',
           title: 'should be ignored',
           salary_text: '999',
         }, { id: 'uuid-123' });
@@ -1084,17 +1083,6 @@ describe('VacancyCrudController', () => {
         expect(forbiddenList).toContain('salary_text');
         expect(forbiddenList).not.toContain('schedule');
         expect(forbiddenList).not.toContain('status');
-      });
-
-      it('allows status-only update', async () => {
-        mockOperationalSelect('SEARCHING');
-        mockClientForUpdate({ id: 'uuid-123', status: 'SUSPENDED' });
-        const req = mockReq({ status: 'SUSPENDED' }, { id: 'uuid-123' });
-        const res = mockRes();
-
-        await controller.updateVacancy(req as never, res as never);
-
-        expect(res.status).toHaveBeenCalledWith(200);
       });
 
       it('allows schedule-only update', async () => {
@@ -1120,53 +1108,38 @@ describe('VacancyCrudController', () => {
       expect(res.status).toHaveBeenCalledWith(404);
     });
 
-    describe('status validation', () => {
-      // estado-automatico F5 (E5): o cliente só grava o ciclo de vida; os de sistema voltam 400 VACANCY_STATUS_NOT_LIFECYCLE.
-      const CANONICAL_STATUSES = ['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED'];
-      const STATUS_DE_SISTEMA = ['SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'PENDING_ACTIVATION', 'ACTIVE', 'DE_BAJA'];
+    describe('status validation (semaforo-da-vaga F4: ninguém grava status)', () => {
+      const QUALQUER_STATUS = [
+        'SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED', // o antigo "ciclo de vida"
+        'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'PENDING_ACTIVATION', 'ACTIVE', 'DE_BAJA', // de sistema
+        'BUSQUEDA', 'REEMPLAZO', 'CUBIERTO', 'CANCELADO', 'draft', // legado fora do CHECK
+      ];
 
-      it.each(CANONICAL_STATUSES)('accepts canonical status "%s" → 200', async (status) => {
+      it.each(QUALQUER_STATUS)('PUT com status "%s" → 400 VACANCY_STATUS_NOT_WRITABLE (es + pt-BR); nenhum UPDATE', async (status) => {
         mockOperationalSelect('SEARCHING');
-        mockClientForUpdate({ id: 'uuid-123', status });
-        const req = mockReq({ status }, { id: 'uuid-123' });
-        const res = mockRes();
-
-        await controller.updateVacancy(req as never, res as never);
-
-        expect(res.status).toHaveBeenCalledWith(200);
-      });
-
-      it.each(STATUS_DE_SISTEMA)('rejects system status "%s" → 400 VACANCY_STATUS_NOT_LIFECYCLE, no query executed', async (status) => {
         const req = mockReq({ status }, { id: 'uuid-123' });
         const res = mockRes();
 
         await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, code: 'VACANCY_STATUS_NOT_LIFECYCLE' }));
-        expect(mockQuery).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          success: false,
+          code: 'VACANCY_STATUS_NOT_WRITABLE',
+          messages: expect.objectContaining({ es: expect.any(String), 'pt-BR': expect.any(String) }),
+        }));
+        expect(mockConnect).not.toHaveBeenCalled(); // nenhuma transação, nenhum UPDATE
       });
 
-      it.each([
-        ['BUSQUEDA'],
-        ['REEMPLAZO'],
-        ['CUBIERTO'],
-        ['CANCELADO'],
-        ['draft'],
-      ])('rejects legacy status "%s" → 400, no query executed', async (status) => {
-        const req = mockReq({ status }, { id: 'uuid-123' });
+      it('schedule + status juntos também recusam (o status contamina o corpo todo)', async () => {
+        mockOperationalSelect('SEARCHING');
+        const req = mockReq({ schedule: [], status: 'ON_HOLD' }, { id: 'uuid-123' });
         const res = mockRes();
 
         await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(400);
-        expect(res.json).toHaveBeenCalledWith(
-          expect.objectContaining({
-            success: false,
-            error: expect.stringContaining(status),
-          }),
-        );
-        expect(mockQuery).not.toHaveBeenCalled();
+        expect(mockConnect).not.toHaveBeenCalled();
       });
 
       it('does not block update when status is undefined (other field updated normally in draft)', async () => {
@@ -1292,49 +1265,45 @@ describe('VacancyCrudController', () => {
   });
 });
 
-// ── tryEnsureShortLink — is_test guard ──────────────────────────────
-// Vaga is_test=true nunca pode criar short link real no Short.io (terceiro
-// sem teardown — o cleanup de fixtures apaga a vaga, não o link). Guarda
-// exercitada aqui diretamente sobre a função (exportada só para teste),
-// porque em produção ela roda fire-and-forget dentro de um setImmediate.
-describe('tryEnsureShortLink — is_test guard', () => {
-  const FAKE_POOL = {} as unknown as import('pg').Pool;
+// ── tryEnsureShortLink — "publicável" é do dono (vacancyPublication) ─────────────
+// Vaga is_test=true nunca pode criar short link real no Short.io (terceiro sem teardown — o cleanup de fixtures apaga a vaga, não o
+// link). Desde a F4 do semaforo-da-vaga o guard é parte da regra de publicável (`jp.is_test = false`), lida do banco: a função não
+// carrega mais status nem flag. Roda fire-and-forget (pós-commit), por isso é exercitada aqui direto.
+describe('tryEnsureShortLink — a pergunta ao dono (is_test, rascunho, status fora do ar)', () => {
   const VACANCY_ID = 'vac-uuid-999';
+  const poolCom = (rows: unknown[]) => ({ query: jest.fn().mockResolvedValue({ rows }) }) as unknown as import('pg').Pool;
 
   beforeEach(() => {
     (EnsureVacancyShortLinkUseCase as jest.Mock).mockClear();
     mockEnsureUseCaseExecute.mockClear();
     mockShortLinkFromEnv.mockReset();
-    // Short.io "configurado" — se o guard de is_test não interceptar antes,
-    // o caminho chegaria até aqui e criaria o link.
     mockShortLinkFromEnv.mockReturnValue({ buildAndCreate: jest.fn() });
   });
 
-  it('vaga is_test=true NÃO chama o criador de link, mesmo com status publicável', async () => {
-    await tryEnsureShortLink(FAKE_POOL, VACANCY_ID, 'SEARCHING', true);
-
+  it('a vaga é de teste (o dono não devolve linha) → NÃO chama o criador de link', async () => {
+    await tryEnsureShortLink(poolCom([]), VACANCY_ID);
     expect(EnsureVacancyShortLinkUseCase).not.toHaveBeenCalled();
     expect(mockEnsureUseCaseExecute).not.toHaveBeenCalled();
-    // O guard é fail-fast: nem chega a consultar ShortLinkService.fromEnv().
-    expect(mockShortLinkFromEnv).not.toHaveBeenCalled();
   });
 
-  it('vaga normal (is_test=false) com status publicável CONTINUA chamando o criador de link', async () => {
-    await tryEnsureShortLink(FAKE_POOL, VACANCY_ID, 'SEARCHING', false);
+  it('o SQL perguntado carrega `is_test = false` e `is_draft = false` (a regra do dono, gerada)', async () => {
+    const pool = poolCom([]);
+    await tryEnsureShortLink(pool, VACANCY_ID);
+    const [sql] = (pool.query as unknown as jest.Mock).mock.calls[0];
+    expect(sql).toContain('jp.is_test = false');
+    expect(sql).toContain('jp.is_draft = false');
+  });
 
+  it('vaga publicável (o dono devolve a linha) CONTINUA chamando o criador de link', async () => {
+    await tryEnsureShortLink(poolCom([{ '?column?': 1 }]), VACANCY_ID);
     expect(EnsureVacancyShortLinkUseCase).toHaveBeenCalledTimes(1);
     expect(mockEnsureUseCaseExecute).toHaveBeenCalledWith(VACANCY_ID, 'site');
   });
 
-  it('vaga is_test=true com status NÃO publicável também não chama (dupla garantia)', async () => {
-    await tryEnsureShortLink(FAKE_POOL, VACANCY_ID, 'PENDING_ACTIVATION', true);
-
-    expect(EnsureVacancyShortLinkUseCase).not.toHaveBeenCalled();
-  });
-
-  it('vaga is_test=false com status NÃO publicável não chama (comportamento pré-existente, não regrediu)', async () => {
-    await tryEnsureShortLink(FAKE_POOL, VACANCY_ID, 'PENDING_ACTIVATION', false);
-
-    expect(EnsureVacancyShortLinkUseCase).not.toHaveBeenCalled();
+  it('Short.io não configurado (fromEnv=null) → nem pergunta ao banco', async () => {
+    mockShortLinkFromEnv.mockReturnValue(null);
+    const pool = poolCom([{ '?column?': 1 }]);
+    await tryEnsureShortLink(pool, VACANCY_ID);
+    expect(pool.query).not.toHaveBeenCalled();
   });
 });

@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { CicloDeVida } from '@domain/value-objects/vacancyLifecycle';
 
 interface VacancyLifecycleBadgeProps {
-  /** Ciclo de vida que o back calcula (`lifecycle`); `null`/ausente = a resposta não trouxe (mostra "—"). */
+  /** Selo que o back calcula (`lifecycle`): só `rascunho` | `baja`. `null`/ausente = vaga sem selo (nada é renderizado). */
   lifecycle: CicloDeVida | null | undefined;
   className?: string;
 }
@@ -13,22 +13,20 @@ interface VacancyLifecycleBadgeProps {
  */
 const BG_POR_CICLO: Readonly<Record<CicloDeVida, string>> = {
   rascunho: 'bg-purple-100',
-  aberta: 'bg-blue-100',
-  pausada: 'bg-wait',
-  cerrada: 'bg-slate-200',
   baja: 'bg-slate-300',
 };
 
-export function VacancyLifecycleBadge({ lifecycle, className = '' }: VacancyLifecycleBadgeProps): JSX.Element {
+export function VacancyLifecycleBadge({ lifecycle, className = '' }: VacancyLifecycleBadgeProps): JSX.Element | null {
   const { t } = useTranslation();
-  const bg = lifecycle ? BG_POR_CICLO[lifecycle] : 'bg-slate-200';
+  const bg = lifecycle ? BG_POR_CICLO[lifecycle] : undefined;
+  if (!bg || !lifecycle) return null;
   return (
     <span
       data-testid="vacancy-lifecycle-badge"
       data-lifecycle={lifecycle ?? ''}
       className={`inline-flex items-center justify-center font-poppins font-semibold text-xs px-6 py-1 rounded text-primary ${bg} ${className}`}
     >
-      {lifecycle ? t(`admin.vacancyDetail.lifecycle.${lifecycle}`) : '—'}
+      {t(`admin.vacancyDetail.lifecycle.${lifecycle}`)}
     </span>
   );
 }

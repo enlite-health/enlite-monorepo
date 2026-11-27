@@ -88,7 +88,6 @@ function fullValidPayload(): ManagementDashboardData {
       equiposPorArmar: 2,
       pacientesActivos: 193,
       vacantesAbiertas: 5,
-      vacantesPausadas: 1,
     },
     equipoArmada: {
       armados: 1,

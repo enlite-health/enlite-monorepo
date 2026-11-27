@@ -73,10 +73,10 @@ describe('PatientVacanciesCard — código da vaga em EN1234#01 (spec 047 F4)', 
   it('D3: cada vaga mostra o ciclo de vida (badge) e o estado do paciente (pílula) — sem mapa de cor por valor de banco', () => {
     render(lista([
       { ...VAGA, id: 'a', isDraft: true, lifecycle: 'rascunho', patientStatus: 'SEARCHING' },
-      { ...VAGA, id: 'b', caseOrdinal: 2, status: 'SEARCHING_REPLACEMENT', lifecycle: 'aberta', patientStatus: 'REPLACEMENT' },
+      { ...VAGA, id: 'b', caseOrdinal: 2, status: 'SEARCHING_REPLACEMENT', lifecycle: null, patientStatus: 'REPLACEMENT' },
       { ...VAGA, id: 'c', caseOrdinal: 3, status: null, lifecycle: 'baja' },
     ]));
-    expect(screen.getAllByTestId('vacancy-lifecycle-badge').map((b) => b.getAttribute('data-lifecycle'))).toEqual(['rascunho', 'aberta', 'baja']);
+    expect(screen.getAllByTestId('vacancy-lifecycle-badge').map((b) => b.getAttribute('data-lifecycle'))).toEqual(['rascunho', 'baja']);
     expect(screen.getByText(translations.admin.vacancyDetail.lifecycle.rascunho)).toBeInTheDocument();
     expect(screen.getAllByTestId('patient-status-pill').map((p) => p.getAttribute('data-patient-status'))).toEqual(['SEARCHING', 'REPLACEMENT', '']);
     expect(screen.queryByText('SEARCHING_REPLACEMENT')).not.toBeInTheDocument(); // o valor de banco nunca vira texto

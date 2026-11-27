@@ -265,3 +265,34 @@ describe('PatientKanbanSubcards — gate do foguete (patient_services:update + v
     expect(screen.queryByTestId('patient-kanban-subcard-rocket')).toBeNull();
   });
 });
+
+describe('PatientKanbanSubcards — círculo do semáforo (semaforo-da-vaga F3)', () => {
+  beforeAll(() => { i18n.changeLanguage('es'); });
+
+  it('mostra só o círculo (sem o n visível) ANTES do nome; o n vai no aria-label e o nome do serviço segue visível', () => {
+    renderSubcards([service({ semaphore: { n: 0, color: 'green' } })]);
+    const dot = screen.getByTestId('patient-kanban-subcard-semaphore');
+    expect(dot).toHaveAttribute('data-color', 'green'); // n=0 e verde: o front só pinta
+    expect(dot.textContent).toBe(''); // sem número visível: espremia o nome do serviço
+    expect(dot.getAttribute('aria-label')).toContain('Verde');
+    expect(dot.getAttribute('aria-label')).toContain('0');
+    const nome = screen.getByText('Acompañante Terapéutico');
+    expect(nome).toBeVisible();
+    const sub = screen.getByTestId('patient-kanban-subcard');
+    expect(sub.textContent).toContain('Acompañante');
+    expect(dot.compareDocumentPosition(nome) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('dois serviços → dois círculos, cada um com a sua cor', () => {
+    renderSubcards([
+      service({ contractedServiceId: 's-1', semaphore: { n: 3, color: 'red' } }),
+      service({ contractedServiceId: 's-2', semaphore: { n: 12, color: 'green' } }),
+    ]);
+    expect(screen.getAllByTestId('patient-kanban-subcard-semaphore').map((d) => d.getAttribute('data-color'))).toEqual(['red', 'green']);
+  });
+
+  it('semaphore null ou ausente (sin vacante) → nenhum círculo', () => {
+    renderSubcards([service({ contractedServiceId: 's-1', semaphore: null }), service({ contractedServiceId: 's-2' })]);
+    expect(screen.queryByTestId('patient-kanban-subcard-semaphore')).not.toBeInTheDocument();
+  });
+});
