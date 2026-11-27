@@ -541,6 +541,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/assistants/escalations → assistant_escalation:register',
         // spec 086 (Luz prueba, `adminLuzPruebaRoutes.ts`): família admin.integrations, célula luz_prueba:chat (só Acesso Master).
         'POST /api/admin/luz-prueba/turn → luz_prueba:chat',
+        // emenda 077 §6 (fila de revisão de presença, `adminPresenceReviewRoutes.ts`): família admin.patients, célula presence_exception:review (Master recebe pelo sync D338).
+        'GET /api/admin/presence/review-queue → presence_exception:review',
+        'POST /api/admin/presence/exceptions/:eventId/decision → presence_exception:review',
         // spec 082 (painel de custos, `adminCostsRoutes.ts`): família admin.integrations, célula platform_costs:read (só Acesso Master).
         'GET /api/admin/costs/overview → platform_costs:read',
       ].sort(),

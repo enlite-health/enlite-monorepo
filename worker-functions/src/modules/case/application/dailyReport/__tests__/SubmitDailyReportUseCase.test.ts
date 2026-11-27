@@ -1,6 +1,8 @@
 import { SubmitDailyReportUseCase, type SubmitDailyReportCommand } from '../SubmitDailyReportUseCase';
 import { DailyReportConflictError, DailyReportError, type ReportAnswer } from '../../../domain/DailyReport';
 import { AccountInactiveError } from '../../GetWorkerItineraryUseCase';
+import { PresenceUnavailableError, type PresenceReader, type PresenceStatus } from '../../ports/PresenceReaderPort';
+import type { DailyReportPort } from '../../ports/DailyReportPort';
 import { fakePort, fakeState, version, guard, obj, OTHER_SERVICE, type FakeState } from './fakeDailyReport';
 
 const choice = (itemId: string, scaleCode: string, optionCode: string, reasonCode: string | null = null, itemKind: 'objective' | 'activity' = 'objective'): ReportAnswer =>
@@ -14,7 +16,19 @@ function cmd(over: Partial<SubmitDailyReportCommand> = {}): SubmitDailyReportCom
     now: new Date('2026-11-17T13:00:00.000Z'), today: '2026-11-17', ...over,
   };
 }
-const run = (s: FakeState, c: SubmitDailyReportCommand) => new SubmitDailyReportUseCase(fakePort(s)).execute(c);
+/** Dublê do PresenceReader: nunca rede. Default = presença fechada pelo checkout do app. Conta as chamadas e guarda os ids pedidos. */
+function fakePresence(status: PresenceStatus | 'DOWN' = 'CLOSED'): PresenceReader & { calls: string[] } {
+  const calls: string[] = [];
+  return {
+    calls,
+    statusOf: async (id) => {
+      calls.push(id);
+      if (status === 'DOWN') throw new PresenceUnavailableError('timeout');
+      return status;
+    },
+  };
+}
+const run = (s: FakeState, c: SubmitDailyReportCommand, presence: PresenceReader = fakePresence()) => new SubmitDailyReportUseCase(fakePort(s), presence).execute(c);
 const codeOf = async (p: Promise<unknown>): Promise<string> => {
   try { await p; } catch (e) { return (e as { code?: string }).code ?? String(e); }
   return 'NAO_FALHOU';
@@ -85,14 +99,14 @@ describe('SubmitDailyReportUseCase — contrato do PUT', () => {
     expect(await run(s, cmd({ now: new Date('2027-03-01T00:00:00.000Z') }))).toBe('replayed');
   });
 
-  it('422 pti_version_mismatch: inexistente, de outro serviço, anulada, vencida, ainda não iniciada ou substituída por mais recente', async () => {
-    expect(await codeOf(run(fakeState(), cmd({ ptiVersionId: 'nao-existe' })))).toBe('pti_version_mismatch');
+  it('422 pti_version_mismatch (sem PTI vigente e id não-nulo): de outro serviço, anulada, vencida ou ainda não iniciada; 409 template_outdated quando há vigente diferente', async () => {
+    expect(await codeOf(run(fakeState(), cmd({ ptiVersionId: 'nao-existe' })))).toBe('daily_report_template_outdated');
     expect(await codeOf(run(fakeState({ versions: [version('v1', { contractedServiceId: OTHER_SERVICE })] }), cmd()))).toBe('pti_version_mismatch');
     expect(await codeOf(run(fakeState({ versions: [version('v1', { startDate: '2026-11-17' })] }), cmd()))).toBe('pti_version_mismatch');
     expect(await codeOf(run(fakeState({ versions: [version('v1', { annulledAt: '2026-11-01T00:00:00.000Z' })] }), cmd()))).toBe('pti_version_mismatch');
     expect(await codeOf(run(fakeState({ versions: [version('v1', { endDate: '2026-11-15' })] }), cmd()))).toBe('pti_version_mismatch');
     const substituida = fakeState({ versions: [version('v1'), version('v2', { createdAt: '2026-10-01T10:00:00.000Z' })] });
-    expect(await codeOf(run(substituida, cmd()))).toBe('pti_version_mismatch');
+    expect(await codeOf(run(substituida, cmd()))).toBe('daily_report_template_outdated');
     expect(await run(substituida, cmd({ ptiVersionId: 'v2' }))).toBe('created');
   });
 
@@ -105,11 +119,29 @@ describe('SubmitDailyReportUseCase — contrato do PUT', () => {
     expect(await codeOf(run(fakeState({ versions: [version('v1', { endDate: '2026-11-15' })] }), cmd()))).toBe('pti_version_mismatch');
   });
 
-  it('DC-4: ptiVersionId null → só relato, aceito COM ou SEM PTI vigente; qualquer resposta é item_not_in_pti', async () => {
-    for (const mk of [() => fakeState(), () => fakeState({ versions: [] })]) {
-      expect(await run(mk(), cmd({ ptiVersionId: null, answers: [] }))).toBe('created');
-      expect(await codeOf(run(mk(), cmd({ ptiVersionId: null })))).toBe('item_not_in_pti');
-    }
+  it('DC-4: sem PTI vigente, ptiVersionId null → só relato aceito; qualquer resposta é item_not_in_pti', async () => {
+    const mk = () => fakeState({ versions: [] });
+    expect(await run(mk(), cmd({ ptiVersionId: null, answers: [] }))).toBe('created');
+    expect(await codeOf(run(mk(), cmd({ ptiVersionId: null })))).toBe('item_not_in_pti');
+  });
+
+  it('R-19 409 daily_report_template_outdated: ptiVersionId null + 0 respostas + PTI vigente → nada gravado (antes dava 201)', async () => {
+    const s = fakeState();
+    expect(await codeOf(run(s, cmd({ ptiVersionId: null, answers: [] })))).toBe('daily_report_template_outdated');
+    expect(s.inserted).toHaveLength(0);
+  });
+
+  it('R-19 409 daily_report_template_outdated: versão velha com outra vigente (o servidor ignora o ptiVersionId do app); a vigente passa', async () => {
+    const s = fakeState({ versions: [version('v1'), version('v2', { createdAt: '2026-10-01T10:00:00.000Z' })] });
+    const err = await run(s, cmd({ ptiVersionId: 'v1' })).catch((e) => e);
+    expect(err).toBeInstanceOf(DailyReportConflictError);
+    expect(err.code).toBe('daily_report_template_outdated');
+    expect(s.inserted).toHaveLength(0);
+    expect(await run(s, cmd({ ptiVersionId: 'v2', answers: OK_ANSWERS }))).toBe('created');
+  });
+
+  it('R-19 sem PTI vigente + null → 201 (só relato)', async () => {
+    expect(await run(fakeState({ versions: [version('v1', { endDate: '2026-11-15' })] }), cmd({ ptiVersionId: null, answers: [] }))).toBe('created');
   });
 
   it('422 item_not_in_pti: item fora do molde (OM, legado sem pergunta, id inventado)', async () => {
@@ -156,5 +188,80 @@ describe('SubmitDailyReportUseCase — contrato do PUT', () => {
   it('outra guarda do mesmo serviço usa o mesmo molde; guarda de outro serviço do paciente usa o PTI DELE (via PTI informado)', async () => {
     const s = fakeState({ guards: [guard(), guard({ occurrenceId: 'occ-2', slotId: 'slot-2', serviceId: OTHER_SERVICE })] });
     expect(await codeOf(run(s, cmd({ occurrenceId: 'occ-2', reportId: 'r-9' })))).toBe('pti_version_mismatch'); // v1 é do SERVICE, não do OTHER
+  });
+
+  describe('presença fechada (emenda 077 §2.1, passo 5b)', () => {
+    it('OPEN → 409 daily_report_presence_open e nada gravado; consulta a ocorrência da guarda', async () => {
+      const s = fakeState();
+      const p = fakePresence('OPEN');
+      const err = await run(s, cmd(), p).catch((e) => e);
+      expect(err).toBeInstanceOf(DailyReportConflictError);
+      expect(err.code).toBe('daily_report_presence_open');
+      expect(s.inserted).toHaveLength(0);
+      expect(p.calls).toEqual(['occ-1']);
+    });
+
+    it('NONE (sem linha no attendance) → 409 daily_report_presence_open e nada gravado', async () => {
+      const s = fakeState();
+      expect(await codeOf(run(s, cmd(), fakePresence('NONE')))).toBe('daily_report_presence_open');
+      expect(s.inserted).toHaveLength(0);
+    });
+
+    it('CLOSED_DECLARED e CLOSED → 201', async () => {
+      expect(await run(fakeState(), cmd(), fakePresence('CLOSED_DECLARED'))).toBe('created');
+      expect(await run(fakeState(), cmd(), fakePresence('CLOSED'))).toBe('created');
+    });
+
+    it('janela fechada + presença aberta → 422 daily_report_window_closed (o terminal vence o retentável; nem consulta o attendance)', async () => {
+      const p = fakePresence('OPEN');
+      const due = new Date('2026-11-17T15:00:00.000Z').getTime();
+      expect(await codeOf(run(fakeState(), cmd({ now: new Date(due + 7 * 86_400_000 + 1) }), p))).toBe('daily_report_window_closed');
+      expect(p.calls).toHaveLength(0);
+    });
+
+    it('retry do mesmo id não chama o PresenceReader (responde antes de consultar fora), nem com o attendance fora do ar', async () => {
+      const s = fakeState();
+      await run(s, cmd());
+      const p = fakePresence('DOWN');
+      expect(await run(s, cmd(), p)).toBe('replayed');
+      expect(p.calls).toHaveLength(0);
+    });
+
+    it('attendance indisponível → PresenceUnavailableError (503 no controller) e nada gravado', async () => {
+      const s = fakeState();
+      await expect(run(s, cmd(), fakePresence('DOWN'))).rejects.toBeInstanceOf(PresenceUnavailableError);
+      expect(s.inserted).toHaveLength(0);
+    });
+
+    it('a presença é conferida ANTES do molde: presença aberta + PTI desatualizado → presence_open', async () => {
+      expect(await codeOf(run(fakeState(), cmd({ ptiVersionId: null, answers: [] }), fakePresence('OPEN')))).toBe('daily_report_presence_open');
+    });
+
+    it('o PresenceReader é chamado SEM transação aberta (HTTP nunca segura conexão do pool), e as fases de banco rodam em tx próprias antes e depois', async () => {
+      const s = fakeState();
+      const inner = fakePort(s);
+      let active = 0;
+      const log: string[] = [];
+      const tracked: DailyReportPort = { run: (work) => { active++; log.push('tx+'); return inner.run(work).finally(() => { active--; log.push('tx-'); }); } };
+      const presence: PresenceReader = { statusOf: async () => { log.push(active === 0 ? 'presence(sem-tx)' : 'presence(DENTRO-DE-TX)'); return 'CLOSED'; } };
+      expect(await new SubmitDailyReportUseCase(tracked, presence).execute(cmd())).toBe('created');
+      expect(log).toEqual(['tx+', 'tx-', 'presence(sem-tx)', 'tx+', 'tx-']);
+    });
+
+    it('outro PUT grava o mesmo id enquanto a presença é consultada → a 2ª tx devolve 200 (replayed) sem gravar de novo', async () => {
+      const s = fakeState();
+      const presence: PresenceReader = {
+        statusOf: async () => { await run(s, cmd()); return 'CLOSED'; }, // o "outro PUT" completo termina durante a consulta
+      };
+      expect(await new SubmitDailyReportUseCase(fakePort(s), presence).execute(cmd())).toBe('replayed');
+      expect(s.inserted).toHaveLength(1);
+    });
+
+    it('outro id grava a mesma guarda durante a consulta → 409 daily_report_exists', async () => {
+      const s = fakeState();
+      const presence: PresenceReader = { statusOf: async () => { await run(s, cmd({ reportId: 'r-2' })); return 'CLOSED'; } };
+      expect(await codeOf(new SubmitDailyReportUseCase(fakePort(s), presence).execute(cmd()))).toBe('daily_report_exists');
+      expect(s.inserted).toHaveLength(1);
+    });
   });
 });

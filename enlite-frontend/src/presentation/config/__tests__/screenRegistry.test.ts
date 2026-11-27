@@ -106,6 +106,8 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       // Spec 048: destinatário do aviso do 12º dia (consulta por célula no job) — não controla elemento de tela.
       'patient_therapeutic_project:incomplete_alert',
       'prescreening:write',
+      // Emenda 077 §5.4 (F-g): `presence_alert:receive` decide só quem RECEBE o aviso à coordenação (resolvedor no back); sem tela, sem rota.
+      'presence_alert:receive',
       'recruitment:read',
       'recruitment:write',
       // Spec 081 (T064) — Master-only, sem tela (consumida só pela rota de atividade e pela Maria).

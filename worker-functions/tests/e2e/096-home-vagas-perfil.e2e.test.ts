@@ -128,7 +128,7 @@ describe('096 home do prestador: vagas por raio com perfil de match @integration
     const proibidas = ['lat', 'lng', 'latitude', 'longitude', 'address_formatted', 'required_sex', 'sex', 'phone'];
     for (const item of r.data.items) {
       expect(Object.keys(item).sort()).toEqual(
-        ['already_applied', 'case_number', 'city', 'distance_km', 'id', 'neighborhood', 'schedule', 'service', 'state', 'title', 'vacancy_number', 'worker_type'].sort(),
+        ['already_applied', 'applied_at', 'case_number', 'city', 'distance_km', 'id', 'neighborhood', 'schedule', 'service', 'state', 'title', 'vacancy_number', 'worker_type'].sort(),
       );
       for (const k of proibidas) expect(item).not.toHaveProperty(k);
     }

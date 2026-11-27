@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
 import { cicloDeVidaSql } from '../../domain/vacancyLifecycle';
+import { vagaPublicavelSql } from '../../domain/vacancyPublication';
 import { logger } from '@shared/logging';
 import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
 import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
@@ -83,16 +84,13 @@ const LOOKS_LIKE_SLUG = /^caso/i;
  * de renderizar a vaga. É a resposta certa — vaga fechada não é conteúdo público —, e é
  * visível para quem clicar, não silenciosa.
  *
- * `STATUS_PUBLICAVEL` continua sendo "candidatável" (o feed usa a mesma lista, sem DE_BAJA —
- * D179 continua valendo). `DE_BAJA` é um caso à parte (change baja-vacante-por-servico): a
+ * "Candidatável" é `vagaPublicavelSql` (o dono, `vacancyPublication.ts`; o feed usa a mesma regra — D179 continua
+ * valendo). `DE_BAJA` é um caso à parte (change baja-vacante-por-servico): a
  * PÁGINA da vaga (link direto, este endpoint) precisa continuar servindo — 200, mostrando
  * "desativada" — mesmo depois do serviço contratado dar baixa; só o FEED e a candidatura
- * somem. `STATUS_DETALHE_PUBLICO` é a lista que este endpoint usa para não dar 404; o payload
+ * somem. o endpoint serve "publicável OU `DE_BAJA`" para não dar 404; o payload
  * carrega `is_disabled` calculado a partir do status para a tela decidir o que renderizar.
  */
-const STATUS_PUBLICAVEL = ['ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE'];
-const STATUS_DETALHE_PUBLICO = [...STATUS_PUBLICAVEL, 'DE_BAJA'];
-
 export class PublicVacancyController {
   private readonly db = DatabaseConnection.getInstance().getPool();
   private readonly diagnosisServiceOverride: PatientDiagnosisService | undefined;
@@ -131,25 +129,15 @@ export class PublicVacancyController {
       const params: (string | number | string[])[] = isSlug
         ? [Number(slugMatch![1]), Number(slugMatch![2])]
         : [id];
-      // O placeholder da lista de status vem DEPOIS dos parâmetros de identificação, cujo
-      // número muda entre slug (2) e uuid (1) — por isso é calculado, não chumbado.
-      const statusParam = `$${params.length + 1}`;
-      params.push(STATUS_DETALHE_PUBLICO);
       const identificacao = isSlug
         ? 'jp.case_number = $1 AND jp.vacancy_number = $2'
         : 'jp.id = $1';
-      // Cinto de segurança (change baja-vacante-por-servico), mesmo predicado do feed
-      // (`PublicJobsQueryBuilder`): se o serviço ligado está inativo mas o status da vaga NÃO
-      // é DE_BAJA (divergência — status não sincronizado a tempo), a vaga não é tratada como
-      // publicável mesmo assim — cai no 404, como qualquer vaga não-publicável. DE_BAJA em si
-      // é sempre servido (é exatamente o estado que este endpoint passou a mostrar).
+      // "Publicável OU DE_BAJA" (semaforo-da-vaga F4): a regra de publicável é a MESMA do feed (dono: `vacancyPublication.ts`,
+      // com o cinto do serviço inativo e o paciente que pausou a vaga), com `incluirTeste`: a vaga de teste abre aqui, como antes
+      // (existe para ser exercida de ponta a ponta em prd); o feed, o raio e a Luz seguem sem ela. DE_BAJA é sempre servida, desativada (`is_disabled`).
       const whereClause =
-        `${identificacao} AND jp.deleted_at IS NULL ` +
-        `AND jp.is_draft = false AND jp.status = ANY(${statusParam}::text[]) ` +
-        `AND (jp.status = 'DE_BAJA' OR NOT EXISTS (
-               SELECT 1 FROM patient_contracted_services pcs
-                WHERE pcs.id = jp.contracted_service_id AND pcs.active = false
-             ))`;
+        `${identificacao} AND jp.deleted_at IS NULL AND jp.is_draft = false ` +
+        `AND (jp.status = 'DE_BAJA' OR ${vagaPublicavelSql('jp', 'p', { incluirTeste: true })})`;
 
       const result = await this.db.query(
         `
@@ -231,7 +219,7 @@ export class PublicVacancyController {
         status:                 row.status,
         lifecycle:              row.lifecycle,
         // Change baja-vacante-por-servico: DE_BAJA é o único status que este endpoint serve
-        // sem ser "candidatável" (STATUS_PUBLICAVEL) — a tela usa este campo para não oferecer
+        // sem ser "candidatável" (publicável) — a tela usa este campo para não oferecer
         // candidatura e mostrar o badge de desativada, em vez de inferir a partir de `status`
         // cru (a mesma lista PERMISSÃO acima: decidir aqui, não deixar a tela adivinhar).
         is_disabled:            row.status === 'DE_BAJA',

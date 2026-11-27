@@ -8,7 +8,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
       {
         id: 'fd269cde-d8c9-4fdc-88a9-5b19ebcdb531',
         caseNumber: 349, caseOrdinal: 1,
-        lifecycle: 'aberta',
+        lifecycle: null,
         diasAberto: '05',
         stageCounts: {
           COMPATIBLE: 6,
@@ -29,7 +29,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
       {
         id: 'c83963ee-beaf-45f2-88a3-365147b0c205',
         caseNumber: 348, caseOrdinal: 1,
-        lifecycle: 'aberta',
+        lifecycle: null,
         diasAberto: '03',
         stageCounts: {
           COMPATIBLE: 8,
@@ -55,10 +55,8 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
     expect(screen.getByText('349#01')).toBeVisible();
     expect(screen.getByText('348#01')).toBeVisible();
 
-    // GARANTIA 2: Status visível (aparece 2x)
-    const statusElements = screen.getAllByText('admin.vacancyDetail.lifecycle.aberta');
-    expect(statusElements).toHaveLength(2);
-    statusElements.forEach((el) => expect(el).toBeVisible());
+    // GARANTIA 2: vaga no ar não tem selo (F15)
+    expect(screen.queryByTestId('vacancy-lifecycle-badge')).not.toBeInTheDocument();
 
     // GARANTIA 3: sem coluna de prioridade (spec 046 F1)
     expect(screen.queryByText('admin.vacancies.priorityOptions.urgent')).not.toBeInTheDocument();

@@ -12,6 +12,9 @@ import type { KanbanServicesRows } from '../../infrastructure/PatientKanbanServi
 /** Dublê do leitor do quadro C (056 §9): nenhum serviço com equipe. */
 const noTeam = { readMany: jest.fn().mockResolvedValue([]) };
 
+/** Dublê do leitor do semáforo (semaforo-da-vaga F2): nenhuma vaga medida. */
+const noSemaphores = { readMany: jest.fn().mockResolvedValue(new Map<string, number>()) };
+
 function readerWith(rows: KanbanServicesRows[]): KanbanServicesReaderPort {
   return { readKanbanServices: jest.fn().mockResolvedValue(rows) };
 }
@@ -45,7 +48,7 @@ describe('ListKanbanServicesUseCase', () => {
         ],
       },
     ];
-    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
+    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam, noSemaphores);
 
     const result = await useCase.execute(['AR'], new Date('2026-09-27T15:00:00Z'));
 
@@ -60,6 +63,7 @@ describe('ListKanbanServicesUseCase', () => {
       liveVacancyId: 'v',
       uncoveredDays: 0,
       reserve: null,
+      semaphore: null, // vaga viva sem `n` medido = não medido, nunca vermelho
     });
     expect(result.patients[0].services[1].cobertas).toBe(0);
   });
@@ -78,7 +82,7 @@ describe('ListKanbanServicesUseCase', () => {
         ],
       },
     ];
-    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
+    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam, noSemaphores);
 
     const result = await useCase.execute(['AR'], new Date('2026-09-27T15:00:00Z'));
 
@@ -104,7 +108,7 @@ describe('ListKanbanServicesUseCase', () => {
       },
     ];
 
-    const semAusencia = new ListKanbanServicesUseCase(readerWith(baseRows), noTeam);
+    const semAusencia = new ListKanbanServicesUseCase(readerWith(baseRows), noTeam, noSemaphores);
     const resultSemAusencia = await semAusencia.execute(['AR'], asOf);
 
     const comAusencia = new ListKanbanServicesUseCase(
@@ -167,7 +171,7 @@ describe('ListKanbanServicesUseCase', () => {
         },
       },
     ];
-    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
+    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam, noSemaphores);
 
     const result = await useCase.execute(['AR'], asOf);
 
@@ -186,7 +190,7 @@ describe('ListKanbanServicesUseCase', () => {
       occurrences: { slots: [faixa('dom', 0), faixa('sab', 6)], assignments: [], absences: [] },
     });
     const dias = async (assembled: boolean | undefined) =>
-      (await new ListKanbanServicesUseCase(readerWith([linha(assembled)]), noTeam).execute(['AR'], asOf)).patients[0].services[0].uncoveredDays;
+      (await new ListKanbanServicesUseCase(readerWith([linha(assembled)]), noTeam, noSemaphores).execute(['AR'], asOf)).patients[0].services[0].uncoveredDays;
 
     expect(await dias(false)).toBe(0);
     expect(await dias(undefined)).toBe(0); // ausente = não montado
@@ -202,7 +206,7 @@ describe('ListKanbanServicesUseCase', () => {
       slots: [],
       occurrences: { slots: [faixa('dom', 0), faixa('sab', 6)], assignments: [], absences: [] },
     });
-    const dias = async (st: string) => (await new ListKanbanServicesUseCase(readerWith([linha(st)]), noTeam).execute(['AR'], asOf)).patients[0].services[0].uncoveredDays;
+    const dias = async (st: string) => (await new ListKanbanServicesUseCase(readerWith([linha(st)]), noTeam, noSemaphores).execute(['AR'], asOf)).patients[0].services[0].uncoveredDays;
     expect(await dias('ON_HOLD')).toBe(0);
     expect(await dias('ACTIVE')).toBe(2);
   });
@@ -220,7 +224,7 @@ describe('ListKanbanServicesUseCase', () => {
       },
     ];
 
-    const result = await new ListKanbanServicesUseCase(readerWith(rows), noTeam).execute(['AR'], asOf);
+    const result = await new ListKanbanServicesUseCase(readerWith(rows), noTeam, noSemaphores).execute(['AR'], asOf);
 
     expect(result.patients[0].services[0].uncoveredDays).toBe(2);
   });
@@ -230,7 +234,7 @@ describe('ListKanbanServicesUseCase', () => {
       { patientId: 'p-ar', country: 'AR', assembled: true, services: [], slots: [] },
       { patientId: 'p-br', country: 'BR', assembled: true, services: [], slots: [] },
     ];
-    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
+    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam, noSemaphores);
 
     const result = await useCase.execute(['AR', 'BR'], new Date('2026-09-28T02:30:00Z'));
 
@@ -239,7 +243,7 @@ describe('ListKanbanServicesUseCase', () => {
   });
 
   it('leitor devolve [] → { patients: [] }', async () => {
-    const useCase = new ListKanbanServicesUseCase(readerWith([]), noTeam);
+    const useCase = new ListKanbanServicesUseCase(readerWith([]), noTeam, noSemaphores);
 
     const result = await useCase.execute(['AR']);
 
@@ -260,7 +264,7 @@ describe('ListKanbanServicesUseCase', () => {
         ],
       },
     ];
-    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam);
+    const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam, noSemaphores);
 
     const result = await useCase.execute(['AR'], new Date('2026-09-27T15:00:00Z'));
 
@@ -286,12 +290,50 @@ describe('ListKanbanServicesUseCase', () => {
       ]),
     };
 
-    const result = await new ListKanbanServicesUseCase(readerWith(rows), teamReader).execute(['AR'], new Date('2026-09-27T15:00:00Z'));
+    const result = await new ListKanbanServicesUseCase(readerWith(rows), teamReader, noSemaphores).execute(['AR'], new Date('2026-09-27T15:00:00Z'));
 
     expect(teamReader.readMany).toHaveBeenCalledWith(['svc-a']);
     expect(result.patients[0].services.map((sv) => [sv.contractedServiceId, sv.reserve])).toEqual([
       ['svc-a', { count: 2, minimum: 10 }],
       ['svc-b', null],
     ]);
+  });
+
+  describe('semáforo da vaga (semaforo-da-vaga F2, P1)', () => {
+    const svc = (id: string, vac: string | null) => ({ id, serviceCode: 'AT', liveVacancyId: vac });
+    const patient = (patientId: string, services: ReturnType<typeof svc>[]): KanbanServicesRows =>
+      ({ patientId, country: 'AR', assembled: true, services, slots: [] });
+    const asOf = new Date('2026-09-27T15:00:00Z');
+    const semaphoresWith = (n: Record<string, number>) => ({ readMany: jest.fn().mockResolvedValue(new Map(Object.entries(n))) });
+
+    it('lê o `n` por serviço pela porta, a cor sai do dono e o pior do paciente é a mais grave', async () => {
+      const rows = [patient('p-1', [svc('a', 'va'), svc('b', 'vb')]), patient('p-2', [svc('c', 'vc'), svc('d', null)])];
+      const useCase = new ListKanbanServicesUseCase(readerWith(rows), noTeam, semaphoresWith({ va: 4, vb: 10, vc: 7 }));
+      const { patients } = await useCase.execute(['AR'], asOf);
+      expect(patients[0].services.map((s) => s.semaphore)).toEqual([{ n: 4, color: 'red' }, { n: 10, color: 'green' }]);
+      expect(patients[0].worstSemaphore).toBe('red');
+      expect(patients[1].services.map((s) => s.semaphore)).toEqual([{ n: 7, color: 'yellow' }, null]);
+      expect(patients[1].worstSemaphore).toBe('yellow');
+    });
+
+    it('paciente sem nenhum serviço com vaga viva: worstSemaphore null', async () => {
+      const useCase = new ListKanbanServicesUseCase(readerWith([patient('p-1', [svc('a', null)])]), noTeam, semaphoresWith({}));
+      const { patients } = await useCase.execute(['AR'], asOf);
+      expect(patients[0].services[0].semaphore).toBeNull();
+      expect(patients[0].worstSemaphore).toBeNull();
+    });
+
+    it('sem N+1: UMA chamada a readMany para 1 serviço e UMA para 3 (a mesma contagem)', async () => {
+      const um = semaphoresWith({ va: 1 });
+      await new ListKanbanServicesUseCase(readerWith([patient('p-1', [svc('a', 'va')])]), noTeam, um).execute(['AR'], asOf);
+      expect(um.readMany).toHaveBeenCalledTimes(1);
+      expect(um.readMany).toHaveBeenCalledWith(['va']);
+
+      const tres = semaphoresWith({ va: 1, vb: 2, vc: 3 });
+      const rows = [patient('p-1', [svc('a', 'va'), svc('b', 'vb')]), patient('p-2', [svc('c', 'vc')])];
+      await new ListKanbanServicesUseCase(readerWith(rows), noTeam, tres).execute(['AR'], asOf);
+      expect(tres.readMany).toHaveBeenCalledTimes(1);
+      expect(tres.readMany).toHaveBeenCalledWith(['va', 'vb', 'vc']);
+    });
   });
 });

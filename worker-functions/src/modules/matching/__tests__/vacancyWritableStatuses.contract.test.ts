@@ -1,9 +1,10 @@
 /**
- * TESTE DE CONTRATO — o que o cliente pode GRAVAR em `job_postings.status` (estado-automatico-do-paciente, F2, D3/E5).
+ * TESTE DE CONTRATO — o que o cliente pode GRAVAR em `job_postings.status`: NADA (semaforo-da-vaga F4; antes: estado-automatico-do-paciente, F2).
  *
  * Duas cópias em TypeScript, uma verdade: `STATUS_GRAVAVEIS` / `CICLOS_DE_VIDA` do back (dono, `vacancyLifecycle.ts`) e as do front
- * (`enlite-frontend/src/domain/value-objects/vacancyLifecycle.ts`). Lê o ARQUIVO do front (molde `relationshipParity.contract.test.ts`)
- * e confere que o editor da vaga e o wizard usam a constante do front em vez de lista literal própria.
+ * (`enlite-frontend/src/domain/value-objects/vacancyLifecycle.ts`). Lê o ARQUIVO do front (molde `relationshipParity.contract.test.ts`).
+ * O editor de estado da vaga e o select do wizard saíram: o teste prova que `STATUS_GRAVAVEIS` é vazio nas duas pontas, e a recusa
+ * do servidor (400 `VACANCY_STATUS_NOT_WRITABLE`) é provada no e2e `vaga-sem-estado-manual.e2e.test.ts`.
  *
  * Se falhar, NÃO edite a lista esperada: ajuste o front (ou o dono) para bater.
  */
@@ -24,7 +25,7 @@ function listaConst(fonte: string, nome: string): string[] {
 describe('contrato: lista gravável e ciclos de vida — front = back', () => {
   const dominioFront = lerFront('domain/value-objects/vacancyLifecycle.ts');
 
-  it('STATUS_GRAVAVEIS do front = STATUS_GRAVAVEIS do back (mesma ordem)', () => {
+  it('STATUS_GRAVAVEIS do front = STATUS_GRAVAVEIS do back', () => {
     expect(listaConst(dominioFront, 'STATUS_GRAVAVEIS')).toEqual([...STATUS_GRAVAVEIS]);
   });
 
@@ -32,22 +33,17 @@ describe('contrato: lista gravável e ciclos de vida — front = back', () => {
     expect(listaConst(dominioFront, 'CICLOS_DE_VIDA')).toEqual([...CICLOS_DE_VIDA]);
   });
 
-  it('o editor da vaga e o wizard LEEM a constante do front — nenhuma lista literal de status de vaga neles', () => {
-    const editor = lerFront('presentation/components/features/admin/VacancyDetail/VacancyStatusEditor.tsx');
-    const wizard = lerFront('presentation/components/features/admin/vacancy-form-schema.ts');
-    expect(editor).toContain("STATUS_GRAVAVEIS");
-    expect(editor).toContain("@domain/value-objects/vacancyLifecycle");
-    expect(wizard).toMatch(/export const STATUS_OPTIONS = STATUS_GRAVAVEIS/);
-    for (const fonte of [editor, wizard]) {
-      expect(fonte).not.toMatch(/SEARCHING_REPLACEMENT|RAPID_RESPONSE|PENDING_ACTIVATION/);
-    }
+  it('ninguém grava status: STATUS_GRAVAVEIS é vazio nas duas pontas (controle positivo: o regex achou as duas constantes)', () => {
+    expect(listaConst(dominioFront, 'STATUS_GRAVAVEIS')).toEqual([]);
+    expect([...STATUS_GRAVAVEIS]).toEqual([]);
   });
 
-  it('o filtro da lista e o badge leem CICLOS_DE_VIDA / o ciclo, sem mapa de valores de banco', () => {
+  it('a lista de vagas NÃO tem mais filtro de ciclo (getLifecycleOptions ausente) e o badge lê o ciclo, sem mapa de valores de banco', () => {
     const dados = lerFront('presentation/pages/admin/vacanciesData.ts');
-    expect(dados).toContain('CICLOS_DE_VIDA');
+    expect(dados).not.toContain('getLifecycleOptions'); // F4 tirou o filtro de ciclo da lista
     expect(dados).not.toMatch(/SEARCHING_REPLACEMENT|RAPID_RESPONSE|PENDING_ACTIVATION/);
     const badge = lerFront('presentation/components/atoms/VacancyLifecycleBadge/VacancyLifecycleBadge.tsx');
+    expect(badge).toContain('CicloDeVida'); // controle positivo: o arquivo lido é o badge que lê o ciclo
     expect(badge).not.toMatch(/SEARCHING|ON_HOLD|SUSPENDED|CLOSED|DE_BAJA/);
   });
 });

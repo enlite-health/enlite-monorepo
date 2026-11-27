@@ -1131,16 +1131,9 @@
         "vacantesAbiertas": {
           "title": "Vacantes abiertas",
           "que": "Puestos de trabajo que están buscando prestador ahora.",
-          "origen": "• Cuenta las vacantes en estado de búsqueda: búsqueda normal, búsqueda de reemplazo, respuesta rápida y pendiente de activación.\n• Descarta borradores y vacantes borradas.",
-          "cambia": "• Publicar una vacante nueva: sube.\n• Cerrar, suspender o borrar la vacante: baja.",
+          "origen": "• Cuenta las vacantes publicables: lanzadas (no borradores), no dadas de baja ni borradas, de un servicio que sigue activo y cuyo paciente no está en pausa (en espera, suspendido, de alta o de baja).\n• Nadie elige el estado de la vacante: sale solo de lo que pasa con el paciente y el servicio.",
+          "cambia": "• Publicar una vacante nueva: sube.\n• Pausar, suspender o dar de alta al paciente, desactivar el servicio o dar de baja la vacante: baja.\n• Retomar al paciente: vuelve a subir.",
           "ojo": "Mover tarjetas en el Kanban NO mueve este número: eso cambia el embudo de candidatos, no el estado de la vacante. Es el comportamiento correcto."
-        },
-        "vacantesPausadas": {
-          "title": "Vacantes pausadas",
-          "que": "Vacantes que existen pero están frenadas a propósito (suspendidas temporalmente).",
-          "origen": "• Cuenta las vacantes en estado Suspendida, sin borradores ni borradas.",
-          "cambia": "• Suspender una vacante: sube.\n• Reactivarla o cerrarla: baja.",
-          "ojo": "Vacante pausada es demanda represada: si este número crece, hay trabajo que no aparece en \"Vacantes abiertas\" ni en la fila del reclutamiento."
         },
         "horasTotais": {
           "title": "Horas semanales totales",
@@ -1364,8 +1357,6 @@
         "pacientesActivosSub": "Pacientes en atención hoy",
         "vacantesAbiertas": "Vacantes abiertas",
         "vacantesAbiertasSub": "Puestos buscando prestador",
-        "vacantesPausadas": "Vacantes pausadas",
-        "vacantesPausadasSub": "Puestos en pausa temporal",
         "ubicaciones": "Ubicaciones",
         "pctRespostaRapida": "% grupo de respuesta rápida armado",
         "pctRespostaRapidaSub": "{{num}} de {{den}} casos medibles · {{excluidos}} sin clasificar quedan fuera",
@@ -1495,7 +1486,8 @@
       "aiPrompts": "Prompts de IA",
       "interviewHosts": "Entrevistadores",
       "insuranceProviders": "Obras sociales",
-      "pedidosIa": "Pedidos de la IA"
+      "pedidosIa": "Pedidos de la IA",
+      "presenceReview": "Revisión de presencia"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -2217,9 +2209,6 @@
       "filters": {
         "allOption": "Todos",
         "clear": "Limpiar filtros",
-        "lifecycle": {
-          "label": "Ciclo de vida"
-        },
         "patientStatus": {
           "label": "Estado del paciente"
         },
@@ -2276,7 +2265,7 @@
         "done": "{{count}} vacantes dadas de baja",
         "error": "No se pudo dar de baja",
         "errors": {
-          "VACANCY_HAS_SERVICE": "Una vacante de un servicio contratado no se da de baja a mano: usá \"Pausar\" (En espera).",
+          "VACANCY_HAS_SERVICE": "Una vacante de un servicio contratado no se da de baja a mano: pausá o suspendé al paciente, o desactivá el servicio.",
           "VACANCY_ALREADY_DE_BAJA": "La vacante ya está dada de baja.",
           "VACANCY_NOT_FOUND": "Vacante no encontrada."
         },
@@ -2585,7 +2574,6 @@
         "caseNumber": "Número de Caso",
         "vacancyNumber": "Número de Vacante",
         "title": "Título",
-        "status": "Estado",
         "selectPlaceholder": "Seleccionar...",
         "hintSelectCase": "Seleccioná un caso primero para habilitar los campos del paciente.",
         "sectionCaseInfo": "Información del Caso",
@@ -2650,12 +2638,6 @@
           "full-time": "Full-time",
           "part-time": "Part-time",
           "flexible": "Flexible"
-        },
-        "statusOptions": {
-          "SEARCHING": "Abierta",
-          "ON_HOLD": "En espera",
-          "SUSPENDED": "Suspendida",
-          "CLOSED": "Cerrada"
         },
         "cancel": "Cancelar",
         "create": "Crear Vacante",
@@ -2771,9 +2753,6 @@
       },
       "lifecycle": {
         "rascunho": "Borrador",
-        "aberta": "Abierta",
-        "pausada": "En espera",
-        "cerrada": "Cerrada",
         "baja": "Dada de baja"
       },
       "caseCard": {
@@ -2814,22 +2793,6 @@
           "thursday": "Jueves:",
           "friday": "Viernes:",
           "saturday": "Sábado:"
-        }
-      },
-      "statusEditor": {
-        "editLabel": "Editar estado de la vacante",
-        "resume": "Reanudar",
-        "options": {
-          "SEARCHING": "Abierta",
-          "ON_HOLD": "En espera",
-          "SUSPENDED": "Suspendida",
-          "CLOSED": "Cerrada"
-        },
-        "pauseHint": "En espera mantiene el tablero, el historial y el link corto.",
-        "errors": {
-          "VACANCY_STATUS_NOT_LIFECYCLE": "El estado de la vacante solo admite: Abierta, En espera, Suspendida o Cerrada. El estado del paciente lo define el flujo automático.",
-          "VACANCY_DE_BAJA_NO_REACTIVATION": "Una vacante dada de baja no se reactiva: solo vuelve cuando se reactiva el servicio que la dio de baja.",
-          "CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED": "Una vacante de un servicio activo no se cierra: usá \"Pausar\" (En espera)."
         }
       },
       "scheduleEditor": {
@@ -3047,7 +3010,6 @@
       "sectionConditions": "Condiciones de la vacante",
       "publishDate": "Fecha de publicación",
       "closingDate": "Fecha de encerramento",
-      "status": "Estado",
       "serviceType": "Tipo de servicio",
       "location": "Localización",
       "serviceAddress": "Dirección donde se presta el servicio",
@@ -3065,7 +3027,6 @@
       "professionalTypePlaceholder": "Seleccionar...",
       "sexPlaceholder": "Seleccionar...",
       "ageRangePlaceholder": "Seleccionar...",
-      "statusPlaceholder": "Seleccionar...",
       "serviceTypePlaceholder": "Seleccionar...",
       "caseSelectStep": {
         "caseLabel": "Caso",
@@ -5514,6 +5475,8 @@
             "incomplete_alert": "Aviso día 12",
             "waive_contact": "No necesita",
             "decidir": "Decidir",
+            "review": "Revisar",
+            "receive": "Recibir",
             "register": "Registrar",
             "resend_message": "Reenviar mensaje",
             "move_to_on_hold": "A en espera",
@@ -5548,6 +5511,8 @@
             "tag": "Catálogo de etiquetas",
             "ai_prompt": "Prompts de IA",
             "pedidos_ia": "Pedidos de IA",
+            "presence_alert": "Aviso de presencia a coordinación",
+            "presence_exception": "Revisión de presencia (excepciones de lugar)",
             "platform_costs": "Costos de la plataforma",
             "luz_prueba": "Luz (prueba)",
             "recruitment_activity_per_person": "Actividad del embudo por reclutadora",
@@ -6129,6 +6094,9 @@
         },
         "pedidosIa": {
           "label": "Pedidos de la IA"
+        },
+        "presenceReview": {
+          "label": "Revisión de presencia"
         }
       }
     },
@@ -6869,6 +6837,14 @@
       "talentumWebhookTextSilencio": "Webhook de Talentum: sin eventos en 6 h",
       "talentumWebhookActor": "Enlite",
       "talentumWebhookContext": "Webhook de Talentum",
+      "presenceOpen4h": "Turno sin salida registrada: pasaron más de 4 h del fin previsto ({{fecha}}).",
+      "presenceOpen4hWithTime": "Turno sin salida registrada: pasaron más de 4 h del fin previsto ({{fecha}}, {{hora}}).",
+      "presenceOpen4hNoDate": "Turno sin salida registrada: pasaron más de 4 h del fin previsto.",
+      "checkInRefusedNoEntry": "Entrada rechazada y sin entrada aceptada: turno del {{fecha}}.",
+      "checkInRefusedNoEntryWithTime": "Entrada rechazada y sin entrada aceptada: turno del {{fecha}}, {{hora}}.",
+      "checkInRefusedNoEntryNoDate": "Entrada rechazada y sin entrada aceptada en un turno.",
+      "presenceActor": "Enlite",
+      "presenceContext": "Revisión de presencia",
       "talentumWebhookAlarm": {
         "inbox_falha": "eventos con error",
         "inbox_pendente": "eventos sin procesar",
@@ -7414,6 +7390,91 @@
       "noAccess": "No tenés acceso a Luz (prueba).",
       "genericError": "Algo salió mal. Probá de nuevo."
     },
+    "presenceReview": {
+      "title": "Revisión de presencia",
+      "subtitle": "Turnos que necesitan revisión de coordinación: excepciones de lugar, salidas declaradas, horas no verificables y entradas rechazadas sin entrada aceptada.",
+      "loading": "Cargando…",
+      "authzError": "No se pudo verificar tu acceso. Probá de nuevo.",
+      "noAccess": {
+        "title": "Sin acceso",
+        "message": "Tu cuenta no tiene permiso para revisar la presencia. Pedile a coordinación que te lo habilite."
+      },
+      "filters": {
+        "kind": "Tipo",
+        "country": "País",
+        "allKinds": "Todos los tipos"
+      },
+      "kinds": {
+        "EXCEPTION_PENDING": "Excepción de lugar",
+        "EXIT_DECLARED": "Salida declarada",
+        "CLOCK_UNVERIFIED": "Hora no verificable",
+        "ENTRY_REFUSED_NO_ENTRY": "Entrada rechazada sin entrada aceptada"
+      },
+      "columns": {
+        "type": "Tipo",
+        "shift": "Fecha y horario del turno",
+        "worker": "Prestador/a",
+        "patient": "Paciente (nº de caso)",
+        "reason": "Motivo elegido",
+        "distance": "Distancia y precisión",
+        "action": "Acción"
+      },
+      "caseLabel": "Caso {{number}}",
+      "distance": "{{meters}} m del paciente",
+      "accuracy": "precisión ±{{meters}} m",
+      "reasons": {
+        "GPS_INDOOR": "El GPS no funciona adentro de la casa",
+        "ADDRESS_WRONG": "La dirección del paciente está mal en el mapa",
+        "PATIENT_ELSEWHERE": "El paciente está en otro lugar (consulta, internación, salida)",
+        "OTHER": "Otro motivo",
+        "SERVER_DETECTED": "El servidor detectó otra ubicación; la prestadora no eligió motivo",
+        "OCCURRENCE_NOT_OWNED": "El turno no es de la prestadora",
+        "UNKNOWN_OCCURRENCE": "Turno que no existe en el itinerario",
+        "CLOCK_SUSPECT": "Hora del teléfono sospechosa",
+        "MOCK_LOCATION": "Ubicación simulada",
+        "MOCK": "Ubicación simulada",
+        "OUT_OF_WINDOW": "Fuera del horario permitido",
+        "ALREADY_CLOSED": "El turno ya tenía salida",
+        "CHECK_OUT_BEFORE_CHECK_IN": "Salida antes de la entrada",
+        "CHECK_IN_AFTER_CHECK_OUT": "Entrada después de la salida",
+        "OUTSIDE": "Fuera del lugar del paciente",
+        "INCONCLUSIVE": "Ubicación no concluyente",
+        "NO_POSITION": "Sin ubicación",
+        "ADDRESS_UNRELIABLE": "Dirección del paciente poco confiable",
+        "UNKNOWN": "Otro motivo"
+      },
+      "actions": {
+        "approve": "Aprobar",
+        "reject": "Rechazar"
+      },
+      "monthlyCheck": "A conferir en la validación mensual",
+      "empty": "No hay nada para revisar.",
+      "loadMore": "Cargar más",
+      "dialog": {
+        "title": {
+          "APPROVED": "Aprobar excepción de lugar",
+          "REFUSED": "Rechazar excepción de lugar"
+        },
+        "legend": "Código de resolución (obligatorio)",
+        "required": "Elegí un código de resolución para continuar.",
+        "confirm": "Confirmar",
+        "cancel": "Cancelar"
+      },
+      "resolution": {
+        "INDOOR_CONFIRMED": "GPS adentro, confirmado",
+        "ADDRESS_TO_FIX": "Dirección a corregir",
+        "PATIENT_ELSEWHERE_CONFIRMED": "Paciente en otro lugar, confirmado",
+        "NOT_AT_PATIENT": "No estaba con el paciente",
+        "NO_EVIDENCE": "Sin forma de confirmar"
+      },
+      "errors": {
+        "load": "No se pudo cargar la fila de revisión. Probá de nuevo.",
+        "generic": "No se pudo registrar la decisión. Probá de nuevo.",
+        "alreadyDecided": "Esta excepción ya tiene una decisión. La fila se actualizó.",
+        "notFound": "No encontramos esa excepción. La fila se actualizó.",
+        "unavailable": "El servicio de presencia no está disponible ahora. Probá de nuevo en unos minutos."
+      }
+    },
     "pedidosIa": {
       "title": "Pedidos de la IA",
       "subtitle": "Pedidos del Sol como publicaciones: aceptá, negá o describí qué hacer.",
@@ -7822,6 +7883,17 @@
         "vacante_other": "Hay {{count}} personas en la vacante que todavía no recibieron el WhatsApp.",
         "seeVacante": "Ver las {{count}}"
       }
+    },
+    "semaphore": {
+      "title": "Semáforo",
+      "filterLabel": "Semáforo",
+      "colors": {
+        "red": "Rojo",
+        "yellow": "Amarillo",
+        "green": "Verde"
+      },
+      "dotAria": "Semáforo {{color}}: {{n}} en Seleccionado y Respuesta rápida (sin desvinculados)",
+      "none": "Sin semáforo"
     }
   },
   "publicVacancy": {

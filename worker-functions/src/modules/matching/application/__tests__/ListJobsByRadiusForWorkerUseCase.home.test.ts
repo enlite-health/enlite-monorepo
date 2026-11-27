@@ -8,7 +8,7 @@ import { ListJobsByRadiusForWorkerUseCase } from '../ListJobsByRadiusForWorkerUs
 
 const W = '11111111-1111-4111-8111-111111111111';
 const PROFILE = { center: { lat: -37.977, lng: -57.551 }, sexEncrypted: 'cifra', occupation: 'AT', hasAvailability: true };
-const base = { case_number: 1, vacancy_number: 1, title: 't', service: null, neighborhood: null, city: null, state: null, schedule: null, worker_type: [], distance_km: 1, already_applied: false };
+const base = { case_number: 1, vacancy_number: 1, title: 't', service: null, neighborhood: null, city: null, state: null, schedule: null, worker_type: [], distance_km: 1, applied_at: null, already_applied: false };
 
 function setup(profile: unknown, rows: Array<Record<string, unknown>>, sex = 'FEMALE') {
   const client = { query: jest.fn(async () => ({ rows: [{ id: W, status: 'REGISTERED' }] })) } as unknown as PoolClient;

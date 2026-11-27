@@ -62,8 +62,8 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
 
     patientId = await createPatientFixture(pool, 'eligibility');
     const vacancy = await pool.query<{ id: string }>(
-      `INSERT INTO job_postings (title, country, status, patient_id, case_number)
-       VALUES ('Caso E2E eligibility', 'AR', 'SEARCHING', $1, 99971)
+      `INSERT INTO job_postings (title, country, status, patient_id, case_number, is_draft)
+       VALUES ('Caso E2E eligibility', 'AR', 'SEARCHING', $1, 99971, false)
        RETURNING id`,
       [patientId],
     );

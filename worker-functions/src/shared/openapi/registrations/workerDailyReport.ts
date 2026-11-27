@@ -96,7 +96,7 @@ registry.registerPath({
   tags: ['Worker · Informe da guarda'],
   summary: 'Envia o informe da guarda (idempotente pelo id, imutável depois de recebido)',
   description:
-    '201 criado · 200 mesmo id e mesmo corpo (retry) · 409 `daily_report_conflict` (mesmo id, corpo diferente) · 409 `daily_report_exists` (outro id para a guarda) · '
+    '201 criado · 200 mesmo id e mesmo corpo (retry) · 409 `daily_report_conflict` (mesmo id, corpo diferente) · 409 `daily_report_exists` (outro id para a guarda) · 409 `daily_report_presence_open` (sem saída aceita nem declarada; retentável) · 409 `daily_report_template_outdated` (molde ≠ PTI vigente; retentável) · 503 `UPSTREAM_UNAVAILABLE` (attendance fora) · '
     + '422 com `code` ∈ occurrence_unknown, daily_report_window_closed, pti_version_mismatch, item_not_in_pti, scale_mismatch, option_unknown, reason_required, '
     + 'reason_not_allowed, objective_answer_missing. O corpo de erro NUNCA ecoa narrativa nem respostas.',
   security,

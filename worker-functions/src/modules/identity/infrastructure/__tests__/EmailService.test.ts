@@ -235,4 +235,72 @@ describe('EmailService — guard de envio (teste nunca toca canal real)', () => 
       expect(mockSend).not.toHaveBeenCalled();
     });
   });
+
+  describe('sendCoordinationAlert (emenda 077 §5.5)', () => {
+    const base = { onDate: '2026-11-02', time: '18:00' };
+    const PROIBIDOS = /Ana|Gómez|Calle|Av\./;
+
+    it('em NODE_ENV=test (mesmo com chave) NÃO chama o SDK e lança o erro tipado "ambiente de teste"', async () => {
+      process.env.NODE_ENV = 'test';
+      process.env.SENDGRID_API_KEY = 'SG.chave-de-verdade-exportada-no-shell';
+      await expect(new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'PRESENCE_OPEN_4H', ...base })).rejects.toMatchObject({ motivo: 'ambiente de teste' });
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('sem SENDGRID_API_KEY NÃO chama o SDK (motivo "sem SENDGRID_API_KEY")', async () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.SENDGRID_API_KEY;
+      await expect(new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'CHECK_IN_REFUSED_NO_ENTRY', ...base })).rejects.toMatchObject({ motivo: 'sem SENDGRID_API_KEY' });
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('falha do SendGrid propaga (o canal a converte em FAILED)', async () => {
+      envDeProducao();
+      mockSend.mockRejectedValueOnce(new Error('boom'));
+      await expect(new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'PRESENCE_OPEN_4H', ...base })).rejects.toThrow('boom');
+    });
+
+    it('AR: espanhol nos dois tipos, só tipo + data + hora + link; sem nome/endereço', async () => {
+      envDeProducao();
+      await new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'PRESENCE_OPEN_4H', country: 'AR', ...base });
+      await new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'CHECK_IN_REFUSED_NO_ENTRY', country: 'AR', ...base });
+      const [open, refused] = mockSend.mock.calls.map((c) => c[0]);
+      expect(open.to).toBe('c@enlite.test');
+      expect(open.subject).toBe('Turno sin salida registrada');
+      expect(open.html).toContain('(2026-11-02, 18:00) y no hay salida registrada');
+      expect(open.html).toContain('Abrir la cola de revisión');
+      expect(open.html).toContain('https://app.enlite.health/admin/presencia/revision');
+      expect(refused.subject).toBe('Entrada rechazada en un turno');
+      expect(refused.html).toContain('un turno del 2026-11-02, 18:00');
+      expect(open.html).not.toMatch(PROIBIDOS);
+      expect(refused.html).not.toMatch(PROIBIDOS);
+    });
+
+    it('BR: português (minúsculas aceitas) nos dois tipos, mesmos dados, sem texto em espanhol', async () => {
+      envDeProducao();
+      await new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'PRESENCE_OPEN_4H', country: 'br', ...base });
+      await new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'CHECK_IN_REFUSED_NO_ENTRY', country: 'BR', ...base });
+      const [open, refused] = mockSend.mock.calls.map((c) => c[0]);
+      expect(open.subject).toBe('Turno sem saída registrada');
+      expect(open.html).toContain('(2026-11-02, 18:00) e não há saída registrada');
+      expect(open.html).toContain('Abrir a fila de revisão');
+      expect(refused.subject).toBe('Entrada recusada em um turno');
+      expect(refused.html).toContain('um turno de 2026-11-02, 18:00');
+      expect(open.html).not.toContain('Abrir la cola');
+      expect(open.html).toContain('https://app.enlite.health/admin/presencia/revision');
+    });
+
+    it('país ausente ou desconhecido cai em espanhol', async () => {
+      envDeProducao();
+      await new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'PRESENCE_OPEN_4H', ...base });
+      await new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'PRESENCE_OPEN_4H', country: 'XX', ...base });
+      expect(mockSend.mock.calls.map((c) => c[0].subject)).toEqual(['Turno sin salida registrada', 'Turno sin salida registrada']);
+    });
+
+    it('escapa data/hora no HTML', async () => {
+      envDeProducao();
+      await new EmailService().sendCoordinationAlert('c@enlite.test', { kind: 'PRESENCE_OPEN_4H', onDate: '<b>x</b>', time: '18:00' });
+      expect(mockSend.mock.calls[0][0].html).toContain('&lt;b&gt;x&lt;/b&gt;');
+    });
+  });
 });

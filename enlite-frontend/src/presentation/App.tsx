@@ -24,6 +24,7 @@ import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 import { AdminHomeRedirect } from './components/features/admin/AdminHomeRedirect';
 import { AccessPage, AreaMembershipsPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
 import { PedidosIaPage } from './pages/admin/pedidos-ia';
+import { PresenceReviewPage } from './pages/admin/presence-review';
 import { CustosPage } from './pages/admin/custos';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
 import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
@@ -303,6 +304,8 @@ export function App() {
           <Route path="dedup" element={<DedupCenterPage />} />
           {/* Spec 078 (M3b-1): pedidos do Sol. Sem chave `screen:*` nem FeatureRouteGate: a trava é a célula `pedidos_ia:read`, na página. */}
           <Route path="pedidos-ia" element={<PedidosIaPage />} />
+          {/* Emenda 077 §6: fila de revisão de presença da coordenação. Sem chave `screen:*`: a trava é a célula `presence_exception:review`, na página e na API (sem a célula, "Sin acceso"). */}
+          <Route path="presencia/revision" element={<PresenceReviewPage />} />
           {/* Spec 082 (painel de custos): só pela URL, SEM item de menu (DF-2). A trava é a célula `platform_costs:read`, na página e na API. */}
           <Route path="custos" element={<CustosPage />} />
           {/* Painel de acessos — cada página se fecha sozinha em `permission_management:read` (AccessGate). */}

@@ -40,7 +40,7 @@ vi.mock('@presentation/components/features/admin/ManagementDashboard/PacientesSe
 function payloadWith(countries: Array<'AR' | 'BR'>, requested: 'AR' | 'BR' | 'ALL' = 'ALL'): ManagementDashboardData {
   return {
     scope: { countries, requested },
-    bigNumbers: { equiposArmados: 0, equiposPorArmar: 0, pacientesActivos: 0, vacantesAbiertas: 0, vacantesPausadas: 0 },
+    bigNumbers: { equiposArmados: 0, equiposPorArmar: 0, pacientesActivos: 0, vacantesAbiertas: 0 },
     equipoArmada: { armados: 0, porArmar: 0, semConfig: 0, pendenteClasificacao: 0, pctRespostaRapidaArmado: { num: 0, den: 0, excluidos: 0, pct: null } },
     pacientes: { activos: 0, ubicacionesActivas: 0, solicitudes: 0, entrevistaAgendada: 0, enAdmision: 0, enBusca: 0, sobrepoe: true },
     horas: { totais: 0, aPreencher: 0, ativas: 0, ativasConSchedule: 0, ativasSinSchedule: 0, coberturaConSchedule: 0, coberturaSinSchedule: 0 },

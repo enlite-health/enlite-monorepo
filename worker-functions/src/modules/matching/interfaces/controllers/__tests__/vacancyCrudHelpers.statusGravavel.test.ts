@@ -1,7 +1,6 @@
 /**
- * estado-automatico-do-paciente F2 (D3/E5/E10): o editor da vaga só grava o ciclo de vida.
- * Os 4 valores legados (que fingiam ser estado do paciente) são recusados com 400 `VACANCY_STATUS_NOT_LIFECYCLE`;
- * o default de criação (escrita de sistema) NÃO muda.
+ * semaforo-da-vaga F4 (D1): ninguém grava `status` pela API. Qualquer valor (inclusive os 4 do antigo ciclo de vida) é recusado com
+ * 400 `VACANCY_STATUS_NOT_WRITABLE`, es + pt-BR; o default de criação (escrita de sistema) NÃO muda.
  */
 import { authorizeVacancyUpdate, buildInsertParams, clientStatusRefusal } from '../vacancyCrudHelpers';
 
@@ -14,39 +13,48 @@ const BASE = {
   patient_address_id: null, contracted_service_id: null,
 };
 
-describe('PUT: os 4 legados são recusados pelo servidor', () => {
-  it.each(['SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'ACTIVE', 'PENDING_ACTIVATION'])('%s → 400 VACANCY_STATUS_NOT_LIFECYCLE com es + pt-BR', async (legado) => {
-    const out = await authorizeVacancyUpdate(dbCom(VAGA), 'v', { status: legado });
-    expect(out).toMatchObject({ kind: 'error', status: 400, code: 'VACANCY_STATUS_NOT_LIFECYCLE' });
-    const msg = (out as { messages: { es: string; 'pt-BR': string } }).messages;
-    expect(msg.es).toMatch(/flujo automático/);
-    expect(msg['pt-BR']).toMatch(/fluxo automático/);
-    expect((out as { error: string }).error).toContain('Invalid status value');
+describe('PUT: qualquer status é recusado pelo servidor', () => {
+  it.each(['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'ACTIVE', 'PENDING_ACTIVATION', 'DE_BAJA'])(
+    '%s → 400 VACANCY_STATUS_NOT_WRITABLE com es + pt-BR',
+    async (valor) => {
+      const out = await authorizeVacancyUpdate(dbCom(VAGA), 'v', { status: valor });
+      expect(out).toMatchObject({ kind: 'error', status: 400, code: 'VACANCY_STATUS_NOT_WRITABLE' });
+      const msg = (out as { messages: { es: string; 'pt-BR': string } }).messages;
+      expect(msg.es).toMatch(/no se edita/);
+      expect(msg['pt-BR']).toMatch(/não é editável/);
+    },
+  );
+
+  it('status null também é recusado (a chave presente é o ato, não o valor)', async () => {
+    expect(await authorizeVacancyUpdate(dbCom(VAGA), 'v', { status: null })).toMatchObject({ kind: 'error', status: 400, code: 'VACANCY_STATUS_NOT_WRITABLE' });
   });
 
-  it('DE_BAJA também não é gravável pelo cliente (R17 continua)', async () => {
-    expect(await authorizeVacancyUpdate(dbCom(VAGA), 'v', { status: 'DE_BAJA' })).toMatchObject({ kind: 'error', status: 400 });
+  it('a recusa vem ANTES de buscar a vaga: o corpo é validado primeiro, então uuid inexistente também dá 400 (e o banco nem é consultado)', async () => {
+    const db = dbCom(VAGA);
+    expect(await authorizeVacancyUpdate(db, 'uuid-que-nao-existe', { status: 'SEARCHING' })).toMatchObject({ kind: 'error', status: 400, code: 'VACANCY_STATUS_NOT_WRITABLE' });
+    expect((db as unknown as { query: jest.Mock }).query).not.toHaveBeenCalled();
+    const semVaga = { query: jest.fn(async () => ({ rows: [] })) } as never;
+    expect(await authorizeVacancyUpdate(semVaga, 'inexistente', { title: 'x' })).toMatchObject({ kind: 'error', status: 404 });
   });
 
-  it('os 4 do ciclo de vida passam', async () => {
-    for (const ok of ['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED']) {
-      expect(await authorizeVacancyUpdate(dbCom(VAGA), 'v', { status: ok })).toMatchObject({ kind: 'ok' });
-    }
+  it('R17 segue valendo: em vaga DE_BAJA um campo NÃO-status dá 409 (nenhum campo muda por aqui)', async () => {
+    expect(await authorizeVacancyUpdate(dbCom({ ...VAGA, status: 'DE_BAJA' }), 'v', { title: 'x' }))
+      .toMatchObject({ kind: 'error', status: 409, code: 'VACANCY_DE_BAJA_NO_REACTIVATION' });
   });
 
-  it('sem status no corpo não há o que recusar', () => {
+  it('sem status no corpo não há o que recusar', async () => {
     expect(clientStatusRefusal(undefined)).toBeNull();
+    expect(await authorizeVacancyUpdate(dbCom(VAGA), 'v', { schedule: [] })).toMatchObject({ kind: 'ok' });
   });
 });
 
 describe('POST: mesma recusa; o default de criação é escrita de sistema e NÃO muda (E10)', () => {
-  it('status legado vindo do cliente → recusa (o controller devolve 400 antes do INSERT)', () => {
-    expect(clientStatusRefusal('SEARCHING_REPLACEMENT')).toMatchObject({ status: 400, code: 'VACANCY_STATUS_NOT_LIFECYCLE' });
+  it('status vindo do cliente → recusa (o controller devolve 400 antes do INSERT)', () => {
+    expect(clientStatusRefusal('SEARCHING')).toMatchObject({ status: 400, code: 'VACANCY_STATUS_NOT_WRITABLE' });
+    expect(clientStatusRefusal('')).toMatchObject({ status: 400, code: 'VACANCY_STATUS_NOT_WRITABLE' });
   });
 
-  it('sem status, a vaga nasce PENDING_ACTIVATION (foguete e POST sem status)', () => {
-    const params = buildInsertParams({ ...BASE, status: undefined });
-    expect(buildInsertParams({ ...BASE, status: 'SEARCHING' })).not.toContain('PENDING_ACTIVATION');
-    expect(params.filter((x) => x === 'PENDING_ACTIVATION')).toHaveLength(1);
+  it('a vaga SEMPRE nasce PENDING_ACTIVATION (foguete e POST): o INSERT não lê status de ninguém', () => {
+    expect(buildInsertParams(BASE).filter((x) => x === 'PENDING_ACTIVATION')).toHaveLength(1);
   });
 });

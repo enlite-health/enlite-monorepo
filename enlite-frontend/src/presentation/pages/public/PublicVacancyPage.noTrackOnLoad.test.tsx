@@ -32,7 +32,6 @@ const vacancy: PublicVacancyDetail = {
   vacancy_number: 1,
   title: 'CASO 502-1',
   status: 'BUSQUEDA',
-  lifecycle: 'aberta',
   is_disabled: false,
   required_professions: ['AT'],
   required_sex: null,

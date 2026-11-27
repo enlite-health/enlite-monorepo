@@ -1,6 +1,7 @@
 import type { PatientStatus } from './patientEnums';
 import type { ServiceReserve } from './PatientItinerary';
 import type { PatientCompletenessCode } from './PatientCompleteness';
+import type { SemaphoreColor, VacancySemaphore } from '../value-objects/vacancySemaphore';
 
 /**
  * Estado v2 do paciente e o Historial — spec 012, US-B7.
@@ -93,6 +94,8 @@ export interface PatientKanbanServiceSummary {
   liveVacancyId: string | null;
   /** Dias sem cobertura do serviço, a partir de hoje (Fase 13, `uncoveredDayAlerts` na API — nunca calculado no cliente). Opcional: fixtures vivas seguem válidas. */
   uncoveredDays?: number;
+  /** semaforo-da-vaga F3: cor+n da vaga viva do serviço, calculados pelo back (nunca no cliente); `null` = sem vaga viva. */
+  semaphore?: VacancySemaphore | null;
 }
 
 /** Row shape used by the patient kanban board (grouped by status). */
@@ -119,6 +122,11 @@ export interface PatientKanbanItem {
   slaBreached?: boolean;
   /** The SLA threshold (hours) that applies to the current status. */
   slaThresholdHours?: number | null;
+  /**
+   * semaforo-da-vaga F3: a PIOR cor entre as vagas vivas do paciente (`piorCor` do back, nunca escolhida no cliente).
+   * `null` = sem vaga viva; `undefined` = o agregado não carregou (403/erro) — o filtro por cor some e nada é filtrado.
+   */
+  worstSemaphore?: SemaphoreColor | null;
   // ── Desempate do lead sem nome (lex 30/08) ───────────────────────────────
   /**
    * E-mail de contato JÁ MASCARADO pelo servidor (`jo***@gmail.com`). Presente

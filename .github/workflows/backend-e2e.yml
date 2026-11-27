@@ -84,8 +84,12 @@ jobs:
       # (backend-prd.yml: ACCOUNT_LINK_ENABLED=true). Desligado, as 4 rotas `/api/workers/me/account-link/*` respondem o 404
       # do flagGate ANTES de qualquer guard, e `learner-only-denied`/`worker-routes-still-open` não provam o Cedar nelas.
       # Só neste job: o `docker-compose.test.yml` também serve o job do frontend, que não depende disto.
+      #
+      # `docker-compose.attendance-stub.yml` (emenda 077 F5): o PUT do informe consulta a presença no attendance, que não existe no CI.
+      # Um stub HTTP (`test-fixtures/attendance-presence-stub.mjs`) ocupa o lugar dele em `ATTENDANCE_SERVICE_URL`, com `ATTENDANCE_AUTH=none`
+      # (ignorado em production). Sem ele o PUT responde 503 (fail-closed) e `daily-reports-api.e2e.test.ts` reprova.
       - name: Start Docker stack
-        run: docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.accountlink.yml up -d postgres api fake-gcs
+        run: docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.accountlink.yml -f docker-compose.attendance-stub.yml up -d postgres api fake-gcs attendance-stub
 
       - name: Wait for fake-gcs
         run: |
@@ -151,6 +155,8 @@ jobs:
           API_URL: http://localhost:8080
           DATABASE_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
           INTERNAL_TOKEN_SECRET: test-secret-for-e2e-only
+          # Emenda 077 F5: o e2e do informe fixa a presença no stub do attendance (porta publicada pelo docker-compose.attendance-stub.yml).
+          ATTENDANCE_STUB_URL: http://localhost:59070
           # Spec 018 PR-4 (foto do paciente) — conserto #1 da 2ª revisão: `patient-photo.e2e.test.ts`
           # (antes `patient-photo-and-documents.e2e.test.ts` — documento/consentimento removidos
           # por completo, fix/018-remover-documentos-consentimento) monta o app EM PROCESSO (não

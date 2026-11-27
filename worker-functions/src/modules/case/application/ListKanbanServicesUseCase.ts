@@ -15,6 +15,9 @@ import { expandServiceOccurrences, uncoveredWindow } from '../domain/serviceOccu
 import type { ServiceReserve } from '../domain/deriveServiceTeam';
 import { ServiceTeamReader } from '../infrastructure/ServiceTeamReader';
 import { reservesByServiceId, type ServiceReserveReaderPort } from './serviceReserve';
+import type { VacancySemaphoreReaderPort } from './vacancySemaphorePort';
+import { VacancySemaphoreReader } from '../../matching/infrastructure/VacancySemaphoreReader';
+import { corDoSemaforo, piorCor, type CorDoSemaforo } from '../../matching/domain/vacancySemaphore';
 
 export interface KanbanServiceSummary {
   contractedServiceId: string;
@@ -26,11 +29,21 @@ export interface KanbanServiceSummary {
   uncoveredDays: number;
   /** 056 §9: `null` = serviço sem vaga viva ("sin vacante"). Leitura derivada do quadro C — nada gravado. */
   reserve: ServiceReserve | null;
+  /** semaforo-da-vaga F2: `null` = serviço sem vaga viva (mesmo sentido de `reserve: null`) ou `n` não medido. */
+  semaphore: KanbanServiceSemaphore | null;
+}
+
+/** Semáforo da vaga viva do serviço: `n` do dono (`semaforoContagemSql`) + a cor da tabela do dono (`corDoSemaforo`). */
+export interface KanbanServiceSemaphore {
+  n: number;
+  color: CorDoSemaforo;
 }
 
 export interface KanbanPatientServices {
   patientId: string;
   asOf: string;
+  /** P1: a pior cor entre os serviços com semáforo; `null` = nenhum serviço com semáforo (nunca "verde"). */
+  worstSemaphore: CorDoSemaforo | null;
   services: KanbanServiceSummary[];
 }
 
@@ -42,10 +55,16 @@ export interface KanbanServicesReaderPort {
   readKanbanServices(countries: readonly CountryCode[]): Promise<KanbanServicesRows[]>;
 }
 
+const semaphoreOf = (counts: ReadonlyMap<string, number>, vacancyId: string | null): KanbanServiceSemaphore | null => {
+  const n = vacancyId === null ? undefined : counts.get(vacancyId);
+  return n === undefined ? null : { n, color: corDoSemaforo(n) };
+};
+
 export class ListKanbanServicesUseCase {
   constructor(
     private readonly reader: KanbanServicesReaderPort = new PatientKanbanServicesReader(),
     private readonly teamReader: ServiceReserveReaderPort = new ServiceTeamReader(),
+    private readonly semaphoreReader: VacancySemaphoreReaderPort = new VacancySemaphoreReader(),
   ) {}
 
   async execute(countries: readonly CountryCode[], now: Date = new Date()): Promise<ListKanbanServicesResult> {
@@ -54,6 +73,10 @@ export class ListKanbanServicesUseCase {
     // Reserva (056 §9): UMA leitura em lote do quadro C, só dos serviços com vaga viva (os demais são `null`).
     const liveServiceIds = rows.flatMap((row) => row.services.filter((s) => s.liveVacancyId !== null).map((s) => s.id));
     const teamRows = await this.teamReader.readMany(liveServiceIds);
+
+    // Semáforo (semaforo-da-vaga F2): UMA leitura em lote do `n` das vagas vivas, fora do laço por paciente/serviço.
+    const liveVacancyIds = rows.flatMap((row) => row.services.flatMap((s) => (s.liveVacancyId === null ? [] : [s.liveVacancyId])));
+    const counts = await this.semaphoreReader.readMany(liveVacancyIds);
 
     const patients = rows.map((row) => {
       const asOf = operationDateOf(row.country, now);
@@ -76,9 +99,11 @@ export class ListKanbanServicesUseCase {
           // L2: DIAS, não turnos — dedupe por `date` (2 faixas descobertas no mesmo dia = 1 dia).
           uncoveredDays: uncoveredDayCount(uncoveredDayAlerts(doServico, asOf, { itineraryAssembled: row.assembled === true, patientStatus: row.patientStatus ?? null })),
           reserve: reserves.get(service.id) ?? null,
+          semaphore: semaphoreOf(counts, service.liveVacancyId),
         };
       });
-      return { patientId: row.patientId, asOf, services };
+      const worstSemaphore = piorCor(services.flatMap((s) => (s.semaphore === null ? [] : [s.semaphore.color])));
+      return { patientId: row.patientId, asOf, worstSemaphore, services };
     });
 
     return { patients };

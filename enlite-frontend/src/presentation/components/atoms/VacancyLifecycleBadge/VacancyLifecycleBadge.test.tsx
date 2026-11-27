@@ -7,7 +7,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-describe('VacancyLifecycleBadge — lê só o ciclo de vida (5 valores), sem mapa de valores de banco', () => {
+describe('VacancyLifecycleBadge — lê só o selo (rascunho | baja), sem mapa de valores de banco', () => {
   it.each(CICLOS_DE_VIDA)('%s → rótulo i18n do ciclo', (ciclo) => {
     render(<VacancyLifecycleBadge lifecycle={ciclo} />);
     expect(screen.getByText(`admin.vacancyDetail.lifecycle.${ciclo}`)).toBeInTheDocument();
@@ -24,13 +24,22 @@ describe('VacancyLifecycleBadge — lê só o ciclo de vida (5 valores), sem map
     }
   });
 
-  it('sem ciclo (resposta sem o campo) → "—", nunca o valor cru', () => {
-    render(<VacancyLifecycleBadge lifecycle={null} />);
-    expect(screen.getByTestId('vacancy-lifecycle-badge')).toHaveTextContent('—');
+  it('sem selo (null/ausente) → não renderiza nada: vaga "no ar" não tem selo "Abierta" (F15)', () => {
+    const { container, rerender } = render(<VacancyLifecycleBadge lifecycle={null} />);
+    expect(container).toBeEmptyDOMElement();
+    rerender(<VacancyLifecycleBadge lifecycle={undefined} />);
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByTestId('vacancy-lifecycle-badge')).toBeNull();
+  });
+
+  it('valor legado que o back não manda mais ("aberta") nunca vira rótulo', () => {
+    // @ts-expect-error — fora do tipo de propósito: o back só manda rascunho | baja | null
+    const { container } = render(<VacancyLifecycleBadge lifecycle="aberta" />);
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('className extra é aplicado', () => {
-    render(<VacancyLifecycleBadge lifecycle="aberta" className="shrink-0" />);
+    render(<VacancyLifecycleBadge lifecycle="baja" className="shrink-0" />);
     expect(screen.getByTestId('vacancy-lifecycle-badge').className).toContain('shrink-0');
   });
 });

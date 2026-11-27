@@ -20,6 +20,7 @@ import {
   type PedidoIaAplicarPayload,
   type AdmissionImportBlockedPayload,
   type TalentumWebhookAlarmPayload,
+  type CoordinationAlertPayload,
   TALENTUM_WEBHOOK_ALARMS,
   IMPORT_STAGES,
   IMPORT_KINDS,
@@ -40,7 +41,26 @@ export const SYSTEM_SOL_FILA_ACTOR_UID = 'system:sol-fila';
 /** Sentinela do aviso do webhook do Talentum (spec 095 §3.5): sem autor humano, sem FK (461). A tela mostra "Enlite", nunca o uid. */
 export const SYSTEM_TALENTUM_WEBHOOK_ACTOR_UID = 'system:talentum-webhook';
 
+/** Sentinela do aviso de presença à coordenação (emenda 077 §5): sem autor humano, sem FK (461). */
+export const SYSTEM_PRESENCE_ACTOR_UID = 'system:presence-alert';
+
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Payload fechado do aviso de presença à coordenação: `{ occurrence_id, slot_id, on_date, worker_id, service_id, start_time, end_time }` (os 2 últimos = instantes ISO da janela do turno). Reconstrói chave a chave:
+ * chave extra (nome, endereço, coordenada, clínico) LANÇA, não é ignorada. Valor fora do contrato (uuid, data) também lança.
+ */
+export function buildCoordinationAlertPayload(input: { occurrence_id: string; slot_id: string; on_date: string; worker_id: string; service_id: string; start_time: string; end_time: string }): CoordinationAlertPayload {
+  const extra = Object.keys(input).filter((k) => !['occurrence_id', 'slot_id', 'on_date', 'worker_id', 'service_id', 'start_time', 'end_time'].includes(k));
+  if (extra.length > 0) throw new Error('CoordinationAlertPayload: chave fora do contrato');
+  const uuids = [input.occurrence_id, input.slot_id, input.worker_id, input.service_id];
+  const instants = [input.start_time, input.end_time];
+  if (!uuids.every((u) => UUID_RE.test(u)) || !ISO_DATE.test(input.on_date) || !instants.every((t) => typeof t === 'string' && ISO_INSTANT.test(t) && !Number.isNaN(Date.parse(t)))) {
+    throw new Error('CoordinationAlertPayload: valor fora do contrato');
+  }
+  return { occurrence_id: input.occurrence_id, slot_id: input.slot_id, on_date: input.on_date, worker_id: input.worker_id, service_id: input.service_id, start_time: input.start_time, end_time: input.end_time };
+}
 
 /**
  * Payload fechado do aviso "aplicar" (spec 078 M4.4, gatilho (d)): id do pedido + degrau (3|4) + grave + prazo. `hoje` se grave, `semana`
@@ -320,6 +340,29 @@ export class SystemNotificationPublisher {
         conversationId: null,
         messageId: null,
         payload: buildItineraryUncoveredShiftsPayload({ operationDate: input.operationDate, items: input.items }),
+      },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, [input.recipientUid], client);
+    return eventId;
+  }
+
+  /**
+   * Emenda 077 §5: o aviso de presença a UM destinatário da coordenação. O `client` é a transação do alerta (a entrega in-app vai nela).
+   * Payload só-ids (`buildCoordinationAlertPayload`); `patient_id` na coluna. Devolve o id do evento (a entrega o referencia).
+   */
+  async publishCoordinationAlert(
+    client: PoolClient,
+    input: { typeCode: 'PRESENCE_OPEN_4H' | 'CHECK_IN_REFUSED_NO_ENTRY'; recipientUid: string; patientId: string; payload: Parameters<typeof buildCoordinationAlertPayload>[0] },
+  ): Promise<string> {
+    const eventId = await this.repository.insertEvent(
+      {
+        typeCode: input.typeCode,
+        actorUid: SYSTEM_PRESENCE_ACTOR_UID,
+        patientId: input.patientId,
+        conversationId: null,
+        messageId: null,
+        payload: buildCoordinationAlertPayload(input.payload),
       },
       client,
     );

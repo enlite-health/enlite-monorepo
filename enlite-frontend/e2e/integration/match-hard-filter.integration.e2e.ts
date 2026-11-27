@@ -90,7 +90,6 @@ test.describe('Match — hard filters @integration', () => {
         providers_needed: 1,
         salary_text: 'A convenir',
         schedule: [{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }],
-        status: 'SEARCHING',
       },
     });
     expect(createRes.ok(), `Create vacancy failed: ${createRes.status()}`).toBe(true);
