@@ -58,9 +58,20 @@ describe('claimRoutes — claimIpKey', () => {
   });
 
   it('X-Forwarded-For IPv6 também é normalizado (mesmo /56 colapsa)', () => {
-    const chave1 = claimIpKey(reqComForwardedFor('2001:db8:1:1::1, 10.0.0.9'));
-    const chave2 = claimIpKey(reqComForwardedFor('2001:db8:1:1::2, 10.0.0.9'));
+    const chave1 = claimIpKey(reqComForwardedFor('10.0.0.9, 2001:db8:1:1::1'));
+    const chave2 = claimIpKey(reqComForwardedFor('10.0.0.9, 2001:db8:1:1::2'));
     expect(chave1).toBe(chave2);
+  });
+
+  it('B2: dois pedidos com 1º item diferente (forjado) e ÚLTIMO igual dão a MESMA chave', () => {
+    const chave1 = claimIpKey(reqComForwardedFor('6.6.6.6, 1.2.3.4'));
+    const chave2 = claimIpKey(reqComForwardedFor('7.7.7.7, 1.2.3.4'));
+    expect(chave1).toBe(chave2);
+    expect(chave1).toBe('1.2.3.4');
+  });
+
+  it('B2: último item diferente dá chave diferente', () => {
+    expect(claimIpKey(reqComForwardedFor('6.6.6.6, 1.2.3.4'))).not.toBe(claimIpKey(reqComForwardedFor('6.6.6.6, 1.2.3.5')));
   });
 });
 

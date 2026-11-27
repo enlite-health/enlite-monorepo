@@ -14,6 +14,7 @@ import type { AccountLinkController } from './AccountLinkController';
 import type { AuthMiddleware } from '../identity/interfaces/middleware/AuthMiddleware';
 import { routeClass } from '../identity/permissions';
 import { selfUid } from '@shared/http/selfUid';
+import { clientIp } from '@shared/http/clientIp';
 
 function flagGate(req: Request, res: Response, next: NextFunction): void {
   if (process.env.ACCOUNT_LINK_ENABLED !== 'true') {
@@ -25,11 +26,9 @@ function flagGate(req: Request, res: Response, next: NextFunction): void {
 
 // `ipKeyGenerator` e não o endereço cru: em IPv6 cada cliente recebe um /64
 // (às vezes /56) inteiro, então chave por endereço exato deixa a mesma pessoa
-// trocar de sufixo e furar o limite de start/confirm. Exportada para teste.
-export const ipKey = (req: Request): string =>
-  ipKeyGenerator(
-    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ?? req.ip ?? 'unknown',
-  );
+// trocar de sufixo e furar o limite de start/confirm. Chave = último item do X-Forwarded-For
+// (o que o GFE acrescenta; o 1º é do cliente). Exportada para teste.
+export const ipKey = (req: Request): string => ipKeyGenerator(clientIp(req));
 
 const startIpLimit = rateLimit({
   windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false,

@@ -3,9 +3,10 @@ import rateLimit, { ipKeyGenerator, type Options } from 'express-rate-limit';
 import { ClaimController } from '../controllers/ClaimController';
 import type { AuthMiddleware } from '@modules/identity/interfaces/middleware/AuthMiddleware';
 import { routeClass } from '@modules/identity/permissions';
+import { clientIp } from '@shared/http/clientIp';
 
 /**
- * Chave por IP (com X-Forwarded-For como preferência) normalizada por
+ * Chave por IP (último item do X-Forwarded-For, o que o GFE acrescenta; o 1º é do cliente) normalizada por
  * `ipKeyGenerator`: em IPv6 cada cliente tem um /64 (às vezes /56) inteiro à
  * disposição, então chavear pelo endereço exato deixa a mesma pessoa trocar
  * de sufixo e furar o limite de OTP/confirm. Extraída (e exportada) para ser
@@ -13,11 +14,7 @@ import { routeClass } from '@modules/identity/permissions';
  * handler montado.
  */
 export function claimIpKey(req: Request): string {
-  return ipKeyGenerator(
-    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
-      req.ip ??
-      'unknown',
-  );
+  return ipKeyGenerator(clientIp(req));
 }
 
 /**
