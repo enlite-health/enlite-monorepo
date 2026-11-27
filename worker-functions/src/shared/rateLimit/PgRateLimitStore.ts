@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import type { Store, Options, ClientRateLimitInfo } from 'express-rate-limit';
 import type { Pool } from 'pg';
-import { DatabaseConnection } from '../database/DatabaseConnection';
+import { lazyPool } from '../db/lazyPool';
 
 /**
  * Store do `express-rate-limit` sobre Postgres: o contador é compartilhado entre instâncias (o MemoryStore conta por
@@ -48,9 +48,5 @@ export class PgRateLimitStore implements Store {
 
 export function createPgRateLimitStore(prefix: string): PgRateLimitStore {
   // Pool resolvido na consulta, não na criação: as rotas criam o store no carregamento do módulo (sem DB configurado em teste).
-  const lazyPool: Pick<Pool, 'query'> = {
-    query: ((...args: unknown[]) =>
-      (DatabaseConnection.getInstance().getPool().query as (...a: unknown[]) => unknown)(...args)) as Pool['query'],
-  };
-  return new PgRateLimitStore(lazyPool, prefix);
+  return new PgRateLimitStore(lazyPool(), prefix);
 }

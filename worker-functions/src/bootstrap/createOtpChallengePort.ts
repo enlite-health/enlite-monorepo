@@ -5,6 +5,7 @@ import { PgOtpChallengeService } from '@modules/auth/infrastructure/PgOtpChallen
 import { TwilioAuthTemplateSender } from '@modules/auth/infrastructure/TwilioAuthTemplateSender';
 import { TwilioVerifyOtpAdapter } from '@modules/auth/infrastructure/TwilioVerifyOtpAdapter';
 import { TwilioVerifyService } from '@modules/auth/infrastructure/TwilioVerifyService';
+import { lazyPool } from '@shared/db/lazyPool';
 import { GuardedOtpChallengePort } from '@modules/auth/application/GuardedOtpChallengePort';
 import { PgOtpSendLedger } from '@modules/auth/infrastructure/PgOtpSendLedger';
 import type { OtpChallengePort } from '@modules/auth/ports/OtpChallengePort';
@@ -27,8 +28,8 @@ export function dailyMaxFrom(env: NodeJS.ProcessEnv): number {
  */
 export function createOtpChallengePort(env: NodeJS.ProcessEnv = process.env): OtpChallengePort {
   const dailyMax = dailyMaxFrom(env);
-  const pool = DatabaseConnection.getInstance().getPool();
-  const ledger = new PgOtpSendLedger(pool);
+  // Pool preguiçoso: montar o port no boot não abre conexão nem exige banco (no ramo Verify isso seria comportamento novo).
+  const ledger = new PgOtpSendLedger(lazyPool());
   const contentSid = env.TWILIO_AUTH_TEMPLATE_CONTENT_SID;
   const accountSid = env.TWILIO_ACCOUNT_SID;
   const authToken = env.TWILIO_AUTH_TOKEN;
@@ -38,7 +39,7 @@ export function createOtpChallengePort(env: NodeJS.ProcessEnv = process.env): Ot
       fromNumber: env.TWILIO_WHATSAPP_NUMBER,
       messagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
     });
-    return new GuardedOtpChallengePort(new PgOtpChallengeService(pool, sender), ledger, 'own', dailyMax);
+    return new GuardedOtpChallengePort(new PgOtpChallengeService(DatabaseConnection.getInstance().getPool(), sender), ledger, 'own', dailyMax);
   }
   return new GuardedOtpChallengePort(
     new TwilioVerifyOtpAdapter(new IsTestOtpGuardedVerify(new TwilioVerifyService())), ledger, 'verify', dailyMax,

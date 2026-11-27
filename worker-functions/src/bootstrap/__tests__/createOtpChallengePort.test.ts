@@ -4,8 +4,9 @@ import { PgOtpChallengeService } from '@modules/auth/infrastructure/PgOtpChallen
 import { TwilioVerifyOtpAdapter } from '@modules/auth/infrastructure/TwilioVerifyOtpAdapter';
 
 jest.mock('twilio', () => jest.fn(() => ({})));
+const mockGetInstance = jest.fn(() => ({ getPool: () => ({ query: jest.fn() }) }));
 jest.mock('@shared/database/DatabaseConnection', () => ({
-  DatabaseConnection: { getInstance: () => ({ getPool: () => ({ query: jest.fn() }) }) },
+  DatabaseConnection: { getInstance: () => mockGetInstance() },
 }));
 
 type Interno = { inner: unknown; adapter: string; dailyMax: number };
@@ -32,6 +33,17 @@ describe('createOtpChallengePort — decorator em volta dos dois adapters', () =
     expect(interno(port).adapter).toBe('own');
     expect(interno(port).inner).toBeInstanceOf(PgOtpChallengeService);
     expect(interno(port).dailyMax).toBe(99);
+  });
+
+  it('no ramo Verify, montar NÃO resolve o pool: sem banco configurado não lança', () => {
+    mockGetInstance.mockClear();
+    mockGetInstance.mockImplementation(() => { throw new Error('No database configuration found.'); });
+    try {
+      expect(() => createOtpChallengePort({} as NodeJS.ProcessEnv)).not.toThrow();
+      expect(mockGetInstance).not.toHaveBeenCalled();
+    } finally {
+      mockGetInstance.mockImplementation(() => ({ getPool: () => ({ query: jest.fn() }) }));
+    }
   });
 
   it('em Cloud Run, o teto ausente derruba a montagem', () => {
