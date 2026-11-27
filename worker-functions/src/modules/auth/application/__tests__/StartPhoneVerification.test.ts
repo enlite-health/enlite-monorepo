@@ -78,4 +78,38 @@ describe('T-F3c-134 start: o servidor decide a finalidade', () => {
     await useCase.execute({ ...input, purpose: 'claim' } as never);
     expect(otp.start).toHaveBeenCalledWith(expect.objectContaining({ purpose: 'phone_verify' }));
   });
+
+  it('G1 telefone de outro país: PHONE_COUNTRY_NOT_SUPPORTED antes de qualquer leitura ou envio', async () => {
+    const { useCase, otp, workers } = build();
+    const r = await useCase.execute({ ...input, phone: '+12025550123' });
+    expect(r.error).toBe('PHONE_COUNTRY_NOT_SUPPORTED');
+    expect(workers.findByAuthUid).not.toHaveBeenCalled();
+    expect(otp.start).not.toHaveBeenCalled();
+  });
+
+  it('G1 celular BR válido: otp.start com phoneE164 +55… e requesterUid = authUid do token', async () => {
+    const { useCase, otp } = build();
+    const r = await useCase.execute({ ...input, phone: '+55 11 98765-4321' });
+    expect(r.getValue()).toMatchObject({ status: 'SENT' });
+    expect(otp.start).toHaveBeenCalledWith(expect.objectContaining({ phoneE164: '+5511987654321', requesterUid: 'uid-own' }));
+  });
+
+  it('B10 o requesterUid é o authUid do token também no AR', async () => {
+    const { useCase, otp } = build();
+    await useCase.execute(input);
+    expect(otp.start).toHaveBeenCalledWith(expect.objectContaining({ requesterUid: 'uid-own' }));
+  });
+
+  it('o port que recusa por país (decorator) sobe como PHONE_COUNTRY_NOT_SUPPORTED, não OTP_START_FAILED', async () => {
+    const { useCase, otp } = build();
+    otp.start.mockRejectedValue(new Error('PHONE_COUNTRY_NOT_SUPPORTED'));
+    const r = await useCase.execute(input);
+    expect(r.error).toBe('PHONE_COUNTRY_NOT_SUPPORTED');
+  });
+
+  it.each(['RATE_LIMITED', 'OTP_CHANNEL_UNAVAILABLE'])('%s do port segue como antes', async (code) => {
+    const { useCase, otp } = build();
+    otp.start.mockRejectedValue(new Error(code));
+    expect((await useCase.execute(input)).error).toBe(code);
+  });
 });
