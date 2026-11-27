@@ -39,3 +39,7 @@ jobs:
       # 34 arquivos, 100 nos quatro eixos — e esta linha volta a ser verdade.
       - name: Run unit tests (com o piso de cobertura)
         run: npm test -- --coverage
+        env:
+          # Teto de heap explícito por worker (os workers do jest são forks e herdam o env). Sem isso o Node
+          # decide sozinho e o worker morria perto de ~2 GB (PR #932). Runner assumido: 4 vCPU / 16 GB, 3 workers.
+          NODE_OPTIONS: --max-old-space-size=4096
