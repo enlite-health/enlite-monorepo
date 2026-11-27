@@ -54,7 +54,7 @@ const VACANCY_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
  * semaforo-da-vaga F4: "publicável" tem um dono (`vacancyPublication.ts`) e a página serve "publicável OU DE_BAJA". Nenhuma lista de
  * status vai como parâmetro: o SQL carrega a regra gerada, e a única lista literal aqui é a do que o dono tira do ar.
  */
-const DONO_DE_PUBLICAVEL = vagaPublicavelSql('jp', 'p');
+const DONO_DE_PUBLICAVEL = vagaPublicavelSql('jp', 'p', { incluirTeste: true });
 
 /**
  * A LISTA DE PERMISSÃO da resposta pública, escrita por extenso de propósito.
@@ -543,6 +543,16 @@ describe('PublicVacancyController.getById', () => {
       expect(sql).toContain("jp.status NOT IN ('DE_BAJA', 'CLOSED', 'ON_HOLD', 'SUSPENDED')");
       expect(sql).toContain("COALESCE(p.status, '') NOT IN ('ON_HOLD', 'SUSPENDED', 'ALTA', 'DISCHARGED')");
       expect(params).toEqual([VACANCY_ID]);
+    });
+
+    it('a vaga de TESTE abre na página (opção incluirTeste do mesmo dono — o comportamento de antes): o SQL da rota não filtra is_test', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
+      const [req, res] = mockReqRes({ id: VACANCY_ID });
+      await controller.getById(req, res);
+
+      const [sql] = mockQuery.mock.calls[0];
+      expect(sql).not.toContain('is_test');
+      expect(vagaPublicavelSql('jp', 'p')).toContain('jp.is_test = false'); // o padrão (feed, raio, Luz) continua excluindo teste
     });
 
     it('o número de params acompanha o formato do id (slug tem 2, uuid tem 1): sem placeholder de status', async () => {

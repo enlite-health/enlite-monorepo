@@ -29,8 +29,16 @@ describe('PUT: qualquer status é recusado pelo servidor', () => {
     expect(await authorizeVacancyUpdate(dbCom(VAGA), 'v', { status: null })).toMatchObject({ kind: 'error', status: 400, code: 'VACANCY_STATUS_NOT_WRITABLE' });
   });
 
-  it('em vaga DE_BAJA o 409 de R17 vence o 400 (nenhum campo muda por aqui)', async () => {
-    expect(await authorizeVacancyUpdate(dbCom({ ...VAGA, status: 'DE_BAJA' }), 'v', { status: 'SEARCHING' }))
+  it('a recusa vem ANTES de buscar a vaga: o corpo é validado primeiro, então uuid inexistente também dá 400 (e o banco nem é consultado)', async () => {
+    const db = dbCom(VAGA);
+    expect(await authorizeVacancyUpdate(db, 'uuid-que-nao-existe', { status: 'SEARCHING' })).toMatchObject({ kind: 'error', status: 400, code: 'VACANCY_STATUS_NOT_WRITABLE' });
+    expect((db as unknown as { query: jest.Mock }).query).not.toHaveBeenCalled();
+    const semVaga = { query: jest.fn(async () => ({ rows: [] })) } as never;
+    expect(await authorizeVacancyUpdate(semVaga, 'inexistente', { title: 'x' })).toMatchObject({ kind: 'error', status: 404 });
+  });
+
+  it('R17 segue valendo: em vaga DE_BAJA um campo NÃO-status dá 409 (nenhum campo muda por aqui)', async () => {
+    expect(await authorizeVacancyUpdate(dbCom({ ...VAGA, status: 'DE_BAJA' }), 'v', { title: 'x' }))
       .toMatchObject({ kind: 'error', status: 409, code: 'VACANCY_DE_BAJA_NO_REACTIVATION' });
   });
 

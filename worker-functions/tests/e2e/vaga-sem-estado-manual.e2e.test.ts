@@ -17,10 +17,14 @@
  *   (vi)   POST /vacancies/baja de vaga sem serviço → DE_BAJA, fora do feed, página pública 200 com is_disabled;
  *   (vii)  vaga de serviço → baixa recusada com a mensagem nova (P8);
  *   (viii) a Luz ("vagas próximas") oferece o que o feed oferece: uma vaga de paciente SUSPENDED não aparece;
- *   (ix)   P6: vaga lançada com o paciente pausado não ganha link; a retomada do paciente garante o short link e a vaga volta ao feed.
+ *   (ix)   P6: vaga lançada com o paciente pausado não ganha link; a retomada do paciente garante o short link e a vaga volta ao feed;
+ *   (x)    I1: publish com o paciente JÁ pausado → a vaga nasce PENDING_PAUSE na transação e o Talentum recebe PUT pause (fora do feed);
+ *   (xi)   I3: a pausa que o Talentum recusa (403) vira MANUAL_PAUSE; o paciente retoma → PENDING_RESUME → PUT resume, e sai da lista manual;
+ *   (xii)  I4: a candidatura (app) decide pelo dono de publicável: paciente SUSPENDED → 409 VACANCY_NOT_PUBLISHABLE, nenhuma candidatura criada;
+ *   (xiii) B3b: vaga `is_test` publicável abre na página pública (200) e aceita candidatura, e NÃO aparece no feed nem na busca por raio.
  */
 import { Pool } from 'pg';
-import { createApiClient, waitForBackend } from './helpers';
+import { createApiClient, getMockToken, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
 import {
   COMPLETE_SERVICE_AREA,
@@ -58,12 +62,30 @@ describe('F4 (back) — a vaga não tem estado manual; "publicável" tem dono @i
   let seq = 0;
 
   const bearer = () => ({ headers: { Authorization: `Bearer ${workerToken}` } });
+  let registrado: { id: string; token: string } | null = null;
+  /** Prestadora REGISTERED (elegível a candidatar-se): linha própria por INSERT, como `worker-application-eligibility.e2e`. */
+  async function prestadoraRegistrada(): Promise<{ id: string; token: string }> {
+    if (registrado) return registrado;
+    const authUid = `uid-${TAG}-reg-${Date.now()}`;
+    const email = `${TAG}-reg-${Date.now()}@e2e.test`;
+    const id = (await pool.query<{ id: string }>(
+      `INSERT INTO workers (auth_uid, email, status, country, timezone) VALUES ($1, $2, 'REGISTERED', 'AR', 'America/Argentina/Buenos_Aires') RETURNING id`,
+      [authUid, email],
+    )).rows[0].id;
+    registrado = { id, token: await getMockToken(api, { uid: authUid, email, role: 'worker' }) };
+    return registrado;
+  }
   const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   async function limpar(): Promise<void> {
     const pats = `SELECT id FROM patients WHERE clickup_task_id LIKE $1`;
     const arg = [`${TAG}%`];
     await pool.query(`DELETE FROM job_posting_prescreening_questions WHERE job_posting_id IN (SELECT id FROM job_postings WHERE patient_id IN (${pats}))`, arg);
+    const vagas = `SELECT id FROM job_postings WHERE patient_id IN (${pats})`;
+    await pool.query(`DELETE FROM worker_job_application_stage_history WHERE application_id IN (SELECT id FROM worker_job_applications WHERE job_posting_id IN (${vagas}))`, arg).catch(() => {});
+    await pool.query(`DELETE FROM encuadres WHERE job_posting_id IN (${vagas})`, arg);
+    await pool.query(`DELETE FROM worker_job_applications WHERE job_posting_id IN (${vagas})`, arg);
+    await pool.query(`DELETE FROM worker_blocked_applications WHERE job_posting_id IN (${vagas})`, arg).catch(() => {});
     await pool.query(`DELETE FROM job_postings WHERE patient_id IN (${pats})`, arg);
     await pool.query(`DELETE FROM patient_contracted_services WHERE patient_id IN (${pats})`, arg);
     await pool.query(`DELETE FROM patient_status_history WHERE patient_id IN (${pats})`, arg);
@@ -153,7 +175,7 @@ describe('F4 (back) — a vaga não tem estado manual; "publicável" tem dono @i
     await limpar();
     await pool.query(`DELETE FROM worker_availability WHERE worker_id = $1`, [worker.id]).catch(() => {});
     await pool.query(`DELETE FROM worker_service_areas WHERE worker_id = $1`, [worker.id]).catch(() => {});
-    await pool.query(`DELETE FROM workers WHERE id = $1`, [worker.id]).catch(() => {});
+    await pool.query(`DELETE FROM workers WHERE id = ANY($1::uuid[])`, [[worker.id, ...(registrado ? [registrado.id] : [])]]).catch(() => {});
     const resto = await pool.query<{ n: number }>(
       `SELECT (SELECT count(*) FROM patients WHERE clickup_task_id LIKE $1)::int + (SELECT count(*) FROM job_postings WHERE title LIKE $1)::int AS n`, [`${TAG}%`]);
     expect(resto.rows[0].n).toBe(0);
@@ -227,10 +249,10 @@ describe('F4 (back) — a vaga não tem estado manual; "publicável" tem dono @i
     expect(criadas.rows).toHaveLength(0);
   });
 
-  it('(iv) paciente pausado pela ação humana → a vaga some do feed e o Talentum recebe PUT pause; retomar → volta e recebe PUT resume; MANUAL_PAUSE e DE_BAJA ficam intactos', async () => {
+  it('(iv) paciente pausado pela ação humana → a vaga some do feed e o Talentum recebe PUT pause; retomar → volta e recebe PUT resume; MANUAL_PAUSE de linha legada ON_HOLD e DE_BAJA ficam intactos', async () => {
     const p = await novoPaciente('iv');
     const viva = await vagaPublicadaNoStub(p, 996004);
-    const manual = await vagaPublicadaNoStub(p, 996014, { pauseState: 'MANUAL_PAUSE' });
+    const manual = await vagaPublicadaNoStub(p, 996014, { status: 'ON_HOLD', pauseState: 'MANUAL_PAUSE' }); // legado ON_HOLD: fora de "publicável", a retomada não a toca
     const baixada = await vagaPublicadaNoStub(p, 996024, { status: 'DE_BAJA' });
     expect(await noFeed(viva.id)).toBe(true); // controle positivo
     expect(await noRaio(viva.id)).toBe(true);
@@ -261,7 +283,7 @@ describe('F4 (back) — a vaga não tem estado manual; "publicável" tem dono @i
     expect(await aguardarEstado(viva.id, null)).toBeNull(); // PENDING_RESUME → enviado → o estado é limpo
     expect(talentum.count('PUT', `/projects/${viva.projectId}/resume`)).toBe(1);
     expect(talentum.projects.get(viva.projectId)!.status).toBe('IN_PROGRESS');
-    expect((await linha(manual.id)).talentum_pause_state).toBe('MANUAL_PAUSE'); // nunca retomada
+    expect((await linha(manual.id)).talentum_pause_state).toBe('MANUAL_PAUSE'); // legado fora de "publicável": não é retomada (a publicável sim — caso xi)
     expect(talentum.count('PUT', `/projects/${manual.projectId}/`)).toBe(0);
     expect(talentum.count('PUT', `/projects/${baixada.projectId}/`)).toBe(0);
     expect((await linha(baixada.id)).status).toBe('DE_BAJA');
@@ -364,6 +386,107 @@ describe('F4 (back) — a vaga não tem estado manual; "publicável" tem dono @i
     expect(await noFeed(v.id)).toBe(true);
     expect(await noRaio(v.id)).toBe(true);
   }, 90_000);
+
+  it('(x) I1: publish com o paciente JÁ pausado → a vaga nasce PENDING_PAUSE na transação, o Talentum recebe PUT pause e ela fica fora do feed', async () => {
+    const p = await novoPaciente('x');
+    const pausa = await api.post(`/api/admin/patients/${p.patientId}/status-actions`, { action: 'pausar', onHoldReason: 'SCHOOL' }, asAdmin);
+    expect(pausa.status).toBe(200);
+    const id = await novaVaga(p, 996010);
+    await pool.query(`INSERT INTO job_posting_prescreening_questions (job_posting_id, question_order, question, desired_response, weight) VALUES ($1, 1, '¿Experiencia?', 'Sí', 5)`, [id]);
+    await pool.query(`UPDATE job_postings SET talentum_description = 'Descripción QA' WHERE id = $1`, [id]);
+    const criacoes = talentum.calls.filter((c) => c.method === 'POST' && c.path === '/projects').length;
+
+    const pub = await api.post(`/api/admin/vacancies/${id}/publish-talentum`, {}, asAdmin);
+    expect(pub.status).toBe(200);
+    expect(talentum.calls.filter((c) => c.method === 'POST' && c.path === '/projects').length).toBe(criacoes + 1); // o projeto FOI criado no stub
+    const depois = await linha(id);
+    expect(depois.is_draft).toBe(false);
+    expect(depois.talentum_project_id).toBeTruthy();
+    // marcada na MESMA transação do publish: logo após a resposta nunca é NULL (PENDING_PAUSE, ou já o final PAUSED)
+    expect(['PENDING_PAUSE', 'PAUSED']).toContain(depois.talentum_pause_state);
+    expect(await aguardarEstado(id, 'PAUSED')).toBe('PAUSED');
+    expect(talentum.count('PUT', `/projects/${depois.talentum_project_id}/pause`)).toBe(1); // o stub RECEBEU a pausa
+    expect(talentum.projects.get(depois.talentum_project_id!)!.status).toBe('PAUSED');
+    expect(await noFeed(id)).toBe(false);
+    expect(await noRaio(id)).toBe(false);
+    expect(shortIo.createdFor(`caso996010-`)).toHaveLength(0); // fora do ar → sem short link (P6)
+
+    // controle: a MESMA publicação com o paciente vivo NÃO marca pausa
+    const vivo = await novoPaciente('x-vivo');
+    const idVivo = await novaVaga(vivo, 996020);
+    await pool.query(`INSERT INTO job_posting_prescreening_questions (job_posting_id, question_order, question, desired_response, weight) VALUES ($1, 1, '¿Experiencia?', 'Sí', 5)`, [idVivo]);
+    await pool.query(`UPDATE job_postings SET talentum_description = 'Descripción QA' WHERE id = $1`, [idVivo]);
+    expect((await api.post(`/api/admin/vacancies/${idVivo}/publish-talentum`, {}, asAdmin)).status).toBe(200);
+    expect((await linha(idVivo)).talentum_pause_state).toBeNull();
+  }, 90_000);
+
+  it('(xi) I3: o Talentum recusa a pausa (403) → MANUAL_PAUSE + lista manual; o paciente retoma → PUT resume e a vaga sai da lista "pausar a mano"', async () => {
+    const p = await novoPaciente('xi');
+    const v = await vagaPublicadaNoStub(p, 996011);
+    talentum.projects.get(v.projectId)!.myRole = 'VIEWER'; // a conta não é dona do projeto: escrita dá 403 (mecanismo do 084-talentum-403)
+    const manual = async (): Promise<string[]> => {
+      const r = await api.get(`/api/admin/vacancies?search=996011&talentum_manual=true&limit=50`, asAdmin);
+      expect(r.status).toBe(200);
+      return (r.data.data as Array<{ id: string }>).map((i) => i.id);
+    };
+
+    expect((await api.post(`/api/admin/patients/${p.patientId}/status-actions`, { action: 'pausar', onHoldReason: 'SCHOOL' }, asAdmin)).status).toBe(200);
+    expect(await aguardarEstado(v.id, 'MANUAL_PAUSE')).toBe('MANUAL_PAUSE');
+    expect(await manual()).toEqual([v.id]);
+    expect(talentum.count('PUT', `/projects/${v.projectId}/pause`)).toBeGreaterThanOrEqual(1);
+
+    // o time pausa o projeto à mão no Talentum e o paciente volta: a retomada tem de limpar o MANUAL_PAUSE
+    Object.assign(talentum.projects.get(v.projectId)!, { myRole: 'OWNER', status: 'PAUSED' });
+    expect((await api.post(`/api/admin/patients/${p.patientId}/status-actions`, { action: 'retomar' }, asAdmin)).status).toBe(200);
+    expect(await aguardarEstado(v.id, null)).toBeNull();
+    expect(talentum.count('PUT', `/projects/${v.projectId}/resume`)).toBe(1);
+    expect(talentum.projects.get(v.projectId)!.status).toBe('IN_PROGRESS');
+    expect(await manual()).toEqual([]); // saiu da lista manual
+  }, 90_000);
+
+  it('(xii) I4: candidatura pelo app decide pelo dono de publicável — paciente SUSPENDED → 409 VACANCY_NOT_PUBLISHABLE e nenhuma candidatura criada; paciente vivo → 200', async () => {
+    const reg = await prestadoraRegistrada();
+    const candidaturas = async (jobId: string): Promise<number> =>
+      Number((await pool.query(`SELECT count(*) AS n FROM worker_job_applications WHERE job_posting_id = $1 AND worker_id = $2`, [jobId, reg.id])).rows[0].n);
+    const candidatar = (jobId: string) => api.post('/api/worker-applications/track-channel', { jobPostingId: jobId, channel: 'facebook' }, { headers: { Authorization: `Bearer ${reg.token}` } });
+
+    const vivo = await vagaPublicadaNoStub(await novoPaciente('xii-vivo'), 996012);
+    const ok = await candidatar(vivo.id);
+    expect(ok.status).toBe(200); // controle positivo: a mesma worker, a mesma rota, vaga publicável
+    expect(await candidaturas(vivo.id)).toBe(1);
+
+    const pSusp = await novoPaciente('xii-susp', 'SUSPENDED');
+    const susp = await vagaPublicadaNoStub(pSusp, 996022);
+    expect(await noFeed(susp.id)).toBe(false); // o dono diz: não publicável
+    const r = await candidatar(susp.id);
+    expect(r.status).toBe(409);
+    expect(r.data).toMatchObject({ success: false, code: 'VACANCY_NOT_PUBLISHABLE', reason: 'vacancy_not_publishable' });
+    expect(await candidaturas(susp.id)).toBe(0);
+    expect(Number((await pool.query(`SELECT count(*) AS n FROM encuadres WHERE job_posting_id = $1`, [susp.id])).rows[0].n)).toBe(0);
+
+    // DE_BAJA mantém o código da 084
+    const baixada = await vagaPublicadaNoStub(await novoPaciente('xii-baja'), 996032, { status: 'DE_BAJA' });
+    const rb = await candidatar(baixada.id);
+    expect(rb.status).toBe(409);
+    expect(rb.data).toMatchObject({ code: 'VACANCY_DE_BAJA', reason: 'vacancy_de_baja' });
+  }, 60_000);
+
+  it('(xiii) B3b: vaga is_test publicável abre na página pública (200) e aceita candidatura, e NÃO aparece no feed nem na busca por raio', async () => {
+    const reg = await prestadoraRegistrada();
+    const normal = await vagaPublicadaNoStub(await novoPaciente('xiii-n'), 996013 + 100);
+    const teste = await vagaPublicadaNoStub(await novoPaciente('xiii-t'), 996013 + 200);
+    await pool.query(`UPDATE job_postings SET is_test = true WHERE id = $1`, [teste.id]);
+
+    expect(await noFeed(normal.id)).toBe(true); // controle positivo: a vaga normal entra no feed
+    expect(await noFeed(teste.id)).toBe(false);
+    expect(await noRaio(teste.id)).toBe(false);
+    expect((await api.get(`/api/vacancies/${normal.id}`)).status).toBe(200);
+    const pagina = await api.get(`/api/vacancies/${teste.id}`);
+    expect(pagina.status).toBe(200); // a página pública segue servindo a vaga de teste (a jornada de teste em prd)
+    expect(pagina.data.data.id).toBe(teste.id);
+    const cand = await api.post('/api/worker-applications/track-channel', { jobPostingId: teste.id, channel: 'facebook' }, { headers: { Authorization: `Bearer ${reg.token}` } });
+    expect(cand.status).toBe(200);
+  }, 60_000);
 
   it('mapa de outbound: só o stub recebeu — Talentum só em /projects, Short.io só POST /links; nenhum DELETE no Talentum', async () => {
     for (const c of talentum.calls) expect(c.path === '/auth/login' || c.path.startsWith('/projects')).toBe(true);

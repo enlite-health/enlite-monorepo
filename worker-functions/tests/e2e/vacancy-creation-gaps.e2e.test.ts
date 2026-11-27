@@ -168,9 +168,8 @@ describe('Vacancy creation gaps — review 2026-05-27', () => {
     trackedPatients.push(patientId);
     const addressId = await insertActiveAddress(pool, patientId, 'Av Gap1 100, Buenos Aires, Argentina');
 
-    // Frontend default sends status='SEARCHING' on Step 1 submit. is_draft is
-    // left to its DB default (true) — only PublishVacancyToTalentumUseCase
-    // flips it.
+    // O POST não aceita `status` (semaforo-da-vaga F4): a vaga nasce PENDING_ACTIVATION e is_draft fica no default do banco (true) —
+    // só PublishVacancyToTalentumUseCase vira a flag. O status SEARCHING (o que provocava o bug do gate por status) é semeado por SQL.
     const createRes = await api.post(
       '/api/admin/vacancies',
       {
@@ -180,13 +179,13 @@ describe('Vacancy creation gaps — review 2026-05-27', () => {
         required_professions: ['AT'],
         providers_needed:    1,
         schedule:            [{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }],
-        status:              'SEARCHING',
       },
       auth(),
     );
     expect(createRes.status).toBe(201);
     const vacancyId = createRes.data.data.id as string;
     trackedVacancies.push(vacancyId);
+    await pool.query(`UPDATE job_postings SET status = 'SEARCHING' WHERE id = $1`, [vacancyId]);
 
     // Confirm the state we expect to provoke the bug
     const { rows } = await pool.query<{ is_draft: boolean; status: string }>(

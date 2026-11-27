@@ -7,7 +7,7 @@
  * Cenários (feliz + alternativos por fase):
  *   F1  baixar uma / em lote → some das listas, nunca apaga, guarda status anterior + motivo + auditoria;
  *       lote com vaga de serviço → recusado inteiro; baixar de novo → recusado.
- *   R17 PUT de status em vaga baixada → 409 e segue baixada; a reativação do serviço devolve SÓ a baixada por ele.
+ *   R17 PUT de campo em vaga baixada → 409 e segue baixada (PUT com `status` → 400 antes de buscar a vaga); a reativação do serviço devolve SÓ a baixada por ele.
  *   F2  lista esconde as baixadas; include_baja=true e filtro de status as mostram.
  *   F5  (F4 do semaforo-da-vaga) PUT com qualquer status → 400 VACANCY_STATUS_NOT_WRITABLE; a vaga sem serviço sai por "Dar de baja".
  *   F6  o #NN é a ordem do serviço; vaga sem serviço sem número; vaga nova do mesmo serviço repete o número (R12).
@@ -160,13 +160,13 @@ describe('Spec 084 — baixa de vaga antiga, volta só pelo serviço @integratio
   });
 
   describe('R17 — a vaga baixada NÃO volta por ação de usuário; só pela reativação do serviço que a baixou', () => {
-    it('PUT de status em vaga baixada sem serviço → 409 com es/pt-BR e ela segue DE_BAJA (teste-chave R17)', async () => {
+    it('PUT de campo (não-status) em vaga baixada sem serviço → 409 com es/pt-BR e ela segue DE_BAJA (teste-chave R17)', async () => {
       const patientId = await criarPaciente('r17', 884004);
       const vagaId = await criarVaga({ patientId, caseNumber: 884004 });
       await api.post('/api/admin/vacancies/baja', { vacancyIds: [vagaId] }, asAdmin);
 
-      for (const status of ['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED']) {
-        const put = await api.put(`/api/admin/vacancies/${vagaId}`, { status }, asAdmin);
+      for (const corpo of [{ title: 'CASO 084E2E r17 renomeada' }, { daily_obs: 'r17' }, { schedule: [] }]) {
+        const put = await api.put(`/api/admin/vacancies/${vagaId}`, corpo, asAdmin);
         expect(put.status).toBe(409);
         expect(put.data.code).toBe('VACANCY_DE_BAJA_NO_REACTIVATION');
         expect(put.data.messages.es).toBeTruthy();
@@ -175,6 +175,18 @@ describe('Spec 084 — baixa de vaga antiga, volta só pelo serviço @integratio
       const row = await linha(vagaId);
       expect(row.status).toBe('DE_BAJA');
       expect(row.baja_reason).toBe('MANUAL');
+    });
+
+    it('PUT com `status` em vaga baixada → 400 VACANCY_STATUS_NOT_WRITABLE (o corpo é validado antes de buscar a vaga) e ela segue DE_BAJA', async () => {
+      const patientId = await criarPaciente('r17s', 884014);
+      const vagaId = await criarVaga({ patientId, caseNumber: 884014 });
+      await api.post('/api/admin/vacancies/baja', { vacancyIds: [vagaId] }, asAdmin);
+      for (const status of ['SEARCHING', 'ON_HOLD', 'SUSPENDED', 'CLOSED']) {
+        const put = await api.put(`/api/admin/vacancies/${vagaId}`, { status }, asAdmin);
+        expect(put.status).toBe(400);
+        expect(put.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
+      }
+      expect((await linha(vagaId)).status).toBe('DE_BAJA');
     });
 
     it('baixa do serviço marca SERVICE; reativar o serviço devolve SÓ a vaga baixada por ele (a baixada à mão, de outro serviço, fica)', async () => {

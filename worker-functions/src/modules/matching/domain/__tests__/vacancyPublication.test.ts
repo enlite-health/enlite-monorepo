@@ -8,6 +8,7 @@ import {
   PACIENTE_QUE_PAUSA_A_VAGA,
   STATUS_QUE_TIRAM_DO_FEED,
   vagaPublicavel,
+  pacientePausadoSql,
   vagaPublicavelSql,
   type VagaPublicacaoFatos,
 } from '../vacancyPublication';
@@ -49,6 +50,27 @@ describe('vagaPublicavel (TS)', () => {
   });
 });
 
+describe('opção incluirTeste (página pública e candidatura servem a vaga de teste; feed, raio e Luz seguem excluindo)', () => {
+  it('TS: vaga is_test é publicável SÓ com incluirTeste; todas as outras regras seguem valendo', () => {
+    const teste = { ...VIVA, isTest: true };
+    expect(vagaPublicavel(teste)).toBe(false);
+    expect(vagaPublicavel(teste, { incluirTeste: true })).toBe(true);
+    expect(vagaPublicavel({ ...teste, isDraft: true }, { incluirTeste: true })).toBe(false);
+    expect(vagaPublicavel({ ...teste, status: 'DE_BAJA' }, { incluirTeste: true })).toBe(false);
+    expect(vagaPublicavel({ ...teste, patientStatus: 'SUSPENDED' }, { incluirTeste: true })).toBe(false);
+    expect(vagaPublicavel({ ...teste, serviceActive: false }, { incluirTeste: true })).toBe(false);
+  });
+
+  it('SQL: a MESMA regra gerada, sem a cláusula is_test; o padrão (sem opção) continua excluindo teste', () => {
+    expect(vagaPublicavelSql('jp', 'p')).toContain('jp.is_test = false');
+    const com = vagaPublicavelSql('jp', 'p', { incluirTeste: true });
+    expect(com).not.toContain('is_test');
+    expect(com.replace('jp.is_test = false\n         AND ', '')).toBe(vagaPublicavelSql('jp', 'p').replace('jp.is_test = false\n         AND ', ''));
+    expect(com).toContain('jp.is_draft = false');
+    expect(com).toMatch(/\bp\.status/);
+  });
+});
+
 describe('vagaPublicavelSql (gerado da mesma regra)', () => {
   const sql = vagaPublicavelSql('jp', 'p');
 
@@ -78,6 +100,14 @@ describe('vagaPublicavelSql (gerado da mesma regra)', () => {
 
   it('p é opcional na forma semPaciente (sem alias de paciente no FROM)', () => {
     expect(() => vagaPublicavelSql('jp', undefined, { semPaciente: true })).not.toThrow();
+  });
+});
+
+describe('pacientePausadoSql (a marcação de pausa do publish; gerado da MESMA tabela do paciente)', () => {
+  it('carrega exatamente os estados de PACIENTE_QUE_PAUSA_A_VAGA, com o alias recebido', () => {
+    const sql = pacientePausadoSql('pac');
+    expect(sql).toBe(`pac.status IN (${PACIENTE_QUE_PAUSA_A_VAGA.map((x) => `'${x}'`).join(', ')})`);
+    expect(pacientePausadoSql()).toMatch(/^p\.status IN/);
   });
 });
 

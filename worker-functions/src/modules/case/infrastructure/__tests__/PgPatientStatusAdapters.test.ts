@@ -78,12 +78,34 @@ describe('PgTalentumPauseMarker (P6, semaforo-da-vaga F4): a pergunta é a regra
     expect(params).toEqual(['pat-1']);
   });
 
-  it("resume marca PENDING_RESUME só quem estava PAUSED/PENDING_PAUSE: MANUAL_PAUSE e o resto ficam intactos", async () => {
+  it("resume marca PENDING_RESUME quem estava PAUSED/PENDING_PAUSE/MANUAL_PAUSE (I3: a pausa que falhou também volta); só vaga publicável-sem-paciente", async () => {
     const t = tx([]);
     expect(await new PgTalentumPauseMarker().mark(t as never, 'pat-1', 'resume')).toEqual([]);
     const [sql] = t.query.mock.calls[0] as unknown as [string];
     expect(sql).toContain("talentum_pause_state = 'PENDING_RESUME'");
-    expect(sql).toContain("jp.talentum_pause_state IN ('PAUSED', 'PENDING_PAUSE')");
-    expect(sql).not.toContain('MANUAL_PAUSE');
+    expect(sql).toContain("jp.talentum_pause_state IN ('PAUSED', 'PENDING_PAUSE', 'MANUAL_PAUSE')");
+    // MANUAL_PAUSE de vaga baixada (DE_BAJA) ou de legado ON_HOLD/CLOSED não volta: o filtro de publicável as exclui
+    expect(sql).toContain("jp.status NOT IN ('DE_BAJA', 'CLOSED', 'ON_HOLD', 'SUSPENDED')");
+    expect(sql).not.toContain('MANUAL_RESUME');
+  });
+});
+
+describe('PgTalentumPauseMarker.markVacancyIfPatientPaused (I1): a vaga que acabou de ser lançada com o paciente já pausado', () => {
+  const tx = (ids: string[]) => ({ query: jest.fn(async () => ({ rows: ids.map((id) => ({ id })), rowCount: ids.length })) });
+
+  it('marca PENDING_PAUSE SÓ a vaga pedida, e só se o paciente dela está no conjunto que pausa (a tabela do dono)', async () => {
+    const t = tx(['v9']);
+    expect(await new PgTalentumPauseMarker().markVacancyIfPatientPaused(t as never, 'v9')).toEqual(['v9']);
+    const [sql, params] = t.query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(sql).toContain("talentum_pause_state = 'PENDING_PAUSE'");
+    expect(sql).toContain('jp.id = $1');
+    expect(sql).toContain('jp.talentum_project_id IS NOT NULL');
+    expect(sql).toContain("p.status IN ('ON_HOLD', 'SUSPENDED', 'ALTA', 'DISCHARGED')"); // paciente pausado (PACIENTE_QUE_PAUSA_A_VAGA)
+    expect(sql).toContain("jp.status NOT IN ('DE_BAJA', 'CLOSED', 'ON_HOLD', 'SUSPENDED')"); // o resto da regra do dono (sem a cláusula do paciente)
+    expect(params).toEqual(['v9']);
+  });
+
+  it('paciente vivo (nenhuma linha) → nada marcado', async () => {
+    expect(await new PgTalentumPauseMarker().markVacancyIfPatientPaused(tx([]) as never, 'v9')).toEqual([]);
   });
 });

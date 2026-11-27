@@ -38,11 +38,12 @@ describe('contrato: lista gravável e ciclos de vida — front = back', () => {
     expect([...STATUS_GRAVAVEIS]).toEqual([]);
   });
 
-  it('o filtro da lista e o badge leem CICLOS_DE_VIDA / o ciclo, sem mapa de valores de banco', () => {
+  it('a lista de vagas NÃO tem mais filtro de ciclo (getLifecycleOptions ausente) e o badge lê o ciclo, sem mapa de valores de banco', () => {
     const dados = lerFront('presentation/pages/admin/vacanciesData.ts');
-    expect(dados).toContain('CICLOS_DE_VIDA');
+    expect(dados).not.toContain('getLifecycleOptions'); // F4 tirou o filtro de ciclo da lista
     expect(dados).not.toMatch(/SEARCHING_REPLACEMENT|RAPID_RESPONSE|PENDING_ACTIVATION/);
     const badge = lerFront('presentation/components/atoms/VacancyLifecycleBadge/VacancyLifecycleBadge.tsx');
+    expect(badge).toContain('CicloDeVida'); // controle positivo: o arquivo lido é o badge que lê o ciclo
     expect(badge).not.toMatch(/SEARCHING|ON_HOLD|SUSPENDED|CLOSED|DE_BAJA/);
   });
 });

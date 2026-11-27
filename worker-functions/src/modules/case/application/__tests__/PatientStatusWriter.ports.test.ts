@@ -25,7 +25,7 @@ function montar(missing: PatientCompletenessCode[] = [], de = 'ADMISSION') {
     transaction: { run: jest.fn(async (fn) => fn(tx)) },
     completeness: { missingFor: jest.fn(async () => missing) },
     allocation: { countLive: jest.fn(async () => 0) },
-    talentum: { mark: jest.fn(async () => []) },
+    talentum: { mark: jest.fn(async () => []), markVacancyIfPatientPaused: jest.fn(async () => []) },
   };
   return { ports, tx, queries, move: createPatientStatusWriter(ports) };
 }

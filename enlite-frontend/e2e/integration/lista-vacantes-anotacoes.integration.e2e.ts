@@ -212,15 +212,15 @@ test.describe('lista de vacantes e anotações @integration', () => {
     });
     await expect(page.getByTestId(`vacancies-row-${vacancyD}-last-action`)).toHaveText(esperado);
 
-    // 4. Controle positivo: um PUT que só reafirma o `status` atual ainda
-    // avança `updated_at` (gatilho genérico da 011) — e a "última ação" NÃO
+    // 4. Controle positivo: um PUT operacional (`schedule`, o único campo editável de vaga publicada; `status` não é mais gravável,
+    // semaforo-da-vaga F4) ainda avança `updated_at` (gatilho genérico da 011) — e a "última ação" NÃO
     // pode seguir esse avanço (DX-3.5 proíbe `updated_at` como fonte).
     const antes = Number(runSQL(`select extract(epoch from updated_at) from job_postings where id='${vacancyD}'`));
     const putRes = await request.put(`${BACKEND_URL}/api/admin/vacancies/${vacancyD}`, {
       headers: { Authorization: `Bearer ${tokenFor(MOCK_STAFF)}` },
-      data: { status: 'SEARCHING' },
+      data: { schedule: [{ dayOfWeek: 1, startTime: '09:00', endTime: '17:00' }] },
     });
-    expect(putRes.status(), 'PUT /vacancies/:id (status)').toBe(200);
+    expect(putRes.status(), 'PUT /vacancies/:id (schedule)').toBe(200);
     const depois = Number(runSQL(`select extract(epoch from updated_at) from job_postings where id='${vacancyD}'`));
     console.log('[3.4] updated_at antes=', antes, 'depois=', depois);
     expect(depois, 'updated_at avançou (controle positivo)').toBeGreaterThan(antes);
