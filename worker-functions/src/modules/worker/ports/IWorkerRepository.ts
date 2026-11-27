@@ -14,6 +14,8 @@ export interface IWorkerRepository {
     termsAccepted: boolean;
     privacyAccepted: boolean;
   }): Promise<Result<Worker>>;
+  /** Zera a foto de perfil (única escrita que apaga; o PATCH nunca apaga). Idempotente. */
+  clearProfilePhoto(workerId: string): Promise<Result<void>>;
   updateAuthUid(workerId: string, authUid: string, phone?: string, consentAt?: Date): Promise<Result<Worker>>;
   /** Aceite da política na ficha existente: COALESCE do trio de consentimento (o 1º aceite vale). `false` = ficha não achada. */
   recordConsentIfMissing(workerId: string, consentAt: Date): Promise<boolean>;

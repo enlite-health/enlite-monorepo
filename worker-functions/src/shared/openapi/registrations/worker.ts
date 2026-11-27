@@ -210,6 +210,24 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: 'delete',
+  path: '/api/workers/me/photo',
+  tags: ['Worker · Profile'],
+  summary: 'Apaga a foto de perfil do worker autenticado',
+  description:
+    'Zera a foto de perfil (data-URL cifrado em workers.profile_photo_url_encrypted; não há objeto de storage). ' +
+    'Idempotente: sem foto também devolve 200. A identidade vem só do token. ' +
+    'O PUT /api/workers/me/general-info NUNCA apaga a foto (campo ausente preserva o valor).',
+  security: [{ firebaseAuth: [] }],
+  responses: {
+    200: { description: 'Foto removida (ou já não havia).', content: { 'application/json': { schema: OkMessage } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    404: { description: 'Worker não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
   method: 'put',
   path: '/api/workers/me/service-area',
   tags: ['Worker · Profile'],

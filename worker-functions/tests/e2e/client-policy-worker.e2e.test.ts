@@ -22,6 +22,7 @@ const ROTAS_DE_PRESTADOR: Array<[string, string, 'read' | 'update']> = [
   ['GET', '/api/workers/me', 'read'],
   ['PUT', '/api/workers/me/general-info', 'update'],
   ['PUT', '/api/workers/me/service-area', 'update'],
+  ['DELETE', '/api/workers/me/photo', 'update'],
   ['GET', '/api/workers/me/availability', 'read'],
   ['PUT', '/api/workers/me/availability', 'update'],
   ['POST', '/api/workers/me/account-link/lookup', 'update'],

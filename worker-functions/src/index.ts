@@ -20,7 +20,7 @@ import express, { Request, Response, RequestHandler } from 'express';
 import { AnaCareHoursController, createAnaCareHoursRoutes, AnaCareHoursSyncController, createAnaCareHoursSyncAdminRoutes, createAnaCareHoursSyncInternalRoutes } from '@modules/anacare-hours';
 import { corsMiddleware } from '@shared/http/corsConfig';
 import rateLimit from 'express-rate-limit';
-import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
+import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, WorkerProfilePhotoMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
 import { appChannel } from '@modules/worker/interfaces/middleware/appChannel';
 import {
   AdminPatientsController,
@@ -310,6 +310,7 @@ const workerDailyReportMeController = buildWorkerDailyReportController();
 const workerJobsByRadiusController = new WorkerJobsByRadiusController();
 const adminWorkerDocumentsController = new AdminWorkerDocumentsController();
 const workerAdditionalDocsMeController = new WorkerAdditionalDocsMeController();
+const workerProfilePhotoMeController = new WorkerProfilePhotoMeController();
 const adminAdditionalDocsController = new AdminAdditionalDocsController();
 const encuadreController = new EncuadreController();
 const analyticsController = new AnalyticsController();
@@ -531,6 +532,10 @@ app.put('/api/workers/me/daily-reports/:reportId', routeClass('client-policy'), 
 });
 app.put('/api/workers/me/general-info', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), appChannel(), (req: Request, res: Response) => {
   workerController.saveGeneralInfo(req, res);
+});
+// D815: a prestadora apaga a PRÓPRIA foto (o PUT general-info nunca apaga: COALESCE). Identidade só pelo token.
+app.delete('/api/workers/me/photo', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+  workerProfilePhotoMeController.remove(req, res);
 });
 app.put('/api/workers/me/service-area', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), appChannel(), (req: Request, res: Response) => {
   workerController.saveServiceArea(req, res);
