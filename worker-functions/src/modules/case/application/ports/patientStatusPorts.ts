@@ -37,6 +37,8 @@ export interface LiveAllocationPort {
  */
 export interface TalentumPauseMarkerPort {
   mark(tx: StatusTx, patientId: string, acao: AcaoTalentum): Promise<string[]>;
+  /** I1: a vaga recém-lançada (publish) cujo paciente JÁ está pausado nasce PENDING_PAUSE, na transação do publish. Devolve o id marcado (ou `[]`). */
+  markVacancyIfPatientPaused(tx: StatusTx, vacancyId: string): Promise<string[]>;
 }
 
 export interface PatientStatusPorts {

@@ -32,15 +32,26 @@ export interface VagaPublicacaoFatos {
 
 const em = (lista: readonly string[], valor: string | null): boolean => valor !== null && lista.includes(valor);
 
-export const vagaPublicavel = (v: VagaPublicacaoFatos): boolean =>
+/**
+ * `incluirTeste`: a vaga `is_test` só entra onde ela existe para ser exercida de ponta a ponta em produção — a página pública
+ * (`/vacantes/<vaga>`) e a candidatura. Feed, busca por raio e a Luz usam o padrão (teste fora). É OPÇÃO do mesmo dono, não 2ª regra.
+ */
+export interface OpcoesPublicavel {
+  incluirTeste?: boolean;
+}
+
+export const vagaPublicavel = (v: VagaPublicacaoFatos, opts: OpcoesPublicavel = {}): boolean =>
   !v.deleted
   && !v.isDraft
-  && !v.isTest
+  && (opts.incluirTeste === true || !v.isTest)
   && v.serviceActive !== false
   && !em(STATUS_QUE_TIRAM_DO_FEED, v.status)
   && !em(PACIENTE_QUE_PAUSA_A_VAGA, v.patientStatus);
 
 const lista = (valores: readonly string[]): string => valores.map((s) => `'${s}'`).join(', ');
+
+/** "O paciente está pausado?" em SQL, gerado da MESMA tabela `PACIENTE_QUE_PAUSA_A_VAGA` (a marcação de pausa na hora do publish a usa). */
+export const pacientePausadoSql = (p = 'p'): string => `${p}.status IN (${lista(PACIENTE_QUE_PAUSA_A_VAGA)})`;
 
 /**
  * A mesma regra em SQL, GERADA das tabelas acima. `jp` = alias de `job_postings`; `p` = alias de `patients` (LEFT JOIN do
@@ -50,12 +61,12 @@ const lista = (valores: readonly string[]): string => valores.map((s) => `'${s}'
 export function vagaPublicavelSql(
   jp = 'jp',
   p = 'p',
-  opts: { semPaciente?: boolean } = {},
+  opts: OpcoesPublicavel & { semPaciente?: boolean } = {},
 ): string {
   const clausulas = [
     `${jp}.deleted_at IS NULL`,
     `${jp}.is_draft = false`,
-    `${jp}.is_test = false`,
+    ...(opts.incluirTeste ? [] : [`${jp}.is_test = false`]),
     `${jp}.status NOT IN (${lista(STATUS_QUE_TIRAM_DO_FEED)})`,
     // Cinto de segurança (baja-vacante-por-servico): serviço dado de baixa tira a vaga mesmo com o status defasado.
     // Vaga sem serviço não casa nenhuma linha → NOT EXISTS verdadeiro → não é excluída.

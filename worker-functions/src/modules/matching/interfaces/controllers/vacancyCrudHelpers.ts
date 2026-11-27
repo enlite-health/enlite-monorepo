@@ -202,6 +202,11 @@ export async function authorizeVacancyUpdate(
   vacancyId: string,
   updates: Record<string, unknown>,
 ): Promise<UpdateAuthorizationResult> {
+  // semaforo-da-vaga F4: ninguém grava `status` (400 `VACANCY_STATUS_NOT_WRITABLE`). O corpo é validado ANTES de buscar a vaga (como no
+  // main): o PUT com status dá 400 existindo a vaga ou não. R17 (vaga baixada, 409) vale para os demais campos.
+  const recusa = clientStatusRefusal(updates.status);
+  if (recusa) return { kind: 'error', ...recusa };
+
   const currentRow = await db.query<{
     status: string | null;
     is_draft: boolean | null;
@@ -220,8 +225,8 @@ export async function authorizeVacancyUpdate(
   }
   const currentStatus = currentRow.rows[0].status;
 
-  // Spec 084 R17 (REGRA DURA): vaga baixada é só consulta. NENHUM campo — e muito menos o status — muda por aqui; a
-  // única volta é a reativação do serviço que a baixou. Roda antes de qualquer outra regra.
+  // Spec 084 R17 (REGRA DURA): vaga baixada é só consulta. NENHUM campo muda por aqui (o `status` já foi recusado acima, 400); a
+  // única volta é a reativação do serviço que a baixou. Roda antes de qualquer outra regra de campo.
   if (currentStatus === DE_BAJA_STATUS) {
     return {
       kind: 'error',
@@ -231,11 +236,6 @@ export async function authorizeVacancyUpdate(
       messages: BAJA_REFUSAL_MESSAGES.VACANCY_DE_BAJA_NO_REACTIVATION,
     };
   }
-
-  // semaforo-da-vaga F4: ninguém grava `status` (400 `VACANCY_STATUS_NOT_WRITABLE`). Depois do R17 de propósito: na vaga baixada
-  // a resposta continua sendo o 409 (nenhum campo muda), com o status no corpo ou não.
-  const recusa = clientStatusRefusal(updates.status);
-  if (recusa) return { kind: 'error', ...recusa };
 
   // Spec 084 F5 (R4/P1): vaga de serviço ATIVO nunca é encerrada, só pausada (ON_HOLD) — recusado pelo servidor.
   if (

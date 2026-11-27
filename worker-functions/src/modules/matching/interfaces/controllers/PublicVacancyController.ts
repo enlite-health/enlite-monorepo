@@ -133,10 +133,11 @@ export class PublicVacancyController {
         ? 'jp.case_number = $1 AND jp.vacancy_number = $2'
         : 'jp.id = $1';
       // "Publicável OU DE_BAJA" (semaforo-da-vaga F4): a regra de publicável é a MESMA do feed (dono: `vacancyPublication.ts`,
-      // com o cinto do serviço inativo e o paciente que pausou a vaga). DE_BAJA é sempre servida, desativada (`is_disabled`).
+      // com o cinto do serviço inativo e o paciente que pausou a vaga), com `incluirTeste`: a vaga de teste abre aqui, como antes
+      // (existe para ser exercida de ponta a ponta em prd); o feed, o raio e a Luz seguem sem ela. DE_BAJA é sempre servida, desativada (`is_disabled`).
       const whereClause =
         `${identificacao} AND jp.deleted_at IS NULL AND jp.is_draft = false ` +
-        `AND (jp.status = 'DE_BAJA' OR ${vagaPublicavelSql('jp', 'p')})`;
+        `AND (jp.status = 'DE_BAJA' OR ${vagaPublicavelSql('jp', 'p', { incluirTeste: true })})`;
 
       const result = await this.db.query(
         `

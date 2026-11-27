@@ -63,7 +63,7 @@ export class PublishVacancyToTalentumUseCase {
   private db: Pool;
   private auditRepo: JobPostingAuditRepository;
 
-  /** `afterPublish` (opcional): roda DEPOIS do commit que lança a vaga — o short link do feed. Sem ele, nada. */
+  /** `afterPublish` (opcional): a marcação de pausa na transação do publish + o que roda DEPOIS do commit (pausa, short link do feed). Sem ele, nada. */
   constructor(private readonly afterPublish?: VacancyPublishedPort) {
     this.db = DatabaseConnection.getInstance().getPool();
     this.auditRepo = new JobPostingAuditRepository();
@@ -173,6 +173,7 @@ export class PublishVacancyToTalentumUseCase {
     }
 
     // 6. Save references + audit DRAFT_CHANGED (CA-4.7: transaction)
+    let pausedIds: string[] = [];
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
@@ -209,6 +210,20 @@ export class PublishVacancyToTalentumUseCase {
         });
       }
 
+      // I1: o paciente da vaga já está pausado → ela nasce PENDING_PAUSE (mesma transação, mesmo marcador do escritor de estado). Best-effort via
+      // SAVEPOINT, como a auditoria: o projeto JÁ existe no Talentum, então a falha daqui não pode desfazer o publish (ROLLBACK deixaria o
+      // projeto órfão); ela é reportada e o publish segue.
+      if (this.afterPublish) {
+        await client.query('SAVEPOINT publish_pause_mark');
+        try {
+          pausedIds = await this.afterPublish.markPauseInTx(client, jobPostingId);
+          await client.query('RELEASE SAVEPOINT publish_pause_mark');
+        } catch (err) {
+          await client.query('ROLLBACK TO SAVEPOINT publish_pause_mark');
+          reportError(err instanceof Error ? err : new Error(String(err)), { source: 'PublishVacancyToTalentumUseCase:markPause', jobPostingId });
+        }
+      }
+
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
@@ -221,9 +236,9 @@ export class PublishVacancyToTalentumUseCase {
       `[PublishVacancy] Published vacancy ${jobPostingId} → Talentum project ${projectId}`,
     );
 
-    // Depois do COMMIT, por porta: a vaga lançada vira publicável e o feed exige o link `site`. Nunca rejeita.
+    // Depois do COMMIT, por porta: dispara a pausa marcada acima e cria o link `site` que o feed exige. Nunca rejeita.
     try {
-      await this.afterPublish?.onPublished(jobPostingId);
+      await this.afterPublish?.onPublished(jobPostingId, pausedIds);
     } catch (err) {
       reportError(err instanceof Error ? err : new Error(String(err)), { source: 'PublishVacancyToTalentumUseCase:afterPublish', jobPostingId });
     }

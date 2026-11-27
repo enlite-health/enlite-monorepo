@@ -13,8 +13,7 @@ import {
   GeminiApiError,
 } from '@modules/integration';
 import { loggingAls, reportError } from '@shared/logging';
-import { withSystemDbContext } from '@shared/database/requestDbSession';
-import { tryEnsureShortLink } from '../../application/vacancyShortLinks';
+import { buildVacancyPublishedPort } from './vacancyPublishedPortAdapter';
 import {
   JobPostingAuditRepository,
 } from '../../infrastructure/JobPostingAuditRepository';
@@ -84,10 +83,7 @@ export class VacancyTalentumController {
         return;
       }
       const actor = this.extractActor(req);
-      const useCase = new PublishVacancyToTalentumUseCase({
-        // O link do feed nasce quando a vaga vira publicável (depois do commit); escopo de sistema, como os pós-commit da vaga.
-        onPublished: (vacancyId) => withSystemDbContext('job:vacancy-publish-shortlink', () => tryEnsureShortLink(this.db, vacancyId)),
-      });
+      const useCase = new PublishVacancyToTalentumUseCase(buildVacancyPublishedPort(this.db));
       const result = await useCase.publish({ jobPostingId: id }, actor);
       res.status(200).json({ success: true, data: result });
     } catch (error: unknown) {
