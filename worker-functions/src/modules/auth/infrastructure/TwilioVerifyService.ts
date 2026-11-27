@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import twilio from 'twilio';
-import { logger, reportError } from '@shared/logging';
+import { logger, reportError, safeErrorFields } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 
@@ -192,9 +192,10 @@ export class TwilioVerifyService implements ITwilioVerifyService {
         durationMs,
         twilioCode,
         twilioStatus,
-        errorMessage: e.message,
+        ...safeErrorFields(err),
       });
-      reportError(e, {
+      // B8: a mensagem do Twilio carrega o telefone ("Invalid To +54…"): o relatório recebe mensagem fixa, sem `cause`.
+      reportError(new Error('twilio_verify_start_failed'), {
         source: 'TwilioVerifyService:start',
         phoneMasked,
         twilioCode: twilioCode != null ? String(twilioCode) : null,
