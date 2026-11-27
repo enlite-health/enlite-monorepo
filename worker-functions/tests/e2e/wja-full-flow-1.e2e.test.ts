@@ -113,8 +113,8 @@ describe('WJA Full Flow Part 1 — T1→T5 @integration', () => {
 
     // Vaga (sem link de reunião — spec 068)
     const jpRes = await pool.query<{ id: string }>(
-      `INSERT INTO job_postings (case_number, title, status)
-       VALUES ($1, $2, 'SEARCHING')
+      `INSERT INTO job_postings (case_number, title, status, is_draft)
+       VALUES ($1, $2, 'SEARCHING', false)
        RETURNING id`,
       [CASE_NUMBER, `CASO ${CASE_NUMBER} WFF E2E`],
     );
