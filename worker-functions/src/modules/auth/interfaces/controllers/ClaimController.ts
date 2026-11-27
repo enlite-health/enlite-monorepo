@@ -79,6 +79,12 @@ export class ClaimController {
           return;
         }
 
+        if (error === 'PHONE_COUNTRY_NOT_SUPPORTED') {
+          res.status(400).json({ success: false, error, code: error });
+          log.info({ msg: 'claim_request_completed', responseStatus: 400, durationMs: Date.now() - startedAt });
+          return;
+        }
+
         if (error === 'RATE_LIMITED' || error === 'OTP_CHANNEL_UNAVAILABLE') {
           const status = error === 'RATE_LIMITED' ? 429 : 503;
           res.status(status).json({ success: false, error, code: error });

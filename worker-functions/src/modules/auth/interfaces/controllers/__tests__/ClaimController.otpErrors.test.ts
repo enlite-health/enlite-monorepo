@@ -31,4 +31,14 @@ describe('ClaimController.start — erros do port', () => {
     expect(json).toHaveBeenCalledWith({ success: false, error, code: error });
     expect(status).not.toHaveBeenCalledWith(500);
   });
+
+  it('PHONE_COUNTRY_NOT_SUPPORTED → 400 com { success, error, code } e sem 500', async () => {
+    const error = 'PHONE_COUNTRY_NOT_SUPPORTED';
+    const start = { execute: jest.fn().mockResolvedValue(Result.fail(error)) };
+    const [r, status, json] = res();
+    await new ClaimController(start as never, { execute: jest.fn() } as never).start(req, r);
+    expect(status).toHaveBeenCalledWith(400);
+    expect(json).toHaveBeenCalledWith({ success: false, error, code: error });
+    expect(status).not.toHaveBeenCalledWith(500);
+  });
 });

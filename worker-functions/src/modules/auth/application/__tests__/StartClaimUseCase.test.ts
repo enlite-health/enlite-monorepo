@@ -14,6 +14,7 @@ jest.mock('@shared/logging', () => ({
     }),
   },
   reportError: jest.fn(),
+  safeErrorFields: (e: unknown) => ({ errorName: e instanceof Error ? e.name : typeof e, code: (e as { code?: string } | null)?.code ?? null }),
 }));
 
 const WORKER_ID = 'a1b2c3d4-1234-4abc-8def-9876543210ab';
@@ -95,7 +96,7 @@ describe('StartClaimUseCase', () => {
       await useCase.execute({
         authUid: 'newUid',
         email: 'outro@gmail.com',
-        phone: '+5411999887766', // phone diferente do da ficha
+        phone: '+5491166667777', // phone diferente do da ficha
       });
 
       expect(twilio.startVerification).toHaveBeenCalledWith(FICHA_PHONE, expect.objectContaining({ fichaIsTest: false }));
@@ -117,7 +118,7 @@ describe('StartClaimUseCase', () => {
       });
 
       expect(result.isFailure).toBe(true);
-      expect(result.error).toContain('TWILIO_ERROR');
+      expect(result.error).toBe('OTP_START_FAILED');
     });
 
     it('loga claim_start_otp_dispatched quando Twilio responde sucesso', async () => {
@@ -336,6 +337,50 @@ describe('StartClaimUseCase', () => {
 
       expect(result.isSuccess).toBe(true);
       expect('noCandidate' in result.getValue()).toBe(false);
+    });
+  });
+
+  describe('G1, B8 e requesterUid', () => {
+    const otpDuble = (start: jest.Mock) => ({ start, check: jest.fn(), cancel: jest.fn() });
+    const repoComFicha = () => makeRepo({ findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(importedWorker)) });
+
+    it('telefone de outro país: PHONE_COUNTRY_NOT_SUPPORTED, sem consultar o banco nem enviar', async () => {
+      const repo = repoComFicha();
+      const start = jest.fn();
+      const r = await new StartClaimUseCase(repo as any, otpDuble(start) as any).execute({
+        authUid: 'uid-teste-1', email: 'joana@gmail.com', phone: '+12025550123',
+      });
+      expect(r.error).toBe('PHONE_COUNTRY_NOT_SUPPORTED');
+      expect(repo.findByPhoneCandidates).not.toHaveBeenCalled();
+      expect(start).not.toHaveBeenCalled();
+    });
+
+    it('requesterUid = authUid do token no otp.start', async () => {
+      const start = jest.fn().mockResolvedValue({ challengeId: 'ch-1' });
+      await new StartClaimUseCase(repoComFicha() as any, otpDuble(start) as any).execute({
+        authUid: 'uid-teste-1', email: 'joana@gmail.com', phone: '+5491155261243',
+      });
+      expect(start).toHaveBeenCalledWith(expect.objectContaining({ requesterUid: 'uid-teste-1' }));
+    });
+
+    it('B8: falha genérica com telefone na mensagem vira OTP_START_FAILED e o log não tem o telefone', async () => {
+      const logChild = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+      (logger.child as jest.Mock).mockReturnValue(logChild);
+      const start = jest.fn().mockRejectedValue(Object.assign(new Error('Invalid To +5491100000000'), { code: 21211 }));
+      const r = await new StartClaimUseCase(repoComFicha() as any, otpDuble(start) as any).execute({
+        authUid: 'uid-teste-1', email: 'joana@gmail.com', phone: '+5491155261243',
+      });
+      expect(r.error).toBe('OTP_START_FAILED');
+      expect(JSON.stringify(logChild.error.mock.calls)).not.toContain('5491100000000');
+      expect(logChild.error).toHaveBeenCalledWith(expect.objectContaining({ msg: 'claim_start_twilio_failed', errorName: 'Error' }));
+    });
+
+    it.each(['RATE_LIMITED', 'OTP_CHANNEL_UNAVAILABLE', 'PHONE_COUNTRY_NOT_SUPPORTED'])('recusa %s do port passa como está', async (code) => {
+      const start = jest.fn().mockRejectedValue(new Error(code));
+      const r = await new StartClaimUseCase(repoComFicha() as any, otpDuble(start) as any).execute({
+        authUid: 'uid-teste-1', email: 'joana@gmail.com', phone: '+5491155261243',
+      });
+      expect(r.error).toBe(code);
     });
   });
 });
