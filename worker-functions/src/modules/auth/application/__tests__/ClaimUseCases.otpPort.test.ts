@@ -10,6 +10,7 @@ import { OTP_CHANNEL_UNAVAILABLE, OTP_RATE_LIMITED } from '../../ports/OtpChalle
 jest.mock('@shared/logging', () => ({
   logger: { child: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }) },
   reportError: jest.fn(),
+  safeErrorFields: (e: unknown) => ({ errorName: e instanceof Error ? e.name : typeof e, code: (e as { code?: string } | null)?.code ?? null }),
 }));
 
 const FICHA = { id: 'w-1', authUid: 'anacareimport_abc', phone: '5491155550001', isTest: false };
