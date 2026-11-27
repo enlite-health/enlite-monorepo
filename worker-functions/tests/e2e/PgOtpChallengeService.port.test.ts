@@ -36,7 +36,7 @@ describe('PgOtpChallengeService — port (start/check/cancel)', () => {
 
   it('T-F3c-108 start grava só o HMAC: o código nunca aparece em claro em nenhuma coluna', async () => {
     const w = await novaFicha();
-    const { challengeId } = await service().start({ workerId: w, purpose: 'claim', phoneE164: PHONE });
+    const { challengeId } = await service().start({ workerId: w, purpose: 'claim', phoneE164: PHONE, requesterUid: 'uid-teste-1' });
     const { rows } = await pool.query<Record<string, unknown>>(`SELECT * FROM otp_challenges WHERE id = $1`, [challengeId]);
 
     expect(lastCode).toMatch(/^\d{6}$/);
@@ -47,7 +47,7 @@ describe('PgOtpChallengeService — port (start/check/cancel)', () => {
 
   it('T-F3c-108 check com o código certo devolve ok', async () => {
     const w = await novaFicha();
-    const { challengeId } = await service().start({ workerId: w, purpose: 'claim', phoneE164: PHONE });
+    const { challengeId } = await service().start({ workerId: w, purpose: 'claim', phoneE164: PHONE, requesterUid: 'uid-teste-1' });
 
     expect(await service().check({ challengeId, workerId: w, phoneOnRecord: PHONE, code: lastCode })).toEqual({ ok: true });
     expect(await statusOf(challengeId)).toBe('consumed');
@@ -55,7 +55,7 @@ describe('PgOtpChallengeService — port (start/check/cancel)', () => {
 
   it('T-F3c-108 cancel marca canceled e o código deixa de valer', async () => {
     const w = await novaFicha();
-    const { challengeId } = await service().start({ workerId: w, purpose: 'claim', phoneE164: PHONE });
+    const { challengeId } = await service().start({ workerId: w, purpose: 'claim', phoneE164: PHONE, requesterUid: 'uid-teste-1' });
     const code = lastCode;
 
     await service().cancel({ workerId: w, purpose: 'claim' });
@@ -66,15 +66,15 @@ describe('PgOtpChallengeService — port (start/check/cancel)', () => {
 
   it('T-F3c-108 start de outra finalidade (link, phone_verify) não cancela o claim; o reenvio da MESMA finalidade cancela só o anterior', async () => {
     const w = await novaFicha();
-    const claim = await service().start({ workerId: w, purpose: 'claim', phoneE164: PHONE });
+    const claim = await service().start({ workerId: w, purpose: 'claim', phoneE164: PHONE, requesterUid: 'uid-teste-1' });
     const outras: OtpPurpose[] = ['link', 'phone_verify'];
     const ids: string[] = [];
-    for (const purpose of outras) ids.push((await service().start({ workerId: w, purpose, phoneE164: PHONE })).challengeId);
+    for (const purpose of outras) ids.push((await service().start({ workerId: w, purpose, phoneE164: PHONE, requesterUid: 'uid-teste-1' })).challengeId);
 
     expect(await statusOf(claim.challengeId)).toBe('pending');
     expect(await Promise.all(ids.map(statusOf))).toEqual(['pending', 'pending']);
 
-    const reenvio = await service().start({ workerId: w, purpose: 'claim', phoneE164: PHONE });
+    const reenvio = await service().start({ workerId: w, purpose: 'claim', phoneE164: PHONE, requesterUid: 'uid-teste-1' });
     expect(await statusOf(claim.challengeId)).toBe('canceled');
     expect(await statusOf(reenvio.challengeId)).toBe('pending');
     expect(await Promise.all(ids.map(statusOf))).toEqual(['pending', 'pending']);

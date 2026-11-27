@@ -27,7 +27,7 @@ describe('PgOtpChallengeService.check', () => {
     return rows[0].id;
   }
   async function emitir(workerId: string, phone = PHONE_A) {
-    const { challengeId } = await service().start({ workerId, purpose: 'claim', phoneE164: phone });
+    const { challengeId } = await service().start({ workerId, purpose: 'claim', phoneE164: phone, requesterUid: 'uid-teste-1' });
     return { challengeId, code: lastCode };
   }
 
