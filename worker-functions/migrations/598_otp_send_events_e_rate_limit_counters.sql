@@ -1,6 +1,6 @@
 -- Migration 598: otp_send_events + rate_limit_counters (spec 077 emenda OTP, B2/B3/G2).
 --
--- Regras da casa: idempotente (roda 2x, tudo com IF NOT EXISTS), sem controle de transação próprio (o runner envolve) e
+-- Regras da casa: idempotente (roda 2x), sem controle de transação próprio (o runner envolve) e
 -- sem alterar privilégios (roda como enlite_app, o dono das tabelas).
 -- Rollback: `migrations/pending/ROLLBACK_598_otp_send_events_e_rate_limit_counters.sql` (perde só contadores e trilha de envio).
 
