@@ -86,10 +86,10 @@ describe('canal app não espelha no Ana Care (spec 077 FR-54)', () => {
     expect(await trilha(c.id)).toEqual(['platform']);
   });
 
-  it('T-F2b-08 token de outra SA (header forjado) não marca app e enfileira 1', async () => {
+  it('T-F2b-08 token de outra SA (header forjado): 401 INVALID_SERVICE_TOKEN, nada gravado, nada enfileirado (fail-closed)', async () => {
     const c = await cuidadora('outra');
-    expect(await put(c.uid, svc('assistants-service-sa@enlite-e2e.iam.gserviceaccount.com'))).toBe(200);
-    expect(await espelhos(c.id)).toBe(1);
-    expect(await trilha(c.id)).toEqual(['platform']);
+    expect(await put(c.uid, svc('assistants-service-sa@enlite-e2e.iam.gserviceaccount.com'))).toBe(401);
+    expect(await espelhos(c.id)).toBe(0);
+    expect(await trilha(c.id)).toEqual([]);
   });
 });

@@ -43,32 +43,43 @@ describe('appChannel', () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it('T-F2b-02 token de outra SA: segue sem marca', async () => {
+  it('T-F2b-02 token de outra SA: 401 INVALID_SERVICE_TOKEN, sem marca', async () => {
     const { res, next } = await call(appChannel(fake({ email: ASSISTANTS_SA, email_verified: true })), {
       [APP_SERVICE_TOKEN_HEADER]: 'tok',
     });
     expect(profileEditChannelOf(res)).toBeUndefined();
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(res.status).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Invalid service token', code: 'INVALID_SERVICE_TOKEN' });
   });
 
-  it('T-F2b-02 email_verified falso: segue sem marca', async () => {
+  it('T-F2b-02 email_verified falso: 401, sem marca', async () => {
     const { res, next } = await call(appChannel(fake({ email: BFF_SA, email_verified: false })), {
       [APP_SERVICE_TOKEN_HEADER]: 'tok',
     });
     expect(profileEditChannelOf(res)).toBeUndefined();
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(res.status).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Invalid service token', code: 'INVALID_SERVICE_TOKEN' });
   });
 
-  it('T-F2b-02 verificador recusa: segue sem marca, sem 401, e o log não traz o token', async () => {
+  it('T-F2b-02 verificador recusa: 401, sem marca, e o log não traz o token', async () => {
     const v: ServiceIdentityVerifier = { verify: jest.fn().mockRejectedValue(new Error('Wrong recipient tok-SECRET-9')) };
     const { res, next } = await call(appChannel(v), { [APP_SERVICE_TOKEN_HEADER]: 'tok-SECRET-9' });
     expect(profileEditChannelOf(res)).toBeUndefined();
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(res.status).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Invalid service token', code: 'INVALID_SERVICE_TOKEN' });
     expect(mockLogger.warn).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(mockLogger.warn.mock.calls)).not.toContain('tok-SECRET-9');
+  });
+
+  it('A header presente mas vazio: 401 sem chamar o verificador (fail-closed)', async () => {
+    const v = fake({ email: BFF_SA, email_verified: true });
+    const { res, next } = await call(appChannel(v), { [APP_SERVICE_TOKEN_HEADER]: '' });
+    expect(v.verify).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 
   it('T-F2b-02 token válido da mobile-bff-sa marca app', async () => {
@@ -80,14 +91,15 @@ describe('appChannel', () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it('T-F2b-02 sem GCP_PROJECT_ID a allowlist é vazia e não marca', async () => {
+  it('T-F2b-02 sem GCP_PROJECT_ID a allowlist é vazia: 401, não marca', async () => {
     delete process.env.GCP_PROJECT_ID;
     const { res, next } = await call(appChannel(fake({ email: BFF_SA, email_verified: true })), {
       [APP_SERVICE_TOKEN_HEADER]: 'tok',
     });
     expect(profileEditChannelOf(res)).toBeUndefined();
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(res.status).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Invalid service token', code: 'INVALID_SERVICE_TOKEN' });
   });
 
   it('T-F2b-02 sem verificador injetado usa o Google com a audiência do BFF', async () => {

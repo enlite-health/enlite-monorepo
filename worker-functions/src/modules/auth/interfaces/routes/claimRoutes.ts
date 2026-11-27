@@ -3,6 +3,8 @@ import rateLimit, { ipKeyGenerator, type Options } from 'express-rate-limit';
 import { ClaimController } from '../controllers/ClaimController';
 import type { AuthMiddleware } from '@modules/identity/interfaces/middleware/AuthMiddleware';
 import { routeClass } from '@modules/identity/permissions';
+import { profileEditChannelOf } from '@modules/worker/interfaces/middleware/appChannel';
+import { APP_CHANNEL } from '@modules/worker/domain/profileEditSource';
 
 /**
  * Chave por IP (com X-Forwarded-For como preferência) normalizada por
@@ -58,14 +60,28 @@ export function markOtpStarted(res: Response): void {
 }
 
 /**
+ * Chave da cota do init. Canal app (token de serviço da mobile-bff-sa JÁ validado pelo `appChannel`):
+ * `app:<uid do JWT>`, porque pelo BFF o IP é o de saída do Cloud Run, comum a todas as cuidadoras, e a cota
+ * por IP viraria global. Web (sem marca): `ip:<claimIpKey>`, como o claim/start. Sem uid no canal app, volta ao IP.
+ */
+export function initOtpKey(req: Request, res: Response): string {
+  const uid = (req as Request & { user?: { uid?: string } }).user?.uid;
+  if (profileEditChannelOf(res) === APP_CHANNEL && uid) return `app:${uid}`;
+  return `ip:${claimIpKey(req)}`;
+}
+
+/**
  * Rate limit do `POST /api/workers/init` (DP-20): o init dispara SMS ao telefone da ficha
  * (`claim_pending`), pelo ramo de telefone e pelo de e-mail não verificado. Mesmo limite do
- * claim/start (3 por IP em 15 min, mesma chave), contando SÓ a resposta que abriu OTP
- * (`markOtpStarted`): o init sem SMS (login, cadastro novo) não gasta a cota. Com a cota
- * cheia, a próxima chamada leva 429 antes do use case, sem novo envio.
+ * claim/start (3 em 15 min), contando SÓ a resposta que abriu OTP (`markOtpStarted`): o init sem
+ * SMS (login, cadastro novo) não gasta a cota. Com a cota cheia, a próxima chamada leva 429 antes
+ * do use case, sem novo envio. Chave: `initOtpKey` (uid no canal app, IP na web).
+ * ⚠️ Monta DEPOIS de `requireAuth` e `appChannel` (precisa do uid e da marca do canal): o anônimo
+ * leva 401 do `requireAuth` antes de qualquer use case/Twilio.
  */
 export function createWorkerInitOtpRateLimit() {
   return otpRateLimit(OTP_START_LIMIT, OTP_START_ERROR, {
+    keyGenerator: initOtpKey,
     skipSuccessfulRequests: true,
     // "bem-sucedida" aqui = não abriu OTP → é descontada da cota
     requestWasSuccessful: (_req, res) => res.locals?.otpStarted !== true,
