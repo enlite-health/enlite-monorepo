@@ -4,6 +4,8 @@ import { ClaimController } from '../controllers/ClaimController';
 import type { AuthMiddleware } from '@modules/identity/interfaces/middleware/AuthMiddleware';
 import { routeClass } from '@modules/identity/permissions';
 import { clientIp } from '@shared/http/clientIp';
+import { selfUid } from '@shared/http/selfUid';
+import { createPgRateLimitStore } from '@shared/rateLimit/PgRateLimitStore';
 
 /**
  * Chave por IP (último item do X-Forwarded-For, o que o GFE acrescenta; o 1º é do cliente) normalizada por
@@ -44,6 +46,15 @@ const OTP_START_ERROR = 'Too many OTP requests. Try again in 15 minutes.';
 const claimStartRateLimit = otpRateLimit(OTP_START_LIMIT, OTP_START_ERROR);
 
 /**
+ * Limite por CONTA (uid do token) do claim/start, DEPOIS do `requireAuth`: 3 pedidos / 15 min, contado no banco
+ * (`PgRateLimitStore`, compartilhado entre instâncias), então trocar de IP não zera a cota. Conta também o `noCandidate`
+ * (o pedido que não achou ficha): é o que limita a enumeração de telefones por conta.
+ */
+const claimUidKey = (req: Request): string => `uid:${selfUid(req) ?? claimIpKey(req)}`;
+const claimStartUidRateLimit = () =>
+  otpRateLimit(OTP_START_LIMIT, OTP_START_ERROR, { keyGenerator: claimUidKey, store: createPgRateLimitStore('claim-start-uid') });
+
+/**
  * Rate limit para claim/confirm:
  *   Max 5 tentativas por IP em 15 minutos (acomoda typos do usuário).
  */
@@ -80,6 +91,7 @@ export function createClaimRoutes(controller: ClaimController, authMiddleware: A
     routeClass('client-policy'),
     claimStartRateLimit,
     authMiddleware.requireAuth(),
+    claimStartUidRateLimit(),
     (req: Request, res: Response) => controller.start(req, res),
   );
 
