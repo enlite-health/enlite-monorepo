@@ -1,5 +1,3 @@
-import type { OtpConfirmContext, OtpSendContext } from '../infrastructure/TwilioVerifyService';
-
 /**
  * Port do OTP próprio (D758). Quem confirma claim/link fala com ESTE port; o domínio e a aplicação não importam
  * Twilio nem Postgres. Adapters: `PgOtpChallengeService` (código nosso, template de autenticação) e, como plano B de
@@ -9,6 +7,27 @@ import type { OtpConfirmContext, OtpSendContext } from '../infrastructure/Twilio
  * destrutiva. Este tipo e o CHECK andam juntos.
  */
 export type OtpPurpose = 'claim' | 'link' | 'phone_verify';
+
+/**
+ * Fatos que a guarda de OTP de teste (`IsTestOtpGuard`) precisa no momento do envio: a ficha que
+ * RECEBE o código é de teste? e o e-mail do TOKEN de quem pede? Ausente = envio normal.
+ */
+export interface OtpSendContext {
+  /** Ficha que RECEBE o código: o confirm confere de novo que é a mesma (lacre dentro do sid suprimido). */
+  workerId: string;
+  fichaIsTest: boolean;
+  tokenEmail?: string | null;
+}
+
+/**
+ * Fatos do CONFIRM de um código suprimido: as duas condições do envio são exigidas de novo, com a
+ * ficha ALVO lida do banco na hora (`fichaIsTest` é função: só é chamada se o sid for suprimido).
+ */
+export interface OtpConfirmContext {
+  workerId: string;
+  tokenEmail?: string | null;
+  fichaIsTest: () => Promise<boolean>;
+}
 
 /** Validade do código (a mesma do Verify), em minutos. Um dono só: o adapter expira com ela e quem responde ao app informa. */
 export const OTP_TTL_MINUTES = 10;

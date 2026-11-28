@@ -1,6 +1,6 @@
 import twilio from 'twilio';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { IsTestOtpGuardedVerify } from '@modules/auth/application/IsTestOtpGuard';
+import { IsTestOtpGuardedVerify } from '@modules/auth/infrastructure/IsTestOtpGuardedVerify';
 import { PgOtpChallengeService } from '@modules/auth/infrastructure/PgOtpChallengeService';
 import { TwilioAuthTemplateSender } from '@modules/auth/infrastructure/TwilioAuthTemplateSender';
 import { TwilioVerifyOtpAdapter } from '@modules/auth/infrastructure/TwilioVerifyOtpAdapter';

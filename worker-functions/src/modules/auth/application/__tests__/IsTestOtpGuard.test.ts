@@ -9,7 +9,7 @@ jest.mock('@modules/account-link/accountLinkNotice', () => ({ sendLinkedNoticeEm
 import type { Pool } from 'pg';
 import { logger } from '@shared/logging';
 import { Result } from '@shared/utils/Result';
-import { IsTestOtpGuardedVerify } from '../IsTestOtpGuard';
+import { IsTestOtpGuardedVerify } from '../../infrastructure/IsTestOtpGuardedVerify';
 import { StartClaimUseCase } from '../StartClaimUseCase';
 import { InitWorkerUseCase } from '@modules/worker/application/InitWorkerUseCase';
 import { AccountLinkService } from '@modules/account-link/AccountLinkService';

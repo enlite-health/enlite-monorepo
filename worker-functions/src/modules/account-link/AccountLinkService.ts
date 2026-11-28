@@ -20,7 +20,7 @@ import { OTP_COUNTRY_NOT_SUPPORTED, OTP_RATE_LIMITED, type OtpChallengePort } fr
 import type { ITwilioVerifyService } from '../auth/infrastructure/TwilioVerifyService';
 import { TwilioVerifyOtpAdapter } from '../auth/infrastructure/TwilioVerifyOtpAdapter';
 import { createOtpChallengePort } from '../../bootstrap/createOtpChallengePort';
-import { IsTestOtpGuardedVerify } from '../auth/application/IsTestOtpGuard';
+import { IsTestOtpGuardedVerify } from '../auth/infrastructure/IsTestOtpGuardedVerify';
 import { PgPhoneVerificationRepository } from '../worker/infrastructure/PgPhoneVerificationRepository';
 import type { IPhoneVerificationRepository } from '../auth/ports/IPhoneVerificationRepository';
 import { ExecuteAdminMergeUseCase } from '../../application/dedup/ExecuteAdminMergeUseCase';
