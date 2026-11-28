@@ -49,7 +49,7 @@ describe('PgOtpChallengeService — port (start/check/cancel)', () => {
     const w = await novaFicha();
     const { challengeId } = await service().start({ workerId: w, purpose: 'claim', phoneE164: PHONE, requesterUid: 'uid-teste-1' });
 
-    expect(await service().check({ challengeId, workerId: w, phoneOnRecord: PHONE, code: lastCode })).toEqual({ ok: true });
+    expect(await service().check({ challengeId, workerId: w, purpose: 'claim', phoneOnRecord: PHONE, code: lastCode })).toEqual({ ok: true });
     expect(await statusOf(challengeId)).toBe('consumed');
   });
 
@@ -61,7 +61,7 @@ describe('PgOtpChallengeService — port (start/check/cancel)', () => {
     await service().cancel({ workerId: w, purpose: 'claim' });
 
     expect(await statusOf(challengeId)).toBe('canceled');
-    expect(await service().check({ challengeId, workerId: w, phoneOnRecord: PHONE, code })).toEqual({ ok: false, code: 'EXPIRED_OTP' });
+    expect(await service().check({ challengeId, workerId: w, purpose: 'claim', phoneOnRecord: PHONE, code })).toEqual({ ok: false, code: 'EXPIRED_OTP' });
   });
 
   it('T-F3c-108 start de outra finalidade (link, phone_verify) não cancela o claim; o reenvio da MESMA finalidade cancela só o anterior', async () => {

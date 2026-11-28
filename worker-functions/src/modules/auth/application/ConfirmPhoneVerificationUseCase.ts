@@ -123,6 +123,7 @@ export class ConfirmPhoneVerificationUseCase {
       checked = await this.challenges.check({
         challengeId: input.challengeId,
         workerId: own.id,
+        purpose: 'phone_verify',
         phoneOnRecord: `+${normalized}`,
         code: input.code,
         ctx: { workerId: own.id, tokenEmail: input.email, fichaIsTest: async () => own.isTest === true },

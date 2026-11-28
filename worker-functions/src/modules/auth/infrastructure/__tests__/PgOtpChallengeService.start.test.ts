@@ -33,7 +33,7 @@ describe('PgOtpChallengeService — falha fechada e registro do envio', () => {
     const { pool, send } = fakes();
     const svc = new PgOtpChallengeService(pool as never, { send }, () => undefined);
 
-    await expect(svc.check({ challengeId: 'c1', workerId: 'w1', phoneOnRecord: START.phoneE164, code: '123456' })).rejects.toThrow('OTP_HMAC_PEPPER not configured');
+    await expect(svc.check({ challengeId: 'c1', workerId: 'w1', purpose: 'claim', phoneOnRecord: START.phoneE164, code: '123456' })).rejects.toThrow('OTP_HMAC_PEPPER not configured');
 
     expect(pool.query).not.toHaveBeenCalled();
   });

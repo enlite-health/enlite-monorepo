@@ -102,6 +102,7 @@ export class ConfirmClaimUseCase {
       outcome = await this.otp.check({
         challengeId: input.verificationSid,
         workerId: input.candidateWorkerId,
+        purpose: 'claim',
         phoneOnRecord,
         code: input.otp,
         // `candidateWorkerId` vem do corpo: a guarda de OTP de teste (plano B) só aceita se for a ficha do envio,

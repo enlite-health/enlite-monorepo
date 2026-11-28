@@ -84,7 +84,7 @@ describe('GuardedOtpChallengePort', () => {
 
   it('check e cancel delegam ao adapter', async () => {
     const { inner, port } = montar();
-    const chk = { challengeId: 'c', workerId: 'w', phoneOnRecord: '+5491100000000', code: '123456' };
+    const chk = { challengeId: 'c', workerId: 'w', purpose: 'link' as const, phoneOnRecord: '+5491100000000', code: '123456' };
     await port.check(chk);
     await port.cancel({ workerId: 'w', purpose: 'link' });
     expect(inner.check).toHaveBeenCalledWith(chk);

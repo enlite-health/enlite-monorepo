@@ -151,6 +151,7 @@ export class AccountLinkService {
     const check = await this.otp.check({
       challengeId: verificationSid,
       workerId: owner.id,
+      purpose: 'link',
       phoneOnRecord: ownerPhone.startsWith('+') ? ownerPhone : `+${normalizePhoneAR(ownerPhone) ?? ownerPhone}`,
       code: otp,
       // `owner` acabou de ser lido do banco por resolvePhoneOwner (inclui is_test) nesta mesma requisição.
