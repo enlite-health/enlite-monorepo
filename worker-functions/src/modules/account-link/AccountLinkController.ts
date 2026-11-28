@@ -32,8 +32,8 @@ const ERROR_HTTP: Record<AccountLinkErrorCode, number> = {
 export class AccountLinkController {
   private readonly service: AccountLinkService;
 
-  constructor(private readonly pool: Pool, service?: AccountLinkService) {
-    this.service = service ?? new AccountLinkService(pool);
+  constructor(private readonly pool: Pool, service: AccountLinkService) {
+    this.service = service;
   }
 
   private authUid(req: Request): string | null {

@@ -90,6 +90,7 @@ import { AdminWorkersMapController } from './modules/worker/interfaces/controlle
 import { AdminTagCatalogController } from './modules/worker/interfaces/controllers/AdminTagCatalogController';
 import { WorkerTimelineController } from './modules/worker/interfaces/controllers/WorkerTimelineController';
 import { MessageTemplateRepository } from '@modules/notification/infrastructure/MessageTemplateRepository';
+import { createAccountLinkService } from './bootstrap/createAccountLinkService';
 import { buildChatwootClient } from './bootstrap/buildChatwootClient';
 import { buildMessagingService } from './bootstrap/buildMessagingService';
 import { OutboxProcessor } from '@modules/notification/infrastructure/OutboxProcessor';
@@ -381,7 +382,10 @@ app.use('/api', createClaimRoutes(claimController, authMiddleware));
 // Vínculo self-service de contas por colisão de telefone (ACCOUNT_LINK_ENABLED
 // gate por request → OFF = 404 em tudo, prod neutro). openspec:
 // vinculo-contas-colisao-telefone.
-const accountLinkController = new AccountLinkController(DatabaseConnection.getInstance().getPool());
+const accountLinkController = new AccountLinkController(
+  DatabaseConnection.getInstance().getPool(),
+  createAccountLinkService(DatabaseConnection.getInstance().getPool()),
+);
 app.use('/api', createAccountLinkRoutes(accountLinkController, authMiddleware));
 
 const workerLookupRateLimit = rateLimit({
