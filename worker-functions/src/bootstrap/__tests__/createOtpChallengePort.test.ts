@@ -14,9 +14,10 @@ const interno = (p: unknown) => p as Interno;
 
 const COMPLETO = {
   TWILIO_AUTH_TEMPLATE_CONTENT_SID: 'HX-teste',
-  OTP_HMAC_PEPPER: 'pepper-teste',
+  OTP_HMAC_PEPPER: 'p'.repeat(32),
   TWILIO_ACCOUNT_SID: 'AC-teste',
   TWILIO_AUTH_TOKEN: 'token-teste',
+  TWILIO_WHATSAPP_NUMBER: '+5491100000000',
 };
 
 describe('createOtpChallengePort — decorator em volta dos dois adapters', () => {
@@ -48,6 +49,36 @@ describe('createOtpChallengePort — decorator em volta dos dois adapters', () =
 
   it('em Cloud Run, o teto ausente derruba a montagem', () => {
     expect(() => createOtpChallengePort({ K_SERVICE: 'worker-functions' } as NodeJS.ProcessEnv)).toThrow('OTP_GLOBAL_DAILY_MAX');
+  });
+});
+
+describe('createOtpChallengePort — conjunto do OTP próprio validado no boot (B5)', () => {
+  const montar = (e: Record<string, string | undefined>) => () => createOtpChallengePort({ ...e } as NodeJS.ProcessEnv);
+
+  it('ContentSid + pepper de 31: lança citando OTP_HMAC_PEPPER', () => {
+    expect(montar({ ...COMPLETO, OTP_HMAC_PEPPER: 'p'.repeat(31) })).toThrow('OTP_HMAC_PEPPER');
+  });
+
+  it('ContentSid sem número nem messaging service: lança', () => {
+    expect(montar({ ...COMPLETO, TWILIO_WHATSAPP_NUMBER: undefined })).toThrow('TWILIO_WHATSAPP_NUMBER');
+  });
+
+  it('ContentSid sem pepper: lança (antes caía em Verify silencioso)', () => {
+    expect(montar({ ...COMPLETO, OTP_HMAC_PEPPER: undefined })).toThrow('misconfigured');
+  });
+
+  it('só o messaging service basta no lugar do número', () => {
+    const port = montar({ ...COMPLETO, TWILIO_WHATSAPP_NUMBER: undefined, TWILIO_MESSAGING_SERVICE_SID: 'MG-teste' })();
+    expect(interno(port).adapter).toBe('own');
+  });
+
+  it('a mensagem de erro não contém valor de env', () => {
+    const marcado = { ...COMPLETO, TWILIO_AUTH_TOKEN: 'VALOR-MARCADO-TOKEN', TWILIO_ACCOUNT_SID: 'VALOR-MARCADO-AC',
+      TWILIO_AUTH_TEMPLATE_CONTENT_SID: 'VALOR-MARCADO-HX', OTP_HMAC_PEPPER: 'VALOR-MARCADO-PEPPER', TWILIO_WHATSAPP_NUMBER: undefined };
+    let msg = '';
+    try { montar(marcado)(); } catch (e) { msg = (e as Error).message; }
+    expect(msg).toContain('misconfigured');
+    expect(msg).not.toContain('VALOR-MARCADO');
   });
 });
 

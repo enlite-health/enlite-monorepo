@@ -33,8 +33,15 @@ export function createOtpChallengePort(env: NodeJS.ProcessEnv = process.env): Ot
   const contentSid = env.TWILIO_AUTH_TEMPLATE_CONTENT_SID;
   const accountSid = env.TWILIO_ACCOUNT_SID;
   const authToken = env.TWILIO_AUTH_TOKEN;
-  if (contentSid && env.OTP_HMAC_PEPPER && accountSid && authToken) {
-    const sender = new TwilioAuthTemplateSender(twilio(accountSid, authToken), {
+  if (contentSid) {
+    const faltando: string[] = [];
+    if (!env.OTP_HMAC_PEPPER || env.OTP_HMAC_PEPPER.length < 32) faltando.push('OTP_HMAC_PEPPER (>= 32 caracteres)');
+    if (!accountSid) faltando.push('TWILIO_ACCOUNT_SID');
+    if (!authToken) faltando.push('TWILIO_AUTH_TOKEN');
+    if (!env.TWILIO_WHATSAPP_NUMBER && !env.TWILIO_MESSAGING_SERVICE_SID) faltando.push('TWILIO_WHATSAPP_NUMBER ou TWILIO_MESSAGING_SERVICE_SID');
+    // Só NOMES das envs na mensagem, nunca valores.
+    if (faltando.length > 0) throw new Error(`OTP own adapter misconfigured: ${faltando.join(', ')}`);
+    const sender = new TwilioAuthTemplateSender(twilio(accountSid as string, authToken as string), {
       contentSid,
       fromNumber: env.TWILIO_WHATSAPP_NUMBER,
       messagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
