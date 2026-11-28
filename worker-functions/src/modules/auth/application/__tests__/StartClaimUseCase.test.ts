@@ -80,7 +80,7 @@ describe('StartClaimUseCase', () => {
       const output = result.getValue();
       expect('noCandidate' in output).toBe(false);
       if (!('noCandidate' in output)) {
-        expect(output.candidateWorkerId).toBe(WORKER_ID);
+        expect(output).toEqual({ phoneMasked: expect.any(String), verificationSid: 'VE_MOCK_SID' });
         expect(output.verificationSid).toBe('VE_MOCK_SID');
         expect(output.phoneMasked).toMatch(/\*{4}/);
       }

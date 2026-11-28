@@ -14,7 +14,7 @@ export interface StartClaimInput {
 
 export type StartClaimOutput =
   | { noCandidate: true }
-  | { candidateWorkerId: string; phoneMasked: string; verificationSid: string };
+  | { phoneMasked: string; verificationSid: string };
 
 /**
  * Inicia um claim de ficha importada: código OTP pelo `OtpChallengePort` (D758; o Twilio Verify é só o plano B de canal).
@@ -105,7 +105,6 @@ export class StartClaimUseCase {
       });
 
       return Result.ok<StartClaimOutput>({
-        candidateWorkerId,
         phoneMasked: maskPhone(phoneE164),
         verificationSid,
       });
