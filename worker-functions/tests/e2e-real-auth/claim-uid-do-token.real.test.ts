@@ -50,7 +50,7 @@ describe('claim start/confirm — token REAL obrigatório, uid só do token (H3/
 
   const startBody = (extra: object = {}) => ({ email: `x-${stamp}@exemplo.test`, phone: `+${phoneFicha}`, ...extra });
   const confirmBody = (extra: object = {}) => ({
-    verificationSid: 'TEST_nao-importa', otp: '123456', email: `x-${stamp}@exemplo.test`, candidateWorkerId: fichaId, ...extra,
+    verificationSid: 'TEST_nao-importa', otp: '123456', email: `x-${stamp}@exemplo.test`, ...extra,
   });
   const semDado = (data: unknown) => {
     const s = JSON.stringify(data);
