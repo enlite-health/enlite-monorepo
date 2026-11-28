@@ -94,7 +94,7 @@ describe('InitWorkerUseCase — telefone de worker existente sem telefone', () =
     const output = result.getValue();
     expect(output.status).toBe('claim_pending');
     if (output.status === 'claim_pending') {
-      expect(output.candidateWorkerId).toBe(OTHER_ID);
+      expect(output).not.toHaveProperty('candidateWorkerId');
       expect(output.verificationSid).toBe('VE_TEST_SID');
     }
     expect(output).toMatchObject({ code: 'CLAIM_PENDING' });

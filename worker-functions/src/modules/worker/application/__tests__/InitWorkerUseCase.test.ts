@@ -10,6 +10,7 @@ import { Result } from '@shared/utils/Result';
 import { Worker } from '../../domain/Worker';
 import { logger } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
+import { resourceIdHash } from '@shared/audit/resourceAccessLog';
 
 // ─── Dados de teste realistas ────────────────────────────────────────────────
 
@@ -258,7 +259,6 @@ describe('InitWorkerUseCase', () => {
       expect(result.isSuccess).toBe(true);
       expect(result.getValue()).toEqual({
         status: 'claim_pending',
-        candidateWorkerId: fichaImportadaComTelefone.id,
         phoneMasked: expect.any(String),
         verificationSid: 'VE_TEST_SID',
       });
@@ -424,7 +424,7 @@ describe('InitWorkerUseCase', () => {
         const output = result.getValue();
         expect(output.status).toBe('claim_pending');
         if (output.status === 'claim_pending') {
-          expect(output.candidateWorkerId).toBe(importedWorker.id);
+          expect(output).not.toHaveProperty('candidateWorkerId');
           expect(output.verificationSid).toBe('VE_TEST_SID');
           expect(output.phoneMasked).toBeTruthy();
         }
@@ -515,9 +515,9 @@ describe('InitWorkerUseCase', () => {
       expect(infoArgs).not.toContain(SENTINEL_PHONE);
       expect(infoArgs).not.toContain('1199990000');
       expect(infoArgs).toContain(maskPhoneForLog(SENTINEL_PHONE));
-      // candidateWorkerId e fromAuthUid identificam o REGISTRO (não são PII de
-      // terceiro) — permanecem crus, prova que não sumiram do log por engano.
-      expect(infoArgs).toContain(importedWorkerSentinel.id);
+      // O id da ficha sai do log como hash (B4); fromAuthUid segue cru, prova que não sumiu por engano.
+      expect(infoArgs).not.toContain(importedWorkerSentinel.id);
+      expect(infoArgs).toContain(resourceIdHash(importedWorkerSentinel.id));
       expect(infoArgs).toContain(IMPORTED_AUTH_UID_ANACARE);
     });
   });

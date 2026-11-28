@@ -224,7 +224,7 @@ export class InitWorkerUseCase {
 
     logger.child({ source: 'InitWorkerUseCase:execute', workerId: ficha.id }).info({
       msg: 'worker_claim_otp_triggered',
-      candidateWorkerId: ficha.id,
+      candidateWorkerIdHash: resourceIdHash(ficha.id),
       fromAuthUid: ficha.authUid,
       phoneE164: maskPhoneForLog(phoneE164),
     });
@@ -234,7 +234,6 @@ export class InitWorkerUseCase {
       // que não passam o port de OTP): retorna claim_pending com sid sintético.
       return Result.ok<InitWorkerOutput>({
         status: 'claim_pending',
-        candidateWorkerId: ficha.id,
         phoneMasked: maskPhone(phoneE164),
         verificationSid: 'TWILIO_NOT_CONFIGURED',
       });
@@ -250,7 +249,6 @@ export class InitWorkerUseCase {
       });
       return Result.ok<InitWorkerOutput>({
         status: 'claim_pending',
-        candidateWorkerId: ficha.id,
         phoneMasked: maskPhone(phoneE164),
         verificationSid,
       });
