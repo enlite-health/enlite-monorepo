@@ -5,14 +5,16 @@
  * (A.merged_into_id = S.id, A.auth_uid real). Quem só prova o telefone de S não pode herdar o histórico de A.
  *
  *  (a) start com o telefone de S → 200 { noCandidate: true } (a busca não a oferece; nenhum OTP)
- *  (b) confirm direto por candidateWorkerId = S (2ª porta, findById) → recusado (NOT_IMPORTABLE) e S segue intacta
- *  (c) controle positivo: ficha sintética comum (nada absorvido) continua candidata: sid TEST_ no start
+ *  (b) confirm de um desafio JÁ emitido para S (a absorção veio depois do envio; o desafio do mesmo uid aponta para S) → recusado e S segue intacta
+ *  (c) controle positivo: ficha sintética comum (nada absorvido) continua candidata: sid TEST_ no start, SEM id interno na resposta (B4);
+ *      a ficha do desafio é lida do ledger `otp_send_events`
  *
  * HTTP real (express numa porta efêmera, rotas `createClaimRoutes` + controller/use cases/WorkerRepository REAIS) contra
  * o BANCO real; confere o banco. Padrão em processo dos e2e da F1 (o setup não sobe container `api`).
  * Só o portão de token é mínimo (aceita `Bearer mock_<b64>` e põe `req.user`): o que se prova é o claim, não a auth.
  * CANAL: nenhum OTP real. E2E_OTP_BYPASS=true → sid `TEST_<uuid>`, TwilioVerifyService nunca fala com o Twilio.
  */
+import { createHash } from 'crypto';
 import { Pool } from 'pg';
 import express from 'express';
 import type { Server } from 'http';
@@ -104,10 +106,18 @@ describe('claim — sobrevivente sintética que absorveu login real (P5/A)', () 
     expect(JSON.stringify(res.data)).not.toContain(sobreviventeId);
   });
 
-  it('(b) o confirm por candidateWorkerId = sobrevivente é recusado e a ficha segue intacta', async () => {
+  it('(b) o confirm de um desafio do mesmo uid apontando para a sobrevivente é recusado e a ficha segue intacta', async () => {
+    // O contrato novo (B4) não aceita id de ficha no corpo: a ficha sai do desafio do uid. Aqui o desafio foi emitido ANTES da
+    // absorção (corrida), então o ledger já aponta para S: é a 2ª porta (findById/importável) que tem de recusar.
+    const sid = `TEST_p5-${stamp}`;
+    await pool.query(
+      `INSERT INTO otp_send_events (challenge_id, adapter, purpose, requester_hash, target_worker_id, suppressed)
+       VALUES ($1, 'verify', 'claim', $2, $3, true)`,
+      [sid, createHash('sha256').update(uidQuemReclama).digest('hex'), sobreviventeId],
+    );
     const res = await post(
       '/api/auth/claim/confirm',
-      { verificationSid: 'TEST_p5-nao-importa', otp: OTP, email: emailQuemReclama, candidateWorkerId: sobreviventeId }
+      { verificationSid: sid, otp: OTP, email: emailQuemReclama }
     );
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.status).toBeLessThan(500);
@@ -120,8 +130,11 @@ describe('claim — sobrevivente sintética que absorveu login real (P5/A)', () 
       { email: emailQuemReclama, phone: `+${phoneComum}` }
     );
     expect(res.status).toBe(200);
-    const data = res.data.data as { candidateWorkerId: string; verificationSid: string };
-    expect(data.candidateWorkerId).toBe(comumId);
+    const data = res.data.data as { verificationSid: string };
     expect(data.verificationSid).toMatch(/^TEST_/);
+    expect(JSON.stringify(res.data)).not.toContain('candidateWorkerId');
+    expect(JSON.stringify(res.data)).not.toContain(comumId);
+    const alvo = await pool.query('SELECT target_worker_id FROM otp_send_events WHERE challenge_id = $1', [data.verificationSid]);
+    expect(alvo.rows[0].target_worker_id).toBe(comumId);
   });
 });
