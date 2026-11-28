@@ -5,7 +5,7 @@ import { logger } from '@shared/logging';
 import { isClaimableWorker } from '@modules/worker/application/isClaimableWorker';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import type { OtpChallengePort } from '../ports/OtpChallengePort';
-import type { PoolClient } from 'pg';
+import type { SqlRunner } from '../ports/IPhoneVerificationRepository';
 import { CLAIM_CONFLICT, type IClaimShellAbsorber } from './ClaimShellAbsorber';
 
 export interface ConfirmClaimInput {
@@ -66,7 +66,7 @@ export class ConfirmClaimUseCase {
    */
   async execute(
     input: ConfirmClaimInput,
-    hooks: { afterAbsorb?: (tx: PoolClient) => Promise<void>; afterAdopt?: (tx: PoolClient) => Promise<void> } = {},
+    hooks: { afterAbsorb?: (tx: SqlRunner) => Promise<void>; afterAdopt?: (tx: SqlRunner) => Promise<void> } = {},
   ): Promise<Result<Worker>> {
     const startedAt = Date.now();
 
