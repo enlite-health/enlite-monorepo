@@ -16,4 +16,6 @@ export interface OtpSendLedgerPort {
   /** Envios NÃO suprimidos desde 00:00 de Buenos Aires. */
   sentToday(): Promise<number>;
   record(event: OtpSendEvent): Promise<void>;
+  /** A ficha do desafio de claim pedido por ESTE uid nos últimos `withinMinutes`. own → otp_challenges.worker_id; verify → target_worker_id. */
+  findClaimTarget(q: { challengeId: string; requesterUid: string; withinMinutes: number }): Promise<string | null>;
 }

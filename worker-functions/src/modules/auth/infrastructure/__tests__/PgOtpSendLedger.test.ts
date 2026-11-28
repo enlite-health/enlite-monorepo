@@ -34,6 +34,26 @@ describe('PgOtpSendLedger', () => {
     expect(query.mock.calls[0][0]).toContain('America/Argentina/Buenos_Aires');
   });
 
+  describe('findClaimTarget', () => {
+    const Q = { challengeId: 'ch-9', requesterUid: UID, withinMinutes: 10 };
+
+    it('devolve o worker_id da linha e manda o requester_hash como sha256 do uid (nunca o uid)', async () => {
+      const { query, ledger } = montar([{ worker_id: 'w-1' }]);
+      await expect(ledger.findClaimTarget(Q)).resolves.toBe('w-1');
+      const [sql, params] = query.mock.calls[0] as [string, unknown[]];
+      expect(sql).toContain('COALESCE(e.target_worker_id, c.worker_id)');
+      expect(sql).toContain('AND e.requester_hash = $2');
+      expect(sql).toContain("e.purpose = 'claim'");
+      expect(params).toEqual(['ch-9', createHash('sha256').update(UID).digest('hex'), 10]);
+      expect(JSON.stringify(params)).not.toContain(UID);
+    });
+
+    it('sem linha (outro requisitante ou fora da janela) → null', async () => {
+      const { ledger } = montar([]);
+      await expect(ledger.findClaimTarget(Q)).resolves.toBeNull();
+    });
+  });
+
   it('erro do pool sobe', async () => {
     const query = jest.fn().mockRejectedValue(new Error('db fora'));
     await expect(new PgOtpSendLedger({ query } as never).record({
