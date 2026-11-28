@@ -51,6 +51,17 @@ describe('PgOtpChallengeService — falha fechada e registro do envio', () => {
     expect(sqls.some((q) => q.includes("status = 'canceled'"))).toBe(false);
   });
 
+  it('B11 a validade do código no INSERT é de 10 minutos (6º parâmetro): trocar exige trocar o Verify e o handshake do app', async () => {
+    const { pool, clientQuery, send } = fakes();
+    const svc = new PgOtpChallengeService(pool as never, { send }, () => 'p'.repeat(40));
+
+    await svc.start(START);
+
+    const insert = clientQuery.mock.calls.find((c) => String(c[0]).includes('INSERT INTO otp_challenges'));
+    expect(insert).toBeDefined();
+    expect((insert as unknown[][])[1][5]).toBe(10);
+  });
+
   it('o envio falhou: o desafio é cancelado e o erro sobe', async () => {
     const { pool } = fakes();
     const send = jest.fn().mockRejectedValue(new Error('OTP_CHANNEL_UNAVAILABLE'));
