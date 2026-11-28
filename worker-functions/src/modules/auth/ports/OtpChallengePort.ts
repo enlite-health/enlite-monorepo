@@ -46,6 +46,8 @@ export interface OtpCheckInput {
   /** Id devolvido pelo `start`. */
   challengeId: string;
   workerId: string;
+  /** Finalidade do desafio que está sendo conferido: código de `link` não confirma `claim`. O adapter do Verify ignora. */
+  purpose: OtpPurpose;
   /** Telefone GRAVADO na ficha, lido do banco — nunca o que o cliente manda (DP-21). */
   phoneOnRecord: string;
   code: string;

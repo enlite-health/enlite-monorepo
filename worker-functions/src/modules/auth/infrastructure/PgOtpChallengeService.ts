@@ -166,9 +166,9 @@ export class PgOtpChallengeService implements OtpChallengePort {
       `UPDATE otp_challenges SET attempts = attempts + 1
         WHERE id = $1 AND worker_id = $2
           AND status = 'pending' AND expires_at > NOW() AND attempts < $4
-          AND phone_e164 = $3
+          AND phone_e164 = $3 AND purpose = $5
         RETURNING code_hmac, purpose, attempts`,
-      [input.challengeId, input.workerId, input.phoneOnRecord, MAX_ATTEMPTS],
+      [input.challengeId, input.workerId, input.phoneOnRecord, MAX_ATTEMPTS, input.purpose],
     );
 
     if (counted.rowCount === 1) {
@@ -196,8 +196,8 @@ export class PgOtpChallengeService implements OtpChallengePort {
   /** Não houve tentativa contada: diz POR QUE o desafio não vale. */
   private async diagnose(input: OtpCheckInput): Promise<OtpCheckOutcome> {
     const state = await this.pool.query<{ status: string; expired: boolean; attempts: number }>(
-      `SELECT status, (expires_at <= NOW()) AS expired, attempts FROM otp_challenges WHERE id = $1 AND worker_id = $2`,
-      [input.challengeId, input.workerId],
+      `SELECT status, (expires_at <= NOW()) AS expired, attempts FROM otp_challenges WHERE id = $1 AND worker_id = $2 AND purpose = $3`,
+      [input.challengeId, input.workerId, input.purpose],
     );
     const row = state.rows[0];
     if (!row) return { ok: false, code: 'INVALID_OTP' };

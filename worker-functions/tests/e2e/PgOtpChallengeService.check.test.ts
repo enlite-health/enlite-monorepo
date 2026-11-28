@@ -76,6 +76,15 @@ describe('PgOtpChallengeService.check', () => {
     expect(await service().check({ challengeId, workerId: w, phoneOnRecord: PHONE_A, code })).toEqual({ ok: true });
   });
 
+  it('B9 desafio emitido como link, conferido como claim: INVALID_OTP e attempts não sobe', async () => {
+    const w = await novaFicha();
+    const { challengeId, code } = await service().start({ workerId: w, purpose: 'link', phoneE164: PHONE_A, requesterUid: 'uid-teste-1' }).then((r) => ({ challengeId: r.challengeId, code: lastCode }));
+
+    expect(await service().check({ challengeId, workerId: w, purpose: 'claim', phoneOnRecord: PHONE_A, code })).toEqual({ ok: false, code: 'INVALID_OTP' });
+    const { rows } = await pool.query<{ attempts: number }>(`SELECT attempts FROM otp_challenges WHERE id = $1`, [challengeId]);
+    expect(rows[0].attempts).toBe(0);
+  });
+
   it('T-F3c-110 DP-21: o código emitido para o telefone A não vale para a ficha cujo telefone é B', async () => {
     const w = await novaFicha();
     const { challengeId, code } = await emitir(w, PHONE_A);
