@@ -70,7 +70,8 @@ export function countSlotAllocationsInDom(page: Page, slotId: string): Promise<n
 export async function digitarDataNoCampo(page: Page, testId: string, iso: string): Promise<void> {
   const [y, m, d] = iso.split('-');
   const campo = page.getByTestId(testId);
-  await campo.click();
+  // o click abre o calendário nativo (showPicker, PR #940), que engole a digitação; a abertura é provada no unit do DdMmDateInput
+  await campo.focus();
   await expect(campo).toBeFocused();
   for (let i = 0; i < 3; i += 1) await page.keyboard.press('ArrowLeft');
   await page.keyboard.type(`${m}${d}${y}`);
