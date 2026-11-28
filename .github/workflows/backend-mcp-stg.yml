@@ -101,6 +101,7 @@ jobs:
             FIREBASE_WEB_API_KEY=AIzaSyCdOWe7NsS9vbQHx3PhWcVKUdr72k5UWVA
             FIREBASE_WEB_AUTH_DOMAIN=enlite-stg.firebaseapp.com
             ALLOWED_MEDIA_HOSTS=api.twilio.com\,*.twilio.com\,chatwoot.enlite.health
+            OTP_GLOBAL_DAILY_MAX=99
           secrets: |
             DB_PASSWORD=enlite-system-db-password:latest
             DB_MIGRATION_PASSWORD=enlite-ar-db-password:latest

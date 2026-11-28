@@ -28,7 +28,7 @@ describe('PgOtpChallengeService — limites de envio por telefone e por ficha (n
     return rows[0].id;
   }
   const start = (svc: PgOtpChallengeService, workerId: string, phoneE164: string, purpose: OtpPurpose = 'claim') =>
-    svc.start({ workerId, purpose, phoneE164 });
+    svc.start({ workerId, purpose, phoneE164, requesterUid: 'uid-teste-1' });
   const linhas = async (col: 'worker_id' | 'phone_e164', val: string) =>
     Number((await pool.query<{ n: string }>(`SELECT count(*) AS n FROM otp_challenges WHERE ${col} = $1`, [val])).rows[0].n);
 

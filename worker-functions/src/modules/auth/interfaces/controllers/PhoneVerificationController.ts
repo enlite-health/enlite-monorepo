@@ -7,6 +7,7 @@ import { identidadeDoToken } from './ClaimController';
 
 const STATUS_BY_CODE: Record<string, number> = {
   INVALID_PHONE: 400,
+  PHONE_COUNTRY_NOT_SUPPORTED: 400,
   INVALID_CONSENT_AT: 400,
   INVALID_OTP: 400,
   EXPIRED_OTP: 400,

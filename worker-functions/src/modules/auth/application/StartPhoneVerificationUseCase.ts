@@ -2,10 +2,10 @@ import { IWorkerRepository } from '@modules/worker/ports/IWorkerRepository';
 import { Result } from '@shared/utils/Result';
 import { logger, safeErrorFields } from '@shared/logging';
 import { resourceIdHash } from '@shared/audit/resourceAccessLog';
-import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
+import { classifyOtpPhone, generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { maskPhone } from '@shared/utils/phoneMask';
 import { isClaimableWorker } from '@modules/worker/application/isClaimableWorker';
-import { OTP_CHANNEL_UNAVAILABLE, OTP_RATE_LIMITED, OTP_TTL_MINUTES, OtpChallengePort, OtpPurpose } from '../ports/OtpChallengePort';
+import { OTP_TTL_MINUTES, OtpChallengePort, OtpPurpose, isOtpStartRefusal } from '../ports/OtpChallengePort';
 import type { IPhoneVerificationRepository } from '../ports/IPhoneVerificationRepository';
 
 /**
@@ -54,8 +54,9 @@ export class StartPhoneVerificationUseCase {
 
   async execute(input: StartPhoneVerificationInput): Promise<Result<StartPhoneVerificationOutput>> {
     if (input.phone === undefined) return this.resendClaim(input.authUid, input.email, input.challengeId);
-    const normalized = normalizePhoneAR(input.phone);
-    if (normalized.length < 10 || normalized.length > 15) return Result.fail('INVALID_PHONE');
+    const classified = classifyOtpPhone(input.phone);
+    if (!classified.ok) return Result.fail(classified.error);
+    const normalized = classified.e164.slice(1);
 
     const ownResult = await this.workers.findByAuthUid(input.authUid);
     if (ownResult.isFailure) return Result.fail(ownResult.error!);
@@ -63,7 +64,7 @@ export class StartPhoneVerificationUseCase {
     if (!own) return Result.fail('WORKER_NOT_FOUND');
 
     const log = logger.child({ source: 'StartPhoneVerificationUseCase:execute', workerIdHash: resourceIdHash(own.id) });
-    const phoneE164 = `+${normalized}`;
+    const phoneE164 = classified.e164;
 
     if (own.phone && normalizePhoneAR(own.phone) === normalized) {
       const current = await this.verification.readState(own.id);
@@ -96,7 +97,7 @@ export class StartPhoneVerificationUseCase {
       };
     }
 
-    return this.send(target, input.email, log);
+    return this.send(target, input.authUid, input.email, log);
   }
 
   /**
@@ -134,16 +135,17 @@ export class StartPhoneVerificationUseCase {
     if (!claimable.getValue()) return refuse('NOT_IMPORTABLE');
 
     const target: Target = { workerId: ficha.id, isTest: ficha.isTest === true, phoneE164: fromChallenge ?? toE164(ficha.phone), purpose: 'claim' };
-    return this.send(target, email, log);
+    return this.send(target, authUid, email, log);
   }
 
   /** Emite pelo port (limites por telefone e por ficha moram lá) e monta a resposta. Erro de canal/limite sobe com o próprio código. */
-  private async send(target: Target, email: string, log: Log): Promise<Result<StartPhoneVerificationOutput>> {
+  private async send(target: Target, requesterUid: string, email: string, log: Log): Promise<Result<StartPhoneVerificationOutput>> {
     try {
       const { challengeId } = await this.otp.start({
         workerId: target.workerId,
         purpose: target.purpose,
         phoneE164: target.phoneE164,
+        requesterUid,
         ctx: { workerId: target.workerId, fichaIsTest: target.isTest, tokenEmail: email },
       });
       const code = target.purpose === 'claim' ? ('CLAIM_PENDING' as const) : undefined;
@@ -158,7 +160,7 @@ export class StartPhoneVerificationUseCase {
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      if (message === OTP_RATE_LIMITED || message === OTP_CHANNEL_UNAVAILABLE) {
+      if (isOtpStartRefusal(message)) {
         log.warn({ msg: 'phone_verification_start', code: message });
         return Result.fail(message);
       }

@@ -14,6 +14,8 @@ import type { AccountLinkController } from './AccountLinkController';
 import type { AuthMiddleware } from '../identity/interfaces/middleware/AuthMiddleware';
 import { routeClass } from '../identity/permissions';
 import { selfUid } from '@shared/http/selfUid';
+import { clientIp } from '@shared/http/clientIp';
+import { createPgRateLimitStore } from '@shared/rateLimit/PgRateLimitStore';
 
 function flagGate(req: Request, res: Response, next: NextFunction): void {
   if (process.env.ACCOUNT_LINK_ENABLED !== 'true') {
@@ -25,11 +27,9 @@ function flagGate(req: Request, res: Response, next: NextFunction): void {
 
 // `ipKeyGenerator` e não o endereço cru: em IPv6 cada cliente recebe um /64
 // (às vezes /56) inteiro, então chave por endereço exato deixa a mesma pessoa
-// trocar de sufixo e furar o limite de start/confirm. Exportada para teste.
-export const ipKey = (req: Request): string =>
-  ipKeyGenerator(
-    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ?? req.ip ?? 'unknown',
-  );
+// trocar de sufixo e furar o limite de start/confirm. Chave = último item do X-Forwarded-For
+// (o que o GFE acrescenta; o 1º é do cliente). Exportada para teste.
+export const ipKey = (req: Request): string => ipKeyGenerator(clientIp(req));
 
 const startIpLimit = rateLimit({
   windowMs: 15 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false,
@@ -49,8 +49,9 @@ const confirmIpLimit = rateLimit({
 // folga o uso real e trava quem varre números. A chave é o uid do JWT (a rota é
 // autenticada), por isso o limitador por conta roda DEPOIS do auth. O por IP é
 // mais folgado (30/15 min) e roda ANTES: IP de saída compartilhado (NAT, BFF)
-// não pode virar balde de todo mundo. Store = memória por instância (como os
-// irmãos): com N instâncias o teto efetivo é até N× o valor.
+// não pode virar balde de todo mundo. Por IP o store é memória por instância
+// (1ª camada barata); por CONTA o contador vive no banco (`PgRateLimitStore`),
+// compartilhado entre instâncias: o teto vale como escrito.
 export const LOOKUP_UID_MAX = 10;
 export const LOOKUP_IP_MAX = 30;
 const LOOKUP_WINDOW_MS = 15 * 60 * 1000;
@@ -64,6 +65,7 @@ const lookupIpLimit = rateLimit({
 const lookupUidLimit = rateLimit({
   windowMs: LOOKUP_WINDOW_MS, max: LOOKUP_UID_MAX, standardHeaders: true, legacyHeaders: false,
   keyGenerator: (req: Request) => `uid:${selfUid(req) ?? ipKey(req)}`,
+  store: createPgRateLimitStore('link-lookup-uid'),
   message: { success: false, code: 'RATE_LIMITED', error: 'Too many lookups. Try again later.' },
 });
 

@@ -4,7 +4,7 @@
  */
 import { PgOtpChallengeService } from '../PgOtpChallengeService';
 
-const START = { workerId: 'w1', purpose: 'claim' as const, phoneE164: '+5491100000009' };
+const START = { workerId: 'w1', purpose: 'claim' as const, phoneE164: '+5491100000009', requesterUid: 'uid-teste-1' };
 
 function fakes() {
   const clientQuery = jest.fn().mockResolvedValue({ rowCount: 1, rows: [] });

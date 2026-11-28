@@ -16,7 +16,7 @@ import { logger } from '@shared/logging';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId } from '@shared/database/resolveCanonicalWorkerId';
-import { OTP_RATE_LIMITED, type OtpChallengePort } from '../auth/ports/OtpChallengePort';
+import { OTP_COUNTRY_NOT_SUPPORTED, OTP_RATE_LIMITED, type OtpChallengePort } from '../auth/ports/OtpChallengePort';
 import type { ITwilioVerifyService } from '../auth/infrastructure/TwilioVerifyService';
 import { TwilioVerifyOtpAdapter } from '../auth/infrastructure/TwilioVerifyOtpAdapter';
 import { createOtpChallengePort } from '../../bootstrap/createOtpChallengePort';
@@ -113,10 +113,12 @@ export class AccountLinkService {
         workerId: owner.id,
         purpose: 'link',
         phoneE164,
+        requesterUid: authUid,
         ctx: { workerId: owner.id, fichaIsTest: owner.is_test === true, tokenEmail },
       }));
     } catch (err) {
       if (err instanceof Error && err.message === OTP_RATE_LIMITED) throw new AccountLinkError('RATE_LIMITED');
+      if (err instanceof Error && err.message === OTP_COUNTRY_NOT_SUPPORTED) throw new AccountLinkError('PHONE_COUNTRY_NOT_SUPPORTED');
       throw err;
     }
     const verificationSid = challengeId; // o fio do vínculo segue chamando de verificationSid; carrega o id do desafio

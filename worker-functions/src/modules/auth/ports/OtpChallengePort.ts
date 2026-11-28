@@ -19,6 +19,14 @@ export const OTP_CHANNEL_UNAVAILABLE = 'OTP_CHANNEL_UNAVAILABLE';
 /** Limite de envio de código estourado (por telefone ou por ficha, contado no banco). Quem chama mapeia para 429 `RATE_LIMITED`. */
 export const OTP_RATE_LIMITED = 'RATE_LIMITED';
 
+/** Telefone fora dos países atendidos (só celular AR +54 e BR +55). Quem chama mapeia para 400 com `code`. */
+export const OTP_COUNTRY_NOT_SUPPORTED = 'PHONE_COUNTRY_NOT_SUPPORTED';
+
+/** Recusas de envio que o chamador traduz para o cliente (os demais erros do `start` são falha de canal). */
+export const OTP_START_REFUSALS = [OTP_RATE_LIMITED, OTP_CHANNEL_UNAVAILABLE, OTP_COUNTRY_NOT_SUPPORTED] as const;
+
+export const isOtpStartRefusal = (m: string): boolean => (OTP_START_REFUSALS as readonly string[]).includes(m);
+
 export type OtpCheckFailure = 'INVALID_OTP' | 'EXPIRED_OTP' | 'OTP_ALREADY_USED';
 
 export type OtpCheckOutcome = { ok: true } | { ok: false; code: OtpCheckFailure };
@@ -30,6 +38,8 @@ export interface OtpStartInput {
   phoneE164: string;
   /** Fatos da guarda de ficha de teste (FR-95): o envio é suprimido quando as duas condições valem. */
   ctx?: OtpSendContext;
+  /** uid do TOKEN de quem pediu o envio (não da ficha). Vai ao registro de envio como sha256; nunca a log. */
+  requesterUid: string;
 }
 
 export interface OtpCheckInput {

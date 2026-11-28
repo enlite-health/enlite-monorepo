@@ -103,7 +103,7 @@ export async function startPhoneVerificationHarness(
     lastCode: () => sent[sent.length - 1]?.code ?? '',
     as: (workerId) => ({ start: (b) => post('/start', workerId, b), confirm: (b) => post('/confirm', workerId, b) }),
     async openChallenge(workerId, purpose, phoneE164) {
-      const { challengeId } = await otp.start({ workerId, purpose, phoneE164 });
+      const { challengeId } = await otp.start({ workerId, purpose, phoneE164, requesterUid: 'uid-teste-1' });
       return { challengeId, code: sent[sent.length - 1].code };
     },
     setTokenEmail(e) { tokenEmailOverride = e; },

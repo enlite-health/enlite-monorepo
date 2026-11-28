@@ -155,6 +155,7 @@ jobs:
             DB_SYSTEM_POOL_MAX=1
             USE_KMS_ENCRYPTION=false
             TWILIO_STATUS_CALLBACK_URL=https://worker-functions-vtf37eainq-tl.a.run.app/api/webhooks/twilio/status
+            OTP_GLOBAL_DAILY_MAX=99
             TWILIO_INBOUND_WEBHOOK_URL=https://worker-functions-vtf37eainq-tl.a.run.app/api/webhooks/twilio/inbound
             GOOGLE_CALENDAR_ID=primary
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}

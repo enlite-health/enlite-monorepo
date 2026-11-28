@@ -22,7 +22,7 @@ describe('PgOtpChallengeService — força bruta e código fora do banco', () =>
   async function novoDesafio() {
     const { rows } = await pool.query<{ id: string }>(`INSERT INTO workers (auth_uid) VALUES ($1) RETURNING id`, [`otp-bf-${Date.now()}-${Math.random()}`]);
     workers.push(rows[0].id);
-    const { challengeId } = await service().start({ workerId: rows[0].id, purpose: 'claim', phoneE164: PHONE });
+    const { challengeId } = await service().start({ workerId: rows[0].id, purpose: 'claim', phoneE164: PHONE, requesterUid: 'uid-teste-1' });
     return { workerId: rows[0].id, challengeId, code: lastCode };
   }
 

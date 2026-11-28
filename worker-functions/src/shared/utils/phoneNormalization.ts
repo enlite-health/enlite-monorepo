@@ -124,3 +124,29 @@ export function generatePhoneCandidates(phone: string): string[] {
   // sync salva sem). O ANY($1) então cobre os dois universos.
   return digitVariants.concat(digitVariants.map(c => '+' + c));
 }
+
+/** Celular BR em E.164 sem '+': 55 + DDD (2 dígitos, 11-99) + 9 + 8 dígitos = 13 dígitos. Outro formato → ''. */
+export function normalizePhoneBR(phone: string | null | undefined): string {
+  const digits = String(phone ?? '').replace(/\D/g, '');
+  return /^55[1-9][1-9]9\d{8}$/.test(digits) ? digits : '';
+}
+
+export type OtpPhoneClass =
+  | { ok: true; country: 'AR' | 'BR'; e164: string }
+  | { ok: false; error: 'INVALID_PHONE' | 'PHONE_COUNTRY_NOT_SUPPORTED' };
+
+/** G1 (D825): destino de OTP só +54 (celular, pelo normalizePhoneAR de sempre) e +55 (celular, normalizePhoneBR). */
+export function classifyOtpPhone(phone: string): OtpPhoneClass {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 10 || digits.length > 15) return { ok: false, error: 'INVALID_PHONE' };
+  if (digits.startsWith('55')) {
+    const br = normalizePhoneBR(digits);
+    return br ? { ok: true, country: 'BR', e164: `+${br}` } : { ok: false, error: 'INVALID_PHONE' };
+  }
+  const ar = normalizePhoneAR(digits);
+  if (ar.startsWith('549') && (ar.length === 12 || ar.length === 13)) return { ok: true, country: 'AR', e164: `+${ar}` };
+  return { ok: false, error: 'PHONE_COUNTRY_NOT_SUPPORTED' };
+}
+
+/** Destino já em E.164 (telefone GRAVADO da ficha, no decorator do teto). */
+export const isAllowedOtpDestination = (e164: string): boolean => classifyOtpPhone(e164).ok;

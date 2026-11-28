@@ -258,6 +258,7 @@
       "errorUsed": "Ese código ya se usó. Pedí uno nuevo.",
       "errorRateLimited": "Demasiados intentos. Esperá un rato y probá de nuevo.",
       "errorChannel": "No pudimos enviar el código por WhatsApp ahora. Probá de nuevo en unos minutos.",
+      "errorCountryNotSupported": "Solo podemos enviar el código a celulares de Argentina (+54) o Brasil (+55).",
       "errorGeneric": "No pudimos completar la verificación. Probá de nuevo.",
       "conflictTitle": "Necesitamos ayuda del equipo",
       "conflictBody": "No pudimos unir este número con tu ficha de forma automática. Nuestro equipo lo resuelve con vos, sin perder tus datos.",

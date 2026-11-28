@@ -26,6 +26,7 @@ const ERROR_HTTP: Record<AccountLinkErrorCode, number> = {
   EXPIRED_OTP: 400,
   INVALID_LINK_TOKEN: 401,
   WORKER_NOT_FOUND: 404,
+  PHONE_COUNTRY_NOT_SUPPORTED: 400,
 };
 
 export class AccountLinkController {
