@@ -12,6 +12,7 @@ import { operationDateInZone } from '@shared/locale/operationDate';
 import { AccountInactiveError } from '../../application/GetWorkerItineraryUseCase';
 import type { GetScaleCatalogUseCase } from '../../application/dailyReport/GetScaleCatalogUseCase';
 import { InvalidTemplateWindowError, type GetReportTemplatesUseCase } from '../../application/dailyReport/GetReportTemplatesUseCase';
+import { PresenceUnavailableError } from '../../application/ports/PresenceReaderPort';
 import type { SubmitDailyReportUseCase } from '../../application/dailyReport/SubmitDailyReportUseCase';
 import { DailyReportConflictError, DailyReportError, type ReportAnswer } from '../../domain/DailyReport';
 import { issuePaths, reportIdParamSchema, submitDailyReportSchema, templatesQuerySchema, type SubmitDailyReportBody } from '../validators/dailyReportSchemas';
@@ -90,6 +91,10 @@ export class WorkerDailyReportMeController {
   private fail(res: Response, err: unknown, op: string, reportId?: string): void {
     if (err instanceof AccountInactiveError) return void res.status(403).json({ code: 'ACCOUNT_INACTIVE' });
     if (err instanceof InvalidTemplateWindowError) return void res.status(400).json({ success: false, error: 'invalid_window', code: 'invalid_window' });
+    if (err instanceof PresenceUnavailableError) {
+      logger.warn({ msg: 'daily_report_presence_unavailable', reason: err.reason, ...(reportId ? { reportId } : {}) });
+      return void res.status(503).json({ code: 'UPSTREAM_UNAVAILABLE' });
+    }
     if (err instanceof DailyReportConflictError) return void res.status(409).json({ success: false, error: err.code, code: err.code });
     if (err instanceof DailyReportError) return void res.status(422).json({ success: false, error: err.code, code: err.code });
     reportError(toSafeError(err), { source: `WorkerDailyReportMeController:${op}`, ...(reportId ? { reportId } : {}) });

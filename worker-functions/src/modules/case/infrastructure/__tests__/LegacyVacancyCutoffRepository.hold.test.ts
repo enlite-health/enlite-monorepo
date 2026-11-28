@@ -1,4 +1,8 @@
-/** Grupo e (spec 084 F3/R18): "En espera" guarda SEARCHING como status de antes — "Reanudar" para CLOSED seria 409 (R4). */
+/**
+ * Grupo e (spec 084 F3/R18): o corte legado põe CLOSED de serviço ativo em ON_HOLD e guarda SEARCHING como status de antes.
+ * semaforo-da-vaga F4: o "Reanudar" (PUT status) saiu — ninguém grava status —, então a coluna `status_before_hold` ficou sem leitor
+ * (LISTA do retorno da F4); o corte legado em si segue como estava.
+ */
 import { LegacyVacancyCutoffRepository } from '../LegacyVacancyCutoffRepository';
 import { authorizeVacancyUpdate } from '../../../matching/interfaces/controllers/vacancyCrudHelpers';
 
@@ -13,10 +17,10 @@ describe('LegacyVacancyCutoffRepository.putOnHold', () => {
     expect(sql).toMatch(/s\.active/);
   });
 
-  it('o destino do "Reanudar" que isto produz (SEARCHING) o servidor ACEITA; CLOSED ele recusa (por isso não se guarda CLOSED)', async () => {
+  it('a vaga que o corte deixa em ON_HOLD não volta por PUT: qualquer status (inclusive o SEARCHING guardado) é 400 — a saída é a baixa', async () => {
     const db = { query: jest.fn(async () => ({ rows: [{ status: 'ON_HOLD', is_draft: false, patient_id: 'p', contracted_service_id: 's', service_active: true }] })) } as never;
-    expect(await authorizeVacancyUpdate(db, 'v', { status: 'SEARCHING' })).toMatchObject({ kind: 'ok' });
-    expect(await authorizeVacancyUpdate(db, 'v', { status: 'CLOSED' })).toMatchObject({ kind: 'error', status: 409 });
+    expect(await authorizeVacancyUpdate(db, 'v', { status: 'SEARCHING' })).toMatchObject({ kind: 'error', status: 400, code: 'VACANCY_STATUS_NOT_WRITABLE' });
+    expect(await authorizeVacancyUpdate(db, 'v', { status: 'CLOSED' })).toMatchObject({ kind: 'error', status: 400, code: 'VACANCY_STATUS_NOT_WRITABLE' });
   });
 
   it('lista vazia não toca o banco', async () => {

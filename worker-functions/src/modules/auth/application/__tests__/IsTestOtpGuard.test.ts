@@ -9,7 +9,7 @@ jest.mock('@modules/account-link/accountLinkNotice', () => ({ sendLinkedNoticeEm
 import type { Pool } from 'pg';
 import { logger } from '@shared/logging';
 import { Result } from '@shared/utils/Result';
-import { IsTestOtpGuardedVerify } from '../IsTestOtpGuard';
+import { IsTestOtpGuardedVerify } from '../../infrastructure/IsTestOtpGuardedVerify';
 import { StartClaimUseCase } from '../StartClaimUseCase';
 import { InitWorkerUseCase } from '@modules/worker/application/InitWorkerUseCase';
 import { AccountLinkService } from '@modules/account-link/AccountLinkService';
@@ -181,7 +181,7 @@ describe('IsTestOtpGuard — os 3 caminhos de envio passam pela guarda', () => {
         return Promise.resolve({ rows: [] });
       }),
     } as unknown as Pool;
-    const service = new AccountLinkService(pool, { twilio: sender as never, adminMerge: {} as never, encryption: {} as never });
+    const service = new AccountLinkService(pool, { otp: new TwilioVerifyOtpAdapter(new IsTestOtpGuardedVerify(sender as never)), adminMerge: {} as never, encryption: {} as never });
     await service.start('uid-1', '1155261243', TEST_TOKEN);
     expect(sender.startVerification).toHaveBeenCalledTimes(ctxCases(isTest).expectedCalls);
   });
@@ -243,7 +243,7 @@ describe('IsTestOtpGuard — o CONFIRM dos 2 fluxos relê a ficha alvo (B2)', ()
     } as unknown as Pool;
     const adminMerge = { execute: jest.fn().mockResolvedValue({ audit_ids: [1], survivor_id: 'me', absorbed_ids: [ownerId] }) };
     const service = new AccountLinkService(pool, {
-      twilio: sender as never, adminMerge: adminMerge as never, encryption: { decrypt: jest.fn().mockResolvedValue('') } as never,
+      otp: new TwilioVerifyOtpAdapter(new IsTestOtpGuardedVerify(sender as never)), adminMerge: adminMerge as never, encryption: { decrypt: jest.fn().mockResolvedValue('') } as never,
     });
     return { service, adminMerge };
   }

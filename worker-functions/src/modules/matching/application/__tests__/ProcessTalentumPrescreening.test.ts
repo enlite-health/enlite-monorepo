@@ -296,7 +296,7 @@ describe('ProcessTalentumPrescreening', () => {
 
     const sqls: string[] = mockPoolClient.query.mock.calls.map((c: any[]) => c[0]);
     expect(sqls.some((q) => q.includes('UPDATE worker_job_applications') && q.includes('application_funnel_stage = $3'))).toBe(true);
-    expect(sqls.some((q) => q.includes("rejection_reason_category = 'TALENTUM_NOT_QUALIFIED'") && q.includes('resultado = NULL'))).toBe(true);
+    expect(sqls.some((q) => q.includes("rejection_reason_category IN ('TALENTUM_NOT_QUALIFIED', 'TALENTUM_EXPIRED')") && q.includes('resultado = NULL'))).toBe(true);
   });
 
   it('QUALIFIED sobre REJECTED HUMANO (changed_by preenchido): não escreve a reversão', async () => {
@@ -1944,6 +1944,196 @@ describe('ProcessTalentumPrescreening', () => {
       const result = await run({ phoneNumber: '+5491100008888' });
 
       expect(result.workerId).toBe('w-sobrevivente');
+    });
+  });
+
+  describe('trava de ordem do status (spec 095 §3.1): log quando o upsert segura a regressão', () => {
+    const mockStoredStatus = (stored: string) =>
+      mockPrescreeningRepo.upsertPrescreening.mockResolvedValueOnce({
+        prescreening: { id: 'ps-1', talentumPrescreeningId: 'tp-1', workerId: 'w-1', jobPostingId: 'jp-1', status: stored },
+        created: false,
+      });
+
+    it('status gravado ≠ effectiveStatus → loga talentum_status_regression_blocked só com ids e os dois enums', async () => {
+      const info = jest.spyOn(logger, 'info').mockImplementation(() => undefined as any);
+      mockStoredStatus('QUALIFIED');
+
+      await useCase.execute(buildPayload({ status: 'COMPLETED', prescreeningId: 'tp-1', profileId: 'prof-1' }));
+
+      const calls = info.mock.calls.filter((c) => c[1] === 'talentum_status_regression_blocked');
+      expect(calls).toHaveLength(1);
+      expect(calls[0][0]).toEqual({
+        talentumPrescreeningId: 'tp-1',
+        talentumProfileId: 'prof-1',
+        kept: 'QUALIFIED',
+        incoming: 'COMPLETED',
+      });
+      expect(Object.keys(calls[0][0] as object).sort()).toEqual(['incoming', 'kept', 'talentumPrescreeningId', 'talentumProfileId']);
+      info.mockRestore();
+    });
+
+    it('status gravado = effectiveStatus → não loga', async () => {
+      const info = jest.spyOn(logger, 'info').mockImplementation(() => undefined as any);
+      mockStoredStatus('COMPLETED');
+
+      await useCase.execute(buildPayload({ status: 'COMPLETED' }));
+
+      expect(info.mock.calls.filter((c) => c[1] === 'talentum_status_regression_blocked')).toHaveLength(0);
+      info.mockRestore();
+    });
+  });
+
+  // ─── Mudança manual do Talentum = decisão humana (T-095-33, spec 095 §3.4) ───
+
+  describe('mudança manual do Talentum', () => {
+    let notifier: { notify: jest.Mock };
+    let manualUseCase: ProcessTalentumPrescreening;
+
+    /** Responde as leituras do pool: status gravado do espelho e a última linha da trilha do WJA. */
+    function mockReads(stored: string | null, lastChangedBy: string | 'sem-trilha') {
+      const orig = mockPool.query.getMockImplementation()!;
+      mockPool.query.mockImplementation((sql: string, params?: unknown[]) => {
+        if (sql.includes('FROM talentum_prescreenings WHERE')) return Promise.resolve({ rows: stored ? [{ status: stored }] : [] });
+        if (sql.includes('worker_job_application_stage_history')) {
+          return Promise.resolve({ rows: lastChangedBy === 'sem-trilha' ? [] : [{ changed_by: lastChangedBy }] });
+        }
+        return orig(sql, params);
+      });
+    }
+    const stamped = () => mockPoolClient.query.mock.calls.filter((c: any[]) => /set_config\('app.current_uid'/.test(c[0]));
+    const wjaUpserts = () => mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mock.calls.length;
+
+    beforeEach(() => {
+      notifier = { notify: jest.fn().mockResolvedValue(undefined) };
+      manualUseCase = new ProcessTalentumPrescreening(mockPrescreeningRepo, mockWorkerLookup, mockJobPostingLookup, mockPool, mockPubsub, notifier);
+    });
+
+    const manualPayload = () => {
+      const p = buildPayload({ statusLabel: 'QUALIFIED' });
+      (p.data.response as any).source = 'MANUAL';
+      return p;
+    };
+
+    it('manual: a transação do funil carimba o ator talentum:manual (vira changed_by na trilha)', async () => {
+      mockReads(null, 'sem-trilha');
+      await manualUseCase.execute(manualPayload());
+      expect(stamped()).toHaveLength(1);
+      expect(stamped()[0][1]).toEqual(['talentum:manual']);
+      expect(wjaUpserts()).toBe(1);
+    });
+
+    it('automático: nenhum ator carimbado (changed_by segue vazio)', async () => {
+      mockReads('COMPLETED', 'sem-trilha');
+      await manualUseCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+      expect(stamped()).toHaveLength(0);
+      expect(wjaUpserts()).toBe(1);
+    });
+
+    it('sem marcador: ANALYZED com veredito ≠ gravado (QUALIFIED → NOT_QUALIFIED) é tratado como manual', async () => {
+      mockReads('QUALIFIED', 'sem-trilha');
+      await manualUseCase.execute(buildPayload({ statusLabel: 'NOT_QUALIFIED' }));
+      expect(stamped()[0][1]).toEqual(['talentum:manual']);
+    });
+
+    it('manual com a última linha de uid NOSSO: só o espelho muda (sem WJA, sem encuadre) + aviso CONFLITO_HUMANO', async () => {
+      mockReads('COMPLETED', 'staff:uid-1');
+      await manualUseCase.execute(manualPayload());
+      expect(mockPrescreeningRepo.upsertPrescreening).toHaveBeenCalledTimes(1); // o espelho
+      expect(wjaUpserts()).toBe(0);
+      expect(mockPool.query.mock.calls.some((c: any[]) => String(c[0]).includes('INSERT INTO encuadres'))).toBe(false);
+      expect(notifier.notify).toHaveBeenCalledWith(mockPoolClient, { workerId: 'w-1', jobPostingId: 'jp-1', talentumPrescreeningId: 'tp-1' });
+      const tx = mockPoolClient.query.mock.calls.map((c: any[]) => c[0]);
+      expect(tx.indexOf('COMMIT')).toBeGreaterThan(-1);
+    });
+
+    it('evento AUTOMÁTICO tardio (COMPLETED) depois de decisão talentum:manual: só o espelho, WJA intacto', async () => {
+      mockReads('QUALIFIED', 'talentum:manual');
+      await manualUseCase.execute(buildPayload({ status: 'COMPLETED' }));
+      expect(wjaUpserts()).toBe(0);
+      expect(notifier.notify).not.toHaveBeenCalled();
+    });
+
+    it('evento AUTOMÁTICO (veredito igual ao gravado) com a última linha talentum:manual: só o espelho', async () => {
+      mockReads('QUALIFIED', 'talentum:manual');
+      await manualUseCase.execute(buildPayload({ statusLabel: 'QUALIFIED' }));
+      expect(mockPrescreeningRepo.upsertPrescreening).toHaveBeenCalledTimes(1);
+      expect(wjaUpserts()).toBe(0);
+      expect(notifier.notify).not.toHaveBeenCalled();
+      expect(mockPool.query.mock.calls.some((c: any[]) => String(c[0]).includes('INSERT INTO encuadres'))).toBe(false);
+    });
+  });
+
+  // ─── Expiração (T-095-34, D626, spec 095 §3.4) ───
+
+  describe('expiração do Talentum', () => {
+    const expiredPayload = (form: 'subtype' | 'statusLabel') => {
+      const p = buildPayload({ status: form === 'subtype' ? ('EXPIRED' as any) : 'ANALYZED', statusLabel: form === 'statusLabel' ? ('EXPIRED' as any) : undefined });
+      if (form === 'subtype') (p.data.response as any).statusLabel = undefined;
+      return p;
+    };
+    const sqlsOf = (): string[] => mockPoolClient.query.mock.calls.map((c: any[]) => String(c[0]));
+
+    it.each(['subtype', 'statusLabel'] as const)('forma %s=EXPIRED: espelho EXPIRED, WJA REJECTED, motivo TALENTUM_EXPIRED na trilha e evento auto_expired', async (form) => {
+      mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mockResolvedValue({ previousStage: 'INVITED' });
+
+      await useCase.execute(expiredPayload(form));
+
+      expect(mockPrescreeningRepo.upsertPrescreening.mock.calls[0][0].status).toBe('EXPIRED');
+      expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mock.calls[0][0].applicationFunnelStage).toBe('REJECTED');
+      // P4: o gatilho lê `app.move_reason`; o set_config vem ANTES do upsert do WJA, na mesma transação
+      const reasonCall = mockPoolClient.query.mock.calls.findIndex((c: any[]) => /set_config\('app.move_reason'/.test(c[0]));
+      expect(reasonCall).toBeGreaterThan(-1);
+      expect(mockPoolClient.query.mock.calls[reasonCall][1]).toEqual(['TALENTUM_EXPIRED']);
+      expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mock.invocationCallOrder[0])
+        .toBeGreaterThan(mockPoolClient.query.mock.invocationCallOrder[reasonCall]);
+      expect(sqlsOf().some((q) => q.includes("rejection_reason_category = 'TALENTUM_EXPIRED'"))).toBe(true);
+      const ev = mockPoolClient.query.mock.calls.find((c: any[]) => String(c[0]).includes("'funnel_stage.rejected'"));
+      expect(JSON.parse(ev[1][0]).source).toBe('auto_expired');
+    });
+
+    it('sem expiração, o motivo NÃO é carimbado (NQ e demais seguem como antes)', async () => {
+      await useCase.execute(buildPayload({ statusLabel: 'NOT_QUALIFIED' }));
+      expect(sqlsOf().some((q) => /set_config\('app.move_reason'/.test(q))).toBe(false);
+    });
+
+    it('EXPIRED atrasado depois de veredito (o upsert devolve QUALIFIED): WJA e encuadre NÃO são tocados', async () => {
+      mockPrescreeningRepo.upsertPrescreening.mockResolvedValueOnce({
+        prescreening: { id: 'ps-1', talentumPrescreeningId: 'tp-1', workerId: 'w-1', jobPostingId: 'jp-1', status: 'QUALIFIED' },
+        created: false,
+      });
+
+      await useCase.execute(expiredPayload('subtype'));
+
+      expect(mockPrescreeningRepo.upsertPrescreening.mock.calls[0][0].status).toBe('EXPIRED');
+      expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).not.toHaveBeenCalled();
+      expect(sqlsOf().some((q) => q.includes("'TALENTUM_EXPIRED'") && q.includes('UPDATE encuadres'))).toBe(false);
+      expect(sqlsOf().some((q) => q.includes("'funnel_stage.rejected'"))).toBe(false);
+    });
+
+    it('expiração sobre etapa acima de QUALIFIED (SELECTED): o espelho vira EXPIRED, mas encuadre e evento não mudam', async () => {
+      mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mockResolvedValue({ previousStage: 'SELECTED' });
+      mockPoolClient.query.mockImplementation((sql: string) => {
+        if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return Promise.resolve();
+        if (sql.includes('funnel_stage_precedence')) return Promise.resolve({ rows: [{ above: true }] });
+        return Promise.resolve({ rows: [] });
+      });
+
+      await useCase.execute(expiredPayload('subtype'));
+
+      expect(mockPrescreeningRepo.upsertPrescreening.mock.calls[0][0].status).toBe('EXPIRED');
+      expect(sqlsOf().some((q) => q.includes("'TALENTUM_EXPIRED'") && q.includes('UPDATE encuadres'))).toBe(false);
+      expect(sqlsOf().some((q) => q.includes("'funnel_stage.rejected'"))).toBe(false);
+    });
+
+    it('expiração com a última movimentação HUMANA nossa: só o espelho muda (WJA intacto)', async () => {
+      const orig = mockPool.query.getMockImplementation()!;
+      mockPool.query.mockImplementation((sql: string, params?: unknown[]) =>
+        sql.includes('worker_job_application_stage_history') ? Promise.resolve({ rows: [{ changed_by: 'staff:uid-1' }] }) : orig(sql, params));
+
+      await useCase.execute(expiredPayload('subtype'));
+
+      expect(mockPrescreeningRepo.upsertPrescreening.mock.calls[0][0].status).toBe('EXPIRED');
+      expect(mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum).not.toHaveBeenCalled();
     });
   });
 });

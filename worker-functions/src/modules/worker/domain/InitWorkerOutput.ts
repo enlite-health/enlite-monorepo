@@ -15,7 +15,6 @@ export type InitWorkerOutput =
   | { status: 'ok'; worker: Worker; code?: 'OK' | 'PHONE_LOCKED' }
   | {
       status: 'claim_pending';
-      candidateWorkerId: string;
       phoneMasked: string;
       verificationSid: string;
       code?: 'CLAIM_PENDING';

@@ -506,10 +506,9 @@ export async function readPatientKanbanColumn(page: Page, patientId: string): Pr
 }
 
 /**
- * D469 (02/10/2026): o foguete passou a mover o paciente do funil para Búsqueda. Os testes que
- * provam o OUTRO caminho (o envio à Talentum move quem ainda estiver no funil — `VacancyLaunchHook`,
- * `vacancy_launch`) ou que dependem do paciente parado em Admisión (derivação não toca o funil)
- * devolvem o paciente ao funil por SQL (fixture; a trilha ganha uma linha sem `change_source`).
+ * D469 (02/10/2026): o foguete move o paciente do funil para Búsqueda. estado-automatico-do-paciente (D1): o envio à
+ * Talentum NÃO move mais. Os testes do lançamento devolvem o paciente ao funil por SQL (fixture; a trilha ganha uma linha
+ * sem `change_source`) para provar que nem o envio recusado, nem o aceito, nem a republicação o movem de novo.
  */
 export function devolverPacienteAoFunil(patientId: string, status = 'ADMISSION'): void {
   runSQL(`UPDATE patients SET status = '${status}' WHERE id = '${patientId}'`);
@@ -517,7 +516,7 @@ export function devolverPacienteAoFunil(patientId: string, status = 'ADMISSION')
 
 // ── Trilha do lançamento ─────────────────────────────────────────────────────────────
 
-/** Conta `patient_status_history` do paciente com `change_source = 'vacancy_launch'`. */
+/** Conta `patient_status_history` do paciente com `change_source = 'vacancy_launch'` (origem antiga; depois da D1 tem de ficar em 0). */
 export function countLaunchTrail(patientId: string): number {
   const out = runSQL(
     `SELECT count(*) FROM patient_status_history WHERE patient_id = '${patientId}' AND change_source = 'vacancy_launch'`,

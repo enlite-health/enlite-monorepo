@@ -19,6 +19,11 @@ export function titleRegex(name: string): string {
 export class JobPostingLookup implements IJobPostingLookup {
   constructor(private readonly pool: Pool) {}
 
+  /** Mesma consulta, outro pool: a conexão da transação do processador da inbox (T-095-30). */
+  withPool(pool: Pool): JobPostingLookup {
+    return new JobPostingLookup(pool);
+  }
+
   /**
    * `prescreeningId` = `data.prescreening.id` do webhook (NÃO é o `talentum_project_id`; medido: divergem em 98%).
    * O `_id` é único entre vagas vivas (índice 558): quem o detém é a vaga do projeto, rascunho ou não.

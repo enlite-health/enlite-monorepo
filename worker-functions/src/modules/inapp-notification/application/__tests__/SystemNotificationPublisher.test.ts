@@ -3,8 +3,12 @@ import {
   buildAdmissionTactiqLinkPayload,
   buildPtContactsPendingPayload,
   buildItineraryUncoveredShiftsPayload,
+  buildCoordinationAlertPayload,
+  SYSTEM_PRESENCE_ACTOR_UID,
   buildPedidoIaAplicarPayload,
   buildAdmissionImportBlockedPayload,
+  buildTalentumWebhookAlarmPayload,
+  SYSTEM_TALENTUM_WEBHOOK_ACTOR_UID,
   SYSTEM_ITINERARY_ACTOR_UID,
   SYSTEM_ADMISSION_ACTOR_UID,
   SYSTEM_NOTIFICATION_ACTOR_UID,
@@ -98,6 +102,91 @@ describe('SystemNotificationPublisher — aviso do vínculo do Tactiq (spec 049 
     expect(() => buildAdmissionTactiqLinkPayload('ana@example.test')).toThrow(/conjunto fechado/);
     await expect(new SystemNotificationPublisher(r as never).publishAdmissionTactiqLinkRequired({} as never, { recipientUid: 'op1', reason: 'x' })).rejects.toThrow();
     expect(r.insertEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildAdmissionTactiqLinkPayload — contrato da falta de assento (tactiq-vinculo-resiliente, D11)', () => {
+  it('seat_missing ao host: audience + adminNotified + autoReactivates, e nada além', () => {
+    expect(buildAdmissionTactiqLinkPayload('seat_missing', { audience: 'host', adminNotified: true, autoReactivates: false })).toEqual({
+      reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: false,
+    });
+  });
+
+  it('seat_missing ao master: hostName opcional (vazio some) e autoReactivates', () => {
+    expect(buildAdmissionTactiqLinkPayload('seat_missing', { audience: 'master', hostName: 'Fulana Fake', autoReactivates: true })).toEqual({
+      reason: 'seat_missing', audience: 'master', hostName: 'Fulana Fake', autoReactivates: true,
+    });
+    expect(buildAdmissionTactiqLinkPayload('seat_missing', { audience: 'master', hostName: '', autoReactivates: true })).toEqual({
+      reason: 'seat_missing', audience: 'master', autoReactivates: true,
+    });
+  });
+
+  it('broken ao master (token morto): audience + hostName, sem autoReactivates; sem extras segue só { reason }', () => {
+    expect(buildAdmissionTactiqLinkPayload('broken', { audience: 'master', hostName: 'Fulana Fake' })).toEqual({
+      reason: 'broken', audience: 'master', hostName: 'Fulana Fake',
+    });
+    expect(buildAdmissionTactiqLinkPayload('broken')).toEqual({ reason: 'broken' });
+  });
+
+  it.each([
+    ['master com missing', 'missing', { audience: 'master' }],
+    ['master com wrong_account', 'wrong_account', { audience: 'master' }],
+    ['hostName em audience host', 'seat_missing', { audience: 'host', hostName: 'Fulana Fake', adminNotified: true, autoReactivates: true }],
+    ['hostName sem audience', 'broken', { hostName: 'Fulana Fake' }],
+    ['adminNotified na cópia master', 'seat_missing', { audience: 'master', adminNotified: true, autoReactivates: true }],
+    ['adminNotified em broken', 'broken', { audience: 'host', adminNotified: true }],
+    ['autoReactivates em broken', 'broken', { audience: 'master', autoReactivates: true }],
+    ['seat_missing sem audience', 'seat_missing', { autoReactivates: true }],
+    ['seat_missing sem autoReactivates', 'seat_missing', { audience: 'master' }],
+    ['seat_missing ao host sem adminNotified', 'seat_missing', { audience: 'host', autoReactivates: true }],
+    ['audience fora do conjunto', 'broken', { audience: 'supervisor' }],
+  ])('combinação proibida lança: %s', (_n, reason, extras) => {
+    expect(() => buildAdmissionTactiqLinkPayload(reason, extras)).toThrow(/admission_tactiq_link_payload/);
+  });
+
+  it('o publicador repassa os extras ao payload e NÃO grava com combinação proibida', async () => {
+    const r = repo();
+    await new SystemNotificationPublisher(r as never).publishAdmissionTactiqLinkRequired({} as never, {
+      recipientUid: 'm1', reason: 'seat_missing', audience: 'master', hostName: 'Fulana Fake', autoReactivates: true,
+    });
+    expect(r.insertEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: { reason: 'seat_missing', audience: 'master', hostName: 'Fulana Fake', autoReactivates: true } }),
+      expect.anything(),
+    );
+    const r2 = repo();
+    await expect(
+      new SystemNotificationPublisher(r2 as never).publishAdmissionTactiqLinkRequired({} as never, { recipientUid: 'm1', reason: 'missing', audience: 'master' }),
+    ).rejects.toThrow();
+    expect(r2.insertEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildAdmissionTactiqLinkPayload — F5, licença antes do 1º vínculo (D11/D16)', () => {
+  it('seat_pending só ao master (hostName opcional) e seat_ready só ao host, com firstLink boolean', () => {
+    expect(buildAdmissionTactiqLinkPayload('seat_pending', { audience: 'master', hostName: 'Fulana Fake' })).toEqual({
+      reason: 'seat_pending', audience: 'master', hostName: 'Fulana Fake',
+    });
+    expect(buildAdmissionTactiqLinkPayload('seat_ready', { audience: 'host', firstLink: true })).toEqual({
+      reason: 'seat_ready', audience: 'host', firstLink: true,
+    });
+    expect(buildAdmissionTactiqLinkPayload('seat_ready', { audience: 'host', firstLink: false })).toEqual({
+      reason: 'seat_ready', audience: 'host', firstLink: false,
+    });
+  });
+
+  it.each([
+    ['seat_ready com master', 'seat_ready', { audience: 'master', firstLink: true }],
+    ['seat_ready sem audience', 'seat_ready', { firstLink: true }],
+    ['seat_ready sem firstLink', 'seat_ready', { audience: 'host' }],
+    ['seat_ready com hostName', 'seat_ready', { audience: 'host', firstLink: true, hostName: 'Fulana Fake' }],
+    ['seat_ready com adminNotified', 'seat_ready', { audience: 'host', firstLink: true, adminNotified: true }],
+    ['seat_pending com host', 'seat_pending', { audience: 'host' }],
+    ['seat_pending sem audience', 'seat_pending', {}],
+    ['seat_pending com firstLink', 'seat_pending', { audience: 'master', firstLink: true }],
+    ['firstLink em seat_missing', 'seat_missing', { audience: 'host', adminNotified: true, autoReactivates: true, firstLink: true }],
+    ['firstLink em broken', 'broken', { firstLink: true }],
+  ])('combinação proibida lança: %s', (_n, reason, extras) => {
+    expect(() => buildAdmissionTactiqLinkPayload(reason, extras)).toThrow(/admission_tactiq_link_payload/);
   });
 });
 
@@ -219,9 +308,100 @@ describe('SystemNotificationPublisher — importação bloqueada (spec 083, D-7)
     for (const stage of ['blocked', 'reminder', 'expired']) expect(buildAdmissionImportBlockedPayload({ ...host, stage }).stage).toBe(stage);
   });
 
+  it('not_recorded (D11): só stage=expired ao host; o payload sai com as 6 chaves', () => {
+    const ok = buildAdmissionImportBlockedPayload({ ...host, stage: 'expired', reason: 'not_recorded' });
+    expect(ok).toEqual({ ...host, stage: 'expired', reason: 'not_recorded' });
+  });
+
+  it.each([
+    ['blocked', { stage: 'blocked' }],
+    ['reminder', { stage: 'reminder' }],
+    ['will_be_lost (supervisor)', { stage: 'will_be_lost', audience: 'supervisor' }],
+    ['expired ao supervisor', { stage: 'expired', audience: 'supervisor' }],
+  ])('not_recorded fora de expired/host lança: %s', (_n, over) => {
+    expect(() => buildAdmissionImportBlockedPayload({ ...host, reason: 'not_recorded', ...over })).toThrow(/combinação/);
+  });
+
+  it('publisher publica not_recorded expired/host (um evento, uma notificação)', async () => {
+    const r = repo();
+    const payload = { ...host, stage: 'expired', reason: 'not_recorded' };
+    await new SystemNotificationPublisher(r as never).publishAdmissionImportBlocked({} as never, { recipientUid: 'op1', payload });
+    expect(r.insertEvent).toHaveBeenCalledWith(expect.objectContaining({ typeCode: 'ADMISSION_IMPORT_BLOCKED', payload }), expect.anything());
+  });
+
   it('publisher que recebe payload inválido lança e nada grava', async () => {
     const r = repo();
     await expect(new SystemNotificationPublisher(r as never).publishAdmissionImportBlocked({} as never, { recipientUid: 'op1', payload: { ...host, stage: 'will_be_lost' } })).rejects.toThrow();
     expect(r.insertEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildTalentumWebhookAlarmPayload / publishTalentumWebhookAlarm (spec 095 T-095-42)', () => {
+  const ok = { alarme: 'inbox_falha', quantidade: 2, desde: '2026-11-25T12:00:00.000Z' };
+
+  it('constrói as 3 chaves fechadas, para cada alarme do conjunto', () => {
+    for (const alarme of ['inbox_falha', 'inbox_pendente', 'veredito_ausente', 'silencio', 'CONFLITO_HUMANO']) {
+      expect(buildTalentumWebhookAlarmPayload({ ...ok, alarme })).toEqual({ alarme, quantidade: 2, desde: ok.desde });
+    }
+  });
+
+  it('chave extra (nome, e-mail, id) LANÇA, não é ignorada', () => {
+    for (const extra of [{ nome: 'Fulana' }, { email: 'a@b.c' }, { workerId: 'w-1' }]) {
+      expect(() => buildTalentumWebhookAlarmPayload({ ...ok, ...extra } as never)).toThrow(/chave fora do contrato/);
+    }
+  });
+
+  it('alarme fora do conjunto, quantidade inválida e desde que não é data lançam', () => {
+    expect(() => buildTalentumWebhookAlarmPayload({ ...ok, alarme: 'sino_falhou' })).toThrow(/fora do contrato/);
+    expect(() => buildTalentumWebhookAlarmPayload({ ...ok, alarme: 'qualquer coisa' })).toThrow(/fora do contrato/);
+    expect(() => buildTalentumWebhookAlarmPayload({ ...ok, quantidade: 0 })).toThrow(/fora do contrato/);
+    expect(() => buildTalentumWebhookAlarmPayload({ ...ok, quantidade: 1.5 })).toThrow(/fora do contrato/);
+    expect(() => buildTalentumWebhookAlarmPayload({ ...ok, desde: 'ontem' })).toThrow(/fora do contrato/);
+  });
+
+  it('publica 1 evento (sentinela, sem paciente) + 1 notificação por destinatário distinto; sem destinatário não grava', async () => {
+    const r = repo();
+    const pub = new SystemNotificationPublisher(r as never);
+    await pub.publishTalentumWebhookAlarm({} as never, { recipientUids: ['u1', 'u2', 'u1'], payload: ok });
+    expect(r.insertEvent).toHaveBeenCalledWith(
+      { typeCode: 'TALENTUM_WEBHOOK_ALARM', actorUid: SYSTEM_TALENTUM_WEBHOOK_ACTOR_UID, patientId: null, conversationId: null, messageId: null, payload: ok },
+      expect.anything(),
+    );
+    expect(SYSTEM_TALENTUM_WEBHOOK_ACTOR_UID).toBe('system:talentum-webhook');
+    expect(r.insertNotifications).toHaveBeenCalledWith('ev-1', ['u1', 'u2'], expect.anything());
+    const vazio = repo();
+    expect(await new SystemNotificationPublisher(vazio as never).publishTalentumWebhookAlarm({} as never, { recipientUids: [], payload: ok })).toBeNull();
+    expect(vazio.insertEvent).not.toHaveBeenCalled();
+  });
+
+  it('payload inválido lança e nada grava', async () => {
+    const r = repo();
+    await expect(new SystemNotificationPublisher(r as never).publishTalentumWebhookAlarm({} as never, { recipientUids: ['u1'], payload: { ...ok, nome: 'x' } as never })).rejects.toThrow();
+    expect(r.insertEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('SystemNotificationPublisher — aviso de presença à coordenação (emenda 077 §5)', () => {
+  const U = '11111111-1111-4111-8111-111111111111';
+  const payload = { occurrence_id: U, slot_id: U, on_date: '2026-11-25', worker_id: U, service_id: U, start_time: '2026-11-25T12:00:00.000Z', end_time: '2026-11-25T21:30:00.000Z' };
+
+  it('UM evento (sentinela, patient_id na COLUNA, payload só-ids) + UMA notificação ao destinatário', async () => {
+    const r = repo();
+    const id = await new SystemNotificationPublisher(r as never).publishCoordinationAlert({} as never, { typeCode: 'PRESENCE_OPEN_4H', recipientUid: 'u1', patientId: U, payload });
+    expect(id).toBe('ev-1');
+    expect(r.insertEvent).toHaveBeenCalledWith(
+      { typeCode: 'PRESENCE_OPEN_4H', actorUid: SYSTEM_PRESENCE_ACTOR_UID, patientId: U, conversationId: null, messageId: null, payload },
+      {},
+    );
+    expect(r.insertNotifications).toHaveBeenCalledWith('ev-1', ['u1'], {});
+  });
+
+  it('o builder é FECHADO: chave extra (nome, endereço, patient_id) LANÇA; uuid ou data fora do contrato lançam', () => {
+    expect(() => buildCoordinationAlertPayload({ ...payload, worker_name: 'Ana' } as never)).toThrow(/chave fora do contrato/);
+    expect(() => buildCoordinationAlertPayload({ ...payload, patient_id: U } as never)).toThrow(/chave fora do contrato/);
+    expect(() => buildCoordinationAlertPayload({ ...payload, worker_id: 'x' })).toThrow(/valor fora do contrato/);
+    expect(() => buildCoordinationAlertPayload({ ...payload, on_date: '25/11/2026' })).toThrow(/valor fora do contrato/);
+    expect(() => buildCoordinationAlertPayload({ ...payload, end_time: '21:30' })).toThrow(/valor fora do contrato/);
+    expect(() => buildCoordinationAlertPayload({ ...payload, start_time: undefined as never })).toThrow(/valor fora do contrato/);
   });
 });

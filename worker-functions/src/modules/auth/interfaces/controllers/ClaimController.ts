@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { logger } from '@shared/logging';
 import { StartClaimUseCase } from '../../application/StartClaimUseCase';
 import { ConfirmClaimUseCase } from '../../application/ConfirmClaimUseCase';
+import { ResolveClaimTarget } from '../../application/ResolveClaimTarget';
 
 type TokenUser = { uid?: string; email?: string };
 
@@ -38,6 +39,7 @@ export class ClaimController {
   constructor(
     private readonly startClaim: StartClaimUseCase,
     private readonly confirmClaim: ConfirmClaimUseCase,
+    private readonly resolveTarget: ResolveClaimTarget,
   ) {}
 
   async start(req: Request, res: Response): Promise<void> {
@@ -75,6 +77,12 @@ export class ClaimController {
 
         if (error === 'INVALID_PHONE') {
           res.status(400).json({ success: false, error });
+          log.info({ msg: 'claim_request_completed', responseStatus: 400, durationMs: Date.now() - startedAt });
+          return;
+        }
+
+        if (error === 'PHONE_COUNTRY_NOT_SUPPORTED') {
+          res.status(400).json({ success: false, error, code: error });
           log.info({ msg: 'claim_request_completed', responseStatus: 400, durationMs: Date.now() - startedAt });
           return;
         }
@@ -122,7 +130,8 @@ export class ClaimController {
         return;
       }
       const { authUid, email } = identidade;
-      const { verificationSid, otp, candidateWorkerId, lgpdOptIn } = req.body as Record<string, unknown>;
+      // `candidateWorkerId` no corpo (SPA em cache) é IGNORADO: a ficha sai do desafio deste uid.
+      const { verificationSid, otp, lgpdOptIn } = req.body as Record<string, unknown>;
 
       if (!verificationSid || typeof verificationSid !== 'string') {
         res.status(400).json({ success: false, error: 'Missing required field: verificationSid' });
@@ -134,8 +143,10 @@ export class ClaimController {
         log.info({ msg: 'claim_request_completed', responseStatus: 400, durationMs: Date.now() - startedAt });
         return;
       }
-      if (!candidateWorkerId || typeof candidateWorkerId !== 'string') {
-        res.status(400).json({ success: false, error: 'Missing required field: candidateWorkerId' });
+
+      const candidateWorkerId = await this.resolveTarget.execute({ challengeId: verificationSid, requesterUid: authUid });
+      if (!candidateWorkerId) {
+        res.status(400).json({ success: false, error: 'CANDIDATE_NOT_FOUND' });
         log.info({ msg: 'claim_request_completed', responseStatus: 400, durationMs: Date.now() - startedAt });
         return;
       }

@@ -16,7 +16,7 @@ const MOCK_VACANCIES: VacancyRow[] = [
   {
     id: '1',
     caseNumber: 100, caseOrdinal: 1,
-    status: 'Activo',
+    lifecycle: null,
     diasAberto: '05',
     stageCounts: {
       INVITED: 10,
@@ -61,7 +61,7 @@ describe('VacanciesTable — Eye icon', () => {
 
 // ── GARANTIA 2: Colunas responsivas (hidden md:table-cell) ────────────────
 
-const ESSENTIAL_KEYS = ['case', 'status', 'last-action'];
+const ESSENTIAL_KEYS = ['case', 'status', 'semaphore', 'last-action'];
 const RESPONSIVE_KEYS = [
   'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
   'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED', 'applicants', 'missing',
@@ -137,9 +137,9 @@ describe('VacanciesTable — empty state colspan', () => {
     expect(emptyCell).toBeTruthy();
 
     const colspan = parseInt(emptyCell!.getAttribute('colspan') || '0');
-    // eye + case/status + última ação + 9 colunas do funil + applicants/missing = 15
+    // eye + case/status + semáforo + última ação + 9 colunas do funil + applicants/missing = 16
     // e igual ao número real de <th> (a soma deixa de ser literal).
-    expect(colspan).toBe(15);
+    expect(colspan).toBe(16);
     expect(colspan).toBe(container.querySelectorAll('thead th').length);
   });
 });

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PointsMap, type MapPoint, type MapRing } from '@presentation/components/molecules/PointsMap/PointsMap';
 import { Text } from '@presentation/components/atoms/Text';
@@ -33,7 +34,8 @@ function Dot({ className, style }: { className?: string; style?: React.CSSProper
 /** L.1–L.9 — mapa com centro fixo, anéis, pinos-ponto, legenda, dica e a nota do passo vacante. */
 export function InviteMapPane({ view, center, height, nobody = false, hoveredId, selectedId, onHover, onSelect }: Props): JSX.Element {
   const { t } = useTranslation();
-  const points: MapPoint[] = view.pins.map((p) => ({
+  // Identidade estável enquanto os pinos não mudam: o mapa só reaplica o que mudou.
+  const points: MapPoint[] = useMemo(() => view.pins.map((p) => ({
     id: p.workerId,
     lat: p.lat,
     lng: p.lng,
@@ -44,13 +46,13 @@ export function InviteMapPane({ view, center, height, nobody = false, hoveredId,
       ? t('admin.vacancyInvite.map.pin', { name: p.workerName, distance: p.distanceKm.toFixed(1).replace('.', ',') })
       : t('admin.vacancyInvite.map.pinNoDistance', { name: p.workerName }),
     style: p.style,
-  }));
-  const rings: MapRing[] = view.rings.map((r) => ({
+  })), [view.pins, t]);
+  const rings: MapRing[] = useMemo(() => view.rings.map((r) => ({
     radiusKm: r.radiusKm,
     ...RING_STYLE[r.tone],
     label: nobody ? '' : `${r.radiusKm} km`,
     labelTone: r.tone,
-  }));
+  })), [view.rings, nobody]);
   const note = view.vacanteNote;
   // E8 (ninguém até 50 km): sem dica, sem legenda e sem rótulo de anel. No passo vacante a nota amarela ocupa o topo: sem dica.
   const showHint = !nobody && view.step !== 'vacante';

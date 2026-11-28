@@ -129,6 +129,100 @@ describe('ADMISSION_TACTIQ_LINK_REQUIRED (spec 049, A7-7)', () => {
   });
 });
 
+// F3 (tactiq-vinculo-resiliente, D11/D14): assento e token morto; a chave sai de audience/adminNotified/autoReactivates.
+describe('ADMISSION_TACTIQ_LINK_REQUIRED — F3 (seat_missing, audience, master broken)', () => {
+  const h = () => getNotificationTypeHandler('ADMISSION_TACTIQ_LINK_REQUIRED');
+  const tq = (payload: Record<string, unknown>) =>
+    notif({ typeCode: 'ADMISSION_TACTIQ_LINK_REQUIRED', actorUid: 'system:admission', actorDisplayName: null, patientId: null, patientDisplayName: null, messageId: null, payload: payload as never });
+  const base = 'admin.notifications.tactiq.';
+
+  it('host auto: avisado e reativa sozinho → seatAuto', () => {
+    expect(h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: true }), t)).toBe(`${base}seatAuto:{}`);
+  });
+  it('host wait: avisado e NÃO reativa sozinho → seatWait', () => {
+    expect(h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: false }), t)).toBe(`${base}seatWait:{}`);
+  });
+  it('host sem master (ninguém avisado) → seatAskAdmin; adminNotified ausente também (não afirma que avisou)', () => {
+    expect(h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: false, autoReactivates: true }), t)).toBe(`${base}seatAskAdmin:{}`);
+    expect(h().buildText(tq({ reason: 'seat_missing' }), t)).toBe(`${base}seatAskAdmin:{}`);
+  });
+  it('master auto com nome: masterSeat + masterSeatAuto, com o nome', () => {
+    const out = h().buildText(tq({ reason: 'seat_missing', audience: 'master', hostName: 'Ana Souza', autoReactivates: true }), t);
+    expect(out).toBe(`${base}masterSeat:{"host":"Ana Souza"}${base}masterSeatAuto:{"host":"Ana Souza"}`);
+  });
+  it('master ¬auto: masterSeat + masterSeatWait', () => {
+    const out = h().buildText(tq({ reason: 'seat_missing', audience: 'master', hostName: 'Ana Souza', autoReactivates: false }), t);
+    expect(out).toBe(`${base}masterSeat:{"host":"Ana Souza"}${base}masterSeatWait:{"host":"Ana Souza"}`);
+  });
+  it('master sem nome: usa o hostFallbackStart (nunca "undefined")', () => {
+    const out = h().buildText(tq({ reason: 'seat_missing', audience: 'master' }), t);
+    expect(out).toContain('admin.notifications.importBlocked.hostFallbackStart:{}');
+    expect(out).not.toContain('undefined');
+  });
+  it('master broken (token morto) sem nome → masterBroken; broken do host segue "broken"', () => {
+    expect(h().buildText(tq({ reason: 'broken', audience: 'master' }), t)).toBe(`${base}masterBroken:{"host":"admin.notifications.importBlocked.hostFallbackStart:{}"}`);
+    expect(h().buildText(tq({ reason: 'broken', audience: 'host' }), t)).toBe(`${base}broken:{}`);
+    expect(h().buildText(tq({ reason: 'broken' }), t)).toBe(`${base}broken:{}`);
+  });
+  it('valor estranho de reason continua em "missing", mesmo com audience master', () => {
+    expect(h().buildText(tq({ reason: 'seat_banana', audience: 'master' }), t)).toBe(`${base}missing:{}`);
+  });
+  it('(F5) master seat_pending: com nome e sem nome (hostFallbackStart, nunca "undefined")', () => {
+    expect(h().buildText(tq({ reason: 'seat_pending', audience: 'master', hostName: 'Ana Souza' }), t)).toBe(`${base}masterSeatPending:{"host":"Ana Souza"}`);
+    const out = h().buildText(tq({ reason: 'seat_pending', audience: 'master' }), t);
+    expect(out).toBe(`${base}masterSeatPending:{"host":"admin.notifications.importBlocked.hostFallbackStart:{}"}`);
+    expect(out).not.toContain('undefined');
+  });
+  it('(F5) host seat_ready: firstLink=true → seatReadyFirst; firstLink=false → seatReadyAgain; audience/firstLink ausentes = host, 1º', () => {
+    expect(h().buildText(tq({ reason: 'seat_ready', audience: 'host', firstLink: true }), t)).toBe(`${base}seatReadyFirst:{}`);
+    expect(h().buildText(tq({ reason: 'seat_ready', audience: 'host', firstLink: false }), t)).toBe(`${base}seatReadyAgain:{}`);
+    expect(h().buildText(tq({ reason: 'seat_ready' }), t)).toBe(`${base}seatReadyFirst:{}`);
+  });
+  it('(F5) combinação fora do contrato (seat_ready ao master, seat_pending ao host) cai em "missing"', () => {
+    expect(h().buildText(tq({ reason: 'seat_ready', audience: 'master', firstLink: true }), t)).toBe(`${base}missing:{}`);
+    expect(h().buildText(tq({ reason: 'seat_pending', audience: 'host' }), t)).toBe(`${base}missing:{}`);
+    expect(h().detailLine?.(tq({ reason: 'seat_ready', audience: 'host', firstLink: true }), t)).toBe(`${base}seatReadyFirst:{}`);
+  });
+  it.each([['es', esJson], ['pt-BR', ptBRJson]] as const)('(F5) %s: textos reais de licença — nome do master, sem placeholder, Settings → MCP só no "again"', async (lng, json) => {
+    const i18n = i18next.createInstance();
+    await i18n.init({ lng, resources: { [lng]: { translation: json } }, interpolation: { escapeValue: false } });
+    const tr = i18n.t.bind(i18n) as unknown as (k: string, o?: Record<string, unknown>) => string;
+    const pending = h().buildText(tq({ reason: 'seat_pending', audience: 'master', hostName: 'Ana Souza' }), tr);
+    expect(pending).toContain('Ana Souza');
+    expect(pending).not.toContain('{{');
+    const first = h().buildText(tq({ reason: 'seat_ready', audience: 'host', firstLink: true }), tr);
+    const again = h().buildText(tq({ reason: 'seat_ready', audience: 'host', firstLink: false }), tr);
+    expect(first).not.toContain('Settings → MCP');
+    expect(again).toContain('Settings → MCP');
+    expect(first).toMatch(/@enlite\.health/);
+  });
+  it('detailLine acompanha o texto', () => {
+    const n = tq({ reason: 'seat_missing', audience: 'host', adminNotified: true });
+    expect(h().detailLine?.(n, t)).toBe(`${base}seatAuto:{}`);
+  });
+
+  it.each([['es', esJson], ['pt-BR', ptBRJson]] as const)('%s: textos reais — host sem "vincular"; master leva o nome (ou o fallback)', async (lng, json) => {
+    const i18n = i18next.createInstance();
+    await i18n.init({ lng, resources: { [lng]: { translation: json } }, interpolation: { escapeValue: false } });
+    const tr = i18n.t.bind(i18n) as unknown as (k: string, o?: Record<string, unknown>) => string;
+    const host = [
+      h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: true }), tr),
+      h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: false }), tr),
+      h().buildText(tq({ reason: 'seat_missing', audience: 'host', adminNotified: false }), tr),
+    ];
+    for (const text of host) {
+      expect(text.length).toBeGreaterThan(20);
+      expect(text.toLowerCase()).not.toMatch(/vincular|vinculá|vincule/);
+    }
+    const master = h().buildText(tq({ reason: 'seat_missing', audience: 'master', hostName: 'Ana Souza', autoReactivates: true }), tr);
+    expect(master).toContain('Ana Souza');
+    expect(master).not.toContain('{{');
+    const fallback = h().buildText(tq({ reason: 'broken', audience: 'master' }), tr);
+    expect(fallback).not.toContain('{{');
+    expect(fallback).toMatch(lng === 'es' ? /La persona responsable/ : /A pessoa responsável/);
+  });
+});
+
 // Spec 050 (F15, R-3): o aviso da transição do relatório do Chrome — o servidor manda só `{state}`; o TEXTO vive aqui.
 describe('ADMISSION_TACTIQ_EXTENSION_CHANGED (spec 050, F15)', () => {
   const ext = (state: string | null) =>
@@ -329,6 +423,26 @@ describe('ADMISSION_IMPORT_BLOCKED (spec 083, F4)', () => {
     expect(body).toContain('sua entrevista de enquadre de 4 de nov. às 14:00, porque a conta do Tactiq conectada não é a sua.');
   });
 
+  it.each([
+    ['pt-BR', 'Esta entrevista não foi gravada no Tactiq', 'A sua reunião de admissão de 4 de nov. às 14:00 não foi gravada no Tactiq, então não há transcrição nem resumo.'],
+    ['es', 'Esta entrevista no quedó grabada en Tactiq', 'Tu reunión de admisión del 4 de nov. a las 14:00 no quedó grabada en Tactiq, así que no hay transcripción ni resumen.'],
+  ] as const)('not_recorded (expired, host) usa título e corpo PRÓPRIOS, sem prazo nem motivo de vínculo (%s)', async (lng, titulo, inicio) => {
+    const t2 = await realT(lng);
+    const n = aviso({ ...HOST, stage: 'expired', reason: 'not_recorded' });
+    const body = handler().detailLine?.(n, t2) ?? '';
+    expect(handler().buildText(n, t2).startsWith(`${titulo}. `)).toBe(true);
+    expect(body.startsWith(inicio)).toBe(true);
+    expect(body).not.toMatch(/\{\{|admin\.notifications/);
+    expect(body).not.toContain('Vincular');
+  });
+
+  it('not_recorded fora de expired/host NÃO usa o texto de reunião sem gravação (cai no texto do estágio)', async () => {
+    const t2 = await realT('pt-BR');
+    for (const p of [{ ...HOST, reason: 'not_recorded' }, { ...HOST, stage: 'expired', reason: 'not_recorded', audience: 'supervisor' }]) {
+      expect(handler().detailLine?.(aviso(p), t2) ?? '').not.toContain('não foi gravada no Tactiq');
+    }
+  });
+
   it.each([['pt-BR', 'a pessoa responsável'], ['es', 'la persona responsable']] as const)('supervisor: mostra o nome de quem fez a reunião; sem nome usa o fallback (%s)', async (lng, fallback) => {
     const t2 = await realT(lng);
     const com = handler().detailLine?.(aviso({ ...SUP, hostName: 'Marina Gómez' }), t2) ?? '';
@@ -347,5 +461,94 @@ describe('ADMISSION_IMPORT_BLOCKED (spec 083, F4)', () => {
     }
     const body = handler().detailLine?.(aviso(null), await realT('pt-BR')) ?? '';
     expect(body).not.toMatch(/\d{4}-\d{2}/);
+  });
+});
+
+// Spec 095 (T-095-43): o aviso do webhook do Talentum — o servidor manda só `{ alarme, quantidade, desde }`; o TEXTO vive aqui.
+describe('TALENTUM_WEBHOOK_ALARM (spec 095, T-095-43)', () => {
+  const aviso = (payload: unknown) =>
+    notif({ typeCode: 'TALENTUM_WEBHOOK_ALARM', actorUid: 'system:talentum-webhook', actorDisplayName: null, patientId: null, patientDisplayName: null, messageId: null, payload: payload as never });
+  const h = () => getNotificationTypeHandler('TALENTUM_WEBHOOK_ALARM');
+  const realT = async (lng: 'es' | 'pt-BR') => {
+    const i18n = i18next.createInstance();
+    const json = lng === 'es' ? esJson : ptBRJson;
+    await i18n.init({ lng, resources: { [lng]: { translation: { admin: { notifications: json.admin.notifications } } } } });
+    return i18n.t.bind(i18n) as never;
+  };
+
+  it.each([
+    [{ alarme: 'inbox_falha', quantidade: 3, desde: '2026-11-25T10:00:00.000Z' }, 'es', 'Webhook de Talentum: 3 eventos con error'],
+    [{ alarme: 'silencio', quantidade: 1, desde: '2026-11-25T10:00:00.000Z' }, 'pt-BR', 'Webhook do Talentum: sem eventos em 6 h'],
+    [{ alarme: 'silencio', quantidade: 1, desde: '2026-11-25T10:00:00.000Z' }, 'es', 'Webhook de Talentum: sin eventos en 6 h'],
+    [{ alarme: 'CONFLITO_HUMANO', quantidade: 2, desde: '2026-11-25T10:00:00.000Z' }, 'pt-BR', 'Webhook do Talentum: 2 mudança manual no Talentum em conflito com um movimento da equipe'],
+  ] as const)('payload %j em %s -> "%s"', async (payload, lng, esperado) => {
+    expect(h().buildText(aviso(payload), await realT(lng))).toBe(esperado);
+  });
+
+  it('autor "Enlite" (nunca o uid do sistema), sem paciente e sem deep link', async () => {
+    for (const lng of ['es', 'pt-BR'] as const) {
+      expect(h().actorLabel?.(aviso(null), await realT(lng))).toBe('Enlite');
+    }
+    expect(h().getDeepLink(aviso({ alarme: 'inbox_falha', quantidade: 1, desde: 'x' }))).toBeNull();
+  });
+
+  it('alarme desconhecido / payload ausente ou estranho: rótulo genérico, nunca crash', async () => {
+    for (const p of [null, {}, { alarme: 'futuro', quantidade: 'x' }, { alarme: 'inbox_falha', quantidade: -4 }]) {
+      for (const lng of ['es', 'pt-BR'] as const) {
+        const tt = await realT(lng);
+        expect(() => h().buildText(aviso(p), tt)).not.toThrow();
+        expect(h().buildText(aviso(p), tt)).toMatch(/^Webhook d[eo]l? Talentum: 1 /);
+      }
+    }
+  });
+});
+
+// Emenda 077 §5.5 (T-806-54): os 2 avisos de presença à coordenação — payload só-ids, texto montado no cliente, link para a fila.
+describe('PRESENCE_OPEN_4H / CHECK_IN_REFUSED_NO_ENTRY (emenda 077 §5.5)', () => {
+  const PAYLOAD = { occurrence_id: 'o1', slot_id: 's1', on_date: '2026-11-25', worker_id: 'w1', service_id: 'sv1' };
+  const aviso = (typeCode: 'PRESENCE_OPEN_4H' | 'CHECK_IN_REFUSED_NO_ENTRY', payload: unknown = PAYLOAD) =>
+    notif({ typeCode, actorUid: 'system:presence-alert', actorDisplayName: null, patientDisplayName: null, messageId: null, payload: payload as never });
+  const realT = async (lng: 'es' | 'pt-BR') => {
+    const json = lng === 'es' ? esJson : ptBRJson;
+    const i18n = i18next.createInstance();
+    await i18n.init({ lng, resources: { [lng]: { translation: { admin: { notifications: json.admin.notifications } } } }, interpolation: { escapeValue: false } });
+    return i18n.t.bind(i18n) as never;
+  };
+
+  it.each(['PRESENCE_OPEN_4H', 'CHECK_IN_REFUSED_NO_ENTRY'] as const)('%s: o deep link abre a fila "Revisión de presencia", sem paciente e sem pedido de foco', (code) => {
+    expect(getNotificationTypeHandler(code).getDeepLink(aviso(code))).toEqual({ path: '/admin/presencia/revision' });
+  });
+
+  it.each([
+    ['PRESENCE_OPEN_4H', 'es', 'Turno sin salida registrada: pasaron más de 4 h del fin previsto (25/11/2026).'],
+    ['PRESENCE_OPEN_4H', 'pt-BR', 'Turno sem saída registrada: passaram mais de 4 h do fim previsto (25/11/2026).'],
+    ['CHECK_IN_REFUSED_NO_ENTRY', 'es', 'Entrada rechazada y sin entrada aceptada: turno del 25/11/2026.'],
+    ['CHECK_IN_REFUSED_NO_ENTRY', 'pt-BR', 'Entrada recusada e sem entrada aceita: turno de 25/11/2026.'],
+  ] as const)('%s em %s: texto renderizado com a data do payload', async (code, lng, esperado) => {
+    expect(getNotificationTypeHandler(code).buildText(aviso(code), await realT(lng))).toBe(esperado);
+  });
+
+  it.each([
+    ['PRESENCE_OPEN_4H', 'es', 'Turno sin salida registrada: pasaron más de 4 h del fin previsto (25/11/2026, 18:30).'],
+    ['PRESENCE_OPEN_4H', 'pt-BR', 'Turno sem saída registrada: passaram mais de 4 h do fim previsto (25/11/2026, 18:30).'],
+    ['CHECK_IN_REFUSED_NO_ENTRY', 'es', 'Entrada rechazada y sin entrada aceptada: turno del 25/11/2026, 09:00.'],
+    ['CHECK_IN_REFUSED_NO_ENTRY', 'pt-BR', 'Entrada recusada e sem entrada aceita: turno de 25/11/2026, 09:00.'],
+  ] as const)('%s em %s: com start_time/end_time ISO, a hora sai no fuso do país (-03), nao UTC', async (code, lng, esperado) => {
+    const comHora = { ...PAYLOAD, start_time: '2026-11-25T12:00:00.000Z', end_time: '2026-11-25T21:30:00.000Z' };
+    expect(getNotificationTypeHandler(code).buildText(aviso(code, comHora), await realT(lng))).toBe(esperado);
+  });
+
+  it('payload ausente/estranho: variante sem data, nunca "undefined" nem crash', async () => {
+    for (const payload of [null, {}, { on_date: '25/11/2026' }]) {
+      const es = getNotificationTypeHandler('PRESENCE_OPEN_4H').buildText(aviso('PRESENCE_OPEN_4H', payload), await realT('es'));
+      expect(es).toBe('Turno sin salida registrada: pasaron más de 4 h del fin previsto.');
+    }
+  });
+
+  it('o cartão não mostra nome de ninguém: ator "Enlite", contexto "Revisión de presencia", sem detalhe', () => {
+    const h = getNotificationTypeHandler('PRESENCE_OPEN_4H');
+    expect(h.actorLabel?.(aviso('PRESENCE_OPEN_4H'), t)).toBe('admin.notifications.presenceActor:{}');
+    expect(h.contextLine?.(aviso('PRESENCE_OPEN_4H'), t)).toBe('admin.notifications.presenceContext:{}');
+    expect(h.detailLine).toBeUndefined();
   });
 });

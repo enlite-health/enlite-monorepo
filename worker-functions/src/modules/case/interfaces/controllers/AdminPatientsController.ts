@@ -6,13 +6,12 @@ import { pgUniqueViolationConflict } from '@shared/http/pgUniqueViolationConflic
 import { AuthMiddleware, resolveCountryScope, CountryScopeError } from '@modules/identity';
 import { currentDbContext } from '@shared/database/requestDbSession';
 import { adminPatientsListSchema } from '../validators/adminPatientsListSchema';
-import { statusOptionsQuerySchema } from '../validators/statusOptionsQuerySchema';
 import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema';
 import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
-import { patientContainerReadsOf, canReadPatientContainer, patientContainerCell, exposeBlockingCodes, exposeBlockingMessage } from '../../application/patientContainerAccess';
+import { patientContainerReadsOf, canReadPatientContainer, patientContainerCell } from '../../application/patientContainerAccess';
 import { hourlyValueActorOf } from '../../application/contractedServiceHourlyValueAccess';
 import {
   toAdminPatientListItem,
@@ -31,14 +30,7 @@ import {
   type PatientGeneralSectionData,
   type PatientRelatedInput,
 } from '../../application/PatientService';
-import {
-  PatientStatusTransitionError,
-  PatientStatusPermissionError,
-  OnHoldReasonRequiredError,
-  PatientStatusNotReadyError,
-  PatientStatusLockedByAllocationError,
-  SuspensionExitReasonRequiredError,
-} from '../../application/PatientStatusWriter';
+import { respondPatientStatusError } from './patientStatusErrorResponse';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
 import { InsuranceProviderUnknownError } from '../../infrastructure/PatientInsuranceVerifiedRepository';
 import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
@@ -60,8 +52,10 @@ import {
 } from '../../application/PatientTestFixtureService';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { GeocodingService } from '../../../../infrastructure/services/GeocodingService';
+import { projectPatientStatus } from '@modules/matching/application/patientInVacancyProjection';
 import { fetchPatientVacancies } from '../../infrastructure/PatientVacanciesQueryHelper';
 import { insertPatientAddress, fetchPatientAddresses } from '../../infrastructure/PatientAddressQueryHelper';
+import { dispatchPatientTalentumPause } from './dispatchPatientTalentumPause';
 
 const createPatientAddressSchema = z.object({
   address_formatted: z.string().min(1),
@@ -378,45 +372,11 @@ export class AdminPatientsController {
         // Spec 051: SÓ aqui a célula do ator chega ao writer. `null` (engine neutro) NÃO vira `[]`.
         cells: clinicalCellsOf(req),
       });
+      dispatchPatientTalentumPause(result.talentum, 'AdminPatientsController:updatePatientStatus', result.id);
       res.status(200).json({ success: true, data: { id: result.id, status: result.status } });
     } catch (err: unknown) {
-      // Troca fora do fluxo sem a célula do destino (spec 051): 403 ANTES de qualquer escrita.
-      // Mesmo molde do 403 de `onHoldNote` acima; `details.cell` leva o nome interno para o suporte.
-      if (err instanceof PatientStatusPermissionError) {
-        res.status(403).json({ success: false, error: 'Forbidden', code: err.code, details: { from: err.from, to: err.to, cell: err.cell } });
-        return;
-      }
-      if (err instanceof PatientStatusTransitionError) {
-        res.status(422).json({ success: false, error: err.message, code: err.code, details: { from: err.from, to: err.to } });
-        return;
-      }
-      if (err instanceof OnHoldReasonRequiredError) {
-        res.status(422).json({ success: false, error: err.message, code: err.code });
-        return;
-      }
-      if (err instanceof SuspensionExitReasonRequiredError) {
-        res.status(422).json({ success: false, error: err.message, code: err.code });
-        return;
-      }
-      // D489/D530: prestador com alocação viva no itinerário. Só a contagem — sem nome (PII).
-      if (err instanceof PatientStatusLockedByAllocationError) {
-        res.status(422).json({ success: false, error: err.message, code: err.code, details: { allocations: err.allocations } });
-        return;
-      }
-      // Decisão do Gabriel 07/09. `details.missing` tem o MESMO formato do 422 do
-      // `POST /activate` — a tela reusa as traduções do checklist para nomear o que falta.
-      if (err instanceof PatientStatusNotReadyError) {
-        // `DIAGNOSIS` (texto clínico: "sem diagnóstico" é dado clínico) sai como `CLINICAL_DATA` para quem não lê
-        // `patient_clinical` — a recusa é a mesma, só o NOME do item muda. Nunca o valor do diagnóstico.
-        const cells = clinicalCellsOf(req);
-        res.status(422).json({
-          success: false,
-          error: exposeBlockingMessage(err.message, cells),
-          code: err.code,
-          details: { to: err.to, missing: exposeBlockingCodes(err.missing, cells) },
-        });
-        return;
-      }
+      // Erro → HTTP numa função só, a mesma das rotas de ação (F3).
+      if (respondPatientStatusError(err, req, res)) return;
       const e = err instanceof Error ? err : new Error(String(err));
       if (/not found/i.test(e.message)) {
         res.status(404).json({ success: false, error: 'Patient not found' });
@@ -428,43 +388,6 @@ export class AdminPatientsController {
         error: 'Failed to update patient status',
         details: e.message,
       });
-    }
-  }
-
-  /**
-   * GET /api/admin/patients/:id/status-options — spec 051 (F3): os destinos de estado que o
-   * servidor ACEITARIA para este paciente e este ator (`via: 'fluxo' | 'permissao'`, `blockedBy`
-   * opcional). Mesma célula do PUT (`patient:update`): a lista nunca oferece o que o PUT negaria
-   * por falta dela. `?changeSource=admin_panel|kanban` (default admin_panel; outro valor → 400): o
-   * PUT depende da origem (D469 libera funil→SEARCHING só para `kanban`) e a resposta devolve a
-   * origem usada em `data.changeSource`. `cells=null` (engine neutro) → só a FSM, como hoje. Só status e contagem:
-   * nenhum texto clínico.
-   */
-  async getPatientStatusOptions(req: Request, res: Response): Promise<void> {
-    const parsed = adminPatientParamsSchema.safeParse(req.params);
-    if (!parsed.success) {
-      res.status(400).json({ success: false, error: 'Invalid params', details: parsed.error.flatten() });
-      return;
-    }
-    const query = statusOptionsQuerySchema.safeParse(req.query);
-    if (!query.success) {
-      res.status(400).json({ success: false, error: 'Invalid query', details: query.error.flatten() });
-      return;
-    }
-    try {
-      const cells = clinicalCellsOf(req);
-      const data = await this.patientService.statusOptions(parsed.data.id, cells, query.data.changeSource);
-      // `blockedBy` pode trazer `DIAGNOSIS`: sai como `CLINICAL_DATA` para quem não lê `patient_clinical`.
-      const options = data.options.map((o) => (o.blockedBy ? { ...o, blockedBy: exposeBlockingCodes(o.blockedBy, cells) } : o));
-      res.status(200).json({ success: true, data: { ...data, options } });
-    } catch (err: unknown) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      if (/not found/i.test(e.message)) {
-        res.status(404).json({ success: false, error: 'Patient not found' });
-        return;
-      }
-      reportError(e, { source: 'AdminPatientsController:getPatientStatusOptions' });
-      res.status(500).json({ success: false, error: 'Failed to load patient status options', details: e.message });
     }
   }
 
@@ -885,7 +808,17 @@ export class AdminPatientsController {
 
     try {
       const vacancies = await fetchPatientVacancies(this.db, parsed.data.id);
-      res.status(200).json({ success: true, data: vacancies });
+      // D3/E6: o estado do paciente na vaga viaja sob o container `patient` — sem `patient:read` sai `null` + `redacted.patient`.
+      const cells = clinicalCellsOf(req);
+      // A redação do estado tem UM dono (`projectPatientStatus`, a MESMA da vaga); aqui só traduz snake_case ↔ camelCase.
+      const data = vacancies.map(({ patientStatus, ...resto }) => {
+        const { patient_status, patient_id: _id, ...saida } = projectPatientStatus(
+          { ...resto, patient_id: parsed.data.id, patient_status: patientStatus },
+          cells,
+        );
+        return patient_status === undefined ? saida : { ...saida, patientStatus: patient_status };
+      });
+      res.status(200).json({ success: true, data });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientsController:listPatientVacancies' });

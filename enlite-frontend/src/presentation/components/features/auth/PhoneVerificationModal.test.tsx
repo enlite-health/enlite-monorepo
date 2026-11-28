@@ -104,4 +104,15 @@ describe('PhoneVerificationModal', () => {
     expect(link.getAttribute('href')).toBe('https://wa.me/549000?text=ref-abc');
     expect(link.textContent).toBe('phoneVerification.modal.teamButton');
   });
+
+  it('PHONE_COUNTRY_NOT_SUPPORTED: o start recusado mostra a mensagem do país (nunca a genérica)', async () => {
+    vi.mocked(WorkerApiService.startPhoneVerification).mockRejectedValue(apiError('PHONE_COUNTRY_NOT_SUPPORTED', 400));
+    render(
+      <PhoneVerificationModal open mode="verify" currentPhone="+5491151265663" onVerified={vi.fn()} onPhoneInUse={vi.fn()} onClose={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByTestId('phone-verification-send'));
+
+    expect(await screen.findByText('phoneVerification.modal.errorCountryNotSupported')).toBeTruthy();
+    expect(screen.queryByText('phoneVerification.modal.errorGeneric')).toBeNull();
+  });
 });

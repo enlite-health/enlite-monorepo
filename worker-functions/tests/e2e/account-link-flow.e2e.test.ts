@@ -23,6 +23,7 @@ import { AccountLinkService } from '../../src/modules/account-link/AccountLinkSe
 import { AccountLinkError } from '../../src/modules/account-link/AccountLinkTypes';
 import { verifyLinkToken, signLinkToken, UNDO_TOKEN_TTL_MS } from '../../src/modules/account-link/linkToken';
 import { UndoMergeUseCase } from '../../src/application/dedup/UndoMergeUseCase';
+import { createAccountLinkService } from '../../src/bootstrap/createAccountLinkService';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -54,7 +55,7 @@ async function insertWorker(client: PoolClient, p: { id: string; auth_uid: strin
 beforeAll(async () => {
   pool = new Pool({ connectionString: DATABASE_URL });
   (DatabaseConnection.getInstance() as unknown as { pool: Pool }).pool = pool;
-  service = new AccountLinkService(pool);
+  service = createAccountLinkService(pool);
 
   const client = await pool.connect();
   try {

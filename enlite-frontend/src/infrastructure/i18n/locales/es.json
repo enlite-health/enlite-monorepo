@@ -258,6 +258,7 @@
       "errorUsed": "Ese código ya se usó. Pedí uno nuevo.",
       "errorRateLimited": "Demasiados intentos. Esperá un rato y probá de nuevo.",
       "errorChannel": "No pudimos enviar el código por WhatsApp ahora. Probá de nuevo en unos minutos.",
+      "errorCountryNotSupported": "Solo podemos enviar el código a celulares de Argentina (+54) o Brasil (+55).",
       "errorGeneric": "No pudimos completar la verificación. Probá de nuevo.",
       "conflictTitle": "Necesitamos ayuda del equipo",
       "conflictBody": "No pudimos unir este número con tu ficha de forma automática. Nuestro equipo lo resuelve con vos, sin perder tus datos.",
@@ -1131,16 +1132,9 @@
         "vacantesAbiertas": {
           "title": "Vacantes abiertas",
           "que": "Puestos de trabajo que están buscando prestador ahora.",
-          "origen": "• Cuenta las vacantes en estado de búsqueda: búsqueda normal, búsqueda de reemplazo, respuesta rápida y pendiente de activación.\n• Descarta borradores y vacantes borradas.",
-          "cambia": "• Publicar una vacante nueva: sube.\n• Cerrar, suspender o borrar la vacante: baja.",
+          "origen": "• Cuenta las vacantes publicables: lanzadas (no borradores), no dadas de baja ni borradas, de un servicio que sigue activo y cuyo paciente no está en pausa (en espera, suspendido, de alta o de baja).\n• Nadie elige el estado de la vacante: sale solo de lo que pasa con el paciente y el servicio.",
+          "cambia": "• Publicar una vacante nueva: sube.\n• Pausar, suspender o dar de alta al paciente, desactivar el servicio o dar de baja la vacante: baja.\n• Retomar al paciente: vuelve a subir.",
           "ojo": "Mover tarjetas en el Kanban NO mueve este número: eso cambia el embudo de candidatos, no el estado de la vacante. Es el comportamiento correcto."
-        },
-        "vacantesPausadas": {
-          "title": "Vacantes pausadas",
-          "que": "Vacantes que existen pero están frenadas a propósito (suspendidas temporalmente).",
-          "origen": "• Cuenta las vacantes en estado Suspendida, sin borradores ni borradas.",
-          "cambia": "• Suspender una vacante: sube.\n• Reactivarla o cerrarla: baja.",
-          "ojo": "Vacante pausada es demanda represada: si este número crece, hay trabajo que no aparece en \"Vacantes abiertas\" ni en la fila del reclutamiento."
         },
         "horasTotais": {
           "title": "Horas semanales totales",
@@ -1364,8 +1358,6 @@
         "pacientesActivosSub": "Pacientes en atención hoy",
         "vacantesAbiertas": "Vacantes abiertas",
         "vacantesAbiertasSub": "Puestos buscando prestador",
-        "vacantesPausadas": "Vacantes pausadas",
-        "vacantesPausadasSub": "Puestos en pausa temporal",
         "ubicaciones": "Ubicaciones",
         "pctRespostaRapida": "% grupo de respuesta rápida armado",
         "pctRespostaRapidaSub": "{{num}} de {{den}} casos medibles · {{excluidos}} sin clasificar quedan fuera",
@@ -1495,7 +1487,8 @@
       "aiPrompts": "Prompts de IA",
       "interviewHosts": "Entrevistadores",
       "insuranceProviders": "Obras sociales",
-      "pedidosIa": "Pedidos de la IA"
+      "pedidosIa": "Pedidos de la IA",
+      "presenceReview": "Revisión de presencia"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -1874,6 +1867,7 @@
         "OVERQUALIFIED": "Sobrecualificado",
         "DEPENDENCY_MISMATCH": "Dependencia",
         "TALENTUM_NOT_QUALIFIED": "Talentum no calificado",
+        "TALENTUM_EXPIRED": "Talentum expirado",
         "OTHER": "Otro"
       },
       "noName": "Sin nombre",
@@ -2180,7 +2174,6 @@
       "errorLoading": "Error al cargar vacantes",
       "searchPlaceholder": "Buscar por nombre del paciente",
       "searchPlaceholderSemNome": "Buscar por caso, vacante o título",
-      "statusLabel": "Estado",
       "priorityLabel": "Prioridad",
       "noVacancies": "No se encontraron vacantes",
       "stats": {
@@ -2207,18 +2200,6 @@
         "noLastAction": "—",
         "noDivulgationRecord": "sin registro"
       },
-      "statusOptions": {
-        "all": "Todos",
-        "searching": "Buscando AT",
-        "searchingReplacement": "Buscando Sustituto",
-        "rapidResponse": "Respuesta Rápida",
-        "pendingActivation": "Esperando Activación",
-        "active": "Activo",
-        "onHold": "En Espera",
-        "suspended": "Suspendido",
-        "closed": "Cerrado",
-        "deBaja": "Dada de baja"
-      },
       "priorityOptions": {
         "all": "Todas",
         "urgent": "Urgente",
@@ -2229,6 +2210,9 @@
       "filters": {
         "allOption": "Todos",
         "clear": "Limpiar filtros",
+        "patientStatus": {
+          "label": "Estado del paciente"
+        },
         "type": {
           "label": "Tipo",
           "at": "AT",
@@ -2282,7 +2266,7 @@
         "done": "{{count}} vacantes dadas de baja",
         "error": "No se pudo dar de baja",
         "errors": {
-          "VACANCY_HAS_SERVICE": "Una vacante de un servicio contratado no se da de baja a mano: usá \"Pausar\" (En espera).",
+          "VACANCY_HAS_SERVICE": "Una vacante de un servicio contratado no se da de baja a mano: pausá o suspendé al paciente, o desactivá el servicio.",
           "VACANCY_ALREADY_DE_BAJA": "La vacante ya está dada de baja.",
           "VACANCY_NOT_FOUND": "Vacante no encontrada."
         },
@@ -2591,7 +2575,6 @@
         "caseNumber": "Número de Caso",
         "vacancyNumber": "Número de Vacante",
         "title": "Título",
-        "status": "Estado",
         "selectPlaceholder": "Seleccionar...",
         "hintSelectCase": "Seleccioná un caso primero para habilitar los campos del paciente.",
         "sectionCaseInfo": "Información del Caso",
@@ -2656,15 +2639,6 @@
           "full-time": "Full-time",
           "part-time": "Part-time",
           "flexible": "Flexible"
-        },
-        "statusOptions": {
-          "SEARCHING": "Búsqueda",
-          "SEARCHING_REPLACEMENT": "Reemplazo",
-          "RAPID_RESPONSE": "Rta. Rápida",
-          "PENDING_ACTIVATION": "Activación Pendiente",
-          "ACTIVE": "Activo",
-          "SUSPENDED": "Suspendido",
-          "CLOSED": "Cerrado"
         },
         "cancel": "Cancelar",
         "create": "Crear Vacante",
@@ -2778,6 +2752,10 @@
         "DE_BAJA": "Dada de baja",
         "ADMISSION": "Admisión"
       },
+      "lifecycle": {
+        "rascunho": "Borrador",
+        "baja": "Dada de baja"
+      },
       "caseCard": {
         "caseLabel": "CASO",
         "paymentTerm": "Plazo de pago",
@@ -2816,15 +2794,6 @@
           "thursday": "Jueves:",
           "friday": "Viernes:",
           "saturday": "Sábado:"
-        }
-      },
-      "statusEditor": {
-        "editLabel": "Editar estado de la vacante",
-        "resume": "Reanudar",
-        "pauseHint": "En espera mantiene el tablero, el historial y el link corto.",
-        "errors": {
-          "VACANCY_DE_BAJA_NO_REACTIVATION": "Una vacante dada de baja no se reactiva: solo vuelve cuando se reactiva el servicio que la dio de baja.",
-          "CLOSE_ACTIVE_SERVICE_VACANCY_REFUSED": "Una vacante de un servicio activo no se cierra: usá \"Pausar\" (En espera)."
         }
       },
       "scheduleEditor": {
@@ -3042,7 +3011,6 @@
       "sectionConditions": "Condiciones de la vacante",
       "publishDate": "Fecha de publicación",
       "closingDate": "Fecha de encerramento",
-      "status": "Estado",
       "serviceType": "Tipo de servicio",
       "location": "Localización",
       "serviceAddress": "Dirección donde se presta el servicio",
@@ -3060,7 +3028,6 @@
       "professionalTypePlaceholder": "Seleccionar...",
       "sexPlaceholder": "Seleccionar...",
       "ageRangePlaceholder": "Seleccionar...",
-      "statusPlaceholder": "Seleccionar...",
       "serviceTypePlaceholder": "Seleccionar...",
       "caseSelectStep": {
         "caseLabel": "Caso",
@@ -3641,7 +3608,6 @@
         "toggleKanban": "Kanban",
         "caseNumber": "Caso",
         "noName": "—",
-        "moveError": "No se pudo mover el paciente",
         "columns": {
           "SOLICITANTE": "Solicitante",
           "ADMISSION": "Admisión",
@@ -3657,16 +3623,7 @@
         },
         "contactOfResponsible": "Contacto del responsable",
         "responsible": "Responsable",
-        "dragHint": "Arrastrá una tarjeta para cambiar el estado del paciente.",
-        "suspensionExitDialog": {
-          "title": "Motivo de salida de Suspendido",
-          "body": "{{name}} va a pasar de Suspendido a {{target}}. Elegí el motivo de salida.",
-          "confirm": "Confirmar y mover"
-        },
-        "moveErrorCodes": {
-          "SUSPENSION_EXIT_REASON_REQUIRED": "Hace falta indicar el motivo de salida de Suspendido.",
-          "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para activar, usá \"Activar reclutamiento\" en el servicio contratado de la ficha del paciente."
-        },
+        "readonlyHint": "El Kanban es de solo lectura: el estado lo define el flujo automático y las acciones de la ficha del paciente.",
         "subcard": {
           "weeklyUnit": "hs/sem",
           "pairAria": "{{covered}} de {{contracted}} horas semanales cubiertas",
@@ -4233,7 +4190,6 @@
           "activateRecruitmentTooltip": "Falta: {{items}}",
           "viewVacancy": "Ver vacante",
           "activateRecruitmentToast": "Vacante en borrador creada",
-          "activateRecruitmentPatientNotMoved": "Vacante creada. El paciente sigue en Admisión: falta {{items}} en un servicio activo.",
           "activateRecruitmentError": "No se pudo activar el reclutamiento",
           "activateRecruitmentAlreadyRecruiting": "Este servicio ya tiene una vacante en curso",
           "payerKindOptions": {
@@ -5129,6 +5085,8 @@
           "activate": "Activación",
           "system": "Sistema",
           "recruitment_activation": "Activación del reclutamiento",
+          "vacancy_launch": "Lanzamiento de la vacante",
+          "resume": "Retomado",
           "admin_panel_override": "Panel (fuera del flujo)",
           "kanban_override": "Kanban (fuera del flujo)"
         },
@@ -5143,8 +5101,22 @@
           "error": "No se pudo cargar el historial"
         },
         "blockedOption": "{{status}} (falta: {{items}})",
-        "optionsLoadError": "No se pudieron cargar los estados disponibles.",
         "optionsRetry": "Reintentar",
+        "actions": {
+          "title": "Acciones",
+          "loadError": "No se pudieron cargar las acciones",
+          "confirm": "Confirmar",
+          "cancel": "Cancelar",
+          "willBecome": "Pasará a «{{status}}»",
+          "names": {
+            "pausar": "Pausar",
+            "suspender": "Suspender",
+            "dar_alta": "Dar de alta",
+            "dar_baja": "Dar de baja",
+            "retomar": "Retomar",
+            "reativar": "Reactivar"
+          }
+        },
         "friendly": {
           "forbidden": "No tienes permiso para pasar a este paciente a «{{status}}». Pídele a quien administra los accesos que lo habilite.",
           "notReadySearching": "Para pasar a «{{status}}», el servicio contratado tiene que estar completo. Falta: {{items}}.",
@@ -5153,7 +5125,7 @@
           "onHoldReasonRequired": "Para dejar al paciente «En espera» indica el motivo (escuela, obra social u otro).",
           "suspensionExitReasonRequired": "Para sacar al paciente de «Suspendido» elige el motivo.",
           "notAvailable": "Este cambio de estado no está disponible.",
-          "optionsUnavailable": "No se pudieron comprobar los estados disponibles. Intenta de nuevo.",
+          "notManual": "Ese estado lo define el flujo automático.",
           "lockedByAllocation": "No se puede cambiar el estado: el paciente tiene prestador asignado en el itinerario. Quitá al prestador del itinerario primero."
         }
       }
@@ -5504,11 +5476,10 @@
             "incomplete_alert": "Aviso día 12",
             "waive_contact": "No necesita",
             "decidir": "Decidir",
+            "review": "Revisar",
+            "receive": "Recibir",
             "register": "Registrar",
             "resend_message": "Reenviar mensaje",
-            "move_to_searching": "A búsqueda",
-            "move_to_active": "A activo",
-            "move_to_replacement": "A reemplazo",
             "move_to_on_hold": "A en espera",
             "move_to_suspended": "A suspendido",
             "move_to_alta": "A alta",
@@ -5541,6 +5512,8 @@
             "tag": "Catálogo de etiquetas",
             "ai_prompt": "Prompts de IA",
             "pedidos_ia": "Pedidos de IA",
+            "presence_alert": "Aviso de presencia a coordinación",
+            "presence_exception": "Revisión de presencia (excepciones de lugar)",
             "platform_costs": "Costos de la plataforma",
             "luz_prueba": "Luz (prueba)",
             "recruitment_activity_per_person": "Actividad del embudo por reclutadora",
@@ -6122,6 +6095,9 @@
         },
         "pedidosIa": {
           "label": "Pedidos de la IA"
+        },
+        "presenceReview": {
+          "label": "Revisión de presencia"
         }
       }
     },
@@ -6785,7 +6761,17 @@
         "action": "Vincular Tactiq",
         "missing": "Tu usuario no está vinculado a Tactiq. Hasta que lo vincules no vas a poder ser responsable de agendas de admisión.",
         "broken": "Tu usuario no está vinculado a Tactiq. Hasta que lo vincules no vas a poder ser responsable de agendas de admisión.",
-        "wrong_account": "La cuenta de Tactiq vinculada no corresponde a tu usuario. Volvé a vincularla para seguir recibiendo agendas."
+        "wrong_account": "La cuenta de Tactiq vinculada no corresponde a tu usuario. Volvé a vincularla para seguir recibiendo agendas.",
+        "seatAuto": "Falta tu licencia de Tactiq. Ya avisamos al administrador. Cuando te la asigne, tu vínculo se activa solo: no tenés que hacer nada.",
+        "seatWait": "Falta tu licencia de Tactiq. Ya avisamos al administrador. Te vamos a avisar cuando esté resuelto.",
+        "seatAskAdmin": "Falta tu licencia de Tactiq. Pedile a un administrador de Tactiq (Ana Joulie, Javier o Marcel) que te asigne una; cuando la tengas, tu vínculo se activa solo.",
+        "masterSeat": "{{host}} no tiene licencia de Tactiq y sus entrevistas no se pueden grabar. Asignale un asiento en Tactiq.",
+        "masterSeatAuto": " Cuando lo tenga, su vínculo se activa solo.",
+        "masterSeatWait": " {{host}} autorizó Tactiq antes de tener el asiento y Tactiq no amplía esa autorización: cuando el asiento exista, la plataforma le va a pedir una única autorización nueva.",
+        "seatReadyFirst": "Ya tenés licencia de Tactiq. Entrá a Mi perfil y vinculá tu cuenta con tu correo @enlite.health. Se hace una sola vez.",
+        "seatReadyAgain": "Ya tenés licencia de Tactiq. Como autorizaste Tactiq antes de tenerla, Tactiq pide una única autorización nueva: entrá a Mi perfil y vinculá tu cuenta. Antes, en Tactiq andá a Settings → MCP y quitá la conexión anterior; si no, Tactiq repite la autorización que ya tenías.",
+        "masterSeatPending": "{{host}} es entrevistador/a y todavía no tiene la licencia de Tactiq confirmada. Asignale un asiento en Tactiq y marcá «Licencia asignada» en Entrevistadores.",
+        "masterBroken": "El vínculo de Tactiq de {{host}} fue revocado o venció en Tactiq. Solo {{host}} puede autorizarlo de nuevo, en Mi perfil."
       },
       "tactiqExtension": {
         "installed": "La extensión de Tactiq quedó instalada en tu Chrome. Para quedar habilitada para recibir agendas, falta hacer la reunión de prueba.",
@@ -6822,6 +6808,10 @@
           "title": "Venció el plazo para traer la transcripción",
           "body": "Se pasó el plazo y no pudimos traer la transcripción de tu {{reuniao}} del {{data}}, porque {{motivo}}. Vinculá tu cuenta en Mi perfil, Tactiq, Vincular Tactiq, así las próximas reuniones no tienen el mismo problema."
         },
+        "notRecorded": {
+          "title": "Esta entrevista no quedó grabada en Tactiq",
+          "body": "Tu {{reuniao}} del {{data}} no quedó grabada en Tactiq, así que no hay transcripción ni resumen. Tu cuenta de Tactiq sigue conectada. Para las próximas, revisá que la extensión de Tactiq esté activa en Chrome y que estés con tu correo @enlite.health."
+        },
         "willBeLost": {
           "title": "La grabación de la reunión de {{host}} se va a perder",
           "body": "La grabación y la transcripción de la {{reuniao}} de {{host}} del {{data}} todavía no llegaron, porque {{motivo}}. Si {{host}} no vincula Tactiq hasta el {{prazo}}, se van a perder. {{hostStart}} tiene que entrar a Mi perfil, ir a Tactiq y tocar Vincular Tactiq."
@@ -6843,7 +6833,27 @@
         "semana": "esta semana"
       },
       "pedidoIaActor": "Sol",
-      "pedidoIaContext": "Pedidos del Sol"
+      "pedidoIaContext": "Pedidos del Sol",
+      "talentumWebhookText": "Webhook de Talentum: {{quantidade}} {{alarme}}",
+      "talentumWebhookTextSilencio": "Webhook de Talentum: sin eventos en 6 h",
+      "talentumWebhookActor": "Enlite",
+      "talentumWebhookContext": "Webhook de Talentum",
+      "presenceOpen4h": "Turno sin salida registrada: pasaron más de 4 h del fin previsto ({{fecha}}).",
+      "presenceOpen4hWithTime": "Turno sin salida registrada: pasaron más de 4 h del fin previsto ({{fecha}}, {{hora}}).",
+      "presenceOpen4hNoDate": "Turno sin salida registrada: pasaron más de 4 h del fin previsto.",
+      "checkInRefusedNoEntry": "Entrada rechazada y sin entrada aceptada: turno del {{fecha}}.",
+      "checkInRefusedNoEntryWithTime": "Entrada rechazada y sin entrada aceptada: turno del {{fecha}}, {{hora}}.",
+      "checkInRefusedNoEntryNoDate": "Entrada rechazada y sin entrada aceptada en un turno.",
+      "presenceActor": "Enlite",
+      "presenceContext": "Revisión de presencia",
+      "talentumWebhookAlarm": {
+        "inbox_falha": "eventos con error",
+        "inbox_pendente": "eventos sin procesar",
+        "veredito_ausente": "postulaciones sin veredicto",
+        "silencio": "sin eventos en 6 h",
+        "CONFLITO_HUMANO": "cambio manual en Talentum en conflicto con un movimiento del equipo"
+      },
+      "talentumWebhookAlarmUnknown": "avisos de alarma"
     },
     "profile": {
       "title": "Mi perfil",
@@ -6925,7 +6935,11 @@
       "startError": "No pudimos iniciar la vinculación. Probá de nuevo.",
       "returnLinked": "Listo: tu cuenta de Tactiq quedó vinculada.",
       "returnError": "No pudimos completar la vinculación con Tactiq. Probá de nuevo.",
-      "accessSeat": "Tu cuenta de Tactiq no tiene un asiento del plan del equipo Enlite, así que no puede leer resúmenes ni transcripciones. Pedile a un administrador de Tactiq (Ana Joulie, Javier o Marcel) que te asigne un asiento y después volvé a vincular acá. Verificá también que en app.tactiq.io estés con tu correo @enlite.health.",
+      "seatAuto": "Falta tu licencia de Tactiq. Ya avisamos al administrador. Cuando te la asigne, tu vínculo se activa solo: no tenés que hacer nada.",
+      "seatWait": "Falta tu licencia de Tactiq. Ya avisamos al administrador. Te vamos a avisar cuando esté resuelto.",
+      "seatAskAdmin": "Falta tu licencia de Tactiq. Pedile a un administrador de Tactiq (Ana Joulie, Javier o Marcel) que te asigne una; cuando la tengas, tu vínculo se activa solo.",
+      "seatNotDeclared": "Todavía no tenés licencia de Tactiq. Ya avisamos al administrador; cuando la asigne, te avisamos para que vincules tu cuenta una sola vez.",
+      "signInHint": "Entrá con tu correo @enlite.health.",
       "accessGeneric": "Tactiq indicó que tu cuenta no tiene acceso: «{{title}}». Verificá que en app.tactiq.io estés con tu correo @enlite.health, resolvelo con un administrador de Tactiq y después volvé a vincular acá.",
       "accessGenericNoTitle": "Tactiq indicó que tu cuenta no tiene acceso a los resúmenes y transcripciones. Verificá que en app.tactiq.io estés con tu correo @enlite.health, consultá con un administrador de Tactiq y después volvé a vincular acá."
     },
@@ -6946,6 +6960,7 @@
         "encuadre": "Encuadre",
         "admission": "Admisión",
         "tactiq": "Tactiq",
+        "seat": "Licencia de Tactiq",
         "actions": "Acciones"
       },
       "userInactive": "Usuario inactivo",
@@ -6956,6 +6971,8 @@
       "quit": "Quitar",
       "tactiqLinked": "Vinculado",
       "tactiqUnlinked": "Sin vincular",
+      "seatAssigned": "Licencia asignada",
+      "seatLabel": "Licencia asignada — {{name}}",
       "tactiqTip": "La persona vincula su cuenta en Mi perfil",
       "saveError": "No pudimos guardar el cambio.",
       "errors": {
@@ -7374,6 +7391,91 @@
       "noAccess": "No tenés acceso a Luz (prueba).",
       "genericError": "Algo salió mal. Probá de nuevo."
     },
+    "presenceReview": {
+      "title": "Revisión de presencia",
+      "subtitle": "Turnos que necesitan revisión de coordinación: excepciones de lugar, salidas declaradas, horas no verificables y entradas rechazadas sin entrada aceptada.",
+      "loading": "Cargando…",
+      "authzError": "No se pudo verificar tu acceso. Probá de nuevo.",
+      "noAccess": {
+        "title": "Sin acceso",
+        "message": "Tu cuenta no tiene permiso para revisar la presencia. Pedile a coordinación que te lo habilite."
+      },
+      "filters": {
+        "kind": "Tipo",
+        "country": "País",
+        "allKinds": "Todos los tipos"
+      },
+      "kinds": {
+        "EXCEPTION_PENDING": "Excepción de lugar",
+        "EXIT_DECLARED": "Salida declarada",
+        "CLOCK_UNVERIFIED": "Hora no verificable",
+        "ENTRY_REFUSED_NO_ENTRY": "Entrada rechazada sin entrada aceptada"
+      },
+      "columns": {
+        "type": "Tipo",
+        "shift": "Fecha y horario del turno",
+        "worker": "Prestador/a",
+        "patient": "Paciente (nº de caso)",
+        "reason": "Motivo elegido",
+        "distance": "Distancia y precisión",
+        "action": "Acción"
+      },
+      "caseLabel": "Caso {{number}}",
+      "distance": "{{meters}} m del paciente",
+      "accuracy": "precisión ±{{meters}} m",
+      "reasons": {
+        "GPS_INDOOR": "El GPS no funciona adentro de la casa",
+        "ADDRESS_WRONG": "La dirección del paciente está mal en el mapa",
+        "PATIENT_ELSEWHERE": "El paciente está en otro lugar (consulta, internación, salida)",
+        "OTHER": "Otro motivo",
+        "SERVER_DETECTED": "El servidor detectó otra ubicación; la prestadora no eligió motivo",
+        "OCCURRENCE_NOT_OWNED": "El turno no es de la prestadora",
+        "UNKNOWN_OCCURRENCE": "Turno que no existe en el itinerario",
+        "CLOCK_SUSPECT": "Hora del teléfono sospechosa",
+        "MOCK_LOCATION": "Ubicación simulada",
+        "MOCK": "Ubicación simulada",
+        "OUT_OF_WINDOW": "Fuera del horario permitido",
+        "ALREADY_CLOSED": "El turno ya tenía salida",
+        "CHECK_OUT_BEFORE_CHECK_IN": "Salida antes de la entrada",
+        "CHECK_IN_AFTER_CHECK_OUT": "Entrada después de la salida",
+        "OUTSIDE": "Fuera del lugar del paciente",
+        "INCONCLUSIVE": "Ubicación no concluyente",
+        "NO_POSITION": "Sin ubicación",
+        "ADDRESS_UNRELIABLE": "Dirección del paciente poco confiable",
+        "UNKNOWN": "Otro motivo"
+      },
+      "actions": {
+        "approve": "Aprobar",
+        "reject": "Rechazar"
+      },
+      "monthlyCheck": "A conferir en la validación mensual",
+      "empty": "No hay nada para revisar.",
+      "loadMore": "Cargar más",
+      "dialog": {
+        "title": {
+          "APPROVED": "Aprobar excepción de lugar",
+          "REFUSED": "Rechazar excepción de lugar"
+        },
+        "legend": "Código de resolución (obligatorio)",
+        "required": "Elegí un código de resolución para continuar.",
+        "confirm": "Confirmar",
+        "cancel": "Cancelar"
+      },
+      "resolution": {
+        "INDOOR_CONFIRMED": "GPS adentro, confirmado",
+        "ADDRESS_TO_FIX": "Dirección a corregir",
+        "PATIENT_ELSEWHERE_CONFIRMED": "Paciente en otro lugar, confirmado",
+        "NOT_AT_PATIENT": "No estaba con el paciente",
+        "NO_EVIDENCE": "Sin forma de confirmar"
+      },
+      "errors": {
+        "load": "No se pudo cargar la fila de revisión. Probá de nuevo.",
+        "generic": "No se pudo registrar la decisión. Probá de nuevo.",
+        "alreadyDecided": "Esta excepción ya tiene una decisión. La fila se actualizó.",
+        "notFound": "No encontramos esa excepción. La fila se actualizó.",
+        "unavailable": "El servicio de presencia no está disponible ahora. Probá de nuevo en unos minutos."
+      }
+    },
     "pedidosIa": {
       "title": "Pedidos de la IA",
       "subtitle": "Pedidos del Sol como publicaciones: aceptá, negá o describí qué hacer.",
@@ -7653,6 +7755,7 @@
       },
       "error": {
         "load": "No pudimos cargar a los prestadores.",
+        "refresh": "No pudimos actualizar la lista tras el envío. Recargá la página para ver el estado real de las invitaciones.",
         "retry": "Reintentar"
       },
       "deBaja": {
@@ -7781,6 +7884,17 @@
         "vacante_other": "Hay {{count}} personas en la vacante que todavía no recibieron el WhatsApp.",
         "seeVacante": "Ver las {{count}}"
       }
+    },
+    "semaphore": {
+      "title": "Semáforo",
+      "filterLabel": "Semáforo",
+      "colors": {
+        "red": "Rojo",
+        "yellow": "Amarillo",
+        "green": "Verde"
+      },
+      "dotAria": "Semáforo {{color}}: {{n}} en Seleccionado y Respuesta rápida (sin desvinculados)",
+      "none": "Sin semáforo"
     }
   },
   "publicVacancy": {

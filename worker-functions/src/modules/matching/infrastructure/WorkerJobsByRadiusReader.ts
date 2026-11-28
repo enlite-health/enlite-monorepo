@@ -33,6 +33,8 @@ export interface WorkerJobByRadius {
   worker_type: string[];
   /** Distância em km, 1 casa, calculada no servidor. */
   distance_km: number;
+  /** Quando o PRÓPRIO prestador se candidatou (`worker_job_applications.applied_at`, ISO 8601); `null` = não se candidatou (D516: derivado em leitura). */
+  applied_at: string | null;
   /** Derivado em leitura de `worker_job_applications` do próprio prestador (D516). */
   already_applied: boolean;
 }
@@ -91,6 +93,7 @@ export function buildJobsByRadiusSql(
               ${vacancyEffectiveScheduleSql('jp')} AS schedule,
               ${vacancyEffectiveRequiredProfessionsSql('jp')} AS worker_type,
               ROUND((d.meters / 1000)::numeric, 1) AS distance_km,
+              (SELECT wja.applied_at FROM worker_job_applications wja WHERE wja.worker_id = ${w} AND wja.job_posting_id = jp.id) AS applied_at,
               EXISTS (SELECT 1 FROM worker_job_applications wja WHERE wja.worker_id = ${w} AND wja.job_posting_id = jp.id) AS already_applied${profileSelect}
        FROM job_postings jp
        ${vacancyEffectiveJoinSql('jp')}
@@ -125,6 +128,7 @@ interface Row {
   schedule: unknown;
   worker_type: string[] | null;
   distance_km: string | number;
+  applied_at: Date | string | null;
   already_applied: boolean | null;
   required_sex?: string | null;
 }
@@ -154,8 +158,16 @@ function toItem(r: Row): WorkerJobByRadius {
     schedule: r.schedule,
     worker_type: r.worker_type ?? [],
     distance_km: Number(r.distance_km),
+    applied_at: appliedAtOf(r.applied_at),
     already_applied: r.already_applied === true,
   };
+}
+
+/** `timestamptz` do pg chega como `Date`; sai como ISO 8601. Ausente ou inválido = `null` (nunca uma data inventada). */
+function appliedAtOf(v: Date | string | null | undefined): string | null {
+  if (v === null || v === undefined) return null;
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 /** Perfil do prestador para `view=home` (096): endereço da zona viva, disponibilidade declarada, profissão e sexo cifrado. */

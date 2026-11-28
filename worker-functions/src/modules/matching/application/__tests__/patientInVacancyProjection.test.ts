@@ -55,3 +55,45 @@ describe('projectPatientInVacancy — o dado do paciente dentro da vaga segue a 
     expect(patientNameIsRedacted({ patient_first_name: NOME_REDIGIDO, patient_last_name: 'x' })).toBe(false);
   });
 });
+
+describe('projectPatientInVacancy — patient_status sob o container `patient` (estado-automatico-do-paciente F2, E6)', () => {
+  const COM_ESTADO = { ...ROW, patient_id: 'p1', patient_status: 'SEARCHING' };
+  const marcador = (r: object): unknown => (r as { redacted?: unknown }).redacted;
+
+  it('com patient:read o estado do paciente sai como veio; sem a célula vira null + redacted.patient (marcador constante)', () => {
+    expect(projectPatientInVacancy(COM_ESTADO, ['vacancy:read', 'patient:read', 'patient_identity:read', 'patient_address:read', 'patient_clinical:read'])).toBe(COM_ESTADO);
+    const sem = projectPatientInVacancy(COM_ESTADO, ['vacancy:read', 'patient_identity:read', 'patient_address:read', 'patient_clinical:read']);
+    expect(sem.patient_status).toBeNull();
+    expect(marcador(sem)).toEqual({ patient: true });
+    expect(COM_ESTADO.patient_status).toBe('SEARCHING'); // não muta a linha
+  });
+
+  it('o marcador sai mesmo quando o campo está vazio ("existe estado" não vaza por ausência)', () => {
+    const sem = projectPatientInVacancy({ ...COM_ESTADO, patient_status: null }, ['vacancy:read']);
+    expect(sem).toMatchObject({ patient_status: null, redacted: { patient: true } });
+  });
+
+  it('cells = null (engine não decidiu) → como antes: lê (D113)', () => {
+    expect(projectPatientInVacancy(COM_ESTADO, null)).toBe(COM_ESTADO);
+  });
+
+  it('vaga SEM paciente → sem a chave (nunca null: null só significa "sem célula"), com ou sem a célula', () => {
+    const semPaciente = { ...ROW, patient_id: null, patient_status: null };
+    for (const cells of [['vacancy:read', 'patient:read'], ['vacancy:read'], null]) {
+      const out = projectPatientInVacancy(semPaciente, cells);
+      expect('patient_status' in out).toBe(false);
+      expect(marcador(out)).toBeUndefined();
+    }
+  });
+
+  it('paciente legado sem estado + com a célula → sem a chave', () => {
+    const out = projectPatientInVacancy({ ...ROW, patient_id: 'p1', patient_status: null }, ['patient:read', 'patient_identity:read', 'patient_address:read', 'patient_clinical:read']);
+    expect('patient_status' in out).toBe(false);
+  });
+
+  it('o estado e a redação do nome/endereço são independentes (uma célula não abre a outra)', () => {
+    const out = projectPatientInVacancy(COM_ESTADO, ['patient:read']);
+    expect(out).toMatchObject({ patient_status: 'SEARCHING', patient_first_name: NOME_REDIGIDO, patient_zone: null });
+    expect(marcador(out)).toBeUndefined();
+  });
+});

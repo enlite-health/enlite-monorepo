@@ -27,7 +27,10 @@ import {
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
 import { workerNotTestSql, excludeTestVacancySql } from '@shared/database/testRealmSql';
 import { aptoWhenCompletedSql } from '@shared/database/workerAptoSql';
-import { INICIAIS_REDIGIDAS, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
+import { INICIAIS_REDIGIDAS, PATIENT_CONTAINER_CELL, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
+import { cicloDeVidaSql, isCicloDeVida, CICLO_POR_STATUS, CICLOS_DE_VIDA, type CicloDeVida, type VacancyStatusValue } from '../../domain/vacancyLifecycle';
+import { CORES, corDoSemaforo, corDoSemaforoSql, parseCoresCsv, type CorDoSemaforo } from '../../domain/vacancySemaphore';
+import { semaforoContagemSql } from '../../infrastructure/vacancySemaphoreSql';
 import {
   tallyKanbanColumns,
   type KanbanTallyRow,
@@ -41,21 +44,6 @@ export function getInitials(firstName: string | null, lastName: string | null): 
   const first = firstName?.charAt(0)?.toUpperCase() || '';
   const last = lastName?.charAt(0)?.toUpperCase() || '';
   return first + last || 'XX';
-}
-
-export function mapStatus(status: string | null): string {
-  const statusMap: Record<string, string> = {
-    'SEARCHING':             'Buscando AT',
-    'SEARCHING_REPLACEMENT': 'Buscando Sustituto',
-    'RAPID_RESPONSE':        'Respuesta Rápida',
-    'PENDING_ACTIVATION':    'Esperando Activación',
-    'ACTIVE':                'Activo',
-    'ON_HOLD':               'En Espera',
-    'SUSPENDED':             'Suspendido',
-    'CLOSED':                'Cerrado',
-    'DE_BAJA':               'Dada de baja',
-  };
-  return statusMap[status ?? ''] ?? 'Desconocido';
 }
 
 // ── listVacancies query builder ────────────────────────────────────────────────
@@ -76,6 +64,11 @@ const LIST_VACANCIES_BASE = `
     jp.title,
     jp.status,
     jp.is_draft,
+    -- estado-automatico-do-paciente F2 (D3): o ciclo de vida sai da tabela do dono (vacancyLifecycle.ts) e o estado do paciente
+    -- é p.status lido por junção no momento da leitura — nunca coluna cópia em job_postings. O controller projeta sob o container patient (E6).
+    jp.patient_id,
+    p.status AS patient_status,
+    ${cicloDeVidaSql('jp')} AS lifecycle,
     -- spec 084: motivo da baixa, se a vaga nasceu de serviço e o estado do Talentum (lista "pausar à mão")
     jp.baja_reason,
     (jp.contracted_service_id IS NOT NULL) AS has_service,
@@ -91,6 +84,8 @@ const LIST_VACANCIES_BASE = `
       WHERE wja.job_posting_id = jp.id
         AND ${WORKER_ACTIVE_SQL}) AS current_applicants,
     jp.max_applicants,
+    -- semaforo-da-vaga F2: n do dono (semaforoContagemSql), materializado UMA vez no LATERAL abaixo; a cor sai de corDoSemaforoSql.
+    sem.n AS semaphore_n,
     p.first_name as patient_first_name,
     p.last_name as patient_last_name,
     CASE
@@ -130,6 +125,7 @@ const LIST_VACANCIES_BASE = `
   ${vacancyEffectiveJoinSql('jp')}
   LEFT JOIN patients p ON jp.patient_id = p.id
   LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
+  LEFT JOIN LATERAL (SELECT ${semaforoContagemSql('jp.id')} AS n) sem ON true
   WHERE jp.case_number IS NOT NULL
     AND jp.deleted_at IS NULL
     AND ${excludeTestVacancySql('jp')}
@@ -158,6 +154,10 @@ export interface ListVacanciesFilters {
   countries: readonly string[];
   search?: unknown;
   status?: unknown;
+  /** E7: ciclo de vida da vaga (`rascunho`|`aberta`|`pausada`|`cerrada`|`baja`) — o SQL sai da MESMA tabela do dono. */
+  lifecycle?: unknown;
+  /** E7: estado do paciente (`p.status`), sob o container `patient` — sem a célula o controller devolve 403. */
+  patientStatus?: unknown;
   /** Filter by required_professions: 'AT' | 'CAREGIVER' */
   workerType?: unknown;
   /** Filter by patient_addresses.state (ILIKE exact value). */
@@ -182,6 +182,8 @@ export interface ListVacanciesFilters {
   includeBaja?: unknown;
   /** Spec 084 F4/R13: `true` = só as vagas na lista "pausar/retomar à mão no Talentum". */
   talentumManual?: unknown;
+  /** semaforo-da-vaga F2: CSV de cores (`red`,`yellow`,`green`). Valor fora de `CORES` → `VacancySemaphoreFilterError` (400). Nunca devolve baixada. */
+  semaphore?: unknown;
   limit: string;
   offset: string;
 }
@@ -192,9 +194,50 @@ export interface ListVacanciesQuery {
   paramIndex: number;
 }
 
+const CORES_LISTA = CORES.join(', ');
+
 const isTrue = (v: unknown): boolean => v === true || v === 'true' || v === '1';
 
-export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { searchByPatientName?: boolean } = {}): ListVacanciesQuery {
+/** Filtrar por estado do paciente sem poder LÊ-LO é oráculo (lex P5): o controller traduz em 403 `{ field, cell }`. */
+export class PatientStatusFilterForbiddenError extends Error {
+  readonly field = 'patientStatus';
+  readonly cell = PATIENT_CONTAINER_CELL;
+  constructor() {
+    super('Forbidden');
+  }
+}
+
+/** Filtro `semaphore` inválido: o controller traduz em 400 `VACANCY_SEMAPHORE_INVALID` com as duas línguas (a tela traduz pelo código). */
+export class VacancySemaphoreFilterError extends Error {
+  readonly code = 'VACANCY_SEMAPHORE_INVALID';
+  readonly messages = {
+    es: `El filtro de semáforo solo acepta: ${CORES_LISTA}.`,
+    'pt-BR': `O filtro de semáforo só aceita: ${CORES_LISTA}.`,
+  };
+  constructor() {
+    super('Invalid semaphore filter');
+  }
+}
+
+/**
+ * Filtro `lifecycle` inválido (semaforo-da-vaga F4): o selo só tem `rascunho` e `baja`. `aberta|pausada|cerrada` saíram
+ * junto com o estado manual — 400 `VACANCY_LIFECYCLE_INVALID` (es + pt-BR) em vez de ignorar em silêncio.
+ */
+export class VacancyLifecycleFilterError extends Error {
+  readonly code = 'VACANCY_LIFECYCLE_INVALID';
+  readonly messages = {
+    es: `El filtro de ciclo solo acepta: ${CICLOS_DE_VIDA.join(', ')}. La vacante ya no tiene estado manual.`,
+    'pt-BR': `O filtro de ciclo só aceita: ${CICLOS_DE_VIDA.join(', ')}. A vaga não tem mais estado manual.`,
+  };
+  constructor() {
+    super('Invalid lifecycle filter');
+  }
+}
+
+export function buildListVacanciesQuery(
+  filters: ListVacanciesFilters,
+  opts: { searchByPatientName?: boolean; canFilterByPatientStatus?: boolean } = {},
+): ListVacanciesQuery {
   let baseQuery = LIST_VACANCIES_BASE;
   const params: unknown[] = [];
   let paramIndex = 1;
@@ -221,14 +264,40 @@ export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { s
     paramIndex++;
   }
 
+  const pediuCiclo = filters.lifecycle !== undefined && filters.lifecycle !== '';
+  if (pediuCiclo && !isCicloDeVida(filters.lifecycle)) throw new VacancyLifecycleFilterError();
+  const lifecycle: CicloDeVida | undefined = isCicloDeVida(filters.lifecycle) ? filters.lifecycle : undefined;
+  if (lifecycle) {
+    baseQuery += ` AND ${cicloDeVidaSql('jp')} = $${paramIndex}`;
+    params.push(lifecycle);
+    paramIndex++;
+  }
+
+  // Valor de banco aceito só por compatibilidade (E7: 084-vagas-antigas-baixa e vacancies-api o usam); a tela não o oferece mais.
   if (typeof filters.status === 'string' && VALID_STATUSES.has(filters.status)) {
     baseQuery += ` AND jp.status = $${paramIndex}`;
     params.push(filters.status);
     paramIndex++;
-  } else if (!isTrue(filters.includeBaja) && !isTrue(filters.talentumManual)) {
+  } else if (!isTrue(filters.includeBaja) && !isTrue(filters.talentumManual) && lifecycle !== 'baja') {
     // Spec 084 F2: por padrão a lista esconde as dadas de baja (nunca apagadas: R2). A lista manual do Talentum (R13) NÃO as
     // esconde: quase toda vaga que espera pausa à mão é uma baixada.
     baseQuery += ` AND jp.status != 'DE_BAJA'`;
+  }
+
+  if (typeof filters.patientStatus === 'string' && filters.patientStatus !== '') {
+    if (!(opts.canFilterByPatientStatus ?? true)) throw new PatientStatusFilterForbiddenError();
+    baseQuery += ` AND p.status = $${paramIndex}`;
+    params.push(filters.patientStatus);
+    paramIndex++;
+  }
+
+  if (filters.semaphore !== undefined) {
+    const cores = parseCoresCsv(filters.semaphore);
+    if (cores === null) throw new VacancySemaphoreFilterError();
+    // A baixada tem semaphore null (P2): o filtro nunca a devolve, mesmo com include_baja. `n` é o do LATERAL (sem repetir a subquery).
+    baseQuery += ` AND ${corDoSemaforoSql('sem.n')} = ANY($${paramIndex}::text[]) AND jp.status <> 'DE_BAJA'`;
+    params.push(cores);
+    paramIndex++;
   }
 
   if (isTrue(filters.talentumManual)) {
@@ -359,14 +428,28 @@ export interface VacancyListRow {
   vacancy_number: number;
   status: string | null;
   is_draft: boolean | null;
+  /** Ciclo de vida (tabela do dono, SQL gerado) — o front traduz pelo i18n. */
+  lifecycle?: CicloDeVida | null;
+  patient_id?: string | null;
+  patient_status?: string | null;
+  redacted?: { patient?: true };
   baja_reason?: string | null;
   has_service?: boolean | null;
+  /** `n` do semáforo (COUNT do fragmento do dono; `pg` devolve int como número, bigint como texto). */
+  semaphore_n?: number | string | null;
   talentum_pause_state?: string | null;
   dias_aberto: number | null;
   convidados: number | string | null;
   postulados: number | string | null;
   selecionados: number | string | null;
   faltantes: number | string | null;
+}
+
+/** P2: `null` tem UM sentido — vaga dada de baixa. O ciclo vem da tabela do dono (`CICLO_POR_STATUS`), sem literal de status aqui. */
+function semaphoreOf(row: VacancyListRow): { n: number; color: CorDoSemaforo } | null {
+  const baixada = CICLO_POR_STATUS[row.status as VacancyStatusValue] === 'baja';
+  const n = Number(row.semaphore_n ?? 0);
+  return baixada ? null : { n, color: corDoSemaforo(n) };
 }
 
 export function mapVacancyListRow(row: VacancyListRow) {
@@ -381,12 +464,17 @@ export function mapVacancyListRow(row: VacancyListRow) {
     caseNumber: row.case_number ?? null,
     caseOrdinal: row.case_ordinal ?? null,
     vacancyNumber: row.vacancy_number,
-    status: mapStatus(row.status),
     statusRaw: row.status,
+    lifecycle: row.lifecycle ?? null,
+    patient_id: row.patient_id ?? null,
+    // Sem a chave quando a vaga não tem paciente (a projeção apagou); `null` + `redacted.patient` quando falta a célula (E6).
+    ...('patient_status' in row ? { patient_status: row.patient_status ?? null } : {}),
+    ...(row.redacted ? { redacted: row.redacted } : {}),
     is_draft: row.is_draft === true,
     bajaReason: row.baja_reason ?? null,
     hasService: row.has_service === true,
     talentumPauseState: row.talentum_pause_state ?? null,
+    semaphore: semaphoreOf(row),
     diasAberto: row.dias_aberto?.toString().padStart(2, '0') ?? '00',
     convidados: row.convidados?.toString().padStart(2, '0') ?? '00',
     postulados: row.postulados?.toString().padStart(2, '0') ?? '00',

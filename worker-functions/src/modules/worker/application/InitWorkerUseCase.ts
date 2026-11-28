@@ -8,7 +8,7 @@ import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNo
 import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
 import { isEnliteTestEmail } from '@shared/utils/testAccountEmail';
 import { isClaimableWorker, isImportedWorker } from './isClaimableWorker';
-import { OTP_CHANNEL_UNAVAILABLE, OTP_RATE_LIMITED, type OtpChallengePort } from '@modules/auth/ports/OtpChallengePort';
+import { isOtpStartRefusal, type OtpChallengePort } from '@modules/auth/ports/OtpChallengePort';
 
 /**
  * `emailVerified` vem do token verificado (nunca do corpo): sem ele, o e-mail é só o que
@@ -25,6 +25,9 @@ export const EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED';
 
 /** O aceite veio (`lgpdOptIn`) mas a ficha existente não o recebeu: nunca devolve `ok` sem gravar (PR-2/G-6). */
 export const CONSENT_NOT_RECORDED = 'CONSENT_NOT_RECORDED';
+
+/** Quem pede: e-mail e uid do TOKEN (o `uid` vai ao registro de envio do OTP como `requesterUid`). */
+type TokenIdentity = { email: string; authUid: string };
 
 export class InitWorkerUseCase {
   constructor(
@@ -55,7 +58,7 @@ export class InitWorkerUseCase {
         if (recorded.isFailure) return Result.fail<InitWorkerOutput>(recorded.error!);
       }
       // FR-88/C-43: com telefone no payload, a ficha achada por auth_uid passa pelo ramo do telefone.
-      if (data.phone) return this.applyPhone(found, data.phone, data.email);
+      if (data.phone) return this.applyPhone(found, data.phone, { email: data.email, authUid: data.authUid });
       return Result.ok<InitWorkerOutput>({ status: 'ok', worker: found });
     }
 
@@ -77,7 +80,7 @@ export class InitWorkerUseCase {
         // telefone DA FICHA (claim, amarrado ao telefone pela DP-21) quando a ficha é reclamável;
         // senão, EMAIL_NOT_VERIFIED.
         if (!data.emailVerified) {
-          return this.relinkWithoutVerifiedEmail(existingByEmail, data.email);
+          return this.relinkWithoutVerifiedEmail(existingByEmail, { email: data.email, authUid: data.authUid });
         }
         const phoneToSet = !existingByEmail.phone && data.phone ? data.phone : undefined;
         const updateResult = await this.workerRepository.updateAuthUid(
@@ -117,7 +120,7 @@ export class InitWorkerUseCase {
         const existingByPhone = phoneCheckResult.getValue()!;
 
         if (isImportedWorker(existingByPhone.authUid)) {
-          return this.startClaimOtp(existingByPhone, existingByPhone.phone ?? phoneInput, data.email);
+          return this.startClaimOtp(existingByPhone, existingByPhone.phone ?? phoneInput, { email: data.email, authUid: data.authUid });
         }
       }
     }
@@ -150,7 +153,7 @@ export class InitWorkerUseCase {
    * Telefone de worker já existente (FR-88/C-43). Só grava se a ficha NÃO tinha telefone; o `code`
    * decide a tela no app. Ficha importada com esse celular → OTP do claim; conta real → PHONE_IN_USE.
    */
-  private async applyPhone(found: Worker, phoneInput: string, tokenEmail: string): Promise<Result<InitWorkerOutput>> {
+  private async applyPhone(found: Worker, phoneInput: string, who: TokenIdentity): Promise<Result<InitWorkerOutput>> {
     const worker = { ...found, phone: found.phone ? found.phone : null };
     if (worker.phone === null) {
       const normalized = normalizePhoneAR(phoneInput);
@@ -165,7 +168,7 @@ export class InitWorkerUseCase {
         if (!isImportedWorker(holder.authUid)) {
           return Result.ok<InitWorkerOutput>({ status: 'phone_rejected', code: 'PHONE_IN_USE' });
         }
-        const claim = await this.startClaimOtp(holder, holder.phone ?? phoneInput, tokenEmail);
+        const claim = await this.startClaimOtp(holder, holder.phone ?? phoneInput, who);
         if (claim.isFailure) return claim;
         return Result.ok<InitWorkerOutput>({ ...(claim.getValue() as InitWorkerOutput & { status: 'claim_pending' }), code: 'CLAIM_PENDING' });
       }
@@ -199,7 +202,7 @@ export class InitWorkerUseCase {
    * Sem telefone, ou não reclamável (login real, `talentum_`, sobrevivente que absorveu login
    * real: o confirm do claim recusaria) → EMAIL_NOT_VERIFIED. Nunca religa nem cria ficha.
    */
-  private async relinkWithoutVerifiedEmail(ficha: Worker, tokenEmail: string): Promise<Result<InitWorkerOutput>> {
+  private async relinkWithoutVerifiedEmail(ficha: Worker, who: TokenIdentity): Promise<Result<InitWorkerOutput>> {
     const log = logger.child({ source: 'InitWorkerUseCase:execute', workerIdHash: resourceIdHash(ficha.id) });
     const blocked = (): Result<InitWorkerOutput> => {
       log.warn({ msg: 'worker_relink_blocked_email_not_verified', hasPhone: Boolean(ficha.phone) });
@@ -212,16 +215,16 @@ export class InitWorkerUseCase {
     if (!claimable.getValue()) return blocked();
 
     log.info({ msg: 'worker_relink_email_not_verified_claim_otp' });
-    return this.startClaimOtp(ficha, ficha.phone, tokenEmail);
+    return this.startClaimOtp(ficha, ficha.phone, who);
   }
 
   /** OTP ao telefone DA FICHA (nunca o do payload — anti-hijack) e `claim_pending`. */
-  private async startClaimOtp(ficha: Worker, phoneForOtp: string, tokenEmail: string): Promise<Result<InitWorkerOutput>> {
+  private async startClaimOtp(ficha: Worker, phoneForOtp: string, who: TokenIdentity): Promise<Result<InitWorkerOutput>> {
     const phoneE164 = phoneForOtp.startsWith('+') ? phoneForOtp : `+${normalizePhoneAR(phoneForOtp)}`;
 
     logger.child({ source: 'InitWorkerUseCase:execute', workerId: ficha.id }).info({
       msg: 'worker_claim_otp_triggered',
-      candidateWorkerId: ficha.id,
+      candidateWorkerIdHash: resourceIdHash(ficha.id),
       fromAuthUid: ficha.authUid,
       phoneE164: maskPhoneForLog(phoneE164),
     });
@@ -231,7 +234,6 @@ export class InitWorkerUseCase {
       // que não passam o port de OTP): retorna claim_pending com sid sintético.
       return Result.ok<InitWorkerOutput>({
         status: 'claim_pending',
-        candidateWorkerId: ficha.id,
         phoneMasked: maskPhone(phoneE164),
         verificationSid: 'TWILIO_NOT_CONFIGURED',
       });
@@ -242,17 +244,17 @@ export class InitWorkerUseCase {
         workerId: ficha.id,
         purpose: 'claim',
         phoneE164,
-        ctx: { workerId: ficha.id, fichaIsTest: ficha.isTest === true, tokenEmail },
+        requesterUid: who.authUid,
+        ctx: { workerId: ficha.id, fichaIsTest: ficha.isTest === true, tokenEmail: who.email },
       });
       return Result.ok<InitWorkerOutput>({
         status: 'claim_pending',
-        candidateWorkerId: ficha.id,
         phoneMasked: maskPhone(phoneE164),
         verificationSid,
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg === OTP_RATE_LIMITED || msg === OTP_CHANNEL_UNAVAILABLE) return Result.fail<InitWorkerOutput>(msg);
+      if (isOtpStartRefusal(msg)) return Result.fail<InitWorkerOutput>(msg);
       return Result.fail<InitWorkerOutput>(`TWILIO_ERROR:${msg}`);
     }
   }

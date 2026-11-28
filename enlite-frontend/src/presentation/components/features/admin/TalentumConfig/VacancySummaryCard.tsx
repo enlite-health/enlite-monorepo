@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Typography } from '@presentation/components/atoms/Typography';
-import { VacancyStatusBadge } from '@presentation/components/atoms/VacancyStatusBadge';
+import { VacancyLifecycleBadge } from '@presentation/components/atoms/VacancyLifecycleBadge';
+import type { CicloDeVida } from '@domain/value-objects/vacancyLifecycle';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
@@ -13,7 +14,8 @@ export interface VacancySummaryData {
   vacancyNumber: number | null;
   patientFirstName: string | null;
   patientLastName: string | null;
-  status: string | null;
+  /** Ciclo de vida calculado pelo back (D3) — o único "estado" que esta tela mostra. */
+  lifecycle: CicloDeVida | null;
   publishedAt: string | null;
   closedAt: string | null;
 }
@@ -78,7 +80,7 @@ export function VacancySummaryCard({ data }: Props) {
             · {tc('closedLabel')}: {formatDate(data.closedAt)}
           </span>
         )}
-        {data.status && <VacancyStatusBadge status={data.status} />}
+        {data.lifecycle && <VacancyLifecycleBadge lifecycle={data.lifecycle} />}
       </div>
     </div>
   );

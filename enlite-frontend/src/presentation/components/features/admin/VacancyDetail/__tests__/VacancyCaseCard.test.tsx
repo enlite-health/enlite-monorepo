@@ -8,14 +8,15 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('@presentation/components/atoms/VacancyStatusBadge', () => ({
-  VacancyStatusBadge: ({ status }: { status: string }) => (
-    <span data-testid="status-badge">{status}</span>
+vi.mock('@presentation/components/atoms/VacancyLifecycleBadge', () => ({
+  VacancyLifecycleBadge: ({ lifecycle }: { lifecycle: string | null }) => (
+    <span data-testid="status-badge">{lifecycle}</span>
   ),
 }));
 
 const defaultProps = {
-  status: 'BUSQUEDA',
+  lifecycle: null,
+  patientStatus: 'SEARCHING',
   caseNumber: 748,
   dependencyLevel: 'MODERATE',
   profession: 'AT',
@@ -185,9 +186,24 @@ describe('VacancyCaseCard — formatDateAR catch (defensivo)', () => {
   });
 });
 
-// ── D269 — status editor (PUT /vacancies/:id → vacancy:write) ───────────────
+// ── D3/E6 — a ficha da vaga mostra o estado do PACIENTE ao lado do ciclo de vida ───
 
-describe('VacancyCaseCard — status editor gate (D269)', () => {
+describe('VacancyCaseCard — estado do paciente (estado-automatico-do-paciente F2)', () => {
+  it('mostra a pílula do estado do paciente e o badge do ciclo de vida', () => {
+    renderCard({ patientStatus: 'SEARCHING', lifecycle: 'rascunho' });
+    expect(screen.getByTestId('patient-status-pill')).toHaveAttribute('data-patient-status', 'SEARCHING');
+    expect(screen.getByTestId('status-badge')).toHaveTextContent('rascunho');
+  });
+
+  it('sem a célula (patientStatus null) a pílula mostra "—"', () => {
+    renderCard({ patientStatus: null });
+    expect(screen.getByTestId('patient-status-pill')).toHaveTextContent('—');
+  });
+});
+
+// ── semaforo-da-vaga F4 — a ficha não tem editor de estado, com ou sem permissão ───────────────
+
+describe('VacancyCaseCard — sem editor de estado da vaga (F4)', () => {
   beforeEach(() => {
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
   });
@@ -201,21 +217,16 @@ describe('VacancyCaseCard — status editor gate (D269)', () => {
     });
   }
 
-  it('🔴 enforcement=on, sem vacancy:write: o EDITOR não existe — vira o badge estático (texto, sem gatilho/dropdown)', () => {
-    comEnforcement([], 'on');
-    renderCard({ onStatusChange: vi.fn() });
+  it.each([
+    ['authz ausente', () => undefined],
+    ['enforcement=on, sem vacancy:update', () => comEnforcement([], 'on')],
+    ['enforcement=on, COM vacancy:update', () => comEnforcement(['vacancy:update'], 'on')],
+  ])('%s: nenhum gatilho/dropdown de estado; só o estado do paciente e o selo', (_nome, prepara) => {
+    prepara();
+    renderCard({});
     expect(screen.queryByTestId('vacancy-status-editor-trigger')).not.toBeInTheDocument();
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(screen.getByTestId('patient-status-pill')).toBeInTheDocument();
     expect(screen.getByTestId('status-badge')).toBeInTheDocument();
-  });
-
-  it('enforcement=on, com vacancy:write: o editor existe (gatilho clicável)', () => {
-    comEnforcement(['vacancy:update'], 'on');
-    renderCard({ onStatusChange: vi.fn() });
-    expect(screen.getByTestId('vacancy-status-editor-trigger')).toBeInTheDocument();
-  });
-
-  it('enforcement OFF (ou ausente): editor existe mesmo sem célula', () => {
-    renderCard({ onStatusChange: vi.fn() }); // authz null — sem enforcement
-    expect(screen.getByTestId('vacancy-status-editor-trigger')).toBeInTheDocument();
   });
 });

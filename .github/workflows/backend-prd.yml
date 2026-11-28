@@ -5,6 +5,11 @@ on:
     branches: [ "main" ]
     paths:
       - 'worker-functions/**'
+      # O próprio workflow também re-deploya: o hotfix do bloco secrets (#923) só mexeu aqui e não disparou o deploy.
+      - '.github/workflows/backend-prd.yml'
+  # Disparo manual (Actions → Run workflow, ou `gh workflow run`): o push do merge do #924 se perdeu num incidente do
+  # GitHub (25/11) e não havia como re-deployar sem outro PR.
+  workflow_dispatch:
   # ⚠️ Sem gatilho de `pull_request`: quem roda qualidade em PR é o `pr-gate.yml`
   # (o agregador que sempre reporta e por isso pode ser exigido em branch
   # protection). Deixar o gatilho aqui rodaria a mesma suíte DUAS vezes por PR.
@@ -147,6 +152,7 @@ jobs:
             TRIAGE_PRUEBA_URL=${{ secrets.TRIAGE_PRUEBA_URL }}
             TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
             TWILIO_WHATSAPP_NUMBER=${{ secrets.TWILIO_WHATSAPP_NUMBER }}
+            OTP_GLOBAL_DAILY_MAX=99
             TWILIO_STATUS_CALLBACK_URL=https://api.enlite.health/api/webhooks/twilio/status
             TWILIO_INBOUND_WEBHOOK_URL=https://api.enlite.health/api/webhooks/twilio/inbound
             GOOGLE_CALENDAR_IMPERSONATE_EMAIL=enlite@enlite.health
@@ -194,6 +200,7 @@ jobs:
             CHATWOOT_URL=https://chatwoot-production-0e81.up.railway.app
             PERISKOPE_PHONE=5491176360496
             PERISKOPE_WEBHOOK_ENABLED=true
+            ATTENDANCE_SERVICE_URL=https://attendance-service-byh3gvl5yq-tl.a.run.app
             TEMPLATE_SUBMISSION_ENABLED=true
             # spec 078, ato (k): aviso GRAVE do Sol. SOL_TWILIO_FROM = o MESMO número do backend (decisão 30/10).
             # Template pendente de aprovação na Meta: até aprovar, o envio vira `falha` com motivo (fail-closed).
@@ -201,6 +208,9 @@ jobs:
             SOL_TWILIO_CONTENT_SID_GRAVE=HX1148e6db5ee181e5da04777e4a1122b1
             SOL_AVISO_GRAVE_REENVIO_HORAS=4
             FRONTEND_URL=https://app.enlite.health
+          # spec 077, D758 (PR-INF-46): pepper do HMAC do OTP próprio. O secret `otp-hmac-pepper-prd` e o secretAccessor da SA do
+          # runtime têm de existir ANTES do merge (merge = deploy; sem o secret a revisão não sobe). A env
+          # TWILIO_AUTH_TEMPLATE_CONTENT_SID entra quando a Meta aprovar o template (H-06): é o ContentSid HX…, que ainda não existe.
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             DB_SYSTEM_PASSWORD=enlite-system-db-password:latest
@@ -222,9 +232,6 @@ jobs:
             ANACARE_PASS=anacare-pass:latest
             SOL_AVISO_GRAVE_DESTINATARIOS=sol-aviso-grave-destinatarios:latest
             E2E_OTP_CODE=e2e-otp-code-prd:latest
-            # spec 077, D758 (PR-INF-46): pepper do HMAC do OTP próprio. O secret `otp-hmac-pepper-prd` e o secretAccessor da SA do
-            # runtime têm de existir ANTES do merge (merge = deploy; sem o secret a revisão não sobe). A env
-            # TWILIO_AUTH_TEMPLATE_CONTENT_SID entra quando a Meta aprovar o template (H-06): é o ContentSid HX…, que ainda não existe.
             OTP_HMAC_PEPPER=otp-hmac-pepper-prd:latest
           flags: >-
             --allow-unauthenticated

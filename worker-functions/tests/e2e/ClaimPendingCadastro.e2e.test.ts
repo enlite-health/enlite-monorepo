@@ -84,7 +84,8 @@ describe('D797: CLAIM_PENDING no init e phone/confirm sem phone', () => {
     const text = await res.text();
     const body = JSON.parse(text);
     expect(res.status).toBe(200);
-    expect(body.data).toMatchObject({ status: 'claim_pending', code: 'CLAIM_PENDING', candidateWorkerId: imp.id });
+    expect(body.data).toMatchObject({ status: 'claim_pending', code: 'CLAIM_PENDING' });
+    expect(body.data).not.toHaveProperty('candidateWorkerId'); // B4: o id interno da ficha não sai
     expect(body.data.challengeId).toMatch(UUID);
     expect(typeof body.data.phoneMasked).toBe('string');
     expect(text).not.toContain(digits(P));

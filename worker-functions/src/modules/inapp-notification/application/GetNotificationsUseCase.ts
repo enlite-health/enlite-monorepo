@@ -16,6 +16,8 @@ import {
   IMPORT_KINDS,
   IMPORT_REASONS,
   IMPORT_AUDIENCES,
+  TALENTUM_WEBHOOK_ALARMS,
+  type TalentumWebhookAlarmPayload,
   type AdmissionTactiqLinkPayload,
   type AdmissionTactiqExtensionPayload,
   type AdmissionImportBlockedPayload,
@@ -23,6 +25,7 @@ import {
   type PedidoIaAplicarPayload,
   type NotificationTypeCode,
   type PtContactsPendingPayload,
+  type CoordinationAlertPayload,
 } from '../infrastructure/NotificationRepository';
 import type { ActorPatientConversationAccessChecker } from './ports';
 
@@ -46,7 +49,7 @@ export interface NotificationDto {
    *  origem É o root, ou quando não há `messageId` no evento. */
   rootMessageId: string | null;
   /** spec 048: SÓ no tipo `THERAPEUTIC_PROJECT_CONTACTS_PENDING` (4 chaves, ids + nome de campo); `null` nos de conversa. */
-  payload: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | null;
+  payload: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | TalentumWebhookAlarmPayload | CoordinationAlertPayload | null;
   /** spec 048: número do Caso (`patients.case_number`) do tipo do PT — o sino NUNCA mostra o nome do paciente nele. */
   patientCaseNumber: number | null;
   /** Item 2 (card com trecho, F7/F8): MESMO gate de `patientDisplayName` — só resolvido quando o
@@ -78,7 +81,7 @@ export class GetNotificationsUseCase {
     // mesmo cache já existente, agora também usado para gatear o trecho (item 2).
     let recipientAllowed: boolean | undefined;
     for (const row of rows) {
-      if (row.patientId && this.accessChecker && !isSystemPtType(row.typeCode)) {
+      if (row.patientId && this.accessChecker && !isSystemAlertType(row.typeCode)) {
         if (recipientAllowed === undefined) {
           recipientAllowed = await this.accessChecker.canReadPatientConversation(params.recipientUid);
         }
@@ -89,7 +92,7 @@ export class GetNotificationsUseCase {
     // messageExcerpt (item 2) É gated: só para linhas com patientId E recipientAllowed — MESMO
     // conjunto que teria patientDisplayName resolvido, decifrado em LOTE (F8).
     const eligibleMessageIds = recipientAllowed
-      ? dedupNonNull(rows.filter((row) => row.patientId && !isSystemPtType(row.typeCode)).map((row) => row.messageId))
+      ? dedupNonNull(rows.filter((row) => row.patientId && !isSystemAlertType(row.typeCode)).map((row) => row.messageId))
       : [];
     const excerpts = await this.repository.findMessageExcerpts(eligibleMessageIds);
 
@@ -100,7 +103,7 @@ export class GetNotificationsUseCase {
 
       // spec 048 (Gabriel, 08/10): o aviso do PT NUNCA leva o nome do paciente, mesmo para quem tem a célula de
       // conversa — só o número do Caso. Por isso o tipo de sistema nem entra na resolução do nome/trecho.
-      if (row.patientId && this.accessChecker && recipientAllowed && !isSystemPtType(row.typeCode)) {
+      if (row.patientId && this.accessChecker && recipientAllowed && !isSystemAlertType(row.typeCode)) {
         patientDisplayName = await this.repository.findPatientDisplayName(row.patientId);
         if (row.messageId) messageExcerpt = excerpts.get(row.messageId) ?? null;
       }
@@ -124,24 +127,79 @@ export class GetNotificationsUseCase {
 
 const isSystemPtType = (code: NotificationTypeCode): boolean => code === 'THERAPEUTIC_PROJECT_CONTACTS_PENDING';
 
+/** Aviso de sistema sem nome de paciente: o do PT e os 2 de presença (§5.5 — o sino mostra data e hora; nome/caso só na tela da fila, sob a célula dela). */
+const isSystemAlertType = (code: NotificationTypeCode): boolean =>
+  isSystemPtType(code) || code === 'PRESENCE_OPEN_4H' || code === 'CHECK_IN_REFUSED_NO_ENTRY';
+
 /** Payload por tipo: o do PT (4 chaves) ou o da admissão (`reason`); conversa não tem payload. */
 function payloadOf(
   code: NotificationTypeCode,
   raw: Record<string, unknown> | null,
-): PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | null {
+): PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | TalentumWebhookAlarmPayload | CoordinationAlertPayload | null {
+  if (code === 'PRESENCE_OPEN_4H' || code === 'CHECK_IN_REFUSED_NO_ENTRY') return coordinationAlertPayloadOf(raw);
   if (isSystemPtType(code)) return ptPayloadOf(raw);
   if (code === 'ADMISSION_TACTIQ_LINK_REQUIRED') {
-    const reason = raw?.reason;
-    return reason === 'missing' || reason === 'broken' || reason === 'wrong_account' ? { reason } : null;
+    return tactiqLinkPayloadOf(raw);
   }
   if (code === 'ITINERARY_UNCOVERED_SHIFTS') return itineraryPayloadOf(raw);
   if (code === 'PEDIDO_IA_APLICAR') return pedidoAplicarPayloadOf(raw);
   if (code === 'ADMISSION_IMPORT_BLOCKED') return importBlockedPayloadOf(raw);
+  if (code === 'TALENTUM_WEBHOOK_ALARM') return talentumAlarmPayloadOf(raw);
   if (code === 'ADMISSION_TACTIQ_EXTENSION_CHANGED') {
     const state = raw?.state;
     return state === 'installed' || state === 'missing' || state === 'disabled' ? { state } : null;
   }
   return null;
+}
+
+/**
+ * Emenda 077 §5.5: o aviso de presença à coordenação leva SÓ as 5 chaves de id/data do contrato + a janela (`start_time`/`end_time`, ISO), reconstruídas uma a uma (chave extra gravada por
+ * engano nunca passa). Linha malformada = sem payload (o front cai no texto sem data). Nenhum nome, endereço nem dado clínico — o `patient_id` vai na coluna.
+ */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+function coordinationAlertPayloadOf(raw: Record<string, unknown> | null): CoordinationAlertPayload | null {
+  if (!raw) return null;
+  const { occurrence_id, slot_id, on_date, worker_id, service_id, start_time, end_time } = raw;
+  const ids = [occurrence_id, slot_id, worker_id, service_id];
+  if (!ids.every((v) => typeof v === 'string' && v !== '') || typeof on_date !== 'string' || !ISO_DATE.test(on_date)) return null;
+  const instantOrNull = (v: unknown): string | null => (typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? v : null);
+  return { occurrence_id, slot_id, on_date, worker_id, service_id, start_time: instantOrNull(start_time), end_time: instantOrNull(end_time) } as CoordinationAlertPayload;
+}
+
+/**
+ * Aviso do vínculo do Tactiq (D11): reconstrói chave a chave, nunca repassa o `raw`. `audience` só vale `master` em `seat_missing`/`broken`/`seat_pending`
+ * (senão cai para o responsável); `hostName` só na cópia `master`; `adminNotified` só em `seat_missing` ao `host`; `autoReactivates` só em
+ * `seat_missing`; `firstLink` só em `seat_ready` (host). `seat_missing` sem `audience` válida é estranho = sem payload (o front cai no texto `missing`).
+ */
+function tactiqLinkPayloadOf(raw: Record<string, unknown> | null): AdmissionTactiqLinkPayload | null {
+  const reason = raw?.reason;
+  const known = ['missing', 'broken', 'wrong_account', 'seat_missing', 'seat_pending', 'seat_ready'] as const;
+  if (!known.includes(reason as (typeof known)[number])) return null;
+  const { audience: rawAudience, hostName, adminNotified, autoReactivates, firstLink } = raw as Record<string, unknown>;
+  const masterAllowed = reason === 'seat_missing' || reason === 'broken' || reason === 'seat_pending';
+  const audience = rawAudience === 'host' || (rawAudience === 'master' && masterAllowed) ? rawAudience : undefined;
+  if (reason === 'seat_missing' && !audience) return null;
+  // F5 (D11): `seat_pending` só existe para o Master; `seat_ready` só para o host e com `firstLink` boolean — fora disso é estranho = sem payload.
+  if (reason === 'seat_pending' && audience !== 'master') return null;
+  if (reason === 'seat_ready' && (audience !== 'host' || typeof firstLink !== 'boolean')) return null;
+  const out: AdmissionTactiqLinkPayload = { reason: reason as AdmissionTactiqLinkPayload['reason'] };
+  if (audience) out.audience = audience;
+  if (audience === 'master' && typeof hostName === 'string' && hostName !== '') out.hostName = hostName;
+  if (reason === 'seat_missing') {
+    if (audience === 'host' && typeof adminNotified === 'boolean') out.adminNotified = adminNotified;
+    if (typeof autoReactivates === 'boolean') out.autoReactivates = autoReactivates;
+  }
+  if (reason === 'seat_ready' && typeof firstLink === 'boolean') out.firstLink = firstLink;
+  return out;
+}
+
+/** Spec 095 §3.5: as 3 chaves do contrato (`alarme` do conjunto fechado, `quantidade` inteira >= 1, `desde` string); chave extra não passa; malformado = sem payload. */
+function talentumAlarmPayloadOf(raw: Record<string, unknown> | null): TalentumWebhookAlarmPayload | null {
+  if (!raw) return null;
+  const { alarme, quantidade, desde } = raw;
+  if (typeof alarme !== 'string' || !(TALENTUM_WEBHOOK_ALARMS as readonly string[]).includes(alarme)) return null;
+  if (typeof quantidade !== 'number' || !Number.isInteger(quantidade) || quantidade < 1 || typeof desde !== 'string') return null;
+  return { alarme: alarme as TalentumWebhookAlarmPayload['alarme'], quantidade, desde };
 }
 
 /** Spec 083 D-7: lê chave a chave (enums conferidos); linha malformada = sem payload; `hostName` só se for string não vazia. */

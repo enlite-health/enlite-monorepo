@@ -14,6 +14,7 @@
 
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
+import { postTalentumAndDrain, TALENTUM_WEBHOOK_TEST } from './helpers/talentumWebhook';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -82,9 +83,10 @@ describe('Partner Webhook Auth', () => {
     });
 
     it('deve retornar 200 com payload válido e salvar environment=production', async () => {
-      const res = await api.post('/api/webhooks/talentum/prescreening', VALID_PAYLOAD);
-      expect(res.status).toBe(200);
-      expect(res.data.talentumPrescreeningId).toBe('tp-auth-test-001');
+      // Ack assíncrono (spec 095): o environment da linha em talentum_prescreenings só existe depois do drain da inbox.
+      const res = await postTalentumAndDrain(api, VALID_PAYLOAD);
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ selected: 1, processed: 1, failed: 0 });
 
       // Verificar que environment=production foi salvo
       const dbResult = await pool.query(
@@ -126,8 +128,9 @@ describe('Partner Webhook Auth', () => {
         },
       };
 
-      const res = await api.post('/api/webhooks-test/talentum/prescreening', testPayload);
-      expect(res.status).toBe(200);
+      const res = await postTalentumAndDrain(api, testPayload, TALENTUM_WEBHOOK_TEST);
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ selected: 1, processed: 1, failed: 0 });
 
       // Verificar que environment=test foi salvo
       const dbResult = await pool.query(

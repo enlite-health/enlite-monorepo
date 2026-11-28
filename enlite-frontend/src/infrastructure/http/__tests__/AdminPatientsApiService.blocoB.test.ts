@@ -1,5 +1,5 @@
 /**
- * AdminPatientsApiService — bloco B (spec 012): PUT /status com motivo/nota, GET /status-history,
+ * AdminPatientsApiService — bloco B (spec 012): POST /status-actions, GET /status-history,
  * GET /catalogs/insurance-providers, PATCH /patients/:id/addresses/:addressId, e a listagem do
  * Kanban carregando `admissionStatus`.
  */
@@ -19,17 +19,15 @@ describe('AdminPatientsApiService — bloco B', () => {
   const fetchMock = vi.fn();
   beforeEach(() => { fetchMock.mockReset(); vi.stubGlobal('fetch', fetchMock); });
 
-  it('updatePatientStatus: string (legado) e objeto (v2) viram o mesmo PUT; 422 vira PatientApiError com code/details', async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ success: true, data: { id: 'p', status: 'ON_HOLD' } }));
-    await AdminPatientsApiService.updatePatientStatus('p', 'ADMISSION');
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ status: 'ADMISSION' });
-    await AdminPatientsApiService.updatePatientStatus('p', { status: 'ON_HOLD', onHoldReason: 'SCHOOL', onHoldNote: 'x' });
-    expect(fetchMock.mock.calls[1][0]).toMatch(/\/api\/admin\/patients\/p\/status$/);
-    expect(fetchMock.mock.calls[1][1].method).toBe('PUT');
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ status: 'ON_HOLD', onHoldReason: 'SCHOOL', onHoldNote: 'x' });
+  it('performPatientStatusAction: POST sem destino; 422 vira PatientApiError com code/details', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ success: true, data: { id: 'p', action: 'pausar', from: 'ACTIVE', status: 'ON_HOLD' } }));
+    await AdminPatientsApiService.performPatientStatusAction('p', { action: 'pausar', onHoldReason: 'SCHOOL', onHoldNote: 'x' });
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/admin\/patients\/p\/status-actions$/);
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ action: 'pausar', onHoldReason: 'SCHOOL', onHoldNote: 'x' });
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: false, error: 'nope', code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED', details: { from: 'ACTIVE', to: 'SEARCHING' } }, 422));
-    const err = await AdminPatientsApiService.updatePatientStatus('p', { status: 'SEARCHING' }).catch((e) => e);
+    const err = await AdminPatientsApiService.performPatientStatusAction('p', { action: 'retomar' }).catch((e) => e);
     expect(err).toBeInstanceOf(PatientApiError);
     expect(err).toMatchObject({ status: 422, code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED', details: { from: 'ACTIVE', to: 'SEARCHING' } });
     expect(new PatientApiError('m', 1).name).toBe('PatientApiError');
@@ -42,20 +40,6 @@ describe('AdminPatientsApiService — bloco B', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, data: { providers: [{ code: 'OSDE', sortOrder: 15 }] } }));
     await expect(AdminPatientsApiService.listInsuranceProviders()).resolves.toEqual([{ code: 'OSDE', sortOrder: 15 }]);
     expect(fetchMock.mock.calls[1][0]).toMatch(/\/api\/admin\/catalogs\/insurance-providers$/);
-  });
-
-  it('getPatientStatusOptions (spec 051): GET /status-options devolve {current, options} como o servidor mandou; recusa do servidor vira erro', async () => {
-    const body = { current: 'ACTIVE', changeSource: 'admin_panel', options: [{ status: 'ON_HOLD', via: 'fluxo' }, { status: 'SEARCHING', via: 'permissao', blockedBy: ['SERVICE_SCHEDULE'] }] };
-    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, data: body }));
-    await expect(AdminPatientsApiService.getPatientStatusOptions('p', 'admin_panel')).resolves.toEqual(body);
-    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/admin\/patients\/p\/status-options\?changeSource=admin_panel$/);
-    expect(fetchMock.mock.calls[0][1].method).toBe('GET');
-    fetchMock.mockResolvedValueOnce(jsonResponse({ success: false, error: 'Forbidden' }, 403));
-    await expect(AdminPatientsApiService.getPatientStatusOptions('p', 'admin_panel')).rejects.toMatchObject({ message: 'Forbidden', status: 403 });
-    // a origem vai na query e a lista de OUTRA origem nunca é aceita
-    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, data: { ...body, changeSource: 'admin_panel' } }));
-    await expect(AdminPatientsApiService.getPatientStatusOptions('p', 'kanban')).rejects.toThrow(/origem admin_panel ≠ pedida kanban/);
-    expect(fetchMock.mock.calls[2][0]).toMatch(/status-options\?changeSource=kanban$/);
   });
 
   it('updatePatientAddressLogistics → PATCH /patients/:id/addresses/:addressId com só os campos dados', async () => {

@@ -33,6 +33,8 @@ const claimedWorker: Worker = {
   updatedAt: new Date('2024-01-01'),
 };
 
+const resolveOk = () => ({ execute: jest.fn().mockResolvedValue(WORKER_ID) });
+
 function makeMockRes(): [Response, jest.Mock, jest.Mock] {
   const jsonMock = jest.fn();
   const statusMock = jest.fn().mockReturnValue({ json: jsonMock });
@@ -52,18 +54,17 @@ describe('ClaimController', () => {
       phone: '+5491155261243',
     };
 
-    it('retorna 200 com candidateWorkerId, phoneMasked e verificationSid', async () => {
+    it('retorna 200 com phoneMasked e verificationSid, SEM id interno da ficha', async () => {
       const startClaim = {
         execute: jest.fn().mockResolvedValue(
           Result.ok({
-            candidateWorkerId: WORKER_ID,
             phoneMasked: '+54 9 11 ****-1243',
             verificationSid: 'VE_SID',
           }),
         ),
       };
       const confirmClaim = { execute: jest.fn() };
-      const controller = new ClaimController(startClaim as any, confirmClaim as any);
+      const controller = new ClaimController(startClaim as any, confirmClaim as any, resolveOk() as any);
 
       const [actualRes, statusFn, jsonFn] = makeMockRes();
       await controller.start({ body: validBody, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
@@ -72,10 +73,7 @@ describe('ClaimController', () => {
       expect(jsonFn).toHaveBeenCalledWith(
         expect.objectContaining({
           success: true,
-          data: expect.objectContaining({
-            candidateWorkerId: WORKER_ID,
-            verificationSid: 'VE_SID',
-          }),
+          data: { phoneMasked: '+54 9 11 ****-1243', verificationSid: 'VE_SID' },
         }),
       );
     });
@@ -85,7 +83,7 @@ describe('ClaimController', () => {
         execute: jest.fn().mockResolvedValue(Result.ok({ noCandidate: true })),
       };
       const confirmClaim = { execute: jest.fn() };
-      const controller = new ClaimController(startClaim as any, confirmClaim as any);
+      const controller = new ClaimController(startClaim as any, confirmClaim as any, resolveOk() as any);
 
       const [actualRes, statusFn, jsonFn] = makeMockRes();
       await controller.start({ body: validBody, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
@@ -98,7 +96,7 @@ describe('ClaimController', () => {
 
     it('H3: sem token (req.user ausente) → 401 e o use case NÃO roda (nenhum OTP)', async () => {
       const startClaim = { execute: jest.fn() };
-      const controller = new ClaimController(startClaim as any, { execute: jest.fn() } as any);
+      const controller = new ClaimController(startClaim as any, { execute: jest.fn() } as any, resolveOk() as any);
 
       const [actualRes, statusFn] = makeMockRes();
       await controller.start({ body: validBody, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
@@ -109,7 +107,7 @@ describe('ClaimController', () => {
 
     it('H3: Bearer de A + body authUid de B → 403 e o use case NÃO roda', async () => {
       const startClaim = { execute: jest.fn() };
-      const controller = new ClaimController(startClaim as any, { execute: jest.fn() } as any);
+      const controller = new ClaimController(startClaim as any, { execute: jest.fn() } as any, resolveOk() as any);
 
       const [actualRes, statusFn] = makeMockRes();
       await controller.start(
@@ -123,7 +121,7 @@ describe('ClaimController', () => {
 
     it('H3: uid/email do use case vêm do TOKEN, não do body (body sem authUid/email continua valendo)', async () => {
       const startClaim = { execute: jest.fn().mockResolvedValue(Result.ok({ noCandidate: true })) };
-      const controller = new ClaimController(startClaim as any, { execute: jest.fn() } as any);
+      const controller = new ClaimController(startClaim as any, { execute: jest.fn() } as any, resolveOk() as any);
 
       const [actualRes, statusFn] = makeMockRes();
       await controller.start(
@@ -142,7 +140,7 @@ describe('ClaimController', () => {
     it('retorna 400 quando phone está ausente', async () => {
       const startClaim = { execute: jest.fn() };
       const confirmClaim = { execute: jest.fn() };
-      const controller = new ClaimController(startClaim as any, confirmClaim as any);
+      const controller = new ClaimController(startClaim as any, confirmClaim as any, resolveOk() as any);
 
       const [actualRes, statusFn] = makeMockRes();
       await controller.start({ body: { authUid: 'newUid123', email: 'joana@gmail.com' }, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
@@ -155,7 +153,7 @@ describe('ClaimController', () => {
         execute: jest.fn().mockResolvedValue(Result.fail('INVALID_PHONE')),
       };
       const confirmClaim = { execute: jest.fn() };
-      const controller = new ClaimController(startClaim as any, confirmClaim as any);
+      const controller = new ClaimController(startClaim as any, confirmClaim as any, resolveOk() as any);
 
       const [actualRes, statusFn, jsonFn] = makeMockRes();
       await controller.start({ body: validBody, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
@@ -171,7 +169,7 @@ describe('ClaimController', () => {
         execute: jest.fn().mockResolvedValue(Result.fail('DB connection lost')),
       };
       const confirmClaim = { execute: jest.fn() };
-      const controller = new ClaimController(startClaim as any, confirmClaim as any);
+      const controller = new ClaimController(startClaim as any, confirmClaim as any, resolveOk() as any);
 
       const [actualRes, statusFn] = makeMockRes();
       await controller.start({ body: validBody, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
@@ -184,7 +182,7 @@ describe('ClaimController', () => {
         execute: jest.fn().mockRejectedValue(new Error('Unexpected crash')),
       };
       const confirmClaim = { execute: jest.fn() };
-      const controller = new ClaimController(startClaim as any, confirmClaim as any);
+      const controller = new ClaimController(startClaim as any, confirmClaim as any, resolveOk() as any);
 
       const [actualRes, statusFn] = makeMockRes();
       await controller.start({ body: validBody, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
@@ -200,7 +198,7 @@ describe('ClaimController', () => {
         execute: jest.fn().mockResolvedValue(Result.ok({ noCandidate: true })),
       };
       const confirmClaim = { execute: jest.fn() };
-      const controller = new ClaimController(startClaim as any, confirmClaim as any);
+      const controller = new ClaimController(startClaim as any, confirmClaim as any, resolveOk() as any);
 
       const [actualRes] = makeMockRes();
       await controller.start({ body: validBody, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
@@ -220,7 +218,6 @@ describe('ClaimController', () => {
       otp: '123456',
       authUid: 'newUid123',
       email: 'joana@gmail.com',
-      candidateWorkerId: WORKER_ID,
     };
 
     it('retorna 200 com worker após OTP válido', async () => {
@@ -228,7 +225,7 @@ describe('ClaimController', () => {
       const confirmClaim = {
         execute: jest.fn().mockResolvedValue(Result.ok(claimedWorker)),
       };
-      const controller = new ClaimController(startClaim as any, confirmClaim as any);
+      const controller = new ClaimController(startClaim as any, confirmClaim as any, resolveOk() as any);
 
       const [actualRes, statusFn, jsonFn] = makeMockRes();
       await controller.confirm({ body: validBody, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
@@ -249,7 +246,7 @@ describe('ClaimController', () => {
         const confirmClaim = {
           execute: jest.fn().mockResolvedValue(Result.fail(errorCode)),
         };
-        const controller = new ClaimController(startClaim as any, confirmClaim as any);
+        const controller = new ClaimController(startClaim as any, confirmClaim as any, resolveOk() as any);
 
         const [actualRes, statusFn, jsonFn] = makeMockRes();
         await controller.confirm({ body: validBody, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
@@ -263,7 +260,7 @@ describe('ClaimController', () => {
 
     it('H3: sem token → 401 e o use case NÃO roda (nada de UPDATE)', async () => {
       const confirmClaim = { execute: jest.fn() };
-      const controller = new ClaimController({ execute: jest.fn() } as any, confirmClaim as any);
+      const controller = new ClaimController({ execute: jest.fn() } as any, confirmClaim as any, resolveOk() as any);
 
       const [actualRes, statusFn] = makeMockRes();
       await controller.confirm({ body: validBody, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
@@ -274,7 +271,7 @@ describe('ClaimController', () => {
 
     it('H3: Bearer de A + body authUid de B → 403 e o use case NÃO roda (nada de UPDATE)', async () => {
       const confirmClaim = { execute: jest.fn() };
-      const controller = new ClaimController({ execute: jest.fn() } as any, confirmClaim as any);
+      const controller = new ClaimController({ execute: jest.fn() } as any, confirmClaim as any, resolveOk() as any);
 
       const [actualRes, statusFn] = makeMockRes();
       await controller.confirm(
@@ -288,7 +285,7 @@ describe('ClaimController', () => {
 
     it('H3: o confirm grava o uid/email do TOKEN (e-mail do body é ignorado)', async () => {
       const confirmClaim = { execute: jest.fn().mockResolvedValue(Result.ok(claimedWorker)) };
-      const controller = new ClaimController({ execute: jest.fn() } as any, confirmClaim as any);
+      const controller = new ClaimController({ execute: jest.fn() } as any, confirmClaim as any, resolveOk() as any);
 
       const [actualRes, statusFn] = makeMockRes();
       await controller.confirm(
@@ -306,16 +303,42 @@ describe('ClaimController', () => {
       });
     });
 
-    it('retorna 400 quando candidateWorkerId está ausente', async () => {
-      const startClaim = { execute: jest.fn() };
-      const confirmClaim = { execute: jest.fn() };
-      const controller = new ClaimController(startClaim as any, confirmClaim as any);
+    it('B4 confirm SEM candidateWorkerId no corpo: a ficha vem do desafio deste uid (port) e confirma', async () => {
+      const confirmClaim = { execute: jest.fn().mockResolvedValue(Result.ok(claimedWorker)) };
+      const resolve = resolveOk();
+      const controller = new ClaimController({ execute: jest.fn() } as any, confirmClaim as any, resolve as any);
 
-      const { candidateWorkerId: _omit, ...bodyWithout } = validBody;
       const [actualRes, statusFn] = makeMockRes();
-      await controller.confirm({ body: bodyWithout, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
+      await controller.confirm({ body: validBody, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
+
+      expect(statusFn).toHaveBeenCalledWith(200);
+      expect(resolve.execute).toHaveBeenCalledWith({ challengeId: 'VE_SID', requesterUid: TOKEN_USER.uid });
+      expect(confirmClaim.execute).toHaveBeenCalledWith(expect.objectContaining({ candidateWorkerId: WORKER_ID }));
+    });
+
+    it('B4 candidateWorkerId de OUTRA ficha no corpo é IGNORADO: usa o do port', async () => {
+      const confirmClaim = { execute: jest.fn().mockResolvedValue(Result.ok(claimedWorker)) };
+      const controller = new ClaimController({ execute: jest.fn() } as any, confirmClaim as any, resolveOk() as any);
+
+      const [actualRes] = makeMockRes();
+      await controller.confirm(
+        { body: { ...validBody, candidateWorkerId: 'ficha-de-outra-pessoa' }, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request,
+        actualRes,
+      );
+
+      expect(confirmClaim.execute).toHaveBeenCalledWith(expect.objectContaining({ candidateWorkerId: WORKER_ID }));
+      expect(confirmClaim.execute).not.toHaveBeenCalledWith(expect.objectContaining({ candidateWorkerId: 'ficha-de-outra-pessoa' }));
+    });
+
+    it('B4 port devolve null: 400 CANDIDATE_NOT_FOUND e o confirm NÃO roda', async () => {
+      const confirmClaim = { execute: jest.fn() };
+      const controller = new ClaimController({ execute: jest.fn() } as any, confirmClaim as any, { execute: jest.fn().mockResolvedValue(null) } as any);
+
+      const [actualRes, statusFn, jsonFn] = makeMockRes();
+      await controller.confirm({ body: validBody, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
 
       expect(statusFn).toHaveBeenCalledWith(400);
+      expect(jsonFn).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: 'CANDIDATE_NOT_FOUND' }));
       expect(confirmClaim.execute).not.toHaveBeenCalled();
     });
 
@@ -324,7 +347,7 @@ describe('ClaimController', () => {
       const confirmClaim = {
         execute: jest.fn().mockRejectedValue(new Error('Crash')),
       };
-      const controller = new ClaimController(startClaim as any, confirmClaim as any);
+      const controller = new ClaimController(startClaim as any, confirmClaim as any, resolveOk() as any);
 
       const [actualRes, statusFn] = makeMockRes();
       await controller.confirm({ body: validBody, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);
@@ -340,7 +363,7 @@ describe('ClaimController', () => {
       const confirmClaim = {
         execute: jest.fn().mockResolvedValue(Result.ok(claimedWorker)),
       };
-      const controller = new ClaimController(startClaim as any, confirmClaim as any);
+      const controller = new ClaimController(startClaim as any, confirmClaim as any, resolveOk() as any);
 
       const [actualRes] = makeMockRes();
       await controller.confirm({ body: validBody, user: TOKEN_USER, headers: {}, ip: '127.0.0.1' } as Request, actualRes);

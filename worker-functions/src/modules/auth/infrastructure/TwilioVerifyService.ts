@@ -1,8 +1,9 @@
 import crypto from 'crypto';
 import twilio from 'twilio';
-import { logger, reportError } from '@shared/logging';
+import { logger, reportError, safeErrorFields } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
+import type { OtpConfirmContext, OtpSendContext } from '../ports/OtpChallengePort';
 
 /**
  * E2E OTP bypass — APENAS pra dev local.
@@ -59,27 +60,6 @@ export interface OtpCheckResult {
   status: 'approved' | 'pending' | 'expired' | 'canceled';
   /** Telefone para o qual a verificação foi aberta, como o Twilio devolve. Ausente = desconhecido. */
   to?: string;
-}
-
-/**
- * Fatos que a guarda de OTP de teste (`IsTestOtpGuard`) precisa no momento do envio: a ficha que
- * RECEBE o código é de teste? e o e-mail do TOKEN de quem pede? Ausente = envio normal.
- */
-export interface OtpSendContext {
-  /** Ficha que RECEBE o código: o confirm confere de novo que é a mesma (lacre dentro do sid suprimido). */
-  workerId: string;
-  fichaIsTest: boolean;
-  tokenEmail?: string | null;
-}
-
-/**
- * Fatos do CONFIRM de um código suprimido: as duas condições do envio são exigidas de novo, com a
- * ficha ALVO lida do banco na hora (`fichaIsTest` é função: só é chamada se o sid for suprimido).
- */
-export interface OtpConfirmContext {
-  workerId: string;
-  tokenEmail?: string | null;
-  fichaIsTest: () => Promise<boolean>;
 }
 
 export interface ITwilioVerifyService {
@@ -192,9 +172,10 @@ export class TwilioVerifyService implements ITwilioVerifyService {
         durationMs,
         twilioCode,
         twilioStatus,
-        errorMessage: e.message,
+        ...safeErrorFields(err),
       });
-      reportError(e, {
+      // B8: a mensagem do Twilio carrega o telefone ("Invalid To +54…"): o relatório recebe mensagem fixa, sem `cause`.
+      reportError(new Error('twilio_verify_start_failed'), {
         source: 'TwilioVerifyService:start',
         phoneMasked,
         twilioCode: twilioCode != null ? String(twilioCode) : null,

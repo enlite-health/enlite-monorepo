@@ -39,7 +39,6 @@ export interface ManagementDashboardData {
     equiposPorArmar: number;
     pacientesActivos: number;
     vacantesAbiertas: number;
-    vacantesPausadas: number;
   };
   /**
    * Classificação honesta da "Equipe Armada" (nunca 0 falso). armados/porArmar

@@ -1,9 +1,13 @@
 import { registry, z } from '../registry';
 import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
+import { CICLOS_DE_VIDA } from '@modules/matching/domain/vacancyLifecycle';
+import { CORES } from '@modules/matching/domain/vacancySemaphore';
 
 const VacancyListQuery = z.object({
   search: z.string().optional().openapi({ description: 'Busca textual por título ou caso.', example: 'Caso 766' }),
-  status: z.string().optional().openapi({ description: 'Filtro por status da vaga (inclui `DE_BAJA`).', example: 'SEARCHING' }),
+  status: z.string().optional().openapi({ description: 'Filtro por valor de banco da vaga (inclui `DE_BAJA`). Aceito só por compatibilidade: a tela usa `lifecycle`.', example: 'SEARCHING' }),
+  lifecycle: z.enum(CICLOS_DE_VIDA).optional().openapi({ description: 'Filtro pelo selo da vaga (`rascunho` ou `baja`; tabela do dono). `aberta|pausada|cerrada` saíram: 400 `VACANCY_LIFECYCLE_INVALID`.', example: 'baja' }),
+  patient_status: z.string().optional().openapi({ description: 'Filtro por estado do paciente (`patients.status`). Sem `patient:read` → 403 `{ field: patientStatus, cell: patient:read }`.', example: 'SEARCHING' }),
   include_baja: z.enum(['true', 'false']).optional().openapi({
     description: 'Spec 084 F2: `true` mostra as vagas dadas de baja (só consulta, com selo). Ausente = escondidas.',
     example: 'true',
@@ -11,6 +15,10 @@ const VacancyListQuery = z.object({
   talentum_manual: z.enum(['true', 'false']).optional().openapi({
     description: 'Spec 084 F4: `true` = só as vagas na lista "pausar/retomar à mão no Talentum" (o Talentum recusou, 403).',
     example: 'true',
+  }),
+  semaphore: z.string().optional().openapi({
+    description: `Filtro por cor do semáforo: CSV de ${CORES.join(', ')}. Roda no servidor antes da paginação e NUNCA devolve vaga dada de baixa. Valor fora da lista → 400 \`VACANCY_SEMAPHORE_INVALID\` (es + pt-BR em \`messages\`).`,
+    example: 'red,yellow',
   }),
   limit: z.coerce.number().optional().openapi({ description: 'Máximo de itens (default 20).', example: 20 }),
   offset: z.coerce.number().optional().openapi({ description: 'Itens a pular (default 0).', example: 0 }),
@@ -34,19 +42,13 @@ const CreateVacancyBody = z.object({
   patient_address_id: z.string().uuid().optional().openapi({ description: 'UUID do endereço do paciente.', example: '6f7c1d4a-9b2e-4c8a-9d5e-1f3b8a2c7e91' }),
   required_professions: z.array(z.string()).optional().openapi({ description: 'Profissões requeridas.', example: ['AT', 'CUIDADOR'] }),
   required_sex: z.string().optional().openapi({ description: 'Sexo do worker preferido.', example: 'FEMALE' }),
-  status: z.string().optional().openapi({ description: 'Status inicial da vaga.', example: 'PENDING_ACTIVATION' }),
   salary_text: z.string().optional().openapi({ description: 'Descrição textual do salário.', example: 'R$ 3.000/mês' }),
   work_schedule: z.string().optional().openapi({ description: 'Jornada de trabalho.', example: '8h às 18h, Seg-Sex' }),
 });
 
 const UpdateVacancyBody = z.object({
-  // Spec 084: `DE_BAJA` NÃO é aceito aqui — nem para entrar (a baixa é `POST /vacancies/baja`) nem para sair (R17: vaga
-  // baixada só volta pela reativação do serviço; PUT em vaga DE_BAJA responde 409 `VACANCY_DE_BAJA_NO_REACTIVATION`).
-  // `ON_HOLD` ("En espera", R18) é a pausa da vaga de serviço ativo; encerrar (`CLOSED`) vaga de serviço ativo → 409.
-  status: z.enum(['SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'PENDING_ACTIVATION', 'ACTIVE', 'ON_HOLD', 'SUSPENDED', 'CLOSED']).optional().openapi({
-    description: 'Novo status da vaga.',
-    example: 'SEARCHING',
-  }),
+  // semaforo-da-vaga F4: `status` NÃO é aceito (nem aqui, nem no POST): 400 `VACANCY_STATUS_NOT_WRITABLE` (es + pt-BR em `messages`).
+  // A vaga baixada segue só consulta (spec 084 R17: PUT → 409 `VACANCY_DE_BAJA_NO_REACTIVATION`).
   patient_address_id: z.string().uuid().optional().openapi({ description: 'Novo endereço do paciente.', example: '6f7c1d4a-9b2e-4c8a-9d5e-1f3b8a2c7e91' }),
   salary_text: z.string().optional().openapi({ description: 'Descrição de salário.', example: 'R$ 3.500/mês' }),
   work_schedule: z.string().optional().openapi({ description: 'Jornada atualizada.', example: 'Integral' }),
@@ -74,12 +76,14 @@ registry.registerPath({
     'Retorna vagas com filtros opcionais de status e busca textual. ' +
     'Ordem padrão (sem `sort`): data de criação decrescente. Com `sort`/`order` ordena a lista inteira antes de paginar. ' +
     'Cada vaga traz `caseNumber` (número do caso lido do paciente; null se a vaga não tem paciente visível ao ator) e ' +
-    '`caseOrdinal` (posição da vaga no caso); o texto `EN1234#01` é formatado pelo frontend.',
+    '`caseOrdinal` (posição da vaga no caso); o texto `EN1234#01` é formatado pelo frontend. ' +
+    '`semaphore: { n, color: red|yellow|green } | null` (semaforo-da-vaga): `n` = prestadores nas colunas Seleccionado + Respuesta rápida do Kanban da vaga, ' +
+    'sem quem foi desligado nem quem tem marca de saída ativa no serviço; `null` tem um só sentido: vaga dada de baixa.',
   security: [{ firebaseAuth: [] }],
   request: { query: VacancyListQuery },
   responses: {
     200: { description: 'Lista paginada de vagas.', content: { 'application/json': { schema: OkMessage } } },
-    400: { description: '`sort` fora da allowlist ou `order` inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    400: { description: '`sort` fora da allowlist, `order` inválido, `semaphore` fora das cores (`VACANCY_SEMAPHORE_INVALID`) ou `lifecycle` fora de `rascunho|baja` (`VACANCY_LIFECYCLE_INVALID`).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },

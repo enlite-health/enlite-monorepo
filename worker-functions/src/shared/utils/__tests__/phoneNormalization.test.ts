@@ -1,4 +1,6 @@
-import { normalizePhoneAR, generatePhoneCandidates, toNationalAR } from '../phoneNormalization';
+import {
+  normalizePhoneAR, generatePhoneCandidates, toNationalAR, normalizePhoneBR, classifyOtpPhone, isAllowedOtpDestination,
+} from '../phoneNormalization';
 
 // ─── normalizePhoneAR ─────────────────────────────────────────────────────────
 
@@ -194,5 +196,40 @@ describe('toNationalAR', () => {
       const once = toNationalAR('5491151265663');
       expect(toNationalAR(once)).toBe(once);
     });
+  });
+});
+
+// ─── G1: destino de OTP só AR e BR ────────────────────────────────────────────
+
+describe('classifyOtpPhone', () => {
+  it.each([
+    ['1151265663', { ok: true, country: 'AR', e164: '+5491151265663' }],
+    ['+5491151265663', { ok: true, country: 'AR', e164: '+5491151265663' }],
+    ['5511987654321', { ok: true, country: 'BR', e164: '+5511987654321' }],
+    ['+55 11 98765-4321', { ok: true, country: 'BR', e164: '+5511987654321' }],
+    ['551187654321', { ok: false, error: 'INVALID_PHONE' }],
+    ['11987654321', { ok: false, error: 'PHONE_COUNTRY_NOT_SUPPORTED' }],
+    ['+12025550123', { ok: false, error: 'PHONE_COUNTRY_NOT_SUPPORTED' }],
+    ['123', { ok: false, error: 'INVALID_PHONE' }],
+  ])('%s', (entrada, esperado) => {
+    expect(classifyOtpPhone(entrada)).toEqual(esperado);
+  });
+});
+
+describe('normalizePhoneBR', () => {
+  it('celular BR de 13 dígitos passa; fixo, curto e outro país viram ""', () => {
+    expect(normalizePhoneBR('+55 (11) 98765-4321')).toBe('5511987654321');
+    expect(normalizePhoneBR('551187654321')).toBe('');
+    expect(normalizePhoneBR('5501987654321')).toBe('');
+    expect(normalizePhoneBR('5491151265663')).toBe('');
+    expect(normalizePhoneBR(null)).toBe('');
+  });
+});
+
+describe('isAllowedOtpDestination', () => {
+  it('aceita E.164 AR e BR e recusa outro país', () => {
+    expect(isAllowedOtpDestination('+5491100000000')).toBe(true);
+    expect(isAllowedOtpDestination('+5511900000000')).toBe(true);
+    expect(isAllowedOtpDestination('+12025550123')).toBe(false);
   });
 });

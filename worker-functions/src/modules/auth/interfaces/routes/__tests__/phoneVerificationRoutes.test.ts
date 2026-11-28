@@ -18,6 +18,28 @@ import {
 import type { PhoneVerificationController } from '../../controllers/PhoneVerificationController';
 import type { AuthMiddleware } from '@modules/identity/interfaces/middleware/AuthMiddleware';
 
+/** Store em memória que CONTA as chamadas por prefix: prova que o limitador por uid usa o store compartilhado (o real é o Postgres). */
+const mockStoreCalls: string[] = [];
+jest.mock('@shared/rateLimit/PgRateLimitStore', () => {
+  class MemStore {
+    private windowMs = 15 * 60 * 1000;
+    private hits = new Map<string, { n: number; reset: number }>();
+    constructor(readonly prefix: string) {}
+    init(o: { windowMs: number }) { this.windowMs = o.windowMs; }
+    async increment(key: string) {
+      mockStoreCalls.push(this.prefix);
+      const now = Date.now();
+      const cur = this.hits.get(key);
+      const e = cur && cur.reset > now ? { n: cur.n + 1, reset: cur.reset } : { n: 1, reset: now + this.windowMs };
+      this.hits.set(key, e);
+      return { totalHits: e.n, resetTime: new Date(e.reset) };
+    }
+    async decrement(key: string) { const c = this.hits.get(key); if (c) c.n = Math.max(c.n - 1, 0); }
+    async resetKey(key: string) { this.hits.delete(key); }
+  }
+  return { createPgRateLimitStore: (prefix: string) => new MemStore(prefix) };
+});
+
 const START = '/api/workers/me/phone-verification/start';
 const CONFIRM = '/api/workers/me/phone-verification/confirm';
 
@@ -132,5 +154,18 @@ describe.each([
       expect((await chamar6(url, `conta-v6-${i}`, `2001:db8:9:1::${i + 1}`)).status).toBe(200);
     }
     expect((await chamar6(url, 'conta-v6-nova', '2001:db8:9:1::ff')).status).toBe(429);
+  });
+});
+
+describe('phoneVerificationRoutes — limite por conta usa o store compartilhado (B2)', () => {
+  beforeEach(() => { mockStoreCalls.length = 0; });
+
+  it.each([
+    ['start', START, 'pv-start-uid'],
+    ['confirm', CONFIRM, 'pv-confirm-uid'],
+  ])('%s: o limitador por conta chama o store compartilhado', async (_nome, url, prefix) => {
+    const { chamar } = montar(`pvStore-${prefix}`);
+    expect((await chamar(url, 'uid-teste-store', '1.2.3.4')).status).toBe(200);
+    expect(mockStoreCalls).toEqual([prefix]);
   });
 });

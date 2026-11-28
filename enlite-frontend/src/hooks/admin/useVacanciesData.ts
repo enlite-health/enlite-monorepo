@@ -4,6 +4,8 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 export interface UseVacanciesDataFilters {
   search?: string;
   status?: string;
+  lifecycle?: string;
+  patient_status?: string;
   limit?: string;
   offset?: string;
   worker_type?: string;
@@ -11,6 +13,7 @@ export interface UseVacanciesDataFilters {
   city?: string;
   required_sex?: string;
   days?: string;     // CSV of ints, e.g. "1,3,5"
+  semaphore?: string; // CSV de cores, e.g. "red,green"
   time_from?: string;
   time_to?: string;
   sort?: string;
@@ -56,6 +59,8 @@ export function useVacanciesData(filters?: UseVacanciesDataFilters) {
   }, [
     filters?.search,
     filters?.status,
+    filters?.lifecycle,
+    filters?.patient_status,
     filters?.limit,
     filters?.offset,
     filters?.worker_type,
@@ -63,6 +68,7 @@ export function useVacanciesData(filters?: UseVacanciesDataFilters) {
     filters?.city,
     filters?.required_sex,
     filters?.days,
+    filters?.semaphore,
     filters?.time_from,
     filters?.time_to,
     filters?.sort,

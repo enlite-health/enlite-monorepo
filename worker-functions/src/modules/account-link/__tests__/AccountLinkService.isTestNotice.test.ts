@@ -9,6 +9,8 @@ jest.mock('../accountLinkNotice', () => ({ sendLinkedNoticeEmail: jest.fn().mock
 import type { Pool } from 'pg';
 import { AccountLinkService } from '../AccountLinkService';
 import { sendLinkedNoticeEmail } from '../accountLinkNotice';
+import { TwilioVerifyOtpAdapter } from '../../auth/infrastructure/TwilioVerifyOtpAdapter';
+import { IsTestOtpGuardedVerify } from '../../auth/infrastructure/IsTestOtpGuardedVerify';
 
 const LOGGED = 'aaaaaaaa-0000-0000-0000-000000000001';
 const OWNER = 'bbbbbbbb-0000-0000-0000-000000000002';
@@ -31,7 +33,7 @@ function makeService(absorbedIsTest: boolean) {
     checkVerification: jest.fn().mockResolvedValue({ valid: true, status: 'approved', to: '+5491133336012' }),
   };
   const adminMerge = { execute: jest.fn().mockResolvedValue({ audit_ids: [77], survivor_id: LOGGED, absorbed_ids: [OWNER] }) };
-  return new AccountLinkService(pool, { twilio: twilio as never, adminMerge: adminMerge as never, encryption: { decrypt: jest.fn().mockResolvedValue('') } as never });
+  return new AccountLinkService(pool, { otp: new TwilioVerifyOtpAdapter(new IsTestOtpGuardedVerify(twilio as never)), adminMerge: adminMerge as never, encryption: { decrypt: jest.fn().mockResolvedValue('') } as never });
 }
 
 beforeAll(() => { process.env.ACCOUNT_LINK_TOKEN_SECRET = 'unit-test-secret'; });

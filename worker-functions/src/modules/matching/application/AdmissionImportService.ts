@@ -20,7 +20,7 @@ import { renderAdmissionSummaryPdf } from '../infrastructure/admissionSummaryPdf
 import {
   IMPORT_EXPIRE_AFTER_MS,
   IMPORT_MIN_DELAY_MS,
-  WRONG_ACCOUNT_AFTER_MS,
+  NOT_RECORDED_AFTER_MS,
   joinParts,
 } from '../domain/admissionImport';
 import type { AdmissionLogger } from './AdmissionMessagingService';
@@ -312,19 +312,13 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
 
   // ── caminhos sem importação (cada um: UMA transação curta com estado + trilha) ─────────────────────
 
-  /** 0 candidatas: espera (tentativa n); 72 h -> `expired`; depois de 3 h sem ver reunião: conta errada, salvo se a reunião terminou antes do 1º vínculo ou a conta já importou com sucesso (aí só expira). */
+  /** 0 candidatas: espera (tentativa n); 72 h -> `expired`; depois de 3 h sem ver reunião: `expired`/`not_recorded` + aviso ao host (o vínculo NÃO é tocado; D10), salvo se a reunião terminou antes do 1º vínculo (só expira, sem aviso). */
   private async noMatch(a: S, reason: 'not_found' | 'code_mismatch', now: Date, expired: boolean): Promise<ImportOutcome> {
     if (expired) return this.expire(a, reason);
-    if (reason === 'not_found' && now.getTime() - (a.conference_ended_at as Date).getTime() >= WRONG_ACCOUNT_AFTER_MS) {
-      // Reunião que terminou ANTES do 1º vínculo: o Tactiq da operadora não podia tê-la gravado como conta vinculada — não prova conta errada. Só expira.
+    if (reason === 'not_found' && now.getTime() - (a.conference_ended_at as Date).getTime() >= NOT_RECORDED_AFTER_MS) {
+      // Reunião que terminou ANTES do 1º vínculo: o Tactiq da operadora não podia tê-la gravado como conta vinculada — nada a avisar. Só expira.
       if (await this.deps.tokens.linkCreatedAfter(a.host_email, a.conference_ended_at as Date)) return this.expire(a, 'not_found');
-      // Conta que já importou com sucesso desde o vínculo é CERTA: uma reunião não gravada (extensão off, celular) só expira — o vínculo fica.
-      if (await this.deps.tokens.hasImportedSinceLinked(a.host_email)) return this.expire(a, 'not_found');
-      const changed = await this.deps.tokens.markWrongAccount(a.host_email);
-      if (await this.setBlocked(a, 'wrong_account', now)) {
-        this.log.error({ [this.naming.idKey]: a.id, reason: 'wrong_account', linkChanged: changed }, `${this.naming.prefix}.import_blocked`);
-      }
-      return 'wrong_account';
+      return this.expire(a, 'not_recorded');
     }
     await this.inTx(async (cli) => {
       if (a.import_status !== 'waiting') {
@@ -346,13 +340,14 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
   }
 
   private async expire(a: S, reason: string): Promise<ImportOutcome> {
-    // Spec 083 (DF-6): só a expiração por conta NÃO conectada (`no_link`) avisa o host; `not_found`/`code_mismatch` seguem só com log.
-    // O motivo exibido é o do último bloqueio humano (`wrong_account` quando foi esse), senão `no_link`.
+    // Spec 083 (DF-6): a expiração por conta NÃO conectada (`no_link`) avisa o host; `not_recorded` (D10/D11) também; `not_found`/`code_mismatch` seguem só com log.
+    // O motivo exibido de `no_link` é o do último bloqueio humano (`wrong_account` quando foi esse), senão `no_link`.
     const notice = reason === 'no_link' && this.deps.notices ? (await this.deps.repo.lastBlockedEvent(a.id))?.reason : undefined;
     await this.inTx(async (cli) => {
       await this.deps.repo.setState(a.id, 'expired', cli);
       await this.deps.events.append({ appointmentId: a.id, kind: 'import_expired', outcome: 'expired', reason }, cli);
       if (reason === 'no_link') await noticeSubject(this.deps.notices, cli, a, { stage: 'expired', reason: isHumanReason(notice) ? notice : 'no_link', warnManagement: false });
+      if (reason === 'not_recorded') await noticeSubject(this.deps.notices, cli, a, { stage: 'expired', reason: 'not_recorded', warnManagement: false });
     });
     this.log.error({ [this.naming.idKey]: a.id, reason, hostEmailKnown: Boolean(a.host_email) }, `${this.naming.prefix}.import_expired`);
     return 'expired';
@@ -385,7 +380,7 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
   /** 401/403 do MCP derruba o vínculo (e bloqueia); rede/5xx só adia. Nunca o corpo nem a mensagem do erro. */
   private async mcpFailure(a: S, err: unknown, where: string, now: Date): Promise<ImportOutcome> {
     if (err instanceof TactiqUnauthorizedError) {
-      await this.deps.tokens.markBroken(a.host_email);
+      await this.deps.tokens.markBroken(a.host_email, 'unauthorized', 'import');
       if (await this.setBlocked(a, 'no_link', now)) {
         this.log.error({ [this.naming.idKey]: a.id, reason: 'unauthorized', where }, `${this.naming.prefix}.import_blocked`);
       }

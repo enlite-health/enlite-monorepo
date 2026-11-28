@@ -11,6 +11,7 @@ export type RejectionReasonCategory =
   | 'OVERQUALIFIED'
   | 'DEPENDENCY_MISMATCH'
   | 'TALENTUM_NOT_QUALIFIED'
+  | 'TALENTUM_EXPIRED'
   | 'OTHER';
 
 export type JobPostingPriority = 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW';
@@ -77,6 +78,14 @@ export interface AdminVacancyDetail {
   id: string;
   title: string | null;
   status: string;
+  /** Ciclo de vida da vaga, calculado pelo back (tabela do dono, D3) — a tela só traduz. */
+  lifecycle?: import('../value-objects/vacancyLifecycle').CicloDeVida | null;
+  /**
+   * Estado do paciente (`patients.status`), lido por join na hora (D3). Sem a célula `patient:read`: `null` + `redacted.patient`.
+   * Vaga sem paciente: a chave não vem.
+   */
+  patient_status?: string | null;
+  redacted?: { patient?: true };
   case_number: number | null;
   vacancy_number: number | null;
   /** FK para patients */

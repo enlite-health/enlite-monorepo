@@ -114,6 +114,15 @@ describe('ConfirmClaimUseCase', () => {
       );
     });
 
+    it("confere o desafio com a finalidade 'claim' (código de outra finalidade não une a ficha)", async () => {
+      const otp = { start: jest.fn(), cancel: jest.fn(), check: jest.fn().mockResolvedValue({ ok: true }) };
+      const useCase = new ConfirmClaimUseCase(makeRepo() as any, otp as any);
+
+      await useCase.execute(makeInput());
+
+      expect(otp.check).toHaveBeenCalledWith(expect.objectContaining({ purpose: 'claim', challengeId: VERIFICATION_SID }));
+    });
+
     it('chama checkVerification com verificationSid e otp corretos', async () => {
       const repo = makeRepo();
       const twilio = makeTwilio();

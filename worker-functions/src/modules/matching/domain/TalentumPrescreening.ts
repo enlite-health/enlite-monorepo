@@ -32,7 +32,7 @@ export interface UpsertTalentumQuestionDTO {
 
 export type TalentumPrescreeningStatus =
   | 'INITIATED' | 'IN_PROGRESS' | 'COMPLETED' | 'ANALYZED'
-  | 'QUALIFIED' | 'NOT_QUALIFIED' | 'IN_DOUBT' | 'PENDING';
+  | 'QUALIFIED' | 'NOT_QUALIFIED' | 'IN_DOUBT' | 'PENDING' | 'EXPIRED';
 
 export interface TalentumPrescreening {
   id: string;

@@ -20,7 +20,7 @@ import express, { Request, Response, RequestHandler } from 'express';
 import { AnaCareHoursController, createAnaCareHoursRoutes, AnaCareHoursSyncController, createAnaCareHoursSyncAdminRoutes, createAnaCareHoursSyncInternalRoutes } from '@modules/anacare-hours';
 import { corsMiddleware } from '@shared/http/corsConfig';
 import rateLimit from 'express-rate-limit';
-import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
+import { WorkerControllerV2, JobsController, WorkerDocumentsMeController, AdminWorkerDocumentsController, WorkerAdditionalDocsMeController, WorkerProfilePhotoMeController, AdminAdditionalDocsController, createAdminWorkerDocumentsRoutes, createWorkerDocumentsRoutes } from '@modules/worker';
 import { appChannel } from '@modules/worker/interfaces/middleware/appChannel';
 import {
   AdminPatientsController,
@@ -48,6 +48,10 @@ import {
   createTherapeuticContactRemindersInternalRoutes,
   ItineraryDailyInternalController,
   createItineraryDailyInternalRoutes,
+  PresenceAlertsInternalController,
+  PresenceReviewController,
+  createAdminPresenceReviewRoutes,
+  createPresenceAlertsInternalRoutes,
   createAdminPatientsRoutes,
   createAdminInsuranceRoutes,
   AdminInsuranceProviderContactsController,
@@ -86,12 +90,14 @@ import { AdminWorkersMapController } from './modules/worker/interfaces/controlle
 import { AdminTagCatalogController } from './modules/worker/interfaces/controllers/AdminTagCatalogController';
 import { WorkerTimelineController } from './modules/worker/interfaces/controllers/WorkerTimelineController';
 import { MessageTemplateRepository } from '@modules/notification/infrastructure/MessageTemplateRepository';
+import { createAccountLinkService } from './bootstrap/createAccountLinkService';
 import { buildChatwootClient } from './bootstrap/buildChatwootClient';
 import { buildMessagingService } from './bootstrap/buildMessagingService';
 import { OutboxProcessor } from '@modules/notification/infrastructure/OutboxProcessor';
 import { BulkDispatchScheduler } from '@modules/notification/infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '@modules/notification/infrastructure/BulkDispatchTalentumScheduler';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { txBoundPool } from '@shared/database/txBoundPool';
 import { createMeAreasRouter } from '@modules/identity/interfaces/meAreasRoute';
 import { createPersonTreeRouter } from '@modules/identity/interfaces/personTreeRoute';
 import { requirePersonTreeService } from '@modules/identity/interfaces/middleware/requirePersonTreeService';
@@ -116,6 +122,8 @@ import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogServ
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
 import { ItineraryDailyRunHealthService } from '@shared/events/ItineraryDailyRunHealthService';
+import { TalentumWebhookHealthService } from '@shared/events/TalentumWebhookHealthService';
+import { TalentumWebhookAlarmNotifier } from '@modules/matching/application/TalentumWebhookAlarmNotifier';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyAutoInviteHandler';
@@ -179,7 +187,10 @@ import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
 import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
 import { registerEnquadreInternalJobRoutes } from './bootstrap/registerEnquadreInternalJobRoutes';
-import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController } from '@modules/integration';
+import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController, createTalentumInboxInternalRoutes, TalentumInboxInternalController, ProcessTalentumInboxUseCase, TalentumInboxRepository, CreateJobPostingFromTalentumUseCase, talentumPrescreeningIdResolver } from '@modules/integration';
+import type { CreateJobPostingFromTalentumPrefetch } from './modules/integration/application/CreateJobPostingFromTalentumUseCase';
+import { ProcessTalentumPrescreening, TalentumPrescreeningRepository, JobPostingLookup } from '@modules/matching';
+import { WorkerRepository } from '@modules/worker';
 import { createAdminPedidosIaRoutes, createPedidoIaController, createAssistantsPlatformController, createAdminAssistantsRoutes, createAssistantCountService, createAdminLuzPruebaRoutes, createLuzPruebaController } from '@modules/agentes';
 import { createAdminCostsRoutes, createGetCostOverviewUseCase } from '@modules/custos';
 import { registerFunnelStageHandlers } from './shared/events/registerFunnelStageHandlers';
@@ -300,6 +311,7 @@ const workerDailyReportMeController = buildWorkerDailyReportController();
 const workerJobsByRadiusController = new WorkerJobsByRadiusController();
 const adminWorkerDocumentsController = new AdminWorkerDocumentsController();
 const workerAdditionalDocsMeController = new WorkerAdditionalDocsMeController();
+const workerProfilePhotoMeController = new WorkerProfilePhotoMeController();
 const adminAdditionalDocsController = new AdminAdditionalDocsController();
 const encuadreController = new EncuadreController();
 const analyticsController = new AnalyticsController();
@@ -370,7 +382,10 @@ app.use('/api', createClaimRoutes(claimController, authMiddleware));
 // Vínculo self-service de contas por colisão de telefone (ACCOUNT_LINK_ENABLED
 // gate por request → OFF = 404 em tudo, prod neutro). openspec:
 // vinculo-contas-colisao-telefone.
-const accountLinkController = new AccountLinkController(DatabaseConnection.getInstance().getPool());
+const accountLinkController = new AccountLinkController(
+  DatabaseConnection.getInstance().getPool(),
+  createAccountLinkService(DatabaseConnection.getInstance().getPool()),
+);
 app.use('/api', createAccountLinkRoutes(accountLinkController, authMiddleware));
 
 const workerLookupRateLimit = rateLimit({
@@ -521,6 +536,10 @@ app.put('/api/workers/me/daily-reports/:reportId', routeClass('client-policy'), 
 });
 app.put('/api/workers/me/general-info', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), appChannel(), (req: Request, res: Response) => {
   workerController.saveGeneralInfo(req, res);
+});
+// D815: a prestadora apaga a PRÓPRIA foto (o PUT general-info nunca apaga: COALESCE). Identidade só pelo token.
+app.delete('/api/workers/me/photo', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), (req: Request, res: Response) => {
+  workerProfilePhotoMeController.remove(req, res);
 });
 app.put('/api/workers/me/service-area', routeClass('client-policy'), authMiddleware.requireAuth(), authMiddleware.requirePermission('worker', 'update'), appChannel(), (req: Request, res: Response) => {
   workerController.saveServiceArea(req, res);
@@ -815,6 +834,9 @@ app.use(
 // ========== Admin informes da guarda (spec 092) — leitura, com redação do texto por célula ==========
 app.use('/api/admin', createAdminDailyReportRoutes(buildAdminDailyReportController(), authMiddleware, permissionMiddleware));
 
+// ========== Fila de revisão de presença da coordenação (emenda 077 §6) — célula presence_exception:review ==========
+app.use('/api/admin', createAdminPresenceReviewRoutes(new PresenceReviewController(), authMiddleware, permissionMiddleware));
+
 // ========== Quadro C — time do serviço contratado (cadeia Fase 10) ==========
 app.use('/api/admin', createAdminServiceTeamRoutes(new AdminServiceTeamController(), authMiddleware, permissionMiddleware));
 app.use('/api/admin', createAdminServiceTeamContactRoutes(new AdminServiceTeamContactController(), authMiddleware, permissionMiddleware));
@@ -939,7 +961,8 @@ const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, 
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
 const messagingRetentionService = new MessagingRetentionService(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool), new ItineraryDailyRunHealthService(dbPool));
+const talentumAlarmNotifier = new TalentumWebhookAlarmNotifier({ pool: dbPool });
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool), new ItineraryDailyRunHealthService(dbPool), new TalentumWebhookHealthService(dbPool), talentumAlarmNotifier);
 app.use('/api/internal', systemContextMiddleware('job:internal'), createInternalRoutes(internalController));
 app.use(
   '/api/internal',
@@ -961,6 +984,34 @@ app.use(
   systemContextMiddleware('job:itinerary-daily'),
   internalAuthMiddleware,
   createItineraryDailyInternalRoutes(new ItineraryDailyInternalController()),
+);
+
+// emenda 077 §5 (F6): alerta de presença à coordenação (turno sem saída 4 h depois do fim; entrada recusada sem entrada aceita). Cloud Scheduler a cada 15 min.
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:presence-alerts'),
+  internalAuthMiddleware,
+  createPresenceAlertsInternalRoutes(new PresenceAlertsInternalController()),
+);
+
+// spec 095 T-095-31: processador da inbox do Talentum (push do Pub/Sub, só com o inboxId) + redrive manual. Mesmo guard dos jobs internos.
+const talentumInboxProcessor = new ProcessTalentumInboxUseCase(
+  dbPool,
+  new TalentumInboxRepository(),
+  new ProcessTalentumPrescreening(new TalentumPrescreeningRepository(), new WorkerRepository(), new JobPostingLookup(dbPool), dbPool, pubsubClient, talentumAlarmNotifier),
+  {
+    // A busca no Talentum (prefetch) roda FORA da transação do processador; `execute` só grava no client dela (T-095-30).
+    prefetch: (data) => new CreateJobPostingFromTalentumUseCase(dbPool, talentumPrescreeningIdResolver).prefetch(data),
+    execute: (data, environment, client, prefetched) =>
+      new CreateJobPostingFromTalentumUseCase(client ? txBoundPool(client) : dbPool, talentumPrescreeningIdResolver)
+        .execute(data, environment, prefetched as CreateJobPostingFromTalentumPrefetch | undefined),
+  },
+);
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:talentum-inbox'),
+  internalAuthMiddleware,
+  createTalentumInboxInternalRoutes(new TalentumInboxInternalController(talentumInboxProcessor, dbPool)),
 );
 
 // spec 049 F4: teste diário do vínculo do Tactiq + aviso no sino por transição + alarme 48 h (Cloud Scheduler, 1×/dia).

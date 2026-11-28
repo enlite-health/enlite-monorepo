@@ -14,6 +14,7 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { envelope, type ResponseBlock } from '../fixtures/talentumPayload';
+import { postTalentumDrainAndRead, TALENTUM_WEBHOOK } from './helpers/talentumWebhook';
 
 type AnalyzedResponseBlock = ResponseBlock & {
   score: number;
@@ -23,7 +24,7 @@ type AnalyzedResponseBlock = ResponseBlock & {
 const DATABASE_URL =
   process.env.DATABASE_URL ||
   'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
-const ENDPOINT = '/api/webhooks/talentum/prescreening';
+const ENDPOINT = TALENTUM_WEBHOOK;
 
 const PROF = {
   P8: 'edge-8-prof', P9: 'edge-9-prof', P10: 'edge-10-prof',
@@ -51,6 +52,9 @@ const ALL_EMAILS  = Object.values(EMAIL);
 describe('Talentum webhook — edge cases e side effects', () => {
   let api: ReturnType<typeof createApiClient>;
   let pool: Pool;
+
+  /** POST + drain da inbox; `data` é o espelho lido do banco (o ack é só `{ received: true }`, spec 095). */
+  const postWh = (payload: unknown) => postTalentumDrainAndRead(api, pool, payload, ENDPOINT);
 
   const wid: Record<string, string> = {};
   const jid: Record<string, string> = {};
@@ -134,7 +138,7 @@ describe('Talentum webhook — edge cases e side effects', () => {
   // ─────────────────────────────────────────────────────────────────
 
   it('[#8] ANALYZED+NOT_QUALIFIED: encuadre.resultado=RECHAZADO', async () => {
-    const res = await api.post(ENDPOINT, envelope({
+    const res = await postWh(envelope({
       subtype: 'ANALYZED',
       prescreening: { id: PSC.P8, name: JOB.P8 },
       profile: { id: PROF.P8, email: EMAIL.P8, phoneNumber: '+5491166660001', cuil: '20-66660001-1',
@@ -165,8 +169,8 @@ describe('Talentum webhook — edge cases e side effects', () => {
       profile: { id: PROF.P9, email: EMAIL.P9, phoneNumber: '+5491122220001', cuil: '20-22220001-1' },
     });
 
-    expect((await api.post(ENDPOINT, p)).status).toBe(200);
-    expect((await api.post(ENDPOINT, p)).status).toBe(200);
+    expect((await postWh(p)).status).toBe(200);
+    expect((await postWh(p)).status).toBe(200);
 
     const { rows: pscs } = await pool.query(
       `SELECT id FROM talentum_prescreenings WHERE talentum_prescreening_id=$1`,
@@ -195,7 +199,7 @@ describe('Talentum webhook — edge cases e side effects', () => {
     );
     expect(pre).toHaveLength(0);
 
-    const res = await api.post(ENDPOINT, envelope({
+    const res = await postWh(envelope({
       subtype: 'INITIATED',
       prescreening: { id: PSC.P10, name: 'CASO INEXISTENTE AUTO999 Edge 10' },
       profile: { id: PROF.P10, email: EMAIL.P10, phoneNumber: '+5491111110001', cuil: '20-11110001-1' },
@@ -225,7 +229,7 @@ describe('Talentum webhook — edge cases e side effects', () => {
   // ─────────────────────────────────────────────────────────────────
 
   it('[#11] prescreening name órfã: jobPostingId=null, WJA não criada', async () => {
-    const res = await api.post(ENDPOINT, envelope({
+    const res = await postWh(envelope({
       subtype: 'INITIATED',
       prescreening: { id: PSC.P11, name: JOB.P11_ORPHAN },
       profile: { id: PROF.P11, email: EMAIL.P11, phoneNumber: '+5491133330001', cuil: '20-33330001-1' },
@@ -263,7 +267,7 @@ describe('Talentum webhook — edge cases e side effects', () => {
     );
     expect(pre).toHaveLength(0);
 
-    const res = await api.post(ENDPOINT, envelope({
+    const res = await postWh(envelope({
       subtype: 'ANALYZED',
       prescreening: { id: PSC.P12, name: JOB.P12 },
       profile: { id: PROF.P12, email: EMAIL.P12, phoneNumber: '+5491177710001', cuil: '20-77710001-1' },
@@ -301,7 +305,7 @@ describe('Talentum webhook — edge cases e side effects', () => {
       [wid.P13, jid.P13],
     );
 
-    const res = await api.post(ENDPOINT, envelope({
+    const res = await postWh(envelope({
       subtype: 'ANALYZED',
       prescreening: { id: PSC.P13, name: JOB.P13 },
       profile: { id: PROF.P13, email: EMAIL.P13, phoneNumber: '+5491188880013', cuil: '20-88880013-1',

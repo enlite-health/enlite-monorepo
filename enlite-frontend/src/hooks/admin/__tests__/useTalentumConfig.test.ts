@@ -33,6 +33,7 @@ const MOCK_VACANCY = {
   patient_first_name: 'Ana',
   patient_last_name: 'García',
   status: 'PENDING_ACTIVATION',
+  lifecycle: null,
   talentum_published_at: null,
   closed_at: null,
 };
@@ -81,7 +82,7 @@ describe('useTalentumConfig', () => {
       vacancyNumber: 2,
       patientFirstName: 'Ana',
       patientLastName: 'García',
-      status: 'PENDING_ACTIVATION',
+      lifecycle: null,
     });
     expect(mockGetVacancy).toHaveBeenCalledWith(VACANCY_ID);
   });

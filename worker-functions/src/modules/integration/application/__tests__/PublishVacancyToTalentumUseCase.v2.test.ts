@@ -74,7 +74,7 @@ describe('PublishVacancyToTalentumUseCase com o cliente v2 real (stub de fetch)'
 
   it('grava o link WEB do publicId em talentum_whatsapp_url (nunca wa.me) e deixa o projeto IN_PROGRESS', async () => {
     setupQueries('EN 123#4');
-    const useCase = new PublishVacancyToTalentumUseCase(jest.fn().mockResolvedValue({}));
+    const useCase = new PublishVacancyToTalentumUseCase();
 
     const result = await useCase.publish({ jobPostingId: JP_ID });
 
@@ -93,7 +93,7 @@ describe('PublishVacancyToTalentumUseCase com o cliente v2 real (stub de fetch)'
     setupQueries('EN 123#4');
     stub.omitPrescreeningId = true;
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const useCase = new PublishVacancyToTalentumUseCase(jest.fn().mockResolvedValue({}));
+    const useCase = new PublishVacancyToTalentumUseCase();
 
     const result = await useCase.publish({ jobPostingId: JP_ID });
 
@@ -115,7 +115,7 @@ describe('PublishVacancyToTalentumUseCase com o cliente v2 real (stub de fetch)'
     });
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    const result = await new PublishVacancyToTalentumUseCase(jest.fn().mockResolvedValue({})).publish({ jobPostingId: JP_ID });
+    const result = await new PublishVacancyToTalentumUseCase().publish({ jobPostingId: JP_ID });
 
     expect(result.projectId).toBeTruthy();
     // colide → mantém o valor anterior da vaga (COALESCE), igual ao sync; nunca sobrescreve com NULL
@@ -126,7 +126,7 @@ describe('PublishVacancyToTalentumUseCase com o cliente v2 real (stub de fetch)'
 
   it('a FAQ do banco não é lida nem enviada à Talentum', async () => {
     setupQueries('EN 123#4');
-    const useCase = new PublishVacancyToTalentumUseCase(jest.fn().mockResolvedValue({}));
+    const useCase = new PublishVacancyToTalentumUseCase();
 
     await useCase.publish({ jobPostingId: JP_ID });
 
@@ -137,7 +137,7 @@ describe('PublishVacancyToTalentumUseCase com o cliente v2 real (stub de fetch)'
   it('título > 50 caracteres: o publish funciona (nome cortado em 50), não vira 502', async () => {
     const longTitle = 'EN 123#4 - Acompañante terapéutico para paciente con TEA nivel 2 en Recoleta';
     setupQueries(longTitle);
-    const useCase = new PublishVacancyToTalentumUseCase(jest.fn().mockResolvedValue({}));
+    const useCase = new PublishVacancyToTalentumUseCase();
 
     const result = await useCase.publish({ jobPostingId: JP_ID });
 
@@ -153,7 +153,7 @@ describe('PublishVacancyToTalentumUseCase com o cliente v2 real (stub de fetch)'
     it('publicar e despublicar COM actor gravam DRAFT_CHANGED (false e true), com e sem traceId', async () => {
       const audit = jest.spyOn(JobPostingAuditRepository.prototype, 'logEventSafe').mockResolvedValue(undefined);
       setupQueries('EN 123#4');
-      const useCase = new PublishVacancyToTalentumUseCase(jest.fn().mockResolvedValue({}));
+      const useCase = new PublishVacancyToTalentumUseCase();
 
       await useCase.publish({ jobPostingId: JP_ID }, ACTOR);
       const projectId = [...stub.projects.keys()][0];
@@ -170,16 +170,9 @@ describe('PublishVacancyToTalentumUseCase com o cliente v2 real (stub de fetch)'
       const audit = jest.spyOn(JobPostingAuditRepository.prototype, 'logEventSafe').mockResolvedValue(undefined);
       setupQueries('EN 123#4');
 
-      await new PublishVacancyToTalentumUseCase(jest.fn().mockResolvedValue({})).publish({ jobPostingId: JP_ID }, { ...ACTOR, traceId: undefined });
+      await new PublishVacancyToTalentumUseCase().publish({ jobPostingId: JP_ID }, { ...ACTOR, traceId: undefined });
 
       expect(audit.mock.calls[0][1]).toMatchObject({ traceId: null });
-    });
-
-    it('gancho que rejeita com valor que não é Error: o publish AINDA resolve (2ª trava)', async () => {
-      setupQueries('EN 123#4');
-      const result = await new PublishVacancyToTalentumUseCase(jest.fn().mockRejectedValue('texto cru')).publish({ jobPostingId: JP_ID });
-
-      expect(result.projectId).toBe([...stub.projects.keys()][0]);
     });
   });
 });

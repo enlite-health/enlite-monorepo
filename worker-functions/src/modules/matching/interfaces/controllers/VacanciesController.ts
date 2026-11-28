@@ -5,6 +5,9 @@ import {
   buildListVacanciesQuery,
   loadStageCounts,
   loadVacancyActivity,
+  PatientStatusFilterForbiddenError,
+  VacancySemaphoreFilterError,
+  VacancyLifecycleFilterError,
   VacancyListRow,
 } from './vacancyListHelpers';
 import { buildVacancyListItem, parseVacancySort, sortVacancyItems } from './vacancyListSort';
@@ -18,7 +21,9 @@ import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { sameRealmAsVacancySql, excludeTestVacancySql } from '@shared/database/testRealmSql';
 import { resolveCountriesOrRespond } from '@modules/identity';
 import { cellsOfRequest, projectWorkerFields, ProjecaoSemDecryptorError } from '@modules/identity/permissions';
-import { canSearchVacanciesByPatientName, projectPatientInVacancy } from '../../application/patientInVacancyProjection';
+import { canReadPatientStatus, canSearchVacanciesByPatientName, projectPatientInVacancy } from '../../application/patientInVacancyProjection';
+import { cicloDeVidaSql } from '../../domain/vacancyLifecycle';
+import { vagaPublicavelSql } from '../../domain/vacancyPublication';
 import { loadVacancyPatientDiagnoses } from '../../application/vacancyPatientDiagnoses';
 import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
 import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
@@ -86,7 +91,7 @@ export class VacanciesController {
     if (!countries) return;
     try {
       const {
-        search, status, include_baja, talentum_manual,
+        search, status, lifecycle, patient_status: patientStatus, include_baja, talentum_manual, semaphore,
         worker_type, state, city, required_sex,
         days, time_from, time_to,
         limit = '20', offset = '0',
@@ -97,9 +102,10 @@ export class VacanciesController {
       const cellsDaLista = cellsOfRequest(req);
       const { baseQuery, params, paramIndex } = buildListVacanciesQuery({
         countries,
-        search, status,
+        search, status, lifecycle, patientStatus,
         includeBaja: include_baja,
         talentumManual: talentum_manual,
+        semaphore,
         workerType: worker_type,
         state,
         city,
@@ -109,7 +115,7 @@ export class VacanciesController {
         timeTo: time_to,
         limit: limit as string,
         offset: offset as string,
-      }, { searchByPatientName: canSearchVacanciesByPatientName(cellsDaLista) });
+      }, { searchByPatientName: canSearchVacanciesByPatientName(cellsDaLista), canFilterByPatientStatus: canReadPatientStatus(cellsDaLista) });
 
       const countQuery = `SELECT COUNT(*) as total FROM (${baseQuery}) as count_query`;
       const countResult = await this.db.query(countQuery, params);
@@ -152,6 +158,18 @@ export class VacanciesController {
         res.status(400).json({ success: false, error: error.message });
         return;
       }
+      if (error instanceof VacancySemaphoreFilterError) {
+        res.status(400).json({ success: false, code: error.code, error: error.messages['pt-BR'], messages: error.messages });
+        return;
+      }
+      if (error instanceof VacancyLifecycleFilterError) {
+        res.status(400).json({ success: false, code: error.code, error: error.messages['pt-BR'], messages: error.messages });
+        return;
+      }
+      if (error instanceof PatientStatusFilterForbiddenError) {
+        res.status(403).json({ success: false, error: 'Forbidden', details: { field: error.field, cell: error.cell } });
+        return;
+      }
       const msg = error instanceof Error ? error.message : String(error);
       reportError(
         error instanceof Error ? error : new Error(msg),
@@ -165,17 +183,20 @@ export class VacanciesController {
     const countries = await resolveCountriesOrRespond(this.db, res, undefined, 'VacanciesController:getVacanciesStats');
     if (!countries) return;
     try {
+      // P7 (semaforo-da-vaga F4): "aberta" = publicável, pelo dono (`vacancyPublication.ts`), como o feed e o painel de gestão.
+      // tempo_medio_fechamento: semântica legada, fora do escopo (LISTA) — segue `status NOT IN (abertas)` como em origin/main.
+      const publicavel = vagaPublicavelSql('jp', 'p');
       const result = await this.db.query(`
         SELECT
           COUNT(*) FILTER (
-            WHERE search_start_date IS NOT NULL
-              AND EXTRACT(DAY FROM NOW() - search_start_date) > 7
-              AND status IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')
+            WHERE jp.search_start_date IS NOT NULL
+              AND EXTRACT(DAY FROM NOW() - jp.search_start_date) > 7
+              AND ${publicavel}
           ) as mais_7_dias,
           COUNT(*) FILTER (
-            WHERE search_start_date IS NOT NULL
-              AND EXTRACT(DAY FROM NOW() - search_start_date) > 24
-              AND status IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')
+            WHERE jp.search_start_date IS NOT NULL
+              AND EXTRACT(DAY FROM NOW() - jp.search_start_date) > 24
+              AND ${publicavel}
           ) as mais_24_dias,
           COUNT(DISTINCT jp.id) FILTER (
             WHERE EXISTS (
@@ -183,18 +204,19 @@ export class VacanciesController {
             )
           ) as em_selecao,
           COUNT(*) FILTER (
-            WHERE status IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')
+            WHERE ${publicavel}
           ) as total_vacantes,
           AVG(
             CASE
-              WHEN search_start_date IS NOT NULL
-                AND status NOT IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')
-              THEN EXTRACT(EPOCH FROM (updated_at - search_start_date)) / 3600
+              WHEN jp.search_start_date IS NOT NULL
+                AND jp.status NOT IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE')
+              THEN EXTRACT(EPOCH FROM (jp.updated_at - jp.search_start_date)) / 3600
               ELSE NULL
             END
           ) as tempo_medio_fechamento
         FROM job_postings jp
-        WHERE case_number IS NOT NULL AND deleted_at IS NULL AND ${excludeTestVacancySql('jp')}
+        LEFT JOIN patients p ON p.id = jp.patient_id
+        WHERE jp.case_number IS NOT NULL AND jp.deleted_at IS NULL AND ${excludeTestVacancySql('jp')}
       AND jp.country = ANY($1::bpchar[])`, [countries]);
 
       const stats = result.rows[0];
@@ -248,6 +270,10 @@ export class VacanciesController {
           jp.closes_at as closed_at,
           p.first_name as patient_first_name,
           p.last_name as patient_last_name,
+          -- estado-automatico-do-paciente F2 (D3/E6): estado do paciente por JOIN, na hora (nunca coluna cópia); projetado
+          -- sob o container patient. O ciclo de vida sai da tabela do dono, em SQL gerado dela.
+          p.status as patient_status,
+          ${cicloDeVidaSql('jp')} as lifecycle,
           COALESCE(pa.neighborhood, p.zone_neighborhood) as patient_zone,
           p.dependency_level as dependency_level,
           -- ATENCAO: a coluna clinica livre de patients NAO entra neste SELECT

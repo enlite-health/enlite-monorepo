@@ -28,7 +28,7 @@ describe('revertAutoRejectionOnPositiveVerdict', () => {
     expect(w).toHaveLength(3);
     expect(w[0].sql).toContain('UPDATE worker_job_applications');
     expect(w[0].params).toEqual(['w', 'j', stage]);
-    expect(w[1].sql).toContain("rejection_reason_category = 'TALENTUM_NOT_QUALIFIED'");
+    expect(w[1].sql).toContain("rejection_reason_category IN ('TALENTUM_NOT_QUALIFIED', 'TALENTUM_EXPIRED')");
     expect(w[2].sql).toContain('funnel_stage.rejection_reverted');
   });
 
@@ -70,5 +70,12 @@ describe('revertAutoRejectionOnPositiveVerdict', () => {
     const db = fakeDb({ new_value: 'REJECTED', changed_by: null }, true);
     expect(await revertAutoRejectionOnPositiveVerdict(db, 'w', 'j', stage, prev)).toBe(false);
     expect(db.query).not.toHaveBeenCalled();
+  });
+
+  it("a prova do evento aceita a rejeição automática por EXPIRAÇÃO: source IN ('auto_not_qualified', 'auto_expired') (decisão 8)", async () => {
+    const db = fakeDb({ new_value: 'REJECTED', changed_by: null }, true);
+    await revertAutoRejectionOnPositiveVerdict(db, 'w', 'j', 'QUALIFIED', 'REJECTED', 'p');
+    const ev = db.calls.find((c) => c.sql.includes("payload->>'source'"));
+    expect(ev?.sql).toContain("IN ('auto_not_qualified', 'auto_expired')");
   });
 });

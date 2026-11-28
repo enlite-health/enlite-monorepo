@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { List, LayoutGrid } from 'lucide-react';
@@ -7,10 +7,10 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
-import { useToast } from '@presentation/hooks/useToast';
 import { usePatientKanban } from '@hooks/admin/usePatientKanban';
 import { getCountryOptions } from '@presentation/pages/admin/patientsData';
-import { friendlyStatusMessage } from '@presentation/utils/patientStatusMessages';
+import { getSemaphoreOptions } from '@presentation/pages/admin/vacanciesData';
+import { filterGroupsByWorstSemaphore } from '@presentation/pages/admin/patientKanbanSemaphoreFilter';
 import { PatientKanbanBoard } from '@presentation/components/features/admin/PatientDetail/kanban/PatientKanbanBoard';
 import { Combobox } from '@presentation/components/atoms/Combobox';
 
@@ -18,10 +18,17 @@ import { Combobox } from '@presentation/components/atoms/Combobox';
 export function PatientKanbanPage(): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const showToast = useToast();
   const [country, setCountry] = useState('');
-  const { groups, isLoading, error, moveStatus, servicesStatus } = usePatientKanban(country);
+  const [semaphore, setSemaphore] = useState<string[]>([]);
+  const { groups, isLoading, error, servicesStatus } = usePatientKanban(country);
   const countryOptions = getCountryOptions(t);
+  const semaphoreOptions = getSemaphoreOptions(t);
+  // O filtro por cor só existe com o agregado de serviços carregado (`worstSemaphore` vem dele): em 403/erro some e não filtra.
+  const semaphoreFilterOn = servicesStatus === 'ok';
+  const visibleGroups = useMemo(
+    () => (semaphoreFilterOn ? filterGroupsByWorstSemaphore(groups, semaphore) : groups),
+    [groups, semaphore, semaphoreFilterOn],
+  );
 
   return (
     <PageContainer>
@@ -29,11 +36,23 @@ export function PatientKanbanPage(): JSX.Element {
         <Heading level={1} weight="semibold" color="primary">
           {t('admin.patients.kanban.title')}
         </Heading>
-        {/* Spec 014 US-D5: nada indicava que arrastar é a única forma de mudar o estado. */}
-        <Text size="sm" color="muted" className="basis-full sm:basis-auto" data-testid="kanban-drag-hint">
-          {t('admin.patients.kanban.dragHint')}
+        {/* F5 (estado-automatico-do-paciente): o board é só de leitura — o estado muda pelo fluxo automático e pelas ações da ficha. */}
+        <Text size="sm" color="muted" className="basis-full sm:basis-auto" data-testid="kanban-readonly-hint">
+          {t('admin.patients.kanban.readonlyHint')}
         </Text>
         <div className="flex items-center gap-2" data-testid="patients-view-toggle">
+          {semaphoreFilterOn && (
+            <div className="w-[210px]" data-testid="patient-semaphore-filter" aria-label={t('admin.semaphore.filterLabel')}>
+              <Combobox
+                multiple
+                inputSize="compact"
+                options={semaphoreOptions}
+                value={semaphore}
+                onChange={setSemaphore}
+                placeholder={t('admin.semaphore.filterLabel')}
+              />
+            </div>
+          )}
           {/* 210px: cabe "Todos los países" sem cortar (ver PatientFilters) */}
           <div className="w-[210px]" data-testid="patient-country-filter">
             <Combobox
@@ -82,23 +101,7 @@ export function PatientKanbanPage(): JSX.Element {
               {t('admin.patients.kanban.subcard.loadError')}
             </Text>
           )}
-          <PatientKanbanBoard
-            groups={groups}
-            onMove={async (patientId, target, opts) => {
-              const err = await moveStatus(patientId, target, opts);
-              if (err) {
-                // Spec 014 (US-D5, lex D5.1): `err.code` é um CÓDIGO de enum quando o backend manda
-                // um (PatientApiError.code) — traduz com i18n; nunca eco de campo do paciente, nunca
-                // console.* com o corpo da resposta. Spec 051 (§6.4): as recusas da troca de estado
-                // saem na MESMA frase amigável da ficha (sem código técnico); o resto cai no mapa por
-                // código de antes e, por fim, no genérico.
-                const codeMessage = t(`admin.patients.kanban.moveErrorCodes.${err.code}`, { defaultValue: '' });
-                const mensagem = friendlyStatusMessage(t, err) || codeMessage || t('admin.patients.kanban.moveError');
-                showToast(mensagem, 'error');
-              }
-              return err;
-            }}
-          />
+          <PatientKanbanBoard groups={visibleGroups} />
         </>
       )}
     </PageContainer>

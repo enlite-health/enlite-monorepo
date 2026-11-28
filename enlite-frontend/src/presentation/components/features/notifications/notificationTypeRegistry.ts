@@ -13,10 +13,11 @@
  * `patientDisplayName` nulos) — texto neutro com o nome do ator, deep-link igual ao padrão
  * (navega se houver `patientId`, D-08).
  */
-import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkReason, ImportBlockedPayload, ItineraryUncoveredShiftsItem, NotificationTypeCode, PedidoIaAplicarPayload } from '@infrastructure/http/AdminNotificationApiService';
+import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkPayload, AdmissionTactiqLinkReason, ImportBlockedPayload, ItineraryUncoveredShiftsItem, NotificationTypeCode, PedidoIaAplicarPayload, PresenceAlertPayload, TalentumWebhookAlarmPayload } from '@infrastructure/http/AdminNotificationApiService';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { formatMessageDateTime } from '@presentation/components/features/admin/PatientDetail/conversation/messageDateFormat';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 export type Translate = (key: string, opts?: Record<string, unknown>) => string;
 
@@ -92,7 +93,34 @@ function patientFileDeepLink(n: AdminNotification): NotificationDeepLink | null 
 /** spec 049 (§3.0.1): o motivo decide a frase; payload ausente/estranho cai na frase de "sem vínculo". */
 function tactiqReason(n: AdminNotification): AdmissionTactiqLinkReason {
   const reason = n.payload && 'reason' in n.payload ? n.payload.reason : null;
-  return reason === 'wrong_account' || reason === 'broken' ? reason : 'missing';
+  return reason === 'wrong_account' || reason === 'broken' || reason === 'seat_missing' || reason === 'seat_pending' || reason === 'seat_ready'
+    ? reason
+    : 'missing';
+}
+
+/**
+ * F3 (D11/D14): o texto do aviso do vínculo. `seat_missing` e `broken` do Master escolhem a chave por `audience`/`adminNotified`/
+ * `autoReactivates`; nenhum texto de assento manda revincular. Payload sem os campos novos = comportamento de antes.
+ */
+function tactiqText(n: AdminNotification, t: Translate): string {
+  const base = 'admin.notifications.tactiq';
+  const reason = tactiqReason(n);
+  const p = n.payload && 'reason' in n.payload && !('stage' in n.payload) ? (n.payload as AdmissionTactiqLinkPayload) : null;
+  const isMaster = p?.audience === 'master';
+  const host = (): string => p?.hostName ?? t('admin.notifications.importBlocked.hostFallbackStart');
+  if (reason === 'seat_missing') {
+    if (isMaster) {
+      return t(`${base}.masterSeat`, { host: host() }) + t(`${base}.${p?.autoReactivates === false ? 'masterSeatWait' : 'masterSeatAuto'}`, { host: host() });
+    }
+    if (p?.adminNotified !== true) return t(`${base}.seatAskAdmin`);
+    return t(`${base}.${p.autoReactivates === false ? 'seatWait' : 'seatAuto'}`);
+  }
+  // F5 (D16): `seat_pending` só existe para o Master e `seat_ready` só para o host; combinação estranha cai em "missing", nunca em texto trocado.
+  if (reason === 'seat_pending' && isMaster) return t(`${base}.masterSeatPending`, { host: host() });
+  if (reason === 'seat_ready' && !isMaster) return t(`${base}.${p?.firstLink === false ? 'seatReadyAgain' : 'seatReadyFirst'}`);
+  if (reason === 'seat_pending' || reason === 'seat_ready') return t(`${base}.missing`);
+  if (reason === 'broken' && isMaster) return t(`${base}.masterBroken`, { host: host() });
+  return t(`${base}.${reason}`);
 }
 
 /** spec 050 F15: o estado novo decide a frase; payload ausente/estranho cai no texto de "não está ativa" (nunca no de "instalada"). */
@@ -156,7 +184,7 @@ function importBlockedPayload(n: AdminNotification): Pick<ImportBlockedPayload, 
   return {
     stage,
     kind: p.kind === 'enquadre' ? 'enquadre' : 'admission',
-    reason: p.reason === 'wrong_account' ? 'wrong_account' : 'no_link',
+    reason: p.reason === 'wrong_account' || p.reason === 'not_recorded' ? p.reason : 'no_link',
     audience: stage === 'will_be_lost' || p.audience === 'supervisor' ? 'supervisor' : 'host',
     meetingAt: typeof p.meetingAt === 'string' ? p.meetingAt : '',
     deadlineAt: typeof p.deadlineAt === 'string' ? p.deadlineAt : '',
@@ -179,8 +207,10 @@ function importBlockedText(n: AdminNotification, t: Translate, part: 'title' | '
   const host = p.hostName ?? t(`${base}.hostFallback`);
   // `hostStart`: o mesmo nome, mas com maiúscula quando abre frase (sem nome: "A pessoa responsável").
   const hostStart = p.hostName ?? t(`${base}.hostFallbackStart`);
-  const motivo = t(`${base}.reason.${p.audience}.${p.reason}`, { host });
-  const key = p.stage === 'will_be_lost' ? 'willBeLost' : p.stage;
+  // `not_recorded` (reunião sem gravação, host, `expired`) tem título e corpo PRÓPRIOS: não há "motivo" nem prazo a cumprir.
+  const notRecorded = p.reason === 'not_recorded' && p.stage === 'expired' && p.audience === 'host';
+  const motivo = notRecorded ? '' : t(`${base}.reason.${p.audience}.${p.reason}`, { host });
+  const key = notRecorded ? 'notRecorded' : p.stage === 'will_be_lost' ? 'willBeLost' : p.stage;
   return t(`${base}.${key}.${part}`, {
     host,
     hostStart,
@@ -190,6 +220,51 @@ function importBlockedText(n: AdminNotification, t: Translate, part: 'title' | '
     prazo: importBlockedMoment(p.deadlineAt, t),
   });
 }
+
+const TALENTUM_ALARMS = ['inbox_falha', 'inbox_pendente', 'veredito_ausente', 'silencio', 'CONFLITO_HUMANO'] as const;
+
+/** spec 095 §3.5: alarme fora do conjunto, quantidade inválida ou payload ausente = rótulo genérico, nunca crash. */
+function talentumWebhookParts(n: AdminNotification, t: Translate): { quantidade: number; alarme: string } {
+  const p = (n.payload ?? {}) as Partial<TalentumWebhookAlarmPayload>;
+  const known = TALENTUM_ALARMS.find((a) => a === p.alarme);
+  return {
+    quantidade: typeof p.quantidade === 'number' && Number.isInteger(p.quantidade) && p.quantidade >= 1 ? p.quantidade : 1,
+    alarme: known ? t(`admin.notifications.talentumWebhookAlarm.${known}`) : t('admin.notifications.talentumWebhookAlarmUnknown'),
+  };
+}
+
+/** `silencio` é ausência de evento: não tem quantidade, o texto não a mostra. */
+function isTalentumSilencio(n: AdminNotification): boolean {
+  return (n.payload as Partial<TalentumWebhookAlarmPayload> | null)?.alarme === 'silencio';
+}
+
+/** Emenda 077 §6: os 2 avisos de presença levam à fila "Revisión de presencia" (sem paciente, sem `focusRequest`). */
+export const PRESENCE_REVIEW_PATH = '/admin/presencia/revision';
+
+/** `YYYY-MM-DD` -> `DD/MM/YYYY`; payload ausente/estranho = null (o texto cai na variante sem data, nunca "undefined"). */
+function presenceDate(n: AdminNotification): string | null {
+  const d = (n.payload as Partial<PresenceAlertPayload> | null | undefined)?.on_date;
+  return typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d.split('-').reverse().join('/') : null;
+}
+
+/** Instante ISO -> `HH:MM` no fuso do país (D664, `formatInstant`: Buenos Aires, 24 h), nunca no do navegador; ausente/inválido = null (o texto cai na variante sem hora). */
+function presenceTime(n: AdminNotification, field: 'start_time' | 'end_time'): string | null {
+  const v = (n.payload as Partial<PresenceAlertPayload> | null | undefined)?.[field];
+  return typeof v === 'string' ? formatInstant(v, { hour: '2-digit', minute: '2-digit' }) : null;
+}
+
+/** `presenceOpen4h` cita a hora do FIM previsto; `checkInRefusedNoEntry`, a do INÍCIO (§5.5). */
+const presenceHandler = (key: 'presenceOpen4h' | 'checkInRefusedNoEntry'): NotificationTypeHandler => ({
+  buildText: (n, t) => {
+    const fecha = presenceDate(n);
+    if (!fecha) return t(`admin.notifications.${key}NoDate`);
+    const hora = presenceTime(n, key === 'presenceOpen4h' ? 'end_time' : 'start_time');
+    return hora ? t(`admin.notifications.${key}WithTime`, { fecha, hora }) : t(`admin.notifications.${key}`, { fecha });
+  },
+  getDeepLink: () => ({ path: PRESENCE_REVIEW_PATH }),
+  actorLabel: (_n, t) => t('admin.notifications.presenceActor'),
+  contextLine: (_n, t) => t('admin.notifications.presenceContext'),
+});
 
 const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   CONVERSATION_MENTIONED: {
@@ -208,11 +283,11 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
     detailLine: (n, t) => t('admin.notifications.ptContactsPendingFields', { fields: ptFieldsLabel(n, t) }),
   },
   ADMISSION_TACTIQ_LINK_REQUIRED: {
-    buildText: (n, t) => t(`admin.notifications.tactiq.${tactiqReason(n)}`),
+    buildText: tactiqText,
     getDeepLink: () => ({ path: TACTIQ_LINK_PATH }),
     actorLabel: (_n, t) => t('admin.notifications.ptContactsPendingActor'),
     contextLine: (_n, t) => t('admin.notifications.tactiq.action'),
-    detailLine: (n, t) => t(`admin.notifications.tactiq.${tactiqReason(n)}`),
+    detailLine: tactiqText,
   },
   ADMISSION_TACTIQ_EXTENSION_CHANGED: {
     buildText: (n, t) => t(`admin.notifications.tactiqExtension.${tactiqExtensionState(n)}`),
@@ -248,6 +323,15 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   PEDIDO_IA_NOVO: pedidoIaHandler('pedidoIaNovo'),
   PEDIDO_IA_GRAVE: pedidoIaHandler('pedidoIaGrave'),
   PEDIDO_IA_APLICAR: pedidoIaAplicarHandler,
+  TALENTUM_WEBHOOK_ALARM: {
+    buildText: (n, t) => (isTalentumSilencio(n) ? t('admin.notifications.talentumWebhookTextSilencio') : t('admin.notifications.talentumWebhookText', talentumWebhookParts(n, t))),
+    getDeepLink: () => null, // sem paciente e sem tela própria do alarme
+    actorLabel: (_n, t) => t('admin.notifications.talentumWebhookActor'),
+    contextLine: (_n, t) => t('admin.notifications.talentumWebhookContext'),
+    detailLine: (n, t) => talentumWebhookParts(n, t).alarme,
+  },
+  PRESENCE_OPEN_4H: presenceHandler('presenceOpen4h'),
+  CHECK_IN_REFUSED_NO_ENTRY: presenceHandler('checkInRefusedNoEntry'),
 };
 
 const FALLBACK_HANDLER: NotificationTypeHandler = {

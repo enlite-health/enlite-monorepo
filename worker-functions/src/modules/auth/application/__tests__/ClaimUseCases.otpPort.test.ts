@@ -10,6 +10,7 @@ import { OTP_CHANNEL_UNAVAILABLE, OTP_RATE_LIMITED } from '../../ports/OtpChalle
 jest.mock('@shared/logging', () => ({
   logger: { child: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }) },
   reportError: jest.fn(),
+  safeErrorFields: (e: unknown) => ({ errorName: e instanceof Error ? e.name : typeof e, code: (e as { code?: string } | null)?.code ?? null }),
 }));
 
 const FICHA = { id: 'w-1', authUid: 'anacareimport_abc', phone: '5491155550001', isTest: false };
@@ -27,7 +28,7 @@ describe('StartClaimUseCase sobre o port', () => {
     const p = port();
     p.start.mockResolvedValue({ challengeId: 'ch-1' });
     const r = await new StartClaimUseCase(repo() as never, p as never).execute({ authUid: 'u', email: 'a@b.c', phone: '1155550001' });
-    expect(r.getValue()).toMatchObject({ candidateWorkerId: 'w-1', verificationSid: 'ch-1' });
+    expect(r.getValue()).toEqual({ phoneMasked: expect.any(String), verificationSid: 'ch-1' });
     expect(p.start).toHaveBeenCalledWith(expect.objectContaining({ workerId: 'w-1', purpose: 'claim', phoneE164: '+5491155550001' }));
   });
 

@@ -13,7 +13,7 @@ import type { InitWorkerResponse } from '@infrastructure/http/WorkerApiService';
 
 export type WorkerInitOutcome =
   | { kind: 'ok'; response: Extract<InitWorkerResponse, { status: 'ok' }> }
-  | { kind: 'claim_pending'; candidateWorkerId: string; phoneMasked: string; verificationSid: string }
+  | { kind: 'claim_pending'; phoneMasked: string; verificationSid: string }
   | { kind: 'email_not_verified' }
   | { kind: 'rate_limited' };
 
@@ -26,8 +26,8 @@ export async function runWorkerInit(call: () => Promise<InitWorkerResponse>): Pr
   try {
     const response = await call();
     if (response.status === 'ok') return { kind: 'ok', response };
-    const { candidateWorkerId, phoneMasked, verificationSid } = response;
-    return { kind: 'claim_pending', candidateWorkerId, phoneMasked, verificationSid };
+    const { phoneMasked, verificationSid } = response;
+    return { kind: 'claim_pending', phoneMasked, verificationSid };
   } catch (err) {
     if (err instanceof ApiError && err.status === 429) return { kind: 'rate_limited' };
     if (err instanceof Error && err.message === EMAIL_NOT_VERIFIED) return { kind: 'email_not_verified' };

@@ -99,16 +99,15 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'patient_service_team:update',
       // Spec 051 (F1): trocar o status do paciente por fora da FSM. Decidida no back por
       // `decidirTrocaForaDoFluxo`; a tela (PR-C) só mostra o destino que a lista do servidor trouxer.
-      'patient_status:move_to_active',
       'patient_status:move_to_alta',
       'patient_status:move_to_discharged',
       'patient_status:move_to_on_hold',
-      'patient_status:move_to_replacement',
-      'patient_status:move_to_searching',
       'patient_status:move_to_suspended',
       // Spec 048: destinatário do aviso do 12º dia (consulta por célula no job) — não controla elemento de tela.
       'patient_therapeutic_project:incomplete_alert',
       'prescreening:write',
+      // Emenda 077 §5.4 (F-g): `presence_alert:receive` decide só quem RECEBE o aviso à coordenação (resolvedor no back); sem tela, sem rota.
+      'presence_alert:receive',
       'recruitment:read',
       'recruitment:write',
       // Spec 081 (T064) — Master-only, sem tela (consumida só pela rota de atividade e pela Maria).

@@ -48,7 +48,8 @@ const MOCK_VACANCIES = [
   {
     id: 'v-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
     caseNumber: 234, caseOrdinal: 12,
-    status: 'Activo',
+    lifecycle: null,
+    patient_status: 'ACTIVE',
     statusRaw: 'ACTIVE',
     priority: 'URGENT',
     diasAberto: '05',
@@ -61,7 +62,8 @@ const MOCK_VACANCIES = [
   {
     id: 'v-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
     caseNumber: 245, caseOrdinal: 4,
-    status: 'En Espera',
+    lifecycle: null,
+    patient_status: 'ON_HOLD',
     statusRaw: 'ON_HOLD',
     priority: 'HIGH',
     diasAberto: '12',
@@ -74,7 +76,8 @@ const MOCK_VACANCIES = [
   {
     id: 'v-cccc-cccc-cccc-cccccccccccc',
     caseNumber: 257, caseOrdinal: 2,
-    status: 'Buscando AT',
+    lifecycle: 'rascunho',
+    patient_status: 'SEARCHING',
     statusRaw: 'SEARCHING',
     priority: 'NORMAL',
     diasAberto: '02',
@@ -229,55 +232,47 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
     // Removed Clientes filter
     await expect(page.getByText(/^Clientes$/)).toHaveCount(0);
 
-    // Filter bar has at least 1 combobox (Estado) — Clientes e Prioridad se foram
+    // Filter bar has at least 1 combobox (Estado del paciente) — Clientes e Prioridad se foram
     // (additional comboboxes added by advanced filters: Tipo, Provincia, Localidad, Sexo, Días)
     const selectCount = await filterBar(page).getByRole('combobox').count();
     expect(selectCount).toBeGreaterThanOrEqual(1);
 
-    // Estado fica na barra; Prioridad não (A4)
-    await expect(filterBar(page).getByText(/^Estado$/)).toBeVisible();
+    // Estado del paciente fica na barra; Ciclo de vida saiu (semaforo-da-vaga F4) e Prioridad também (A4)
+    await expect(filterBar(page).getByText(/^Estado del paciente$/)).toBeVisible();
+    await expect(filterBar(page).getByText(/^Ciclo de vida$/)).toHaveCount(0);
     await expect(filterBar(page).getByText(/^Prioridad$/)).toHaveCount(0);
   });
 
-  test('Estado filter exposes the 8 canonical job_postings.status values', async ({ page }) => {
+  test('NÃO há filtro de Ciclo de vida (semaforo-da-vaga F4): o 1º combobox é o Estado del paciente', async ({ page }) => {
     await loginAsAdmin(page);
 
     await page.goto('/admin/vacancies');
     await expect(page.getByText('234#12')).toBeVisible({ timeout: 15_000 });
 
-    // O painel só existe aberto: abre o gatilho do Estado e lê os RÓTULOS que o usuário vê (o valor não está no DOM).
-    const statusSelect = filterBar(page).getByRole('combobox').nth(0);
-    await statusSelect.click();
-    const labels = await statusSelect.locator('xpath=..').getByRole('option').allTextContents();
-    expect(labels.map((l) => l.trim()).sort()).toEqual(
-      [
-        'Activo', // ACTIVE
-        'Cerrado', // CLOSED
-        'En Espera', // ON_HOLD
-        'Esperando Activación', // PENDING_ACTIVATION
-        'Respuesta Rápida', // RAPID_RESPONSE
-        'Buscando AT', // SEARCHING
-        'Buscando Sustituto', // SEARCHING_REPLACEMENT
-        'Suspendido', // SUSPENDED
-      ].sort(),
-    );
+    await expect(page.getByTestId('vacancy-filter-lifecycle')).toHaveCount(0);
+    // O painel só existe aberto: abre o 1º gatilho e lê os RÓTULOS que o usuário vê (o valor não está no DOM).
+    const primeiro = filterBar(page).getByRole('combobox').nth(0);
+    await primeiro.click();
+    const labels = await primeiro.locator('xpath=..').getByRole('option').allTextContents();
+    expect(labels.map((l) => l.trim())).not.toContain('Abierta');
+    expect(labels.map((l) => l.trim())).not.toContain('Dada de baja');
     await page.keyboard.press('Escape');
   });
 
-  test('Status filter forwards canonical value to /api/admin/vacancies query', async ({ page }) => {
+  test('Patient-status filter forwards its value to /api/admin/vacancies query, and no lifecycle param is ever sent', async ({ page }) => {
     await loginAsAdmin(page);
 
     await page.goto('/admin/vacancies');
     await expect(page.getByText('234#12')).toBeVisible({ timeout: 15_000 });
 
-    const statusSelect = filterBar(page).getByRole('combobox').nth(0);
-
-    const reqWait = page.waitForRequest((req) =>
-      req.url().includes('/api/admin/vacancies') && req.url().includes('status=ON_HOLD'),
+    const patientSelect = filterBar(page).getByRole('combobox').nth(0);
+    const reqPatient = page.waitForRequest((req) =>
+      req.url().includes('/api/admin/vacancies') && req.url().includes('patient_status=SEARCHING'),
     );
-    await escolherNoCombo(page, statusSelect, 'En Espera'); // ON_HOLD = En Espera
-    const req = await reqWait;
-    expect(req.url()).toContain('status=ON_HOLD');
+    await escolherNoCombo(page, patientSelect, 'Búsqueda');
+    const url = (await reqPatient).url();
+    expect(url).toContain('patient_status=SEARCHING');
+    expect(url).not.toContain('lifecycle=');
   });
 
   test('matches Playwright screenshot baseline (es locale)', async ({ page }) => {

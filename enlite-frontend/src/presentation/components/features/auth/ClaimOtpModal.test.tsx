@@ -68,7 +68,6 @@ const defaultProps = {
   open: true,
   phoneMasked: '+54 11 **** 5678',
   verificationSid: 'VE_sid_123',
-  candidateWorkerId: 'cand-worker-456',
   authUid: 'auth-uid-789',
   email: 'test@example.com',
   lgpdOptIn: true, // caixa do cadastro já marcada: o modal não pede de novo
@@ -88,20 +87,20 @@ describe('ClaimOtpModal', () => {
   it('repassa lgpdOptIn ao hook do confirm (caixa marcada no cadastro) e não mostra a caixa de novo', () => {
     mockHookArgs.length = 0;
     render(<ClaimOtpModal {...defaultProps} lgpdOptIn />);
-    expect(mockHookArgs[mockHookArgs.length - 1]?.[4]).toBe(true);
+    expect(mockHookArgs[mockHookArgs.length - 1]?.[3]).toBe(true);
     expect(screen.queryByRole('checkbox')).toBeNull();
   });
 
   it('sem lgpdOptIn (login com Google) mostra a caixa e só confirma depois de marcada', () => {
     mockHookArgs.length = 0;
     render(<ClaimOtpModal {...defaultProps} lgpdOptIn={undefined} />);
-    expect(mockHookArgs[mockHookArgs.length - 1]?.[4]).toBeUndefined();
+    expect(mockHookArgs[mockHookArgs.length - 1]?.[3]).toBeUndefined();
     fireEvent.change(screen.getByTestId('otp-input'), { target: { value: '123456' } });
     const confirmBtn = screen.getByText('claim.otpModal.confirmButton').closest('button')!;
     expect(confirmBtn.disabled).toBe(true);
     fireEvent.click(screen.getByRole('checkbox'));
     expect(confirmBtn.disabled).toBe(false);
-    expect(mockHookArgs[mockHookArgs.length - 1]?.[4]).toBe(true);
+    expect(mockHookArgs[mockHookArgs.length - 1]?.[3]).toBe(true);
   });
 
   it('nao renderiza quando open=false', () => {

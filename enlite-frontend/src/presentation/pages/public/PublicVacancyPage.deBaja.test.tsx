@@ -84,9 +84,12 @@ describe('PublicVacancyPage — vaga DE_BAJA (change baja-vacante-por-servico)',
     expect(screen.queryByText('publicVacancy.postularseUnavailable')).not.toBeInTheDocument();
   });
 
-  it('mostra o badge de status DE_BAJA (VacancyStatusBadge reusado, sem componente novo)', async () => {
+  it('F4: a página pública mostra SÓ o aviso de is_disabled — nenhum selo de estado (nem "baja") e nenhum estado do paciente', async () => {
     render(<PublicVacancyPage />);
-    expect(await screen.findByText('admin.vacancyDetail.statusBadge.DE_BAJA')).toBeInTheDocument();
+    expect(await screen.findByText('publicVacancy.postularseDisabled')).toBeInTheDocument();
+    expect(screen.queryByTestId('vacancy-lifecycle-badge')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.vacancyDetail.lifecycle.baja')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('patient-status-pill')).not.toBeInTheDocument();
   });
 
   it('continua mostrando o resto da ficha (zona do paciente) — a página SERVE a vaga, não é um 404 disfarçado', async () => {

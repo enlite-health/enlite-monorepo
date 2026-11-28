@@ -6,7 +6,7 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useFeature } from '@presentation/hooks/useFeature';
 import { SCREEN_FEATURE_MAP } from './screenFeatureMap';
 import { ADMIN_USERS_PATH } from './adminHome';
-import { CalendarDays, Inbox, MapPin } from 'lucide-react';
+import { CalendarDays, ClipboardCheck, Inbox, MapPin } from 'lucide-react';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
@@ -187,6 +187,12 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       icon: <Inbox className="w-6 h-6" strokeWidth={2} />,
       label: t('admin.nav.pedidosIa', 'Pedidos de la IA'),
       href: '/admin/pedidos-ia',
+    },
+    {
+      // Emenda 077 §6: fila de revisão de presença. O item some sem `presence_exception:review` (registro de telas → `screenVisibleFor`).
+      icon: <ClipboardCheck className="w-6 h-6" strokeWidth={2} />,
+      label: t('admin.nav.presenceReview', 'Revisión de presencia'),
+      href: '/admin/presencia/revision',
     },
     {
       icon: (

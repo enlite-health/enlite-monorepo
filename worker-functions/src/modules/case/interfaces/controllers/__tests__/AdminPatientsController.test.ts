@@ -675,6 +675,35 @@ describe('AdminPatientsController.listPatientVacancies', () => {
     });
   });
 
+  describe('Cenário 8b — estado do paciente na vaga (D3/E6)', () => {
+    const comCells = (cells: string[] | null): [Request, Response] => {
+      const [req, res] = mockReqRes({ id: PATIENT_ID });
+      (req as unknown as { permissionCells: string[] | null }).permissionCells = cells;
+      return [req, res];
+    };
+
+    it('com patient:read e patientStatus presente: devolve o estado', async () => {
+      mockFetchPatientVacancies.mockResolvedValue([makeVacancy({ patientStatus: 'SEARCHING' })]);
+      const [req, res] = comCells(['patient:read']);
+      await controller.listPatientVacancies(req, res);
+      expect((res as any).json.mock.calls[0][0].data[0]).toMatchObject({ patientStatus: 'SEARCHING' });
+    });
+
+    it('com patient:read e patientStatus nulo: a chave não viaja', async () => {
+      mockFetchPatientVacancies.mockResolvedValue([makeVacancy({ patientStatus: null })]);
+      const [req, res] = comCells(['patient:read']);
+      await controller.listPatientVacancies(req, res);
+      expect((res as any).json.mock.calls[0][0].data[0]).not.toHaveProperty('patientStatus');
+    });
+
+    it('sem patient:read: patientStatus null + redacted.patient', async () => {
+      mockFetchPatientVacancies.mockResolvedValue([makeVacancy({ patientStatus: 'ACTIVE' })]);
+      const [req, res] = comCells([]);
+      await controller.listPatientVacancies(req, res);
+      expect((res as any).json.mock.calls[0][0].data[0]).toMatchObject({ patientStatus: null, redacted: { patient: true } });
+    });
+  });
+
   describe('Cenário 9 — Campos retornados', () => {
     it('deve retornar os campos canônicos de cada vaga', async () => {
       const vaga = makeVacancy({ isDraft: true, status: 'DRAFT', caseNumber: null });

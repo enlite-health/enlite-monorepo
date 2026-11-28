@@ -33,7 +33,7 @@ const empty: PatientKanbanGroups = {
 describe('largura das colunas', () => {
   it('as 8 colunas usam a largura reduzida, não os 280px do funil de vagas', () => {
     const { container, getByTestId } = render(
-      <PatientKanbanBoard groups={empty} onMove={async () => null} />,
+      <PatientKanbanBoard groups={empty} />,
     );
     const board = container.querySelector('[data-testid="patient-kanban-board"]')!;
     const cols = [...board.children];

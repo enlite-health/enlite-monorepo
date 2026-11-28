@@ -1,5 +1,3 @@
-import type { OtpConfirmContext, OtpSendContext } from '../infrastructure/TwilioVerifyService';
-
 /**
  * Port do OTP próprio (D758). Quem confirma claim/link fala com ESTE port; o domínio e a aplicação não importam
  * Twilio nem Postgres. Adapters: `PgOtpChallengeService` (código nosso, template de autenticação) e, como plano B de
@@ -10,6 +8,27 @@ import type { OtpConfirmContext, OtpSendContext } from '../infrastructure/Twilio
  */
 export type OtpPurpose = 'claim' | 'link' | 'phone_verify';
 
+/**
+ * Fatos que a guarda de OTP de teste (`IsTestOtpGuard`) precisa no momento do envio: a ficha que
+ * RECEBE o código é de teste? e o e-mail do TOKEN de quem pede? Ausente = envio normal.
+ */
+export interface OtpSendContext {
+  /** Ficha que RECEBE o código: o confirm confere de novo que é a mesma (lacre dentro do sid suprimido). */
+  workerId: string;
+  fichaIsTest: boolean;
+  tokenEmail?: string | null;
+}
+
+/**
+ * Fatos do CONFIRM de um código suprimido: as duas condições do envio são exigidas de novo, com a
+ * ficha ALVO lida do banco na hora (`fichaIsTest` é função: só é chamada se o sid for suprimido).
+ */
+export interface OtpConfirmContext {
+  workerId: string;
+  tokenEmail?: string | null;
+  fichaIsTest: () => Promise<boolean>;
+}
+
 /** Validade do código (a mesma do Verify), em minutos. Um dono só: o adapter expira com ela e quem responde ao app informa. */
 export const OTP_TTL_MINUTES = 10;
 
@@ -18,6 +37,14 @@ export const OTP_CHANNEL_UNAVAILABLE = 'OTP_CHANNEL_UNAVAILABLE';
 
 /** Limite de envio de código estourado (por telefone ou por ficha, contado no banco). Quem chama mapeia para 429 `RATE_LIMITED`. */
 export const OTP_RATE_LIMITED = 'RATE_LIMITED';
+
+/** Telefone fora dos países atendidos (só celular AR +54 e BR +55). Quem chama mapeia para 400 com `code`. */
+export const OTP_COUNTRY_NOT_SUPPORTED = 'PHONE_COUNTRY_NOT_SUPPORTED';
+
+/** Recusas de envio que o chamador traduz para o cliente (os demais erros do `start` são falha de canal). */
+export const OTP_START_REFUSALS = [OTP_RATE_LIMITED, OTP_CHANNEL_UNAVAILABLE, OTP_COUNTRY_NOT_SUPPORTED] as const;
+
+export const isOtpStartRefusal = (m: string): boolean => (OTP_START_REFUSALS as readonly string[]).includes(m);
 
 export type OtpCheckFailure = 'INVALID_OTP' | 'EXPIRED_OTP' | 'OTP_ALREADY_USED';
 
@@ -30,12 +57,16 @@ export interface OtpStartInput {
   phoneE164: string;
   /** Fatos da guarda de ficha de teste (FR-95): o envio é suprimido quando as duas condições valem. */
   ctx?: OtpSendContext;
+  /** uid do TOKEN de quem pediu o envio (não da ficha). Vai ao registro de envio como sha256; nunca a log. */
+  requesterUid: string;
 }
 
 export interface OtpCheckInput {
   /** Id devolvido pelo `start`. */
   challengeId: string;
   workerId: string;
+  /** Finalidade do desafio que está sendo conferido: código de `link` não confirma `claim`. O adapter do Verify ignora. */
+  purpose: OtpPurpose;
   /** Telefone GRAVADO na ficha, lido do banco — nunca o que o cliente manda (DP-21). */
   phoneOnRecord: string;
   code: string;

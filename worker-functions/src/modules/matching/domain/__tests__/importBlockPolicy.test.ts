@@ -8,6 +8,7 @@ import {
   noReminderFits,
   type StandingBlockDecision,
 } from '../importBlockPolicy';
+import { isHumanReason } from '../../application/importNoticeSupport';
 
 const MIN = 60_000;
 const H = 60 * MIN;
@@ -24,6 +25,14 @@ const decide = (sinceBlockMs: number, remindersSent: number, over: { blockedAt?:
     remindersSent,
     linkedSinceBlock: over.linkedSinceBlock ?? false,
   });
+
+describe('importBlockPolicy — not_recorded não é bloqueio humano', () => {
+  it('isHumanReason(not_recorded) = false; no_link/wrong_account = true', () => {
+    expect(isHumanReason('not_recorded')).toBe(false);
+    expect(isHumanReason('no_link')).toBe(true);
+    expect(isHumanReason('wrong_account')).toBe(true);
+  });
+});
 
 describe('importBlockPolicy — constantes', () => {
   it('motivos humanos = no_link e wrong_account; 24 h; no máximo 2 lembretes; expira em 72 h', () => {

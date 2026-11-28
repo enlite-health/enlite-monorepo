@@ -461,6 +461,10 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'recruitment_activity_per_person:read',
       // Spec 086 (Luz prueba): descrição em CELL_DESCRIPTION; a rota real é adminLuzPruebaRoutes (fora do fixture de 2 rotas).
       'luz_prueba:chat',
+      // Emenda 077 §5.4 (F-g): SEM rota por desenho — o consumidor é `PresenceAlertRecipients` (`cells.includes('presence_alert:receive')`), que decide quem recebe o alerta.
+      'presence_alert:receive',
+      // Emenda 077 §6: descrição em CELL_DESCRIPTION; a rota real é adminPresenceReviewRoutes (fora do fixture de 2 rotas).
+      'presence_exception:review',
       // Spec 080 (assistentes no app): 13 células com descrição em CELL_DESCRIPTION; as rotas reais vivem no
       // assistants-service (não neste fixture de 2 rotas), então saem aqui como complemento.
       'assistant_maria:chat', 'assistant_lucero:chat', 'assistant_candela:chat',
@@ -470,9 +474,6 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'knowledge_technical:read', 'knowledge_product_meetings:read',
       // Spec 051 (F1): trocar o status do paciente por FORA da FSM — uma célula por destino; o
       // consumidor é `decidirTrocaForaDoFluxo` (domínio), sem `perm.require` de rota neste PR.
-      'patient_status:move_to_searching',
-      'patient_status:move_to_active',
-      'patient_status:move_to_replacement',
       'patient_status:move_to_on_hold',
       'patient_status:move_to_suspended',
       'patient_status:move_to_alta',

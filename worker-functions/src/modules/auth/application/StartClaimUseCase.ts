@@ -1,10 +1,10 @@
 import { IWorkerRepository } from '@modules/worker/ports/IWorkerRepository';
 import { Result } from '@shared/utils/Result';
-import { logger } from '@shared/logging';
-import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
+import { logger, safeErrorFields } from '@shared/logging';
+import { classifyOtpPhone, generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { maskPhone, maskPhoneForLog } from '@shared/utils/phoneMask';
 import { isClaimableWorker } from '@modules/worker/application/isClaimableWorker';
-import { OTP_CHANNEL_UNAVAILABLE, OTP_RATE_LIMITED, OtpChallengePort } from '../ports/OtpChallengePort';
+import { OtpChallengePort, isOtpStartRefusal } from '../ports/OtpChallengePort';
 
 export interface StartClaimInput {
   authUid: string;
@@ -14,13 +14,13 @@ export interface StartClaimInput {
 
 export type StartClaimOutput =
   | { noCandidate: true }
-  | { candidateWorkerId: string; phoneMasked: string; verificationSid: string };
+  | { phoneMasked: string; verificationSid: string };
 
 /**
  * Inicia um claim de ficha importada: código OTP pelo `OtpChallengePort` (D758; o Twilio Verify é só o plano B de canal).
  *
  * Fluxo:
- *   1. Valida se o phone tem comprimento razoável (≥10 dígitos após normalização).
+ *   1. Valida o phone digitado: só celular AR (+54) e BR (+55) — outro país → PHONE_COUNTRY_NOT_SUPPORTED, lixo → INVALID_PHONE.
  *   2. Busca candidatos no banco (variantes do número).
  *   3. Se encontrou ficha importada (fake authUid), dispara o OTP
  *      para o phone DA FICHA (não o do payload — proteção anti-hijack).
@@ -46,9 +46,9 @@ export class StartClaimUseCase {
 
     log.info({ msg: 'claim_start_requested' });
 
-    const normalized = normalizePhoneAR(input.phone);
-    if (normalized.length < 10) {
-      return Result.fail<StartClaimOutput>('INVALID_PHONE');
+    const classified = classifyOtpPhone(input.phone);
+    if (!classified.ok) {
+      return Result.fail<StartClaimOutput>(classified.error);
     }
 
     const candidates = generatePhoneCandidates(input.phone);
@@ -93,6 +93,7 @@ export class StartClaimUseCase {
         workerId: candidateWorkerId,
         purpose: 'claim',
         phoneE164,
+        requesterUid: input.authUid,
         ctx: { workerId: candidateWorkerId, fichaIsTest: candidate.isTest === true, tokenEmail: input.email },
       });
 
@@ -104,26 +105,24 @@ export class StartClaimUseCase {
       });
 
       return Result.ok<StartClaimOutput>({
-        candidateWorkerId,
         phoneMasked: maskPhone(phoneE164),
         verificationSid,
       });
     } catch (err: unknown) {
-      const twilioCode = (err as { code?: number | string }).code ?? null;
-      const errorMessage = err instanceof Error ? err.message : String(err);
+      const message = err instanceof Error ? err.message : '';
 
+      // B8: a mensagem do Twilio carrega o telefone ("Invalid To +54…"): nem em log nem no erro devolvido.
       log.error({
         msg: 'claim_start_twilio_failed',
         candidateWorkerId,
-        twilioCode,
-        errorMessage,
+        ...safeErrorFields(err),
         durationMs: Date.now() - startedAt,
       });
 
-      if (errorMessage === OTP_RATE_LIMITED || errorMessage === OTP_CHANNEL_UNAVAILABLE) {
-        return Result.fail<StartClaimOutput>(errorMessage);
+      if (isOtpStartRefusal(message)) {
+        return Result.fail<StartClaimOutput>(message);
       }
-      return Result.fail<StartClaimOutput>(`TWILIO_ERROR:${errorMessage}`);
+      return Result.fail<StartClaimOutput>('OTP_START_FAILED');
     }
   }
 }

@@ -10,18 +10,41 @@ import type { Request, Response } from 'express';
 import request from 'supertest';
 import { appDeRota } from '@shared/__tests__/appDeRota';
 import { Router } from 'express';
+/** Store em memória que CONTA as chamadas por prefix (o real é o Postgres). */
+const mockStoreCalls: string[] = [];
+jest.mock('@shared/rateLimit/PgRateLimitStore', () => {
+  class MemStore {
+    private windowMs = 15 * 60 * 1000;
+    private hits = new Map<string, { n: number; reset: number }>();
+    constructor(readonly prefix: string) {}
+    init(o: { windowMs: number }) { this.windowMs = o.windowMs; }
+    async increment(key: string) {
+      mockStoreCalls.push(this.prefix);
+      const now = Date.now();
+      const cur = this.hits.get(key);
+      const e = cur && cur.reset > now ? { n: cur.n + 1, reset: cur.reset } : { n: 1, reset: now + this.windowMs };
+      this.hits.set(key, e);
+      return { totalHits: e.n, resetTime: new Date(e.reset) };
+    }
+    async decrement(key: string) { const c = this.hits.get(key); if (c) c.n = Math.max(c.n - 1, 0); }
+    async resetKey(key: string) { this.hits.delete(key); }
+  }
+  return { createPgRateLimitStore: (prefix: string) => new MemStore(prefix) };
+});
+
 import { claimIpKey, createClaimRoutes, createWorkerInitOtpRateLimit, markOtpStarted } from '../claimRoutes';
 import type { ClaimController } from '../../controllers/ClaimController';
 import type { AuthMiddleware } from '@modules/identity/interfaces/middleware/AuthMiddleware';
 
-/** Dublê do requireAuth real: sem `Authorization: Bearer` → 401; com → popula req.user. */
+/** Dublê do requireAuth real: sem `Authorization: Bearer` → 401; com → popula req.user (uid de `X-Test-Uid`; sem ele, um uid por X-Forwarded-For). */
 const authMiddleware = {
   requireAuth: () => (req: Request, res: Response, next: () => void) => {
     if (!req.headers.authorization?.startsWith('Bearer ')) {
       res.status(401).json({ success: false, error: 'Authentication required' });
       return;
     }
-    (req as Request & { user?: unknown }).user = { uid: 'uid-sintetico-1', email: 'a@exemplo.test' };
+    const uid = (req.headers['x-test-uid'] as string | undefined) ?? `uid-${req.headers['x-forwarded-for'] ?? 'sem-xff'}`;
+    (req as Request & { user?: unknown }).user = { uid, email: 'a@exemplo.test' };
     next();
   },
 } as unknown as AuthMiddleware;
@@ -58,9 +81,20 @@ describe('claimRoutes — claimIpKey', () => {
   });
 
   it('X-Forwarded-For IPv6 também é normalizado (mesmo /56 colapsa)', () => {
-    const chave1 = claimIpKey(reqComForwardedFor('2001:db8:1:1::1, 10.0.0.9'));
-    const chave2 = claimIpKey(reqComForwardedFor('2001:db8:1:1::2, 10.0.0.9'));
+    const chave1 = claimIpKey(reqComForwardedFor('10.0.0.9, 2001:db8:1:1::1'));
+    const chave2 = claimIpKey(reqComForwardedFor('10.0.0.9, 2001:db8:1:1::2'));
     expect(chave1).toBe(chave2);
+  });
+
+  it('B2: dois pedidos com 1º item diferente (forjado) e ÚLTIMO igual dão a MESMA chave', () => {
+    const chave1 = claimIpKey(reqComForwardedFor('6.6.6.6, 1.2.3.4'));
+    const chave2 = claimIpKey(reqComForwardedFor('7.7.7.7, 1.2.3.4'));
+    expect(chave1).toBe(chave2);
+    expect(chave1).toBe('1.2.3.4');
+  });
+
+  it('B2: último item diferente dá chave diferente', () => {
+    expect(claimIpKey(reqComForwardedFor('6.6.6.6, 1.2.3.4'))).not.toBe(claimIpKey(reqComForwardedFor('6.6.6.6, 1.2.3.5')));
   });
 });
 
@@ -258,3 +292,30 @@ describe('createWorkerInitOtpRateLimit — cota de OTP do init', () => {
     expect((await init(enderecos[3], true)).status).toBe(429);
   });
 });
+
+describe('createClaimRoutes — claim/start: limite por conta (uid) contado no banco', () => {
+  const controller = {
+    start: jest.fn((req: Request, res: Response) => { res.status(200).json({ m: 'start' }); }),
+    confirm: jest.fn((req: Request, res: Response) => { res.status(200).json({ m: 'confirm' }); }),
+  } as unknown as ClaimController;
+  const server = appDeRota('claimRoutesUid', '/api', () => createClaimRoutes(controller, authMiddleware));
+
+  it('4º pedido do MESMO uid em 15 min é 429 mesmo com 4 IPs diferentes, e o controller não roda', async () => {
+    mockStoreCalls.length = 0;
+    for (let i = 0; i < 3; i++) {
+      const ok = await request(server).post('/api/auth/claim/start').set(BEARER).set('X-Test-Uid', 'uid-teste-mesmo').set('X-Forwarded-For', `uid-ip-${i}`).send({});
+      expect(ok.status).toBe(200);
+    }
+    (controller.start as jest.Mock).mockClear();
+    const bloqueado = await request(server).post('/api/auth/claim/start').set(BEARER).set('X-Test-Uid', 'uid-teste-mesmo').set('X-Forwarded-For', 'uid-ip-3').send({});
+    expect(bloqueado.status).toBe(429);
+    expect(controller.start).not.toHaveBeenCalled();
+    expect(mockStoreCalls.filter((p) => p === 'claim-start-uid').length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('uid diferente não divide a cota', async () => {
+    const r = await request(server).post('/api/auth/claim/start').set(BEARER).set('X-Test-Uid', 'uid-teste-outro').set('X-Forwarded-For', 'uid-ip-outro').send({});
+    expect(r.status).toBe(200);
+  });
+});
+

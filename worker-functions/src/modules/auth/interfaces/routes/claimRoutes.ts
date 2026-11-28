@@ -3,9 +3,12 @@ import rateLimit, { ipKeyGenerator, type Options } from 'express-rate-limit';
 import { ClaimController } from '../controllers/ClaimController';
 import type { AuthMiddleware } from '@modules/identity/interfaces/middleware/AuthMiddleware';
 import { routeClass } from '@modules/identity/permissions';
+import { clientIp } from '@shared/http/clientIp';
+import { selfUid } from '@shared/http/selfUid';
+import { createPgRateLimitStore } from '@shared/rateLimit/PgRateLimitStore';
 
 /**
- * Chave por IP (com X-Forwarded-For como preferência) normalizada por
+ * Chave por IP (último item do X-Forwarded-For, o que o GFE acrescenta; o 1º é do cliente) normalizada por
  * `ipKeyGenerator`: em IPv6 cada cliente tem um /64 (às vezes /56) inteiro à
  * disposição, então chavear pelo endereço exato deixa a mesma pessoa trocar
  * de sufixo e furar o limite de OTP/confirm. Extraída (e exportada) para ser
@@ -13,11 +16,7 @@ import { routeClass } from '@modules/identity/permissions';
  * handler montado.
  */
 export function claimIpKey(req: Request): string {
-  return ipKeyGenerator(
-    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ??
-      req.ip ??
-      'unknown',
-  );
+  return ipKeyGenerator(clientIp(req));
 }
 
 /**
@@ -45,6 +44,15 @@ const OTP_START_ERROR = 'Too many OTP requests. Try again in 15 minutes.';
  *   Impede enumeração de números válidos e abuso do Twilio Verify.
  */
 const claimStartRateLimit = otpRateLimit(OTP_START_LIMIT, OTP_START_ERROR);
+
+/**
+ * Limite por CONTA (uid do token) do claim/start, DEPOIS do `requireAuth`: 3 pedidos / 15 min, contado no banco
+ * (`PgRateLimitStore`, compartilhado entre instâncias), então trocar de IP não zera a cota. Conta também o `noCandidate`
+ * (o pedido que não achou ficha): é o que limita a enumeração de telefones por conta.
+ */
+const claimUidKey = (req: Request): string => `uid:${selfUid(req) ?? claimIpKey(req)}`;
+const claimStartUidRateLimit = () =>
+  otpRateLimit(OTP_START_LIMIT, OTP_START_ERROR, { keyGenerator: claimUidKey, store: createPgRateLimitStore('claim-start-uid') });
 
 /**
  * Rate limit para claim/confirm:
@@ -83,6 +91,7 @@ export function createClaimRoutes(controller: ClaimController, authMiddleware: A
     routeClass('client-policy'),
     claimStartRateLimit,
     authMiddleware.requireAuth(),
+    claimStartUidRateLimit(),
     (req: Request, res: Response) => controller.start(req, res),
   );
 

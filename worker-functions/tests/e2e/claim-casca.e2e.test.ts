@@ -7,6 +7,7 @@
 import express from 'express';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
+import { createHash } from 'crypto';
 import { Pool } from 'pg';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -37,11 +38,18 @@ describe('claim confirm com ficha própria (D764)', () => {
   const audits = async (survivor: string, absorbed: string) =>
     (await pool.query('SELECT source, executed_by FROM worker_merge_audit WHERE survivor_id = $1 AND absorbed_id = $2', [survivor, absorbed])).rows;
 
+  // B4: o confirm não leva id de ficha; a ficha sai do desafio emitido para o MESMO uid (ledger `otp_send_events`, o que o start grava).
+  let sidSeq = 0;
   async function confirm(n: string, candidate: string, candidatePhone: string, extra: Record<string, unknown> = {}) {
+    const sid = `VE_STUB_${stamp}_${++sidSeq}`;
+    await pool.query(
+      `INSERT INTO otp_send_events (challenge_id, adapter, purpose, requester_hash, target_worker_id, suppressed) VALUES ($1, 'verify', 'claim', $2, $3, false)`,
+      [sid, createHash('sha256').update(uid(n)).digest('hex'), candidate],
+    );
     const res = await fetch(url + '/api/auth/claim/confirm', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-test-uid': uid(n), 'x-test-email': email(n), 'x-test-to': `+${candidatePhone}` },
-      body: JSON.stringify({ verificationSid: 'VE_STUB', otp: '123456', candidateWorkerId: candidate, ...extra }),
+      body: JSON.stringify({ verificationSid: sid, otp: '123456', ...extra }),
     });
     return { status: res.status, text: await res.text() };
   }
@@ -56,12 +64,14 @@ describe('claim confirm com ficha própria (D764)', () => {
     const { ClaimShellAbsorber } = await import('../../src/modules/auth/application/ClaimShellAbsorber');
     const { TwilioVerifyOtpAdapter } = await import('../../src/modules/auth/infrastructure/TwilioVerifyOtpAdapter');
     const { WorkerRepository } = await import('../../src/modules/worker/infrastructure/WorkerRepository');
+    const { ResolveClaimTarget } = await import('../../src/modules/auth/application/ResolveClaimTarget');
+    const { PgOtpSendLedger } = await import('../../src/modules/auth/infrastructure/PgOtpSendLedger');
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     // Twilio: o único dublê. `to` vem do cabeçalho do teste (telefone da ficha reclamada).
     let to = '';
     const twilio = { startVerification: async () => ({ verificationSid: 'VE_STUB' }), checkVerification: async () => ({ valid: true, status: 'approved', to }) };
     const useCase = new ConfirmClaimUseCase(new WorkerRepository(), new TwilioVerifyOtpAdapter(twilio as never), new ClaimShellAbsorber(DatabaseConnection.getInstance().getPool()));
-    const controller = new ClaimController({} as never, useCase);
+    const controller = new ClaimController({} as never, useCase, new ResolveClaimTarget(new PgOtpSendLedger(pool)));
     const app = express();
     app.use(express.json());
     app.post('/api/auth/claim/confirm', (req, res) => {
@@ -76,6 +86,7 @@ describe('claim confirm com ficha própria (D764)', () => {
 
   afterAll(async () => {
     const ids = (await pool.query('SELECT id FROM workers WHERE auth_uid LIKE $1 OR auth_uid LIKE $2', [`e2e-claim-%-${stamp}`, `anacareimport_e2e-claim-%-${stamp}`])).rows.map((r) => r.id);
+    await pool.query('DELETE FROM otp_send_events WHERE challenge_id LIKE $1', [`VE_STUB_${stamp}_%`]).catch(() => {});
     await pool.query('DELETE FROM worker_merge_audit WHERE survivor_id = ANY($1::uuid[]) OR absorbed_id = ANY($1::uuid[])', [ids]).catch(() => {});
     await pool.query('DELETE FROM worker_documents WHERE worker_id = ANY($1::uuid[])', [ids]).catch(() => {});
     await pool.query('UPDATE workers SET merged_into_id = NULL WHERE id = ANY($1::uuid[])', [ids]).catch(() => {});

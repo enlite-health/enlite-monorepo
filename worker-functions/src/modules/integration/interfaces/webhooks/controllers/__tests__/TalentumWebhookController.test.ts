@@ -1,750 +1,185 @@
 /**
- * TalentumWebhookController.test.ts
+ * TalentumWebhookController.test.ts — T-095-21 (spec 095 §3.2): o controller só dá o ACK.
  *
- * Testa o controller com o formato envelope v2 do webhook Talentum.
- *
- * Cenários cobertos:
- *
- * 1. Validação de payload (Zod discriminated union):
- *    - 400 com body vazio / null / undefined
- *    - 400 sem action ou subtype
- *    - 400 com combinação inválida (PRESCREENING + ANALYZED)
- *    - 400 com email inválido
- *    - 400 com campos extras em sub-objetos (strict mode)
- *    - 200 com PRESCREENING_RESPONSE payload válido
- *    - 200 com PRESCREENING.CREATED payload válido
- *
- * 2. Roteamento por action:
- *    - PRESCREENING.CREATED → CreateJobPostingFromTalentumUseCase
- *    - PRESCREENING_RESPONSE → ProcessTalentumPrescreening
- *
- * 3. Propagação de environment
- *
- * 4. Tratamento de erros (500, sem PII)
- *
- * 5. Validação de questions
+ * Cobre: validação mínima (400), PRESCREENING e PRESCREENING_RESPONSE vão para a inbox, propagação de
+ * environment e de ingress_host (X-Forwarded-Host > Host), 503 quando o INSERT falha, 200 quando o publish
+ * falha, e que o caso de uso NÃO roda no ack. O Zod completo e o roteamento por action saíram do ack
+ * (vão para o processador, T-095-30/32); os e2e que dependiam do processamento síncrono migram no T-095-24.
+ * Inbox e publisher são dublês; dados sintéticos.
  */
-
-// Mock das dependências de infraestrutura
-jest.mock('@shared/database/DatabaseConnection', () => ({
-  DatabaseConnection: {
-    getInstance: jest.fn().mockReturnValue({
-      getPool: jest.fn().mockReturnValue({
-        query: jest.fn().mockResolvedValue({ rows: [] }),
-        // persistPrescreening abre transação (card + divergência atômicos)
-        connect: jest.fn().mockResolvedValue({
-          query: jest.fn().mockResolvedValue({ rows: [] }),
-          release: jest.fn(),
-        }),
-      }),
-    }),
-  },
-}));
-
-const prescreeningRepoMockImpl = () => ({
-  upsertPrescreening: jest.fn().mockResolvedValue({
-    prescreening: {
-      id: 'internal-uuid-001',
-      talentumPrescreeningId: 'tp-001',
-      talentumProfileId: 'prof-001',
-      workerId: null,
-      jobPostingId: null,
-      jobCaseName: 'Test Case',
-      status: 'INITIATED',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    created: true,
-  }),
-  upsertQuestion: jest.fn().mockResolvedValue({
-    question: { id: 'q-uuid-001', questionId: 'q1', question: 'Test?', responseType: 'TEXT', createdAt: new Date(), updatedAt: new Date() },
-    created: true,
-  }),
-  upsertResponse: jest.fn().mockResolvedValue({
-    response: { id: 'r-uuid-001', prescreeningId: 'internal-uuid-001', questionId: 'q-uuid-001', answer: 'yes', responseSource: 'register', createdAt: new Date(), updatedAt: new Date() },
-    created: true,
-  }),
-});
-
-// Mock canonical path used by PrescreeningResponseHandler after Passo 6 migration.
-// TalentumPrescreeningRepository class is the same mock — shared reference via prescreeningRepoMockImpl.
-// ProcessTalentumPrescreening is NOT mocked here so it uses the real implementation
-// (which internally calls the mocked TalentumPrescreeningRepository from @modules/matching).
-jest.mock('@modules/matching', () => {
-  const actual = jest.requireActual('@modules/matching');
-  return {
-    ...actual,
-    TalentumPrescreeningRepository: jest.fn().mockImplementation(prescreeningRepoMockImpl),
-  };
-});
-
-jest.mock('@modules/worker', () => ({
-  ...jest.requireActual('@modules/worker'),
-  WorkerRepository: jest.fn().mockImplementation(() => ({
-    findByEmailNormalized: jest.fn().mockResolvedValue({ getValue: () => null }),
-    findByPhoneCandidates: jest.fn().mockResolvedValue({ getValue: () => null }),
-    findByCuit: jest.fn().mockResolvedValue({ getValue: () => null }),
-  })),
-}));
-
-jest.mock('../../../../application/CreateJobPostingFromTalentumUseCase', () => ({
-  CreateJobPostingFromTalentumUseCase: jest.fn().mockImplementation(() => ({
-    execute: jest.fn().mockResolvedValue({
-      created: true,
-      skipped: false,
-      jobPostingId: 'jp-uuid-001',
-      caseNumber: 42,
-    }),
-  })),
+jest.mock('@shared/logging', () => ({
+  ...jest.requireActual('@shared/logging'),
+  reportError: jest.fn(),
 }));
 
 import { Request, Response } from 'express';
 import { TalentumWebhookController } from '../TalentumWebhookController';
-// Import from @modules/matching — same mock instance used by PrescreeningResponseHandler after Passo 6 migration.
-import { TalentumPrescreeningRepository } from '@modules/matching';
+import { ProcessTalentumPrescreening } from '@modules/matching';
 import { CreateJobPostingFromTalentumUseCase } from '../../../../application/CreateJobPostingFromTalentumUseCase';
-
-// ─────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────
 
 function makeResponsePayload(overrides: Record<string, any> = {}) {
   return {
     action: 'PRESCREENING_RESPONSE' as const,
     subtype: overrides.subtype ?? 'INITIATED',
     data: {
-      prescreening: {
-        id: 'tp-001',
-        name: 'Test Case',
-        ...(overrides.prescreening || {}),
-      },
+      prescreening: { id: 'tp-001', name: 'Test Case', ...(overrides.prescreening || {}) },
       profile: {
-        id: 'prof-001',
-        firstName: 'Test',
-        lastName: 'User',
-        email: 'test@example.com',
-        phoneNumber: '+5491100000000',
-        cuil: '20-12345678-9',
-        registerQuestions: [],
-        ...(overrides.profile || {}),
+        id: 'prof-001', firstName: 'Test', lastName: 'User', email: 'test@example.com', phoneNumber: '+5491100000000',
+        registerQuestions: [], ...(overrides.profile || {}),
       },
-      response: {
-        id: 'resp-001',
-        state: [],
-        ...(overrides.response || {}),
-      },
+      response: { id: 'resp-001', state: [], ...(overrides.response || {}) },
     },
   };
 }
 
-function makeCreatedPayload(overrides: Record<string, any> = {}) {
-  return {
-    action: 'PRESCREENING' as const,
-    subtype: 'CREATED' as const,
-    data: {
-      _id: overrides._id ?? 'talentum-project-001',
-      name: overrides.name ?? 'Operario de producción',
-    },
-  };
+function makeCreatedPayload(_id = 'talentum-project-001') {
+  return { action: 'PRESCREENING' as const, subtype: 'CREATED' as const, data: { _id, name: 'Operario de producción' } };
 }
 
-function makeMockReq(body: any, partnerContext?: any): Partial<Request> {
-  const req: Partial<Request> = {
-    body,
-    headers: {},
-  };
-  if (partnerContext !== undefined) {
-    (req as any).partnerContext = partnerContext;
-  }
+function makeMockReq(body: any, partnerContext?: any, headers: Record<string, any> = {}): Partial<Request> {
+  const req: Partial<Request> = { body, headers };
+  if (partnerContext !== undefined) (req as any).partnerContext = partnerContext;
   return req;
 }
 
-function makeMockRes(): { res: Partial<Response>; getStatus: () => number | null; getBody: () => any } {
+function makeMockRes() {
   let statusCode: number | null = null;
   let body: any = null;
-
   const res: Partial<Response> = {
-    status: jest.fn().mockImplementation((code: number) => {
-      statusCode = code;
-      return res;
-    }),
-    json: jest.fn().mockImplementation((data: any) => {
-      body = data;
-      return res;
-    }),
+    status: jest.fn().mockImplementation((code: number) => { statusCode = code; return res; }),
+    json: jest.fn().mockImplementation((data: any) => { body = data; return res; }),
   };
-
-  return {
-    res,
-    getStatus: () => statusCode,
-    getBody: () => body,
-  };
+  return { res, getStatus: () => statusCode, getBody: () => body };
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Testes
-// ─────────────────────────────────────────────────────────────────
-
-describe('TalentumWebhookController', () => {
+describe('TalentumWebhookController (ack)', () => {
+  let inbox: { insertReceived: jest.Mock };
+  let publisher: { publish: jest.Mock };
   let controller: TalentumWebhookController;
+  let logSpy: jest.SpyInstance;
+  let errSpy: jest.SpyInstance;
+  let warnSpy: jest.SpyInstance;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    controller = new TalentumWebhookController();
+    inbox = { insertReceived: jest.fn().mockResolvedValue({ id: 'inbox-1', duplicate: false }) };
+    publisher = { publish: jest.fn().mockResolvedValue(undefined) };
+    controller = new TalentumWebhookController(inbox as never, publisher as never);
+    logSpy = jest.spyOn(console, 'log').mockImplementation();
+    errSpy = jest.spyOn(console, 'error').mockImplementation();
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+  });
+  afterEach(() => {
+    logSpy.mockRestore();
+    errSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 
-  // ─────────────────────────────────────────────────────────────────
-  // 1. Validação de payload (Zod)
-  // ─────────────────────────────────────────────────────────────────
+  async function post(body: any, partnerContext?: any, headers: Record<string, any> = {}) {
+    const r = makeMockRes();
+    await controller.handlePrescreening(makeMockReq(body, partnerContext, headers) as Request, r.res as Response);
+    return r;
+  }
 
-  describe('validação de payload', () => {
-    it('deve retornar 400 com body vazio', async () => {
-      const req = makeMockReq({});
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
+  describe('validação mínima (400)', () => {
+    it.each([
+      ['body vazio', {}],
+      ['body null', null],
+      ['body undefined', undefined],
+      ['sem action', { subtype: 'INITIATED' }],
+      ['action não-string', { action: 3 }],
+      ['prescreening.id ausente', makeResponsePayload({ prescreening: { id: undefined } })],
+      ['prescreening.id vazio', makeResponsePayload({ prescreening: { id: '' } })],
+      ['profile ausente', (() => { const p: any = makeResponsePayload(); delete p.data.profile; return p; })()],
+      ['profile.id vazio', makeResponsePayload({ profile: { id: '' } })],
+      ['PRESCREENING sem _id', { action: 'PRESCREENING', subtype: 'CREATED', data: { name: 'x' } }],
+    ])('400 com %s, sem gravar nem publicar', async (_nome, body) => {
+      const { getStatus } = await post(body);
       expect(getStatus()).toBe(400);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ error: 'Invalid payload' }),
-      );
+      expect(inbox.insertReceived).not.toHaveBeenCalled();
+      expect(publisher.publish).not.toHaveBeenCalled();
     });
 
-    it('deve retornar 400 com body null', async () => {
-      const req = makeMockReq(null);
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
-    });
-
-    it('deve retornar 400 com body undefined', async () => {
-      const req = makeMockReq(undefined);
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
-    });
-
-    it('deve retornar 400 sem action', async () => {
-      const req = makeMockReq({ subtype: 'CREATED', data: { _id: 'x', name: 'y' } });
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
-    });
-
-    it('deve retornar 400 sem subtype', async () => {
-      const req = makeMockReq({ action: 'PRESCREENING', data: { _id: 'x', name: 'y' } });
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
-    });
-
-    it('deve retornar 400 com combinação inválida (PRESCREENING + ANALYZED)', async () => {
-      const req = makeMockReq({ action: 'PRESCREENING', subtype: 'ANALYZED', data: { _id: 'x', name: 'y' } });
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
-    });
-
-    it('deve retornar 400 quando prescreening.id está ausente no PRESCREENING_RESPONSE', async () => {
-      const payload = makeResponsePayload();
-      delete (payload.data.prescreening as any).id;
-
-      const req = makeMockReq(payload);
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
-    });
-
-    it('deve retornar 400 quando prescreening.id é string vazia', async () => {
-      const payload = makeResponsePayload({ prescreening: { id: '' } });
-
-      const req = makeMockReq(payload);
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
-    });
-
-    it('deve retornar 400 quando email é inválido', async () => {
-      const payload = makeResponsePayload({ profile: { email: 'not-an-email' } });
-
-      const req = makeMockReq(payload);
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
-    });
-
-    it('deve retornar 400 quando profile está ausente', async () => {
-      const payload = makeResponsePayload();
-      delete (payload.data as any).profile;
-
-      const req = makeMockReq(payload);
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
-    });
-
-    it('deve retornar 400 quando response está ausente', async () => {
-      const payload = makeResponsePayload();
-      delete (payload.data as any).response;
-
-      const req = makeMockReq(payload);
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
-    });
-
-    it('deve retornar 400 com campo extra dentro de prescreening (strict mode)', async () => {
-      const payload = makeResponsePayload();
-      (payload.data.prescreening as any).extraField = 'nope';
-
-      const req = makeMockReq(payload);
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
-    });
-
-    it('deve aceitar payload quando cuil está ausente (campo opcional)', async () => {
-      const payload = makeResponsePayload();
-      delete (payload.data.profile as any).cuil;
-
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
+    it('não exige mais o Zod completo no ack: e-mail inválido e campo extra passam (a validação é do processador)', async () => {
+      const { getStatus } = await post(makeResponsePayload({ profile: { email: 'nao-e-email', extra: 1 } }));
       expect(getStatus()).toBe(200);
-    });
-
-    it('deve aceitar todos os subtypes válidos de PRESCREENING_RESPONSE', async () => {
-      for (const subtype of ['INITIATED', 'IN_PROGRESS', 'COMPLETED', 'ANALYZED']) {
-        const payload = makeResponsePayload({ subtype });
-        const req = makeMockReq(payload, { isTest: false });
-        const { res, getStatus } = makeMockRes();
-
-        await controller.handlePrescreening(req as Request, res as Response);
-
-        expect(getStatus()).toBe(200);
-      }
-    });
-
-    it('deve retornar detalhes do erro Zod na resposta', async () => {
-      const req = makeMockReq({ bad: true });
-      const { res, getBody } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      const body = getBody();
-      expect(body.error).toBe('Invalid payload');
-      expect(body.details).toBeDefined();
-    });
-
-    it('deve normalizar email para lowercase', async () => {
-      const payload = makeResponsePayload({ profile: { email: 'Test@EXAMPLE.com' } });
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(200);
-    });
-
-    it('deve aceitar email com Unicode no local-part (RFC 6531 / SMTPUTF8)', async () => {
-      const payload = makeResponsePayload({ profile: { email: 'maría.redondo@bue.edu.ar' } });
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(200);
-    });
-
-    it('deve aceitar registerQuestions vazio (default [])', async () => {
-      const payload = makeResponsePayload();
-      delete (payload.data.profile as any).registerQuestions;
-
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(200);
-    });
-
-    it('deve aceitar response.state vazio (default [])', async () => {
-      const payload = makeResponsePayload();
-      delete (payload.data.response as any).state;
-
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(200);
+      expect(inbox.insertReceived).toHaveBeenCalledTimes(1);
     });
   });
 
-  // ─────────────────────────────────────────────────────────────────
-  // 2. Roteamento por action
-  // ─────────────────────────────────────────────────────────────────
-
-  describe('roteamento por action', () => {
-    it('PRESCREENING.CREATED deve chamar CreateJobPostingFromTalentumUseCase', async () => {
-      const payload = makeCreatedPayload();
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus, getBody } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
+  describe('ack', () => {
+    it('PRESCREENING_RESPONSE → inbox + publish do id + 200 { received: true }; o caso de uso NÃO roda', async () => {
+      const execSpy = jest.spyOn(ProcessTalentumPrescreening.prototype, 'execute');
+      const { getStatus, getBody } = await post(makeResponsePayload({ subtype: 'ANALYZED' }), { isTest: false });
 
       expect(getStatus()).toBe(200);
-      const body = getBody();
-      expect(body.received).toBe(true);
-      expect(body.event).toBe('PRESCREENING.CREATED');
-      expect(body.created).toBe(true);
-      expect(body.jobPostingId).toBe('jp-uuid-001');
+      expect(getBody()).toEqual({ received: true });
+      expect(inbox.insertReceived).toHaveBeenCalledWith(expect.objectContaining({ action: 'PRESCREENING_RESPONSE', subtype: 'ANALYZED', prescreeningId: 'tp-001', profileId: 'prof-001' }));
+      expect(publisher.publish).toHaveBeenCalledWith('inbox-1');
+      expect(execSpy).not.toHaveBeenCalled();
+      execSpy.mockRestore();
     });
 
-    it('PRESCREENING_RESPONSE deve chamar ProcessTalentumPrescreening', async () => {
-      const payload = makeResponsePayload();
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus, getBody } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
+    it('PRESCREENING.CREATED → inbox + 200; CreateJobPostingFromTalentumUseCase NÃO roda no ack', async () => {
+      const execSpy = jest.spyOn(CreateJobPostingFromTalentumUseCase.prototype, 'execute');
+      const { getStatus, getBody } = await post(makeCreatedPayload('proj-9'));
 
       expect(getStatus()).toBe(200);
-      const body = getBody();
-      expect(body).toHaveProperty('prescreeningId');
-      expect(body).toHaveProperty('resolved');
+      expect(getBody()).toEqual({ received: true });
+      expect(inbox.insertReceived).toHaveBeenCalledWith(expect.objectContaining({ action: 'PRESCREENING', subtype: 'CREATED', prescreeningId: 'proj-9', profileId: null }));
+      expect(execSpy).not.toHaveBeenCalled();
+      execSpy.mockRestore();
+    });
+
+    it('INSERT falha → 503 { error: "retry" } e nada é publicado', async () => {
+      inbox.insertReceived.mockRejectedValue(Object.assign(new Error('boom'), { code: '57P01' }));
+      const { getStatus, getBody } = await post(makeResponsePayload());
+      expect(getStatus()).toBe(503);
+      expect(getBody()).toEqual({ error: 'retry' });
+      expect(publisher.publish).not.toHaveBeenCalled();
+    });
+
+    it('publish falha → 200 mesmo assim', async () => {
+      publisher.publish.mockRejectedValue(new Error('pubsub down'));
+      const { getStatus, getBody } = await post(makeResponsePayload());
+      expect(getStatus()).toBe(200);
+      expect(getBody()).toEqual({ received: true });
+    });
+
+    it('duplicado → 200', async () => {
+      inbox.insertReceived.mockResolvedValue({ id: 'inbox-0', duplicate: true });
+      expect((await post(makeResponsePayload())).getStatus()).toBe(200);
+    });
+
+    it('nenhum log carrega o e-mail, o telefone ou o nome do payload', async () => {
+      await post(makeResponsePayload());
+      const lines = [...logSpy.mock.calls, ...errSpy.mock.calls, ...warnSpy.mock.calls].map((c) => c.join(' ')).join('\n');
+      expect(lines).not.toContain('test@example.com');
+      expect(lines).not.toContain('+5491100000000');
+      expect(lines).not.toContain('Test User');
     });
   });
 
-  // ─────────────────────────────────────────────────────────────────
-  // 3. Propagação de environment
-  // ─────────────────────────────────────────────────────────────────
-
-  describe('propagação de environment', () => {
-    it('deve passar environment=production quando partnerContext.isTest=false', async () => {
-      const payload = makeResponsePayload();
-      const req = makeMockReq(payload, { partnerId: 'p1', partnerName: 'talentum', isTest: false });
-      const { res } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      const repoInstance = (TalentumPrescreeningRepository as jest.Mock).mock.results[0].value;
-      expect(repoInstance.upsertPrescreening).toHaveBeenCalledWith(
-        expect.objectContaining({ environment: 'production' }),
-        expect.anything(), // client da transação
-      );
+  describe('propagação de environment e ingress_host', () => {
+    it.each([
+      ['isTest=false', { isTest: false }, 'production'],
+      ['isTest=true', { isTest: true }, 'test'],
+      ['partnerContext ausente', undefined, 'production'],
+      ['isTest undefined', {}, 'production'],
+    ])('%s → environment=%s', async (_nome, partnerContext, esperado) => {
+      await post(makeResponsePayload(), partnerContext);
+      expect(inbox.insertReceived).toHaveBeenCalledWith(expect.objectContaining({ environment: esperado }));
     });
 
-    it('deve usar environment=test quando partnerContext.isTest=true', async () => {
-      const payload = makeResponsePayload();
-      const req = makeMockReq(payload, { partnerId: 'p1', partnerName: 'talentum', isTest: true });
-      const { res, getStatus } = makeMockRes();
+    it('ingress_host = X-Forwarded-Host quando presente; senão Host; senão null', async () => {
+      await post(makeResponsePayload(), undefined, { 'x-forwarded-host': 'api.enlite.health', host: 'worker-functions.run.app' });
+      expect(inbox.insertReceived).toHaveBeenLastCalledWith(expect.objectContaining({ ingressHost: 'api.enlite.health' }));
 
-      await controller.handlePrescreening(req as Request, res as Response);
+      await post(makeResponsePayload(), undefined, { host: 'worker-functions.run.app' });
+      expect(inbox.insertReceived).toHaveBeenLastCalledWith(expect.objectContaining({ ingressHost: 'worker-functions.run.app' }));
 
-      expect(getStatus()).toBe(200);
-      const repoInstance = (TalentumPrescreeningRepository as jest.Mock).mock.results[0]?.value;
-      if (repoInstance) {
-        expect(repoInstance.upsertPrescreening).toHaveBeenCalledWith(
-          expect.objectContaining({ environment: 'test' }),
-        expect.anything(), // client da transação
-        );
-      }
-    });
-
-    it('deve defaultar para production quando partnerContext está ausente', async () => {
-      const payload = makeResponsePayload();
-      const req = makeMockReq(payload); // sem partnerContext
-      const { res } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      const repoInstance = (TalentumPrescreeningRepository as jest.Mock).mock.results[0].value;
-      expect(repoInstance.upsertPrescreening).toHaveBeenCalledWith(
-        expect.objectContaining({ environment: 'production' }),
-        expect.anything(), // client da transação
-      );
-    });
-
-    it('deve defaultar para production quando partnerContext.isTest é undefined', async () => {
-      const payload = makeResponsePayload();
-      const req = makeMockReq(payload, { partnerId: 'p1', partnerName: 'talentum' });
-      const { res } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      const repoInstance = (TalentumPrescreeningRepository as jest.Mock).mock.results[0].value;
-      expect(repoInstance.upsertPrescreening).toHaveBeenCalledWith(
-        expect.objectContaining({ environment: 'production' }),
-        expect.anything(), // client da transação
-      );
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────────────
-  // 4. Tratamento de erros
-  // ─────────────────────────────────────────────────────────────────
-
-  describe('tratamento de erros', () => {
-    it('deve retornar 500 quando use case lança exceção', async () => {
-      (TalentumPrescreeningRepository as jest.Mock).mockImplementationOnce(() => ({
-        upsertPrescreening: jest.fn().mockRejectedValue(new Error('DB connection refused')),
-        upsertQuestion: jest.fn(),
-        upsertResponse: jest.fn(),
-      }));
-
-      const controller2 = new TalentumWebhookController();
-      const payload = makeResponsePayload();
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus, getBody } = makeMockRes();
-
-      await controller2.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(500);
-      expect(getBody()).toEqual({ error: 'Internal server error' });
-    });
-
-    it('não deve expor detalhes do erro na resposta 500', async () => {
-      (TalentumPrescreeningRepository as jest.Mock).mockImplementationOnce(() => ({
-        upsertPrescreening: jest.fn().mockRejectedValue(new Error('FATAL: password authentication failed')),
-        upsertQuestion: jest.fn(),
-        upsertResponse: jest.fn(),
-      }));
-
-      const controller2 = new TalentumWebhookController();
-      const payload = makeResponsePayload();
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getBody } = makeMockRes();
-
-      await controller2.handlePrescreening(req as Request, res as Response);
-
-      const body = getBody();
-      expect(body.error).toBe('Internal server error');
-      expect(JSON.stringify(body)).not.toContain('password');
-      expect(JSON.stringify(body)).not.toContain('FATAL');
-      expect(body.stack).toBeUndefined();
-    });
-
-    it('deve logar o prescreeningId externo no erro (para debugging)', async () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-
-      (TalentumPrescreeningRepository as jest.Mock).mockImplementationOnce(() => ({
-        upsertPrescreening: jest.fn().mockRejectedValue(new Error('timeout')),
-        upsertQuestion: jest.fn(),
-        upsertResponse: jest.fn(),
-      }));
-
-      const controller2 = new TalentumWebhookController();
-      const payload = makeResponsePayload({ prescreening: { id: 'external-tp-999' } });
-      const req = makeMockReq(payload, { isTest: false });
-      const { res } = makeMockRes();
-
-      await controller2.handlePrescreening(req as Request, res as Response);
-
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[TalentumWebhook:PrescreeningResponse] ERROR | extId=external-tp-999 |'),
-        'timeout',
-      );
-
-      consoleSpy.mockRestore();
-    });
-
-    it('deve retornar 500 quando CreateJobPostingFromTalentum lança exceção', async () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-
-      (CreateJobPostingFromTalentumUseCase as jest.Mock).mockImplementationOnce(() => ({
-        execute: jest.fn().mockRejectedValue(new Error('DB error')),
-      }));
-
-      const controller2 = new TalentumWebhookController();
-      const payload = makeCreatedPayload();
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus, getBody } = makeMockRes();
-
-      await controller2.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(500);
-      expect(getBody()).toEqual({ error: 'Internal server error' });
-
-      consoleSpy.mockRestore();
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────────────
-  // 5. Resposta de sucesso
-  // ─────────────────────────────────────────────────────────────────
-
-  describe('resposta de sucesso', () => {
-    it('deve retornar 200 com formato correto para PRESCREENING_RESPONSE', async () => {
-      const payload = makeResponsePayload();
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus, getBody } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(200);
-      const body = getBody();
-      expect(body).toHaveProperty('prescreeningId');
-      expect(body).toHaveProperty('talentumPrescreeningId');
-      expect(body).toHaveProperty('workerId');
-      expect(body).toHaveProperty('jobPostingId');
-      expect(body).toHaveProperty('resolved');
-      expect(body.resolved).toHaveProperty('worker');
-      expect(body.resolved).toHaveProperty('jobPosting');
-    });
-
-    it('deve retornar 200 com formato correto para PRESCREENING.CREATED', async () => {
-      const payload = makeCreatedPayload();
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus, getBody } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(200);
-      const body = getBody();
-      expect(body.received).toBe(true);
-      expect(body.event).toBe('PRESCREENING.CREATED');
-      expect(body.jobPostingId).toBeDefined();
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────────────
-  // 5b. Erro sem propriedade .message (fallback ?? err)
-  // ─────────────────────────────────────────────────────────────────
-
-  describe('erro sem .message', () => {
-    it('deve retornar 500 quando handler lança valor não-Error (string)', async () => {
-      (TalentumPrescreeningRepository as jest.Mock).mockImplementationOnce(() => ({
-        upsertPrescreening: jest.fn().mockRejectedValue('raw string error'),
-        upsertWorkerJobApplicationFromTalentum: jest.fn(),
-        upsertQuestion: jest.fn(),
-        upsertResponse: jest.fn(),
-      }));
-
-      const controller2 = new TalentumWebhookController();
-      const payload = makeResponsePayload();
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus, getBody } = makeMockRes();
-
-      await controller2.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(500);
-      expect(getBody()).toEqual({ error: 'Internal server error' });
-    });
-
-    it('deve retornar 500 quando VacancyCreated handler lança valor não-Error', async () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-
-      (CreateJobPostingFromTalentumUseCase as jest.Mock).mockImplementationOnce(() => ({
-        execute: jest.fn().mockRejectedValue(42),
-      }));
-
-      const controller2 = new TalentumWebhookController();
-      const payload = makeCreatedPayload();
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus } = makeMockRes();
-
-      await controller2.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(500);
-      consoleSpy.mockRestore();
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────────────
-  // 6. Validação de questions
-  // ─────────────────────────────────────────────────────────────────
-
-  describe('validação de questions', () => {
-    it('deve retornar 400 quando registerQuestion tem questionId vazio', async () => {
-      const payload = makeResponsePayload({
-        profile: {
-          registerQuestions: [
-            { questionId: '', question: 'Test?', answer: 'yes', responseType: 'TEXT' },
-          ],
-        },
-      });
-
-      const req = makeMockReq(payload);
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
-    });
-
-    it('deve retornar 400 quando registerQuestion tem campo extra (strict)', async () => {
-      const payload = makeResponsePayload({
-        profile: {
-          registerQuestions: [
-            { questionId: 'q1', question: 'Test?', answer: 'yes', responseType: 'TEXT', extra: 'nope' },
-          ],
-        },
-      });
-
-      const req = makeMockReq(payload);
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
-    });
-
-    it('deve aceitar answer vazia em registerQuestion', async () => {
-      const payload = makeResponsePayload({
-        profile: {
-          registerQuestions: [
-            { questionId: 'q1', question: 'Test?', answer: '', responseType: 'TEXT' },
-          ],
-        },
-      });
-
-      const req = makeMockReq(payload, { isTest: false });
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(200);
-    });
-
-    it('deve retornar 400 quando response.state item tem question vazia', async () => {
-      const payload = makeResponsePayload({
-        response: {
-          state: [
-            { questionId: 'q1', question: '', answer: 'yes', responseType: 'TEXT' },
-          ],
-        },
-      });
-
-      const req = makeMockReq(payload);
-      const { res, getStatus } = makeMockRes();
-
-      await controller.handlePrescreening(req as Request, res as Response);
-
-      expect(getStatus()).toBe(400);
+      await post(makeResponsePayload());
+      expect(inbox.insertReceived).toHaveBeenLastCalledWith(expect.objectContaining({ ingressHost: null }));
     });
   });
 });

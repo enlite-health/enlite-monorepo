@@ -50,7 +50,7 @@ describe('PatientVacanciesCard — código da vaga em EN1234#01 (spec 047 F4)', 
     const { rerender } = render(lista([{ ...VAGA, caseNumber: null, caseOrdinal: null, title: 'Só o título' }]));
     expect(screen.getByText('Só o título')).toBeInTheDocument();
     rerender(lista([{ ...VAGA, caseNumber: null, caseOrdinal: null, title: null }]));
-    expect(screen.getByText('—')).toBeInTheDocument();
+    expect(screen.getByTestId('patient-vacancy-code-v-1')).toHaveTextContent('—');
   });
 
   it('A2: para a MESMA vaga o texto do bloco é IGUAL ao da coluna "Código da vacante" da tabela de serviços (um dono só)', () => {
@@ -70,14 +70,16 @@ describe('PatientVacanciesCard — código da vaga em EN1234#01 (spec 047 F4)', 
     unmount();
   });
 
-  it('badges: rascunho mostra o selo, status sem cor mapeada cai no cinza, status nulo não renderiza badge', () => {
+  it('D3: cada vaga mostra o ciclo de vida (badge) e o estado do paciente (pílula) — sem mapa de cor por valor de banco', () => {
     render(lista([
-      { ...VAGA, id: 'a', isDraft: true, status: 'SEARCHING' },
-      { ...VAGA, id: 'b', caseOrdinal: 2, status: 'OUTRO_STATUS' },
-      { ...VAGA, id: 'c', caseOrdinal: 3, status: null },
+      { ...VAGA, id: 'a', isDraft: true, lifecycle: 'rascunho', patientStatus: 'SEARCHING' },
+      { ...VAGA, id: 'b', caseOrdinal: 2, status: 'SEARCHING_REPLACEMENT', lifecycle: null, patientStatus: 'REPLACEMENT' },
+      { ...VAGA, id: 'c', caseOrdinal: 3, status: null, lifecycle: 'baja' },
     ]));
-    expect(screen.getByText(translations.admin.vacancies.table.draftBadge)).toBeInTheDocument();
-    expect(screen.getByText('OUTRO_STATUS').parentElement?.className).toContain('bg-gray-100');
+    expect(screen.getAllByTestId('vacancy-lifecycle-badge').map((b) => b.getAttribute('data-lifecycle'))).toEqual(['rascunho', 'baja']);
+    expect(screen.getByText(translations.admin.vacancyDetail.lifecycle.rascunho)).toBeInTheDocument();
+    expect(screen.getAllByTestId('patient-status-pill').map((p) => p.getAttribute('data-patient-status'))).toEqual(['SEARCHING', 'REPLACEMENT', '']);
+    expect(screen.queryByText('SEARCHING_REPLACEMENT')).not.toBeInTheDocument(); // o valor de banco nunca vira texto
     expect(screen.getByText('EN1234#03')).toBeInTheDocument();
   });
 

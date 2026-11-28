@@ -22,7 +22,7 @@ describe('PgOtpChallengeService — força bruta e código fora do banco', () =>
   async function novoDesafio() {
     const { rows } = await pool.query<{ id: string }>(`INSERT INTO workers (auth_uid) VALUES ($1) RETURNING id`, [`otp-bf-${Date.now()}-${Math.random()}`]);
     workers.push(rows[0].id);
-    const { challengeId } = await service().start({ workerId: rows[0].id, purpose: 'claim', phoneE164: PHONE });
+    const { challengeId } = await service().start({ workerId: rows[0].id, purpose: 'claim', phoneE164: PHONE, requesterUid: 'uid-teste-1' });
     return { workerId: rows[0].id, challengeId, code: lastCode };
   }
 
@@ -37,7 +37,7 @@ describe('PgOtpChallengeService — força bruta e código fora do banco', () =>
     const errado = code === '000000' ? '000001' : '000000';
 
     const results = await Promise.all(
-      Array.from({ length: 10 }, () => service().check({ challengeId, workerId, phoneOnRecord: PHONE, code: errado })),
+      Array.from({ length: 10 }, () => service().check({ challengeId, workerId, purpose: 'claim', phoneOnRecord: PHONE, code: errado })),
     );
 
     expect(results.filter((r) => !r.ok && r.code === 'INVALID_OTP')).toHaveLength(5);
@@ -46,7 +46,7 @@ describe('PgOtpChallengeService — força bruta e código fora do banco', () =>
     expect(rows[0].attempts).toBe(5);
     expect(rows[0].status).toBe('canceled');
 
-    expect(await service().check({ challengeId, workerId, phoneOnRecord: PHONE, code })).toEqual({ ok: false, code: 'EXPIRED_OTP' });
+    expect(await service().check({ challengeId, workerId, purpose: 'claim', phoneOnRecord: PHONE, code })).toEqual({ ok: false, code: 'EXPIRED_OTP' });
   });
 
   it('forca-bruta: a certa no meio de 10 em paralelo vale no máximo 1 vez', async () => {
@@ -54,7 +54,7 @@ describe('PgOtpChallengeService — força bruta e código fora do banco', () =>
     const errado = code === '000000' ? '000001' : '000000';
     const codes = [errado, errado, code, code, errado, errado, errado, code, errado, errado];
 
-    const results = await Promise.all(codes.map((c) => service().check({ challengeId, workerId, phoneOnRecord: PHONE, code: c })));
+    const results = await Promise.all(codes.map((c) => service().check({ challengeId, workerId, purpose: 'claim', phoneOnRecord: PHONE, code: c })));
 
     expect(results.filter((r) => r.ok).length).toBeLessThanOrEqual(1);
     const { rows } = await pool.query<{ attempts: number }>(`SELECT attempts FROM otp_challenges WHERE id = $1`, [challengeId]);

@@ -120,3 +120,48 @@ describe('GET /vacancies/:id — a projeção vale mesmo sem KMS no caminho', ()
     expect(data.encuadres).toHaveLength(1);
   });
 });
+
+describe('GET /vacancies/:id — estado do paciente por join sob o container `patient` (estado-automatico-do-paciente F2)', () => {
+  beforeEach(() => jest.clearAllMocks());
+  const linha = (extra: Record<string, unknown> = {}) => ({
+    id: 'jp-1', vacancy_number: 42, schedule: null, patient_first_name: 'Paciente', service_type: null,
+    required_professions: null, social_short_links: null, encuadres: null, publications: null,
+    patient_id: 'p-1', patient_status: 'SEARCHING', lifecycle: 'rascunho', status: 'PENDING_ACTIVATION', is_draft: true,
+    status_before_hold: 'SEARCHING_REPLACEMENT', ...extra,
+  });
+  const dado = (res: Response) => (res.json as jest.Mock).mock.calls[0][0].data;
+
+  it('a query lê p.status (join) e o ciclo de vida SQL gerado — e nunca on_hold_note nem coluna cópia', async () => {
+    mockQuery.mockResolvedValue({ rows: [linha()] });
+    const [req, res] = reqRes(['vacancy:read', 'patient:read']);
+    await new VacanciesController().getVacancyById(req, res);
+    const sql = String(mockQuery.mock.calls[0][0]);
+    expect(sql).toContain('p.status as patient_status');
+    expect(sql).not.toMatch(/jp\.status\s+as\s+patient_status/i);
+    expect(sql).toContain("WHEN jp.status IN ('DE_BAJA') THEN 'baja'"); // o selo encolheu: só rascunho e baja (F4)
+    expect(sql).not.toMatch(/on_hold_note/i);
+  });
+
+  it('com patient:read: patient_status + lifecycle; o `resumeStatus` do "Reanudar" saiu da resposta (F4)', async () => {
+    mockQuery.mockResolvedValue({ rows: [linha()] });
+    const [req, res] = reqRes(['vacancy:read', 'patient:read']);
+    await new VacanciesController().getVacancyById(req, res);
+    expect(dado(res)).toMatchObject({ patient_status: 'SEARCHING', lifecycle: 'rascunho' });
+    expect(dado(res)).not.toHaveProperty('resumeStatus');
+    expect(dado(res)).not.toHaveProperty('redacted');
+  });
+
+  it('sem patient:read: patient_status null + redacted.patient', async () => {
+    mockQuery.mockResolvedValue({ rows: [linha()] });
+    const [req, res] = reqRes(['vacancy:read']);
+    await new VacanciesController().getVacancyById(req, res);
+    expect(dado(res)).toMatchObject({ patient_status: null, redacted: { patient: true } });
+  });
+
+  it('vaga sem paciente: sem a chave patient_status', async () => {
+    mockQuery.mockResolvedValue({ rows: [linha({ patient_id: null, patient_status: null })] });
+    const [req, res] = reqRes(['vacancy:read', 'patient:read']);
+    await new VacanciesController().getVacancyById(req, res);
+    expect(dado(res)).not.toHaveProperty('patient_status');
+  });
+});

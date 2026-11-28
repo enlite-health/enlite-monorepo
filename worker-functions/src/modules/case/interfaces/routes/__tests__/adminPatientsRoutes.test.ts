@@ -29,6 +29,7 @@ import type { AdminTerminologySearchController } from '@modules/terminology/inte
 import type { AdminPatientContactRowsController } from '../../controllers/AdminPatientContactRowsController';
 import type { AdminPatientExternalContactsController } from '../../controllers/AdminPatientExternalContactsController';
 import type { AdminPatientEmergencyContactController } from '../../controllers/AdminPatientEmergencyContactController';
+import type { AdminPatientStatusActionsController } from '../../controllers/AdminPatientStatusActionsController';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -88,7 +89,9 @@ const ESPERADO: Record<string, string | null> = {
   'GET /patients/:id/vacancies': 'vacancy:read',
   'PUT /patients/:id/status': 'patient:update',
   // Spec 051 (F3): a MESMA célula do PUT /status — a lista não oferece o que o PUT negaria por falta de `patient:update`.
-  'GET /patients/:id/status-options': 'patient:update',
+  // F3 (estado-automatico-do-paciente): as ações dos estados humanos — a MESMA célula do PUT /status.
+  'GET /patients/:id/status-actions': 'patient:update',
+  'POST /patients/:id/status-actions': 'patient:update',
   'GET /patients/:id/status-history': 'patient:read',
   // 410 (spec 018, PR-6, ADR-5): ativar deixou de ser rota única do paciente. Sem célula, como o
   // 410 de support-network.
@@ -171,7 +174,6 @@ function pecas() {
     purgeTestPatient: responde('purgeTestPatient'),
     updatePatientSection: responde('updatePatientSection'),
     getPatientStatusHistory: responde('getPatientStatusHistory'),
-    getPatientStatusOptions: responde('getPatientStatusOptions'),
   } as unknown as AdminPatientsController;
 
   const chatIds = {
@@ -218,6 +220,8 @@ function pecas() {
     create: responde('auth.create'),
     supersede: responde('auth.supersede'),
   } as unknown as AdminContractedServiceAuthorizationController;
+  // F3: ações dos estados humanos — 18º argumento, mesmo molde.
+  const statusActions = { list: responde('statusActions.list'), perform: responde('statusActions.perform') } as unknown as AdminPatientStatusActionsController;
   const terminology = { search: responde('terminology.search') } as unknown as AdminTerminologySearchController;
   const contactRows = {
     createResponsible: responde('rows.createResponsible'),
@@ -243,7 +247,7 @@ function pecas() {
 
   return {
     controller, chatIds, chatRoles, map, addresses, insurance, contracted, diagnoses, terminology, contactRows,
-    externalContacts, emergencyContact, itinerary, kanbanServices, authorization,
+    externalContacts, emergencyContact, itinerary, kanbanServices, authorization, statusActions,
     auth: authDouble(), permissions: permissionsDouble(),
   };
 }
@@ -254,7 +258,7 @@ function build() {
   return createAdminPatientsRoutes(
     p.controller, p.auth, p.permissions, p.chatIds, p.chatRoles,
     p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology, p.contactRows,
-    p.externalContacts, p.emergencyContact, p.itinerary, p.kanbanServices, p.authorization,
+    p.externalContacts, p.emergencyContact, p.itinerary, p.kanbanServices, p.authorization, p.statusActions,
   );
 }
 
@@ -273,8 +277,8 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 62 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8) − as 2 da alocação antiga (fase 14) + o DELETE de endereço (spec 044) + GET status-options (spec 051) + as 3 da autorização de horas do serviço (spec 056) + as 2 do vínculo de vaga existente (spec 079)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(62);
+  it('a família declara exatamente 63 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8) − as 2 da alocação antiga (fase 14) + o DELETE de endereço (spec 044) − GET status-options (spec 051, saiu na F5 do estado-automatico) + as 3 da autorização de horas do serviço (spec 056) + as 2 do vínculo de vaga existente (spec 079) + as 2 das ações dos estados humanos (F3)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(63);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
@@ -298,7 +302,7 @@ describe('createAdminPatientsRoutes', () => {
         p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
         // 12º/13º/14º/15º/16º omitidos de propósito
       );
-      expect(scanExpressRouter(router)).toHaveLength(62);
+      expect(scanExpressRouter(router)).toHaveLength(63);
     } finally {
       if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
     }
@@ -368,7 +372,8 @@ describe('createAdminPatientsRoutes', () => {
     ['post', '/api/admin/patients/map', 'getMapPoints'],
     ['get', '/api/admin/patients/kanban/services', 'kanbanServices.list'],
     ['get', '/api/admin/patients/abc-123/status-history', 'getPatientStatusHistory'],
-    ['get', '/api/admin/patients/abc-123/status-options', 'getPatientStatusOptions'],
+    ['get', '/api/admin/patients/abc-123/status-actions', 'statusActions.list'],
+    ['post', '/api/admin/patients/abc-123/status-actions', 'statusActions.perform'],
     ['patch', '/api/admin/patients/abc-123/addresses/addr-1', 'updatePatientAddress'],
     ['delete', '/api/admin/patients/abc-123/addresses/addr-1', 'deletePatientAddress'],
     ['get', '/api/admin/patients/abc-123/contracted-services', 'cs.list'],

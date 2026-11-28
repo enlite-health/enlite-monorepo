@@ -56,6 +56,8 @@ const payloads: ImportBlockedPayload[] = [
   ...(['blocked', 'reminder', 'expired'] as const).flatMap((stage) =>
     kinds.flatMap((kind) => reasons.map((reason) => ({ ...base, stage, kind, reason, audience: 'host' as const }))),
   ),
+  // reunião sem gravação (F4): só `expired` + host
+  ...kinds.map((kind) => ({ ...base, stage: 'expired' as const, kind, reason: 'not_recorded' as const, audience: 'host' as const })),
   ...kinds.flatMap((kind) =>
     reasons.flatMap((reason) => [
       { ...base, stage: 'will_be_lost' as const, kind, reason, audience: 'supervisor' as const, hostName: HOST_NAME },
@@ -103,7 +105,7 @@ describe('importBlocked — linguagem de pessoa (CA-11)', () => {
 
   it.each(['es', 'pt-BR'] as const)('%s: nenhum texto renderizado tem termo técnico, código, id ou {{}} sobrando', async (lng) => {
     const folhas = await renderAll(lng);
-    expect(folhas.length).toBe(payloads.length * 4); // controle positivo: 20 payloads × 4 linhas
+    expect(folhas.length).toBe(payloads.length * 4); // controle positivo: 22 payloads × 4 linhas
     console.info(`FOLHAS_VERIFICADAS ${lng}=${folhas.length}`);
     expect(folhas.every(([, text]) => text.length > 0)).toBe(true);
     const violacoes = folhas.map(([id, text]) => ({ id, achou: findForbidden(text) })).filter((x) => x.achou.length > 0);

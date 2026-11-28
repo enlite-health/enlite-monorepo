@@ -15,13 +15,14 @@
  */
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
+import { postTalentumAndDrain, TALENTUM_WEBHOOK } from './helpers/talentumWebhook';
 import { envelope, type ResponseBlock } from '../fixtures/talentumPayload';
 import { applyNotQualifiedTransition } from '../../src/modules/matching/application/talentumFunnel';
 
 type Analyzed = ResponseBlock & { score: number; statusLabel: 'QUALIFIED' | 'NOT_QUALIFIED' | 'IN_DOUBT' };
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
-const ENDPOINT = '/api/webhooks/talentum/prescreening';
+const ENDPOINT = TALENTUM_WEBHOOK;
 const KEYS = ['A', 'A2', 'B', 'B2', 'C', 'D'] as const;
 type Key = (typeof KEYS)[number];
 const PSC = (k: Key) => `rrej-psc-${k}`;
@@ -37,12 +38,12 @@ describe('Talentum — veredito positivo desfaz a rejeição AUTOMÁTICA (webhoo
   const jid = {} as Record<Key, string>;
 
   const send = (k: Key, label: Analyzed['statusLabel']) =>
-    api.post(ENDPOINT, envelope({
+    postTalentumAndDrain(api, envelope({
       subtype: 'ANALYZED',
       prescreening: { id: PSC(k), name: TITLE[k] },
       profile: { id: PROF(k), email: EMAIL(k), phoneNumber: PHONE[k], cuil: `20-8${PHONE[k].slice(-7)}-1` },
       response: { id: `rrej-resp-${k}-${label}`, state: [], score: 80, statusLabel: label } as Analyzed,
-    }));
+    }), ENDPOINT);
   const stage = async (k: Key) => (await pool.query(
     `SELECT application_funnel_stage AS s FROM worker_job_applications WHERE worker_id=$1 AND job_posting_id=$2`, [wid[k], jid[k]])).rows[0]?.s;
   const encuadre = async (k: Key) => (await pool.query(
@@ -100,11 +101,11 @@ describe('Talentum — veredito positivo desfaz a rejeição AUTOMÁTICA (webhoo
   });
 
   it('(a) NOT_QUALIFIED automático e depois QUALIFIED: card QUALIFIED, encuadre limpo, reversão auditada', async () => {
-    expect((await send('A', 'NOT_QUALIFIED')).status).toBe(200);
+    expect((await send('A', 'NOT_QUALIFIED')).ack.status).toBe(200);
     expect(await stage('A')).toBe('REJECTED');
     expect(await encuadre('A')).toEqual({ resultado: 'RECHAZADO', cat: 'TALENTUM_NOT_QUALIFIED' });
 
-    expect((await send('A', 'QUALIFIED')).status).toBe(200);
+    expect((await send('A', 'QUALIFIED')).ack.status).toBe(200);
 
     expect(await stage('A')).toBe('QUALIFIED');
     expect(await encuadre('A')).toEqual({ resultado: null, cat: null });
@@ -159,7 +160,7 @@ describe('Talentum — veredito positivo desfaz a rejeição AUTOMÁTICA (webhoo
     expect(last).toEqual({ new_value: 'REJECTED', changed_by: 'system:reconciliar-talentum-sem-worker' });
     expect(await stage('D')).toBe('REJECTED');
 
-    expect((await send('D', 'QUALIFIED')).status).toBe(200);
+    expect((await send('D', 'QUALIFIED')).ack.status).toBe(200);
 
     expect(await stage('D')).toBe('QUALIFIED');
     expect(await encuadre('D')).toEqual({ resultado: null, cat: null });

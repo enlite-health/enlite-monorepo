@@ -134,9 +134,11 @@ describe('captureVacancyDiff', () => {
 
   it('funciona com FULL_ALLOWED_UPDATE_FIELDS (smoke test — sem crash)', () => {
     const before: Record<string, unknown> = { status: 'SEARCHING', title: 'CASO 1-1' };
-    const after: Record<string, unknown>  = { status: 'ACTIVE',    title: 'CASO 1-1' };
+    const after: Record<string, unknown>  = { status: 'ACTIVE',    title: 'CASO 1-2' };
     const result = captureVacancyDiff(before, after, FULL_ALLOWED_UPDATE_FIELDS);
+    // `status` saiu dos campos graváveis (F4 do semaforo-da-vaga): o diff do PUT só vê o que o PUT pode escrever.
     expect(result).toHaveLength(1);
-    expect(result[0].field).toBe('status');
+    expect(result[0].field).toBe('title');
+    expect(FULL_ALLOWED_UPDATE_FIELDS).not.toContain('status');
   });
 });

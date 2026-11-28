@@ -107,7 +107,8 @@ export async function seedPatientY(request: APIRequestContext): Promise<CadeiaPa
 export async function seedPatientZ(request: APIRequestContext): Promise<CadeiaPatientWithVacancy> {
   const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', ...CADEIA_COORDS.Z });
   return orUndo(seed.patientId, seed.cleanup, async () => {
-    const vacancyId = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    // D1 (estado-automatico-do-paciente): quem move o Z para Búsqueda é o foguete (o envio à Talentum não move mais) — o movimento vale.
+    const vacancyId = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId, { moverPaciente: true });
     return { patientId: seed.patientId, addressId: seed.addressId, serviceId: seed.serviceId, vacancyId, cleanup: seed.cleanup };
   });
 }

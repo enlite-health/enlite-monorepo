@@ -10,6 +10,7 @@ import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import type { PubSubClient } from '@shared/events/PubSubClient';
 import { countryToTimezone } from '@shared/locale/CountryTimezone';
 import { updatePersonalInfo as _updatePersonalInfo } from './WorkerPersonalInfoRepository';
+import { clearProfilePhoto as _clearProfilePhoto } from './WorkerProfilePhotoRepository';
 import {
   findByCuit as _findByCuit,
   updateFromImport as _updateFromImport,
@@ -74,6 +75,13 @@ export class WorkerRepository implements IWorkerRepository {
     this.encryptionService = new KMSEncryptionService();
     this.blindIndexService = new BlindIndexService();
     this.pubsub = pubsub ?? null;
+  }
+
+  /** Mesmo repositório (mesmos serviços KMS/blind index), outro pool: a conexão da transação do processador da inbox (T-095-30). */
+  withPool(pool: Pool): WorkerRepository {
+    const bound = Object.create(this) as WorkerRepository;
+    bound.pool = pool;
+    return bound;
   }
 
   async create(data: CreateWorkerDTO): Promise<Result<Worker>> {
@@ -227,6 +235,10 @@ export class WorkerRepository implements IWorkerRepository {
     },
   ): Promise<Result<Worker>> {
     return _updatePersonalInfo(this.pool, this.encryptionService, this.blindIndexService, data);
+  }
+
+  async clearProfilePhoto(workerId: string): Promise<Result<void>> {
+    return _clearProfilePhoto(this.pool, workerId);
   }
 
   async delete(workerId: string): Promise<Result<void>> {

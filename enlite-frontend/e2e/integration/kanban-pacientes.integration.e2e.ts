@@ -10,15 +10,15 @@
  *   P9  — as 8 colunas do board, na ordem fixa
  *   P10 — o totalizador de cada coluna bate com a API
  *   P11 — paciente DISCHARGED (baja) não aparece em ACTIVE
- *   P12 — ALTA é manual e alcançável de qualquer coluna viva
- *   P13 — transição fora do catálogo é recusada e o toast diz o motivo
+ *   P12 — ALTA é manual: a ação "Dar de alta" da ficha, de qualquer coluna viva (F5: o arrasto saiu)
+ *   P13 — o gesto de arrastar não muda nada e o servidor recusa o estado derivado (PATIENT_STATUS_NOT_MANUAL)
  */
 
 import { test, expect, type APIRequestContext, type Page, type Route } from '@playwright/test';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
 import { installAuthInterceptors, tokenFor, type MockUser } from '../helpers/abac-stack-helper';
-import { confirmKanbanSuspensionExit } from '../helpers/kanban-suspension-exit-helper';
+import { escolherNoCombo } from '../helpers/combobox';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -220,11 +220,12 @@ test.describe('kanban de pacientes @integration', () => {
     }
   });
 
-  // ── P12 · alta é manual e vem de qualquer coluna viva ───────────────────
+  // ── P12 · alta é manual e vem de qualquer coluna viva (F5: pela ação "Dar de alta" da ficha — o arrasto saiu) ──
   test('kanban-pacientes-alta-manual', async ({ page, request }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(240_000);
 
-    const origins = ['SOLICITANTE', 'SEARCHING', 'REPLACEMENT', 'ACTIVE', 'ON_HOLD', 'SUSPENDED'] as const;
+    // SOLICITANTE saiu da lista: a ficha só oferece ações a quem já passou pela admissão (o funil não tem "Dar de alta").
+    const origins = ['SEARCHING', 'REPLACEMENT', 'ACTIVE', 'ON_HOLD', 'SUSPENDED'] as const;
     const seeded: string[] = [];
     const reached: string[] = [];
 
@@ -235,46 +236,27 @@ test.describe('kanban de pacientes @integration', () => {
         const { patientId } = insertTestPatient({
           status: origin,
           firstName: 'E2E',
-          lastName: `AltaManual-${origin}-${Date.now()}`,
+          lastName: `AltaManual-${origin}-${Date.now()} QA`,
         });
         seeded.push(patientId);
 
-        await page.goto('/admin/patients/kanban');
-        await waitForBoard(page);
-
-        const card = page.locator(`[data-testid="patient-kanban-card-${patientId}"]`);
-        await expect(card).toBeVisible({ timeout: 10_000 });
-        const targetColumn = page.locator('[data-testid="kanban-column-ALTA"]');
-
-        // DX-EX-3 (decisão desta execução, medida): com 8 colunas de 260px e
-        // viewport 1366px, a coluna de origem de ON_HOLD/SUSPENDED (5ª/6ª) cai
-        // na borda ou fora da área visível. `dndKitDrag` mede a posição do
-        // CURSOR a partir do `boundingBox()` do source SEM garantir que ele
-        // esteja em viewport — sem este scroll o drag nem inicia (sem toast,
-        // sem request ao backend; medido isolando as duas origens: com
-        // `scrollIntoViewIfNeeded()` antes, `status` vira ALTA; sem ele, fica
-        // no status original). O helper (`e2e/helpers/dndKitDrag.ts`) não foi
-        // tocado — só a chamada, aqui.
-        await card.scrollIntoViewIfNeeded();
+        await page.goto(`/admin/patients/${patientId}`);
+        const alta = page.getByTestId('patient-status-action-dar_alta');
+        await alta.click({ timeout: 30_000 });
         if (origin === 'SUSPENDED') {
-          // D444 (2ª rodada): sair de SUSPENDED pelo Kanban abre o
-          // `SuspensionExitReasonDialog` — o drag sozinho não move nada nem
-          // dispara o PUT (helper compartilhado com
-          // `patient-kanban-suspendido-saida-motivo.integration.e2e.ts`).
-          await dndKitDrag(page, card, targetColumn);
-          await confirmKanbanSuspensionExit(page, 'RESUMED_SERVICE');
-        } else {
-          // Item 4c (gate revisao-pr): espera o PUT /status disparado JUNTO com o drag —
-          // sem isso a leitura pela API (linha abaixo) podia correr antes do backend
-          // aplicar a mudança (corrida, não o resultado do drag).
-          await Promise.all([
-            page.waitForResponse((r) => r.request().method() === 'PUT' && /\/status$/.test(r.url())),
-            dndKitDrag(page, card, targetColumn),
-          ]);
+          // D444: sair de SUSPENDED por decisão humana pede o motivo de saída.
+          await escolherNoCombo(page, page.getByTestId('patient-status-action-exit-reason'), 'Retomó el servicio (fin de vacaciones/internación)'); // RESUMED_SERVICE
+          await page.getByTestId('patient-status-action-confirm').click();
         }
+        await expect(page.getByTestId('patient-status-badge')).toContainText('Alta', { timeout: 20_000 }); // lido da TELA
 
         const status = await fetchPatientStatus(request, patientId);
         if (status === 'ALTA') reached.push(origin);
+
+        // o Kanban lê o novo estado: o card está na coluna "Alta"
+        await page.goto('/admin/patients/kanban');
+        await waitForBoard(page);
+        await expect(page.getByTestId('kanban-column-ALTA').getByTestId(`patient-kanban-card-${patientId}`)).toHaveCount(1, { timeout: 15_000 });
       }
 
       expect(reached).toEqual([...origins]);
@@ -283,19 +265,11 @@ test.describe('kanban de pacientes @integration', () => {
     }
   });
 
-  // ── P13 · transição fora do catálogo é recusada e dita ──────────────────
-  // D444 (2ª rodada) liberou SUSPENDED → SEARCHING/REPLACEMENT/ON_HOLD (migration 486) — o par
-  // original deste teste (SUSPENDED → SEARCHING) passou a ser PERMITIDO e agora exige o motivo
-  // (`SuspensionExitReasonDialog`), não mais recusado pelo backend. Par novo: SEARCHING →
-  // SUSPENDED — conferido no catálogo (`patient_status_transitions`, migrations 315/428/473/
-  // 479/485/486): SEARCHING só tem linha para ACTIVE, ON_HOLD, DISCHARGED, ALTA (315/473) e
-  // REPLACEMENT (485, launch/system-only via changeSource); nenhuma linha SEARCHING→SUSPENDED em
-  // migration nenhuma, então continua fora do catálogo. Mantém a intenção do teste (toast de
-  // transição recusada pelo backend) e as duas colunas existem no board; origem SEARCHING não
-  // dispara o diálogo novo (só arrastar PARA FORA de SUSPENDED abre, ver PatientKanbanBoard.
-  // handleDrop — `fromColumnId === 'SUSPENDED'`).
+  // ── P13 · F5: não há arrasto — o gesto não muda nada e o servidor recusa o estado derivado ──────────────
+  // (antes: arrastar SEARCHING → SUSPENDED mostrava o toast "Este cambio de estado no está disponible"; o arrasto saiu e o toast com ele.)
   test('kanban-pacientes-transicao-recusada', async ({ page, request }) => {
-    const lastName = `Recusada-${Date.now()}`;
+    const stamp = Date.now();
+    const lastName = `Recusada-${stamp} QA`;
     const { patientId } = insertTestPatient({
       status: 'SEARCHING',
       firstName: 'E2E',
@@ -303,24 +277,37 @@ test.describe('kanban de pacientes @integration', () => {
     });
 
     try {
+      const escritas: string[] = [];
+      page.on('request', (r) => {
+        if (['PUT', 'POST', 'PATCH', 'DELETE'].includes(r.method()) && /\/api\/admin\/patients\//.test(r.url())) escritas.push(r.method());
+      });
       await loginAsAdmin(page);
       await page.goto('/admin/patients/kanban');
       await waitForBoard(page);
 
       const card = page.locator(`[data-testid="patient-kanban-card-${patientId}"]`);
       await expect(card).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId(`kanban-card-${patientId}`)).not.toHaveAttribute('aria-roledescription', /.+/);
       const targetColumn = page.locator('[data-testid="kanban-column-SUSPENDED"]');
 
       await card.scrollIntoViewIfNeeded();
       await dndKitDrag(page, card, targetColumn);
 
-      // spec 051: o destino fora da lista do servidor nem chega ao PUT — a frase é a amigável (§6.4)
-      await expect(page.getByText('Este cambio de estado no está disponible.')).toBeVisible({ timeout: 8_000 });
+      // nenhuma escrita sai, nenhum toast de erro, e o card continua em Búsqueda
+      expect(escritas).toEqual([]);
+      await expect(page.getByText('Este cambio de estado no está disponible.')).toHaveCount(0);
+      await expect(page.locator('[data-testid="kanban-column-SEARCHING"]')).toContainText(`Recusada-${stamp}`); // o card capitaliza o nome (" QA" → "Qa")
 
-      await expect(page.locator('[data-testid="kanban-column-SEARCHING"]')).toContainText(lastName);
-
-      const status = await fetchPatientStatus(request, patientId);
-      expect(status).toBe('SEARCHING');
+      // o servidor recusa o estado derivado (e a origem `kanban`) mesmo chamado direto
+      for (const [status, changeSource] of [['ACTIVE', 'admin_panel'], ['REPLACEMENT', 'admin_panel'], ['SUSPENDED', 'kanban']]) {
+        const res = await request.put(`${BACKEND_URL}/api/admin/patients/${patientId}/status`, {
+          headers: { Authorization: `Bearer ${MOCK_TOKEN}`, 'Content-Type': 'application/json' },
+          data: { status, changeSource },
+        });
+        expect(res.status(), `${changeSource} → ${status}`).toBe(422);
+        expect(((await res.json()) as { code: string }).code).toBe('PATIENT_STATUS_NOT_MANUAL');
+      }
+      expect(await fetchPatientStatus(request, patientId)).toBe('SEARCHING');
     } finally {
       cleanupTestPatient(patientId);
     }

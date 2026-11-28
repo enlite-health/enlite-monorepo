@@ -25,7 +25,7 @@ describe('CompleteWhatsappPage (login com Google) — aceite no claim', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
   it('o código só confirma com a caixa do aceite marcada, e o confirm leva lgpdOptIn: true', async () => {
-    mockStartClaim.mockResolvedValue({ candidateWorkerId: 'c-1', phoneMasked: '•••1243', verificationSid: 'VE1' });
+    mockStartClaim.mockResolvedValue({ phoneMasked: '•••1243', verificationSid: 'VE1' });
     render(<CompleteWhatsappPage />);
     fireEvent.change(screen.getByTestId('phone-input'), { target: { value: '+5491112341243' } });
     fireEvent.submit(screen.getByTestId('phone-input').closest('form')!);

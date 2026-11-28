@@ -19,7 +19,7 @@ import { DraftVacancyChoiceDialog } from '@presentation/components/features/admi
 import { useVacanciesData } from '@hooks/admin/useVacanciesData';
 import { useTableSort } from '@hooks/useTableSort';
 import type { VacancySortKey } from '@presentation/components/features/admin/VacanciesTable';
-import { getStatusOptions } from './vacanciesData';
+import { getPatientStatusOptions, getSemaphoreOptions } from './vacanciesData';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 
 const INITIAL_ADVANCED: VacancyAdvancedFilters = {
@@ -28,6 +28,7 @@ const INITIAL_ADVANCED: VacancyAdvancedFilters = {
   city: '',
   requiredSex: '',
   days: [],
+  semaphore: [],
   timeFrom: '',
   timeTo: '',
 };
@@ -35,10 +36,11 @@ const INITIAL_ADVANCED: VacancyAdvancedFilters = {
 export function AdminVacanciesPage(): JSX.Element {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const statusOptions = getStatusOptions(t);
+  const patientStatusOptions = getPatientStatusOptions(t);
+  const semaphoreOptions = getSemaphoreOptions(t);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedPatientStatus, setSelectedPatientStatus] = useState('');
   // Spec 084 F2/F4: "Mostrar dadas de baja" (só consulta) e a lista manual do Talentum.
   const [showBaja, setShowBaja] = useState(false);
   const [talentumManual, setTalentumManual] = useState(false);
@@ -62,7 +64,7 @@ export function AdminVacanciesPage(): JSX.Element {
   }, []);
 
   const handleSearchChange = (v: string) => { setSearchQuery(v); setCurrentPage(1); };
-  const handleStatusChange = (v: string) => { setSelectedStatus(v); setCurrentPage(1); };
+  const handlePatientStatusChange = (v: string) => { setSelectedPatientStatus(v); setCurrentPage(1); };
   const handleItemsPerPageChange = (v: string) => { setItemsPerPage(v); setCurrentPage(1); };
   const handleSort = useCallback((key: VacancySortKey) => { toggleSort(key); setCurrentPage(1); }, [toggleSort]);
   const handleAdvancedChange = useCallback((updates: Partial<VacancyAdvancedFilters>) => {
@@ -73,7 +75,7 @@ export function AdminVacanciesPage(): JSX.Element {
   const filters = useMemo(() => {
     const base: Record<string, string> = {
       search: searchQuery,
-      status: selectedStatus,
+      patient_status: selectedPatientStatus,
       limit: itemsPerPage,
       offset: String((currentPage - 1) * parseInt(itemsPerPage)),
     };
@@ -84,6 +86,7 @@ export function AdminVacanciesPage(): JSX.Element {
     if (advancedFilters.city) base.city = advancedFilters.city;
     if (advancedFilters.requiredSex) base.required_sex = advancedFilters.requiredSex;
     if (advancedFilters.days.length > 0) base.days = advancedFilters.days.join(',');
+    if (advancedFilters.semaphore.length > 0) base.semaphore = advancedFilters.semaphore.join(',');
     if (advancedFilters.timeFrom && advancedFilters.timeTo) {
       base.time_from = advancedFilters.timeFrom;
       base.time_to = advancedFilters.timeTo;
@@ -93,7 +96,7 @@ export function AdminVacanciesPage(): JSX.Element {
       base.order = sort.direction;
     }
     return base;
-  }, [searchQuery, selectedStatus, itemsPerPage, currentPage, advancedFilters, sort, showBaja, talentumManual]);
+  }, [searchQuery, selectedPatientStatus, itemsPerPage, currentPage, advancedFilters, sort, showBaja, talentumManual]);
 
   const { vacancies: rawVacancies, stats: rawStats, total, isLoading, error, refetch } = useVacanciesData(filters);
   // Esqueleto só na 1ª carga. Nas buscas seguintes (ordenar/filtrar/paginar) a tabela fica montada
@@ -202,7 +205,9 @@ export function AdminVacanciesPage(): JSX.Element {
         id: vac.id as string,
         caseNumber: (vac.caseNumber as number | null | undefined) ?? null,
         caseOrdinal: (vac.caseOrdinal as number | null | undefined) ?? null,
-        status: (vac.status as string) || '—',
+        lifecycle: (vac.lifecycle as VacancyRow['lifecycle'] | undefined) ?? null,
+        patientStatus: (vac.patient_status as string | null | undefined) ?? null,
+        semaphore: (vac.semaphore as VacancyRow['semaphore'] | undefined) ?? null,
         diasAberto: (vac.diasAberto as string) || '—',
         stageCounts: (vac.stageCounts as Record<string, number> | undefined) ?? {},
         postulados: vac.postulados != null ? String(vac.postulados) : '—',
@@ -337,9 +342,10 @@ export function AdminVacanciesPage(): JSX.Element {
         <VacancyFilters
           searchQuery={searchQuery}
           onSearchChange={handleSearchChange}
-          selectedStatus={selectedStatus}
-          onStatusChange={handleStatusChange}
-          statusOptions={statusOptions}
+          selectedPatientStatus={selectedPatientStatus}
+          onPatientStatusChange={handlePatientStatusChange}
+          patientStatusOptions={patientStatusOptions}
+          semaphoreOptions={semaphoreOptions}
           advancedFilters={advancedFilters}
           onAdvancedChange={handleAdvancedChange}
           stateOptions={stateOptions}

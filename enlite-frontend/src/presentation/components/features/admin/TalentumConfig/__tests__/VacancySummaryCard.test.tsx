@@ -15,7 +15,7 @@ const BASE_DATA: VacancySummaryData = {
   vacancyNumber: 3,
   patientFirstName: 'Juan',
   patientLastName: 'Pérez',
-  status: 'BUSQUEDA',
+  lifecycle: null,
   publishedAt: null,
   closedAt: null,
 };
@@ -42,13 +42,21 @@ describe('VacancySummaryCard', () => {
     expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('renders status badge via the canonical VacancyStatusBadge', () => {
+  it('vaga no ar (sem selo) não mostra badge nem valor de banco (F15)', () => {
     renderCard(BASE_DATA);
-    // BUSQUEDA is a legacy alias of SEARCHING in VacancyStatusBadge; the i18n mock
-    // returns the key, proving the canonical label namespace (not raw "BUSQUEDA") is used.
-    expect(
-      screen.getByText('admin.vacancyDetail.statusBadge.SEARCHING'),
-    ).toBeInTheDocument();
+    expect(screen.queryByTestId('vacancy-lifecycle-badge')).not.toBeInTheDocument();
+    expect(screen.queryByText(/admin\.vacancyDetail\.lifecycle\./)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('patient-status-pill')).not.toBeInTheDocument();
+  });
+
+  it('vaga dada de baja mostra o selo "baja"', () => {
+    renderCard({ ...BASE_DATA, lifecycle: 'baja' });
+    expect(screen.getByText('admin.vacancyDetail.lifecycle.baja')).toBeInTheDocument();
+  });
+
+  it('sem ciclo na resposta, nenhum badge (nunca o valor cru)', () => {
+    renderCard({ ...BASE_DATA, lifecycle: null });
+    expect(screen.queryByTestId('vacancy-lifecycle-badge')).not.toBeInTheDocument();
   });
 
   it('renders dash when publishedAt is null', () => {

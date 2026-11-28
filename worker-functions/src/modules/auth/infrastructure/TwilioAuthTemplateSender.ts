@@ -2,7 +2,7 @@ import { logger, safeErrorFields } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { shouldSuppressOtp } from '../application/IsTestOtpGuard';
 import { OTP_CHANNEL_UNAVAILABLE } from '../ports/OtpChallengePort';
-import type { OtpSendContext } from './TwilioVerifyService';
+import type { OtpSendContext } from '../ports/OtpChallengePort';
 
 /** Pedaço do cliente Twilio que o sender usa: `client.messages.create`. Injetável, para o teste usar dublê (sem rede). */
 export interface TwilioMessagesClient {

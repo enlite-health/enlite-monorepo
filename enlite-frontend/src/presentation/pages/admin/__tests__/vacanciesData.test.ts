@@ -1,51 +1,30 @@
 /**
  * vacanciesData.test.ts
  *
- * GARANTIA: As opções dos selects de vacantes:
- *  - Não contêm opção duplicada com value="" (o Select já adiciona placeholder)
- *  - Usam os valores canônicos do banco para status (8 valores + DE_BAJA, spec 084)
+ * GARANTIA: os filtros da lista de vagas (estado-automatico-do-paciente, F2, E7):
+ *  - NÃO há filtro de "Ciclo de vida" (F4)
+ *  - "Estado del paciente": os estados do paciente, com os rótulos das colunas do Kanban de pacientes
  *  - Usam i18n keys, nunca strings hardcoded
  */
 
 import { describe, it, expect } from 'vitest';
-import { getStatusOptions } from '../vacanciesData';
+import * as vacanciesData from '../vacanciesData';
+import { getPatientStatusOptions } from '../vacanciesData';
+import { PATIENT_STATUSES } from '@domain/entities/patientEnums';
 
 // Mock i18n t function — retorna a chave como string
 const t = ((key: string) => key) as any;
 
-describe('vacanciesData — no duplicate empty-value options', () => {
-  it('CRITICAL: getStatusOptions does NOT include value="" option', () => {
-    const options = getStatusOptions(t);
-    const emptyOptions = options.filter((o) => o.value === '');
-    expect(emptyOptions).toHaveLength(0);
+describe('vacanciesData — sem filtro de Ciclo de vida (semaforo-da-vaga F4)', () => {
+  it('o módulo não exporta getLifecycleOptions: "Mostrar dadas de baja" cobre a baixa e ninguém filtra por estado da vaga', () => {
+    expect(Object.keys(vacanciesData)).not.toContain('getLifecycleOptions');
   });
 });
 
-describe('vacanciesData — status options match the 9 filterable DB values', () => {
-  it('contains the 8 canonical job_postings.status values + DE_BAJA (spec 084 F2: filtro "Dada de baja")', () => {
-    const options = getStatusOptions(t);
-    const values = options.map((o) => o.value).sort();
-    expect(values).toEqual(
-      [
-        'ACTIVE',
-        'CLOSED',
-        'DE_BAJA',
-        'ON_HOLD',
-        'PENDING_ACTIVATION',
-        'RAPID_RESPONSE',
-        'SEARCHING',
-        'SEARCHING_REPLACEMENT',
-        'SUSPENDED',
-      ].sort(),
-    );
-  });
-});
-
-describe('vacanciesData — all options use i18n keys', () => {
-  it('status option labels are i18n keys', () => {
-    const options = getStatusOptions(t);
-    options.forEach((o) => {
-      expect(o.label).toMatch(/^admin\.vacancies\./);
-    });
+describe('vacanciesData — Estado del paciente', () => {
+  it('oferece todos os estados do paciente, com a chave das colunas do Kanban de pacientes', () => {
+    const options = getPatientStatusOptions(t);
+    expect(options.map((o) => o.value)).toEqual([...PATIENT_STATUSES]);
+    for (const o of options) expect(o.label).toBe(`admin.patients.kanban.columns.${o.value}`);
   });
 });

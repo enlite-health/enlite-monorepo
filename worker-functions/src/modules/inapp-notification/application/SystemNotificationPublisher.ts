@@ -12,12 +12,16 @@ import {
   NotificationRepository,
   type AdmissionTactiqLinkPayload,
   type AdmissionTactiqLinkReason,
+  type AdmissionTactiqLinkAudience,
   type AdmissionTactiqExtensionPayload,
   type AdmissionTactiqExtensionState,
   type PtContactsPendingPayload,
   type ItineraryUncoveredShiftsPayload,
   type PedidoIaAplicarPayload,
   type AdmissionImportBlockedPayload,
+  type TalentumWebhookAlarmPayload,
+  type CoordinationAlertPayload,
+  TALENTUM_WEBHOOK_ALARMS,
   IMPORT_STAGES,
   IMPORT_KINDS,
   IMPORT_REASONS,
@@ -34,7 +38,29 @@ export const SYSTEM_ITINERARY_ACTOR_UID = 'system:itinerary-daily';
 /** Sentinela do aviso da fila de pedidos do Sol (spec 078 M3b-2): sem autor humano, sem FK (461). */
 export const SYSTEM_SOL_FILA_ACTOR_UID = 'system:sol-fila';
 
+/** Sentinela do aviso do webhook do Talentum (spec 095 §3.5): sem autor humano, sem FK (461). A tela mostra "Enlite", nunca o uid. */
+export const SYSTEM_TALENTUM_WEBHOOK_ACTOR_UID = 'system:talentum-webhook';
+
+/** Sentinela do aviso de presença à coordenação (emenda 077 §5): sem autor humano, sem FK (461). */
+export const SYSTEM_PRESENCE_ACTOR_UID = 'system:presence-alert';
+
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Payload fechado do aviso de presença à coordenação: `{ occurrence_id, slot_id, on_date, worker_id, service_id, start_time, end_time }` (os 2 últimos = instantes ISO da janela do turno). Reconstrói chave a chave:
+ * chave extra (nome, endereço, coordenada, clínico) LANÇA, não é ignorada. Valor fora do contrato (uuid, data) também lança.
+ */
+export function buildCoordinationAlertPayload(input: { occurrence_id: string; slot_id: string; on_date: string; worker_id: string; service_id: string; start_time: string; end_time: string }): CoordinationAlertPayload {
+  const extra = Object.keys(input).filter((k) => !['occurrence_id', 'slot_id', 'on_date', 'worker_id', 'service_id', 'start_time', 'end_time'].includes(k));
+  if (extra.length > 0) throw new Error('CoordinationAlertPayload: chave fora do contrato');
+  const uuids = [input.occurrence_id, input.slot_id, input.worker_id, input.service_id];
+  const instants = [input.start_time, input.end_time];
+  if (!uuids.every((u) => UUID_RE.test(u)) || !ISO_DATE.test(input.on_date) || !instants.every((t) => typeof t === 'string' && ISO_INSTANT.test(t) && !Number.isNaN(Date.parse(t)))) {
+    throw new Error('CoordinationAlertPayload: valor fora do contrato');
+  }
+  return { occurrence_id: input.occurrence_id, slot_id: input.slot_id, on_date: input.on_date, worker_id: input.worker_id, service_id: input.service_id, start_time: input.start_time, end_time: input.end_time };
+}
 
 /**
  * Payload fechado do aviso "aplicar" (spec 078 M4.4, gatilho (d)): id do pedido + degrau (3|4) + grave + prazo. `hoje` se grave, `semana`
@@ -44,6 +70,20 @@ export function buildPedidoIaAplicarPayload(input: { pedidoId: string; degrau: n
   if (!UUID_RE.test(input.pedidoId)) throw new Error('PedidoIaAplicarPayload: pedidoId inválido');
   if (input.degrau !== 3 && input.degrau !== 4) throw new Error('PedidoIaAplicarPayload: degrau fora de {3,4}');
   return { pedido_id: input.pedidoId, degrau: input.degrau, grave: input.grave, prazo: input.grave ? 'hoje' : 'semana' };
+}
+
+/**
+ * Payload fechado do aviso do webhook do Talentum: `{ alarme, quantidade, desde }`. Reconstrói chave a chave: QUALQUER chave extra (nome,
+ * e-mail, id) faz LANÇAR, não ser ignorada — um chamador que tente passar dado a mais é erro de programação, não dado que some em silêncio.
+ * `alarme` fora do conjunto fechado, `quantidade` não inteira ou < 1 e `desde` que não é data também lançam.
+ */
+export function buildTalentumWebhookAlarmPayload(input: { alarme: string; quantidade: number; desde: string }): TalentumWebhookAlarmPayload {
+  const extra = Object.keys(input).filter((k) => k !== 'alarme' && k !== 'quantidade' && k !== 'desde');
+  if (extra.length > 0) throw new Error('talentum_webhook_alarm_payload: chave fora do contrato');
+  if (!inSet(TALENTUM_WEBHOOK_ALARMS, input.alarme) || !Number.isInteger(input.quantidade) || input.quantidade < 1 || !isIso(input.desde)) {
+    throw new Error('talentum_webhook_alarm_payload: valor fora do contrato');
+  }
+  return { alarme: input.alarme as TalentumWebhookAlarmPayload['alarme'], quantidade: input.quantidade, desde: input.desde };
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -66,14 +106,58 @@ export function buildItineraryUncoveredShiftsPayload(input: {
   };
 }
 
-const ADMISSION_TACTIQ_REASONS: readonly AdmissionTactiqLinkReason[] = ['missing', 'broken', 'wrong_account'];
+const ADMISSION_TACTIQ_REASONS: readonly AdmissionTactiqLinkReason[] = ['missing', 'broken', 'wrong_account', 'seat_missing', 'seat_pending', 'seat_ready'];
+const ADMISSION_TACTIQ_AUDIENCES: readonly AdmissionTactiqLinkAudience[] = ['host', 'master'];
+/** Motivos que a cópia ao Acesso Master pode carregar (D11): o resto só existe para o próprio responsável. */
+const MASTER_REASONS: readonly AdmissionTactiqLinkReason[] = ['seat_missing', 'broken', 'seat_pending'];
 
-/** Payload fechado de 1 chave. Motivo fora do conjunto é erro de programação (lança) — nada livre entra. */
-export function buildAdmissionTactiqLinkPayload(reason: string): AdmissionTactiqLinkPayload {
+export interface AdmissionTactiqLinkExtras {
+  audience?: string;
+  hostName?: string | null;
+  adminNotified?: boolean;
+  autoReactivates?: boolean;
+  firstLink?: boolean;
+}
+
+/**
+ * Payload fechado do aviso do vínculo (D11). Motivo fora do conjunto é erro de programação (lança); sem `extras` o payload é só
+ * `{ reason }` (o contrato antigo). Combinações proibidas lançam: `master` só com `seat_missing`/`broken`; `hostName` só em `master`;
+ * `adminNotified` só em `seat_missing` ao `host`; `autoReactivates` só em `seat_missing`; `seat_missing` exige `audience` e os booleanos.
+ * F5: `seat_pending` só `master`; `seat_ready` só `host` e exige `firstLink` boolean (que só existe em `seat_ready`).
+ */
+export function buildAdmissionTactiqLinkPayload(reason: string, extras: AdmissionTactiqLinkExtras = {}): AdmissionTactiqLinkPayload {
   if (!(ADMISSION_TACTIQ_REASONS as readonly string[]).includes(reason)) {
     throw new Error('admission_tactiq_link_payload: motivo fora do conjunto fechado');
   }
-  return { reason: reason as AdmissionTactiqLinkReason };
+  const r = reason as AdmissionTactiqLinkReason;
+  const { audience, hostName, adminNotified, autoReactivates, firstLink } = extras;
+  const fail = (why: string): never => {
+    throw new Error(`admission_tactiq_link_payload: ${why}`);
+  };
+  if (audience !== undefined && !(ADMISSION_TACTIQ_AUDIENCES as readonly string[]).includes(audience)) fail('audience fora do conjunto fechado');
+  if (audience === 'master' && !MASTER_REASONS.includes(r)) fail('cópia do Acesso Master só com seat_missing, broken ou seat_pending');
+  if (r === 'seat_pending' && audience !== 'master') fail('seat_pending só vai ao Acesso Master');
+  if (r === 'seat_ready' && audience !== 'host') fail('seat_ready só vai ao host');
+  if (firstLink !== undefined && (r !== 'seat_ready' || typeof firstLink !== 'boolean')) fail('firstLink só em seat_ready');
+  if (r === 'seat_ready' && typeof firstLink !== 'boolean') fail('seat_ready exige firstLink');
+  const hasName = hostName !== undefined && hostName !== null && hostName !== '';
+  if (hasName && audience !== 'master') fail('hostName só na cópia do Acesso Master');
+  if (adminNotified !== undefined && (r !== 'seat_missing' || audience !== 'host' || typeof adminNotified !== 'boolean')) {
+    fail('adminNotified só em seat_missing ao host');
+  }
+  if (autoReactivates !== undefined && (r !== 'seat_missing' || typeof autoReactivates !== 'boolean')) fail('autoReactivates só em seat_missing');
+  if (r === 'seat_missing') {
+    if (audience === undefined) fail('seat_missing exige audience');
+    if (typeof autoReactivates !== 'boolean') fail('seat_missing exige autoReactivates');
+    if (audience === 'host' && typeof adminNotified !== 'boolean') fail('seat_missing ao host exige adminNotified');
+  }
+  const out: AdmissionTactiqLinkPayload = { reason: r };
+  if (audience !== undefined) out.audience = audience as AdmissionTactiqLinkAudience;
+  if (hasName) out.hostName = String(hostName);
+  if (adminNotified !== undefined) out.adminNotified = adminNotified;
+  if (autoReactivates !== undefined) out.autoReactivates = autoReactivates;
+  if (firstLink !== undefined) out.firstLink = firstLink;
+  return out;
 }
 
 const ADMISSION_EXTENSION_STATES: readonly AdmissionTactiqExtensionState[] = ['installed', 'missing', 'disabled'];
@@ -103,6 +187,9 @@ export function buildAdmissionImportBlockedPayload(input: {
   }
   if ((input.stage === 'will_be_lost') !== (input.audience === 'supervisor')) {
     throw new Error('admission_import_blocked_payload: combinação stage/audience inválida');
+  }
+  if (input.reason === 'not_recorded' && (input.stage !== 'expired' || input.audience !== 'host')) {
+    throw new Error('admission_import_blocked_payload: combinação stage/audience inválida (not_recorded só expired ao host)');
   }
   const base = {
     stage: input.stage, kind: input.kind, reason: input.reason, audience: input.audience, meetingAt: input.meetingAt, deadlineAt: input.deadlineAt,
@@ -154,9 +241,10 @@ export class SystemNotificationPublisher {
    */
   async publishAdmissionTactiqLinkRequired(
     client: PoolClient,
-    input: { recipientUid: string | null; reason: string },
+    input: { recipientUid: string | null; reason: string } & AdmissionTactiqLinkExtras,
   ): Promise<string | null> {
-    const payload = buildAdmissionTactiqLinkPayload(input.reason);
+    const { recipientUid: _recipient, reason, ...extras } = input;
+    const payload = buildAdmissionTactiqLinkPayload(reason, extras);
     if (!input.recipientUid) return null;
     const eventId = await this.repository.insertEvent(
       {
@@ -188,6 +276,25 @@ export class SystemNotificationPublisher {
       client,
     );
     await this.repository.insertNotifications(eventId, [input.recipientUid], client);
+    return eventId;
+  }
+
+  /**
+   * Spec 095 §3.5: UM evento + uma notificação por destinatário (coordenação de Recrutamento + Master), na transação do chamador (o estado
+   * de dedup do alarme vai na MESMA transação). Sem destinatário não grava e devolve `null`. `patientId` sempre `null`.
+   */
+  async publishTalentumWebhookAlarm(
+    client: PoolClient,
+    input: { recipientUids: readonly string[]; payload: { alarme: string; quantidade: number; desde: string } },
+  ): Promise<string | null> {
+    const payload = buildTalentumWebhookAlarmPayload(input.payload);
+    const uids = [...new Set(input.recipientUids)];
+    if (uids.length === 0) return null;
+    const eventId = await this.repository.insertEvent(
+      { typeCode: 'TALENTUM_WEBHOOK_ALARM', actorUid: SYSTEM_TALENTUM_WEBHOOK_ACTOR_UID, patientId: null, conversationId: null, messageId: null, payload },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, uids, client);
     return eventId;
   }
 
@@ -233,6 +340,29 @@ export class SystemNotificationPublisher {
         conversationId: null,
         messageId: null,
         payload: buildItineraryUncoveredShiftsPayload({ operationDate: input.operationDate, items: input.items }),
+      },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, [input.recipientUid], client);
+    return eventId;
+  }
+
+  /**
+   * Emenda 077 §5: o aviso de presença a UM destinatário da coordenação. O `client` é a transação do alerta (a entrega in-app vai nela).
+   * Payload só-ids (`buildCoordinationAlertPayload`); `patient_id` na coluna. Devolve o id do evento (a entrega o referencia).
+   */
+  async publishCoordinationAlert(
+    client: PoolClient,
+    input: { typeCode: 'PRESENCE_OPEN_4H' | 'CHECK_IN_REFUSED_NO_ENTRY'; recipientUid: string; patientId: string; payload: Parameters<typeof buildCoordinationAlertPayload>[0] },
+  ): Promise<string> {
+    const eventId = await this.repository.insertEvent(
+      {
+        typeCode: input.typeCode,
+        actorUid: SYSTEM_PRESENCE_ACTOR_UID,
+        patientId: input.patientId,
+        conversationId: null,
+        messageId: null,
+        payload: buildCoordinationAlertPayload(input.payload),
       },
       client,
     );

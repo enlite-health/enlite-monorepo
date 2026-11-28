@@ -24,11 +24,10 @@ import { VacancySocialLinksCard } from '@presentation/components/features/admin/
 import { VacancySourceChangeNoticeBanner } from '@presentation/components/features/admin/VacancyDetail/VacancySourceChangeNoticeBanner';
 import { VacancyScheduleEditModal } from '@presentation/components/features/admin/VacancyDetail/VacancyScheduleEditModal';
 import { VacancyDescriptionEditModal } from '@presentation/components/features/admin/VacancyDetail/VacancyDescriptionEditModal';
-import type { EditableVacancyStatus } from '@presentation/components/features/admin/VacancyDetail/VacancyStatusEditor';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { useActionGate, useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { VacancyBajaConfirmDialog } from '@presentation/components/features/admin/VacancyBajaConfirmDialog';
-import { bajaErrorMessage, vacancyUpdateErrorMessage } from '@presentation/components/features/admin/vacancyBajaMessages';
+import { bajaErrorMessage } from '@presentation/components/features/admin/vacancyBajaMessages';
 import { VacancyPrescreeningConfig } from '@presentation/components/features/admin/VacancyDetail/VacancyPrescreeningConfig';
 import { VacancyTalentumCard } from '@presentation/components/features/admin/VacancyDetail/VacancyTalentumCard';
 import { EnquadreTab } from '@presentation/components/features/admin/VacancyDetail/Enquadre/EnquadreTab';
@@ -53,8 +52,6 @@ export default function VacancyDetailPage() {
   const { vacancy, isLoading, error, refetch } = useVacancyDetail(id);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showDescriptionModal, setShowDescriptionModal] = useState(false);
-  const [statusSaving, setStatusSaving] = useState(false);
-  const [statusError, setStatusError] = useState<string | null>(null);
   // Edição gravada, mas que não chegou ao Talentum (OTHER_ACCOUNT/FAILED) — aviso aditivo, nunca erro de gravação.
   const [talentumWarning, setTalentumWarning] = useState<string | null>(null);
   const warnTalentumSync = (sync?: TalentumSync): void => {
@@ -86,22 +83,6 @@ export default function VacancyDetailPage() {
       window.history.replaceState({}, '');
     }
   }, [location.state]);
-
-  const handleStatusChange = async (next: EditableVacancyStatus): Promise<void> => {
-    if (!id) return;
-    setStatusError(null);
-    setTalentumWarning(null);
-    setStatusSaving(true);
-    try {
-      const saved = await AdminApiService.updateVacancy(id, { status: next });
-      warnTalentumSync(saved?.talentumSync);
-      await refetch();
-    } catch (err) {
-      setStatusError(vacancyUpdateErrorMessage(err, t));
-    } finally {
-      setStatusSaving(false);
-    }
-  };
 
   const handleConfirmBaja = async (): Promise<void> => {
     if (!id) return;
@@ -170,8 +151,8 @@ export default function VacancyDetailPage() {
   return (
     <PageContainer>
       {/* Banner: operador foi redirecionado do form de edição completa porque a vaga
-          já saiu do rascunho. Edição localizada (lápis em "Días y Horarios" + dropdown
-          do status badge) é o caminho correto a partir daqui. */}
+          já saiu do rascunho. Edição localizada (lápis em "Días y Horarios") é o
+          caminho correto a partir daqui; ninguém escolhe estado para a vaga (semaforo-da-vaga F4). */}
       {showPublishedRedirectBanner && (
         <div
           className="mb-6 bg-amber-50 border border-amber-300 rounded-xl px-5 py-4 flex items-start justify-between gap-4"
@@ -254,7 +235,8 @@ export default function VacancyDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[404px_1fr] gap-5 mb-5">
         <div className="flex flex-col gap-5">
           <VacancyCaseCard
-            status={vacancy.status ?? '—'}
+            lifecycle={vacancy.lifecycle ?? null}
+            patientStatus={vacancy.patient_status ?? null}
             caseNumber={vacancy.case_number ?? null}
             dependencyLevel={vacancy.dependency_level ?? null}
             profession={
@@ -272,10 +254,6 @@ export default function VacancyDetailPage() {
             providersNeeded={vacancy.providers_needed ?? null}
             publishedAt={vacancy.created_at ?? null}
             closedAt={vacancy.closed_at ?? null}
-            onStatusChange={isDeBaja ? undefined : handleStatusChange}
-            isStatusSaving={statusSaving}
-            hasService={hasService}
-            statusBeforeHold={vacancy.status_before_hold ?? null}
           />
           {showBajaButton && (
             <div>
@@ -296,13 +274,6 @@ export default function VacancyDetailPage() {
             >
               <Text size="sm" color="inherit" className="text-amber-900">
                 {talentumWarning}
-              </Text>
-            </div>
-          )}
-          {statusError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2">
-              <Text size="sm" color="inherit" className="text-red-600">
-                {statusError}
               </Text>
             </div>
           )}

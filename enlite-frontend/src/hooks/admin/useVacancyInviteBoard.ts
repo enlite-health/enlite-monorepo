@@ -89,13 +89,17 @@ export function useVacancyInviteBoard(vacancyId: string | undefined, { enabled, 
   }, [enabled, vacancyId, canExecute, attempt]);
 
   /** Só GET: o que mudou por fora (ou o envio que terminou) volta sem rodar o match de novo. */
-  const refetch = useCallback(async (): Promise<void> => {
-    if (!vacancyId) return;
+  /** Devolve `true` quando o GET voltou; `false` quando falhou (o erro vai para `error`, sem rejeitar). */
+  const refetch = useCallback(async (): Promise<boolean> => {
+    if (!vacancyId) return false;
     setIsRefreshing(true);
+    setError(null);
     try {
       setResults(await AdminApiService.getMatchResults(vacancyId, INVITE_LIMIT));
+      return true;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'error');
+      return false;
     } finally {
       setIsRefreshing(false);
     }

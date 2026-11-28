@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { loggingAls, reportError } from '@shared/logging';
 import { JobPostingAuditRepository } from '../../infrastructure/JobPostingAuditRepository';
+import { SHORT_IO_DEFAULT_BASE_URL } from '../../infrastructure/shortlinks/ShortIoClient';
 
 const SOCIAL_CHANNELS = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site'] as const;
 type SocialChannel = (typeof SOCIAL_CHANNELS)[number];
@@ -27,6 +28,9 @@ const GenerateLinkBodySchema = z.object({
  *   POST /api/admin/vacancies/:id/social-links       — Gera short link para um canal
  *   GET  /api/admin/vacancies/:id/social-links-stats  — Retorna cliques por canal
  */
+/** Mesma base do `ShortIoClient`: default de produção intacto; o e2e aponta `SHORT_IO_BASE_URL` para o stub (nada toca o Short.io real). */
+const shortIoBaseUrl = (): string => (process.env.SHORT_IO_BASE_URL || SHORT_IO_DEFAULT_BASE_URL).replace(/\/+$/, '');
+
 export class VacancySocialLinksController {
   private db: Pool;
   private auditRepo: JobPostingAuditRepository;
@@ -105,7 +109,7 @@ export class VacancySocialLinksController {
         return;
       }
 
-      const shortIoResponse = await fetch('https://api.short.io/links', {
+      const shortIoResponse = await fetch(`${shortIoBaseUrl()}/links`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: apiKey },
         body: JSON.stringify({
@@ -213,7 +217,7 @@ export class VacancySocialLinksController {
       const results = await Promise.allSettled(
         entries.map(async ([channel, val]) => {
           const stored = val as StoredLink;
-          const resp = await fetch(`https://api.short.io/links/${stored.id}`, {
+          const resp = await fetch(`${shortIoBaseUrl()}/links/${stored.id}`, {
             headers: { Authorization: apiKey },
           });
           if (!resp.ok) return { channel, url: stored.url, clicks: 0 };

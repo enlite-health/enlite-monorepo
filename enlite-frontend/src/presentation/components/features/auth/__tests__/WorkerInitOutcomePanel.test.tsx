@@ -23,7 +23,7 @@ describe('WorkerInitOutcomePanel — o painel único do init pendente (DP-20)', 
   beforeEach(() => { vi.clearAllMocks(); });
 
   it('claim_pending → o MESMO ClaimOtpModal, com a máscara e o sid do init', () => {
-    render(<WorkerInitOutcomePanel outcome={{ kind: 'claim_pending', candidateWorkerId: 'w', phoneMasked: '•••1243', verificationSid: 'VE1' }} authUid="u" email="a@b.c" {...handlers()} />);
+    render(<WorkerInitOutcomePanel outcome={{ kind: 'claim_pending', phoneMasked: '•••1243', verificationSid: 'VE1' }} authUid="u" email="a@b.c" {...handlers()} />);
     expect(screen.getByTestId('claim-otp-modal').textContent).toBe('•••1243|VE1');
   });
 

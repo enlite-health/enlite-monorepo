@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import type { PoolClient } from 'pg';
 import { withActorContext } from '@shared/database/actorContext';
 import type {
   InterviewHostAdminRow,
@@ -34,12 +35,18 @@ export interface InterviewHostCreateInput extends InterviewHostInput {
 
 export interface InterviewHostListItem extends InterviewHostAdminRow {
   tactiq: TactiqLinkState;
+  /** O Acesso Master declarou "Licencia asignada" (F5, D16): derivado da trilha pelo `TactiqLinkService`; a tela só mostra. */
+  tactiqSeatDeclared: boolean;
 }
 
 export interface InterviewHostServiceDeps {
   db: Pool;
   repo: InterviewHostRepository;
-  tactiq: { statesFor(emails: string[]): Promise<Map<string, TactiqLinkState>> };
+  tactiq: {
+    statesFor(emails: string[]): Promise<Map<string, TactiqLinkState>>;
+    seatsDeclaredFor(emails: string[]): Promise<Set<string>>;
+    declareSeat(input: { email: string; assigned: boolean; actorUid: string }, cli: PoolClient): Promise<{ changed: boolean }>;
+  };
 }
 
 export class InterviewHostService {
@@ -47,8 +54,26 @@ export class InterviewHostService {
 
   async list(): Promise<InterviewHostListItem[]> {
     const rows = await this.deps.repo.listAdmin();
-    const states = rows.length > 0 ? await this.deps.tactiq.statesFor(rows.map((r) => r.email)) : new Map<string, TactiqLinkState>();
-    return rows.map((r) => ({ ...r, tactiq: states.get(r.email.toLowerCase()) ?? 'missing' }));
+    const emails = rows.map((r) => r.email);
+    const states = rows.length > 0 ? await this.deps.tactiq.statesFor(emails) : new Map<string, TactiqLinkState>();
+    const declared = rows.length > 0 ? await this.deps.tactiq.seatsDeclaredFor(emails) : new Set<string>();
+    return rows.map((r) => ({
+      ...r,
+      tactiq: states.get(r.email.toLowerCase()) ?? 'missing',
+      tactiqSeatDeclared: declared.has(r.email.toLowerCase()),
+    }));
+  }
+
+  /**
+   * "Licencia asignada" (F5, D16): o Acesso Master declara que o assento do Tactiq existe. Confiança DECLARADA (não há API do Tactiq para conferir);
+   * quem grava o evento e os avisos é o `TactiqLinkService`, na mesma transação. Repetir o mesmo valor não faz nada.
+   */
+  async setTactiqSeat(id: string, assigned: boolean, actorUid: string): Promise<void> {
+    await withActorContext(this.deps.db, async (client) => {
+      const current = await this.deps.repo.findById(id, client);
+      if (!current) throw new InterviewHostNotFoundError();
+      await this.deps.tactiq.declareSeat({ email: current.email, assigned, actorUid }, client);
+    });
   }
 
   async candidates(q: string): Promise<StaffCandidate[]> {

@@ -16,6 +16,7 @@ import type { TwilioAuthTemplateSender } from './TwilioAuthTemplateSender';
 /** Tentativas erradas por desafio; a N-ésima cancela. O quadro completo de limites é do cartão de limites (T-F3c-111). */
 const MAX_ATTEMPTS = 5;
 const MIN_PEPPER_LENGTH = 32;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Limites de ENVIO de código, contados NO BANCO (`otp_challenges`): sobrevivem a reinício e valem para N instâncias. Não
@@ -155,6 +156,8 @@ export class PgOtpChallengeService implements OtpChallengePort {
 
   async check(input: OtpCheckInput): Promise<OtpCheckOutcome> {
     this.assertPepper();
+    // Id torto não chega ao Postgres (22P02): INVALID_OTP, sem dizer se o id existe.
+    if (!UUID_RE.test(input.challengeId)) return { ok: false, code: 'INVALID_OTP' };
 
     // 1. A tentativa é CONTADA ANTES de comparar, num único UPDATE atômico com o teto na própria condição: N conferências
     //    paralelas não passam de MAX_ATTEMPTS (compare-depois-incrementa deixaria todas passarem). O telefone da ficha (DP-21)
@@ -163,9 +166,9 @@ export class PgOtpChallengeService implements OtpChallengePort {
       `UPDATE otp_challenges SET attempts = attempts + 1
         WHERE id = $1 AND worker_id = $2
           AND status = 'pending' AND expires_at > NOW() AND attempts < $4
-          AND phone_e164 = $3
+          AND phone_e164 = $3 AND purpose = $5
         RETURNING code_hmac, purpose, attempts`,
-      [input.challengeId, input.workerId, input.phoneOnRecord, MAX_ATTEMPTS],
+      [input.challengeId, input.workerId, input.phoneOnRecord, MAX_ATTEMPTS, input.purpose],
     );
 
     if (counted.rowCount === 1) {
@@ -193,8 +196,8 @@ export class PgOtpChallengeService implements OtpChallengePort {
   /** Não houve tentativa contada: diz POR QUE o desafio não vale. */
   private async diagnose(input: OtpCheckInput): Promise<OtpCheckOutcome> {
     const state = await this.pool.query<{ status: string; expired: boolean; attempts: number }>(
-      `SELECT status, (expires_at <= NOW()) AS expired, attempts FROM otp_challenges WHERE id = $1 AND worker_id = $2`,
-      [input.challengeId, input.workerId],
+      `SELECT status, (expires_at <= NOW()) AS expired, attempts FROM otp_challenges WHERE id = $1 AND worker_id = $2 AND purpose = $3`,
+      [input.challengeId, input.workerId, input.purpose],
     );
     const row = state.rows[0];
     if (!row) return { ok: false, code: 'INVALID_OTP' };

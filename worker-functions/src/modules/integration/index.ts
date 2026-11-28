@@ -91,6 +91,9 @@ export { PartnerAuthMiddleware } from './interfaces/webhooks/middleware/PartnerA
 export { createWebhookRoutes } from './interfaces/webhooks/routes/webhookRoutes';
 export { createAdminIntegrationsRoutes } from './interfaces/routes/adminIntegrationsRoutes';
 export { createAdminAiPromptRoutes } from './interfaces/routes/adminAiPromptRoutes';
+export { createTalentumInboxInternalRoutes, TalentumInboxInternalController } from './interfaces/routes/talentumInboxInternalRoutes';
+export { ProcessTalentumInboxUseCase } from './application/ProcessTalentumInboxUseCase';
+export { TalentumInboxRepository } from './infrastructure/TalentumInboxRepository';
 export { AiPromptController } from './interfaces/controllers/AiPromptController';
 export { AnaCareBackfillController } from './interfaces/controllers/AnaCareBackfillController';
 export { TalentumPrescreeningPayloadSchema } from './interfaces/webhooks/validators/talentumPrescreeningSchema';

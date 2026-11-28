@@ -38,7 +38,7 @@ export type MessagingFailureReason =
 const RULES: ReadonlyArray<{ pattern: RegExp; reason: MessagingFailureReason }> = [
   // PeriskopeMessagingService/TwilioMessagingService: "<provider> service not configured..."
   { pattern: /service not configured/i, reason: 'PROVIDER_NOT_CONFIGURED' },
-  // PeriskopeMessagingService.ts / TwilioMessagingService.ts: `Invalid phone number: ${to}`
+  // PeriskopeMessagingService.ts: `Invalid phone number: ${to}`; TwilioMessagingService.ts: texto fixo `Invalid phone number: (E.164 required)` (sem o número)
   { pattern: /^Invalid phone number:/i, reason: 'INVALID_PHONE' },
   // "Template '<slug>' não encontrado ou inativo" — <slug> é config nossa, não PII, mas o
   // código ainda assim não interpola: fica estável mesmo se a mensagem mudar de idioma/texto.

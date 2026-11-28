@@ -13,20 +13,29 @@ import {
 export class TalentumPrescreeningRepository {
   private pool: Pool;
 
-  constructor() {
-    this.pool = DatabaseConnection.getInstance().getPool();
+  /** `pool` injetado = pool-fachada de uma transação já aberta (`txBoundPool`); omitido = o pool do processo. */
+  constructor(pool?: Pool) {
+    this.pool = pool ?? DatabaseConnection.getInstance().getPool();
+  }
+
+  /** Mesmo repositório, outro pool (a conexão da transação do processador da inbox, T-095-30). */
+  withPool(pool: Pool): TalentumPrescreeningRepository {
+    return new TalentumPrescreeningRepository(pool);
   }
 
   // upsertPrescreening
   //   ON CONFLICT (talentum_prescreening_id, talentum_profile_id):
   //     prescreening_id = fila (processo seletivo), profile_id = candidato
-  //     status         → sempre sobrescreve (INITIATED → IN_PROGRESS → COMPLETED → ANALYZED)
+  //     status         → nunca regride (spec 095 §3.1): grava o novo só se talentum_status_precedence(novo) >=
+  //                      a do gravado (INITIATED 0 → IN_PROGRESS 1 → COMPLETED 2 → ANALYZED/PENDING 3 → EXPIRED 4 → veredito 5);
+  //                      empate grava o novo (veredito → veredito = reclassificação); EXPIRED atrasado NÃO sobrescreve veredito
   //     worker_id      → COALESCE: preenche se era null; não regride para null em POSTs posteriores
   //     job_posting_id → a vaga DONA (resolvida pelo talentum_prescreening_id, `jobPostingResolvedById`)
   //                      vence a gravada; resolução por título/null mantém o COALESCE (título nunca
   //                      sobrescreve uma resolução por id — M2)
   //     updated_at     → sempre NOW()
   //   `previousJobPostingId` = a vaga gravada ANTES deste evento (null se a linha é nova).
+  //   `prescreening.status` já é o status FINAL gravado: se a trava segurou, difere do enviado (o chamador loga).
   //   `client` opcional: roda dentro da transação do chamador (card + divergência atômicos).
   async upsertPrescreening(
     dto: UpsertTalentumPrescreeningDTO,
@@ -49,7 +58,11 @@ export class TalentumPrescreeningRepository {
          environment
        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (talentum_prescreening_id, talentum_profile_id) DO UPDATE SET
-         status         = EXCLUDED.status,
+         status         = CASE
+           WHEN talentum_status_precedence(EXCLUDED.status) >= talentum_status_precedence(talentum_prescreenings.status)
+           THEN EXCLUDED.status
+           ELSE talentum_prescreenings.status
+         END,
          worker_id      = COALESCE(talentum_prescreenings.worker_id,      EXCLUDED.worker_id),
          job_posting_id = CASE
            WHEN $8::boolean AND EXCLUDED.job_posting_id IS NOT NULL THEN EXCLUDED.job_posting_id

@@ -12,12 +12,11 @@
  * If the audit INSERT fails, only the audit row is rolled back — the surrounding
  * transaction (UPDATE job_postings) is NOT affected and always commits.
  *
- * 7. Pós-commit: `onVacancyLaunched` (paciente do funil → Búsqueda).
+ * (Não move o paciente: o foguete é o único gatilho de Búsqueda — estado-automatico-do-paciente, D1.)
  */
 
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { reportError } from '@shared/logging';
 import { TalentumDescriptionService } from '../infrastructure/TalentumDescriptionService';
 import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
 import { isDeadProjectError } from '../domain/talentumErrors';
@@ -27,10 +26,9 @@ import {
   JobPostingAuditRepository,
   type AuditActorType,
 } from '../../matching/infrastructure/JobPostingAuditRepository';
-// DX-6.1: chamado DEPOIS do commit do envio (nunca antes). `onVacancyLaunched` nunca lança
-// (DX-6.2) — o catch abaixo é a 2ª trava, não o contrato do gancho.
 import { guardedPrescreeningIdSql, logPrescreeningIdCollision } from './talentumPrescreeningIdGuard';
-import { onVacancyLaunched } from '../../case/application/VacancyLaunchHook';
+import type { VacancyPublishedPort } from '../ports/VacancyPublishedPort';
+import { reportError } from '@shared/logging';
 
 // ─────────────────────────────────────────────────────────────────
 // Input / Output types
@@ -64,12 +62,11 @@ export interface AuditActor {
 export class PublishVacancyToTalentumUseCase {
   private db: Pool;
   private auditRepo: JobPostingAuditRepository;
-  private launchHook: (jobPostingId: string) => Promise<unknown>;
 
-  constructor(launchHook: (jobPostingId: string) => Promise<unknown> = onVacancyLaunched) {
+  /** `afterPublish` (opcional): a marcação de pausa na transação do publish + o que roda DEPOIS do commit (pausa, short link do feed). Sem ele, nada. */
+  constructor(private readonly afterPublish?: VacancyPublishedPort) {
     this.db = DatabaseConnection.getInstance().getPool();
     this.auditRepo = new JobPostingAuditRepository();
-    this.launchHook = launchHook;
   }
 
   /**
@@ -176,6 +173,7 @@ export class PublishVacancyToTalentumUseCase {
     }
 
     // 6. Save references + audit DRAFT_CHANGED (CA-4.7: transaction)
+    let pausedIds: string[] = [];
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
@@ -212,6 +210,20 @@ export class PublishVacancyToTalentumUseCase {
         });
       }
 
+      // I1: o paciente da vaga já está pausado → ela nasce PENDING_PAUSE (mesma transação, mesmo marcador do escritor de estado). Best-effort via
+      // SAVEPOINT, como a auditoria: o projeto JÁ existe no Talentum, então a falha daqui não pode desfazer o publish (ROLLBACK deixaria o
+      // projeto órfão); ela é reportada e o publish segue.
+      if (this.afterPublish) {
+        await client.query('SAVEPOINT publish_pause_mark');
+        try {
+          pausedIds = await this.afterPublish.markPauseInTx(client, jobPostingId);
+          await client.query('RELEASE SAVEPOINT publish_pause_mark');
+        } catch (err) {
+          await client.query('ROLLBACK TO SAVEPOINT publish_pause_mark');
+          reportError(err instanceof Error ? err : new Error(String(err)), { source: 'PublishVacancyToTalentumUseCase:markPause', jobPostingId });
+        }
+      }
+
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
@@ -220,19 +232,16 @@ export class PublishVacancyToTalentumUseCase {
       client.release();
     }
 
-    // invariante 7 (D434): o lançamento é o envio aceito — pós-commit, idempotente. O gancho
-    // não lança por contrato (DX-6.2); este catch é a 2ª trava: o envio JÁ está commitado e na
-    // Talentum — devolver 500 aqui faria o operador tentar de novo e levar 409.
-    try {
-      await this.launchHook(jobPostingId);
-    } catch (err: unknown) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      reportError(error, { source: 'PublishVacancyToTalentumUseCase:launchHook' });
-    }
-
     console.log(
       `[PublishVacancy] Published vacancy ${jobPostingId} → Talentum project ${projectId}`,
     );
+
+    // Depois do COMMIT, por porta: dispara a pausa marcada acima e cria o link `site` que o feed exige. Nunca rejeita.
+    try {
+      await this.afterPublish?.onPublished(jobPostingId, pausedIds);
+    } catch (err) {
+      reportError(err instanceof Error ? err : new Error(String(err)), { source: 'PublishVacancyToTalentumUseCase:afterPublish', jobPostingId });
+    }
 
     return { projectId, publicId, whatsappUrl };
   }

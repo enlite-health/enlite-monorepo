@@ -46,7 +46,25 @@ export type NotificationTypeCode =
   | 'ITINERARY_UNCOVERED_SHIFTS'
   | 'PEDIDO_IA_NOVO'
   | 'PEDIDO_IA_GRAVE'
-  | 'PEDIDO_IA_APLICAR';
+  | 'PEDIDO_IA_APLICAR'
+  | 'TALENTUM_WEBHOOK_ALARM'
+  | 'PRESENCE_OPEN_4H'
+  | 'CHECK_IN_REFUSED_NO_ENTRY';
+
+/**
+ * Payload do aviso de presença à coordenação (emenda 077 §5.5): SÓ ids e a data/janela do turno. O `patient_id` vai na coluna do evento.
+ * `start_time`/`end_time` = instantes ISO (UTC) da janela do turno (`occurrenceWindowOf`); o cliente formata a hora no fuso do país. Não são PII.
+ * `null` só ao LER aviso gravado antes de existirem; o builder sempre grava os dois.
+ */
+export interface CoordinationAlertPayload {
+  occurrence_id: string;
+  slot_id: string;
+  on_date: string;
+  worker_id: string;
+  service_id: string;
+  start_time: string | null;
+  end_time: string | null;
+}
 
 /**
  * Payload do aviso de contatos pendentes do PT (spec 048): SÓ ids e nomes de campo — nunca nome do
@@ -63,9 +81,23 @@ export interface PtContactsPendingPayload {
  * Payload do aviso "seu usuário não está vinculado ao Tactiq" (spec 049 F4): SÓ o motivo, de um conjunto fechado —
  * nunca e-mail, nome nem token. Construído por `buildAdmissionTactiqLinkPayload`.
  */
-export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account';
+export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account' | 'seat_missing' | 'seat_pending' | 'seat_ready';
+/** Quem lê o aviso: o próprio responsável (`host`, o padrão quando ausente) ou a cópia ao Acesso Master (`master`) — design D11/D12. */
+export type AdmissionTactiqLinkAudience = 'host' | 'master';
+/**
+ * Campos opcionais (change tactiq-vinculo-resiliente, D11): `audience` (obrigatório em `seat_missing`; `master` só em `seat_missing` e `broken`),
+ * `hostName` (nome de FUNCIONÁRIO, só na cópia `master`), `adminNotified` (só `seat_missing` ao `host`) e `autoReactivates` (só `seat_missing`).
+ * F5 (D11/D16): `seat_pending` (licença a confirmar) só vai ao `master`; `seat_ready` (licença confirmada/chegou) só ao `host` e leva `firstLink`
+ * (`true` = 1º vínculo da pessoa; `false` = legado que precisa autorizar de novo).
+ */
 export interface AdmissionTactiqLinkPayload {
   reason: AdmissionTactiqLinkReason;
+  audience?: AdmissionTactiqLinkAudience;
+  hostName?: string;
+  adminNotified?: boolean;
+  autoReactivates?: boolean;
+  /** Só `seat_ready`: `true` = a pessoa nunca vinculou; `false` = já tinha vínculo congelado sem `details` (D0.b). */
+  firstLink?: boolean;
 }
 
 /**
@@ -84,12 +116,13 @@ export interface AdmissionTactiqExtensionPayload {
  */
 export type AdmissionImportBlockedStage = 'blocked' | 'reminder' | 'expired' | 'will_be_lost';
 export type AdmissionImportBlockedKind = 'admission' | 'enquadre';
-export type AdmissionImportBlockedReason = 'no_link' | 'wrong_account';
+/** `not_recorded` (spec tactiq-vinculo-resiliente, D10/D11): reunião que o Tactiq não gravou; SÓ `stage=expired` ao `host`, nunca bloqueio humano. */
+export type AdmissionImportBlockedReason = 'no_link' | 'wrong_account' | 'not_recorded';
 export type AdmissionImportBlockedAudience = 'host' | 'supervisor';
 /** Conjuntos fechados do contrato (fonte única: o publicador valida na escrita e o leitor na leitura). */
 export const IMPORT_STAGES: readonly AdmissionImportBlockedStage[] = ['blocked', 'reminder', 'expired', 'will_be_lost'];
 export const IMPORT_KINDS: readonly AdmissionImportBlockedKind[] = ['admission', 'enquadre'];
-export const IMPORT_REASONS: readonly AdmissionImportBlockedReason[] = ['no_link', 'wrong_account'];
+export const IMPORT_REASONS: readonly AdmissionImportBlockedReason[] = ['no_link', 'wrong_account', 'not_recorded'];
 export const IMPORT_AUDIENCES: readonly AdmissionImportBlockedAudience[] = ['host', 'supervisor'];
 export interface AdmissionImportBlockedPayload {
   stage: AdmissionImportBlockedStage;
@@ -121,6 +154,19 @@ export interface PedidoIaAplicarPayload {
   prazo: 'hoje' | 'semana';
 }
 
+/**
+ * Payload do aviso do webhook do Talentum (spec 095 §3.5): 3 chaves fechadas, só enum + inteiro + data — nunca nome, e-mail, telefone,
+ * vaga nem texto livre. Construído por `buildTalentumWebhookAlarmPayload`. `CONFLITO_HUMANO` é por evento (quantidade 1); os outros são
+ * por relógio (o ciclo `events/health`).
+ */
+export type TalentumWebhookAlarm = 'inbox_falha' | 'inbox_pendente' | 'veredito_ausente' | 'silencio' | 'CONFLITO_HUMANO';
+export const TALENTUM_WEBHOOK_ALARMS: readonly TalentumWebhookAlarm[] = ['inbox_falha', 'inbox_pendente', 'veredito_ausente', 'silencio', 'CONFLITO_HUMANO'];
+export interface TalentumWebhookAlarmPayload {
+  alarme: TalentumWebhookAlarm;
+  quantidade: number;
+  desde: string;
+}
+
 export interface InsertNotificationEventInput {
   typeCode: NotificationTypeCode;
   actorUid: string;
@@ -128,7 +174,7 @@ export interface InsertNotificationEventInput {
   conversationId: string | null;
   messageId: string | null;
   /** Metadado SÓ-ids (461). Omitido = `'{}'`. Hoje só o tipo do PT grava aqui. */
-  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload;
+  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | ItineraryUncoveredShiftsPayload | PedidoIaAplicarPayload | AdmissionImportBlockedPayload | TalentumWebhookAlarmPayload | CoordinationAlertPayload;
 }
 
 export interface NotificationEventRow {

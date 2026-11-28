@@ -92,7 +92,7 @@ const PRESCREENING_URL = 'http://talentum.invalid/public/pre-screening/00000000-
 /** Mock all DB calls after worker lookup: eligibility check + WJA upsert + encuadre insert + leitura do link (só no ramo aprovado) */
 function mockDbSuccess(status: string = 'REGISTERED', link: string | null = PRESCREENING_URL) {
   mockWorkerEligible(status);
-  mockQuery.mockResolvedValueOnce({ rows: [{ status: 'SEARCHING' }] }); // spec 084: vaga NÃO está DE_BAJA (candidatura em vaga baixada é recusada)
+  mockQuery.mockResolvedValueOnce({ rows: [{ status: 'SEARCHING', publicavel: true }] }); // spec 084 + I4: o dono de publicável diz que a vaga recebe candidatura
   mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // WJA upsert
   mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // encuadre insert
   mockQuery.mockResolvedValueOnce({ rows: [{ url: link }] }); // spec 067 FR-16: link da vaga, só na postulação aprovada
@@ -102,7 +102,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
   it('spec 084 (P4/R6): candidatura em vaga DE_BAJA → 409 vacancy_de_baja (não "cadastro incompleto"); nada é criado', async () => {
     mockWorkerFound();
     mockWorkerEligible('REGISTERED');
-    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'DE_BAJA' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'DE_BAJA', publicavel: false }] });
 
     const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'linkedin' }, 'uid-1');
     await controller.trackChannel(req, res);
@@ -110,6 +110,19 @@ describe('WorkerApplicationsController — trackChannel', () => {
     expect(res.status).toHaveBeenCalledWith(409);
     expect((res.json as jest.Mock).mock.calls[0][0]).toMatchObject({ success: false, error: 'vacancy_de_baja', code: 'VACANCY_DE_BAJA' });
     expect(mockQuery).toHaveBeenCalledTimes(3); // worker + elegibilidade + status da vaga: nenhum INSERT
+  });
+
+  it('semaforo-da-vaga F4 (I4): vaga que o dono de publicável não publica (paciente pausado etc.) → 409 vacancy_not_publishable; nada é criado', async () => {
+    mockWorkerFound();
+    mockWorkerEligible('REGISTERED');
+    mockQuery.mockResolvedValueOnce({ rows: [{ status: 'PENDING_ACTIVATION', publicavel: false }] });
+
+    const [req, res] = mockReqRes({ jobPostingId: 'jp-1', channel: 'linkedin' }, 'uid-1');
+    await controller.trackChannel(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect((res.json as jest.Mock).mock.calls[0][0]).toMatchObject({ success: false, error: 'vacancy_not_publishable', code: 'VACANCY_NOT_PUBLISHABLE', reason: 'vacancy_not_publishable' });
+    expect(mockQuery).toHaveBeenCalledTimes(3); // nenhum INSERT
   });
 
   let controller: WorkerApplicationsController;

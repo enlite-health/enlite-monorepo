@@ -4,6 +4,9 @@ import { StartClaimUseCase } from '@modules/auth/application/StartClaimUseCase';
 import { ConfirmClaimUseCase } from '@modules/auth/application/ConfirmClaimUseCase';
 import { ClaimShellAbsorber } from '@modules/auth/application/ClaimShellAbsorber';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { ResolveClaimTarget } from '@modules/auth/application/ResolveClaimTarget';
+import { PgOtpSendLedger } from '@modules/auth/infrastructure/PgOtpSendLedger';
+import { lazyPool } from '@shared/db/lazyPool';
 import { ClaimController } from '@modules/auth/interfaces/controllers/ClaimController';
 
 /**
@@ -16,5 +19,6 @@ export function createClaimController(): ClaimController {
   return new ClaimController(
     new StartClaimUseCase(workerRepository, otp),
     new ConfirmClaimUseCase(workerRepository, otp, new ClaimShellAbsorber(DatabaseConnection.getInstance().getPool())),
+    new ResolveClaimTarget(new PgOtpSendLedger(lazyPool())),
   );
 }

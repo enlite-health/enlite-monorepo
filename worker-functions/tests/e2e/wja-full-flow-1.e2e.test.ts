@@ -17,6 +17,7 @@ import * as path from 'path';
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, waitForBackend } from './helpers';
 import { envelope } from '../fixtures/talentumPayload';
+import { postTalentumAndDrain } from './helpers/talentumWebhook';
 import type { AnalyzedBlock } from './wja-full-flow-types';
 
 const DATABASE_URL =
@@ -112,8 +113,8 @@ describe('WJA Full Flow Part 1 — T1→T5 @integration', () => {
 
     // Vaga (sem link de reunião — spec 068)
     const jpRes = await pool.query<{ id: string }>(
-      `INSERT INTO job_postings (case_number, title, status)
-       VALUES ($1, $2, 'SEARCHING')
+      `INSERT INTO job_postings (case_number, title, status, is_draft)
+       VALUES ($1, $2, 'SEARCHING', false)
        RETURNING id`,
       [CASE_NUMBER, `CASO ${CASE_NUMBER} WFF E2E`],
     );
@@ -202,15 +203,14 @@ describe('WJA Full Flow Part 1 — T1→T5 @integration', () => {
   // ── Step 3: T3-T5 ──────────────────────────────────────────────────────
 
   describe('Step 3 — T3-T5: Progressão via webhooks Talentum (Worker A)', () => {
-    const ENDPOINT = '/api/webhooks/talentum/prescreening';
-
     it('T3: webhook INITIATED → WJA stage=PRE_SCREENING (migration 230: INITIATED→PRE_SCREENING)', async () => {
-      const res = await api.post(ENDPOINT, envelope({
+      const res = await postTalentumAndDrain(api, envelope({
         subtype: 'INITIATED',
         prescreening: { id: PSC_T3, name: `CASO ${CASE_NUMBER} WFF E2E` },
         profile: { id: PROF_A, email: EMAIL_A, phoneNumber: PHONE_A },
       }));
-      expect(res.status).toBe(200);
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ processed: 1, failed: 0 });
 
       const { rows } = await pool.query(
         `SELECT application_funnel_stage FROM worker_job_applications
@@ -222,12 +222,13 @@ describe('WJA Full Flow Part 1 — T1→T5 @integration', () => {
     });
 
     it('T4: webhook IN_PROGRESS → WJA stage=IN_PROGRESS', async () => {
-      const res = await api.post(ENDPOINT, envelope({
+      const res = await postTalentumAndDrain(api, envelope({
         subtype: 'IN_PROGRESS',
         prescreening: { id: PSC_T4, name: `CASO ${CASE_NUMBER} WFF E2E` },
         profile: { id: PROF_A, email: EMAIL_A, phoneNumber: PHONE_A },
       }));
-      expect(res.status).toBe(200);
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ processed: 1, failed: 0 });
 
       const { rows } = await pool.query(
         `SELECT application_funnel_stage FROM worker_job_applications
@@ -238,12 +239,13 @@ describe('WJA Full Flow Part 1 — T1→T5 @integration', () => {
     });
 
     it('T5.a: webhook COMPLETED → WJA stage=COMPLETED', async () => {
-      const res = await api.post(ENDPOINT, envelope({
+      const res = await postTalentumAndDrain(api, envelope({
         subtype: 'COMPLETED',
         prescreening: { id: PSC_T5a, name: `CASO ${CASE_NUMBER} WFF E2E` },
         profile: { id: PROF_A, email: EMAIL_A, phoneNumber: PHONE_A },
       }));
-      expect(res.status).toBe(200);
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ processed: 1, failed: 0 });
 
       const { rows } = await pool.query(
         `SELECT application_funnel_stage FROM worker_job_applications
@@ -254,7 +256,7 @@ describe('WJA Full Flow Part 1 — T1→T5 @integration', () => {
     });
 
     it('T5.b QUALIFIED: webhook ANALYZED+QUALIFIED → stage=QUALIFIED + domain_event emitido', async () => {
-      const res = await api.post(ENDPOINT, envelope({
+      const res = await postTalentumAndDrain(api, envelope({
         subtype: 'ANALYZED',
         prescreening: { id: PSC_T5b, name: `CASO ${CASE_NUMBER} WFF E2E` },
         profile: { id: PROF_A, email: EMAIL_A, phoneNumber: PHONE_A },
@@ -265,7 +267,8 @@ describe('WJA Full Flow Part 1 — T1→T5 @integration', () => {
           statusLabel: 'QUALIFIED',
         } as AnalyzedBlock,
       }));
-      expect(res.status).toBe(200);
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ processed: 1, failed: 0 });
 
       const { rows } = await pool.query(
         `SELECT application_funnel_stage FROM worker_job_applications
@@ -287,7 +290,7 @@ describe('WJA Full Flow Part 1 — T1→T5 @integration', () => {
     });
 
     it('PRECEDÊNCIA: webhook INITIATED tardio NÃO regride stage de QUALIFIED', async () => {
-      await api.post(ENDPOINT, envelope({
+      await postTalentumAndDrain(api, envelope({
         subtype: 'INITIATED',
         prescreening: { id: 'wff-late-initiated', name: `CASO ${CASE_NUMBER} WFF E2E` },
         profile: { id: PROF_A, email: EMAIL_A, phoneNumber: PHONE_A },

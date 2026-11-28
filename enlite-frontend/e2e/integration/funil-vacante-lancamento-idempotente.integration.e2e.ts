@@ -5,18 +5,13 @@
  *
  * `lancamento-idempotente`:
  *   9. despublicar e publicar de novo pelo MESMO switch (`talentum-card`, aba "Talentum" da
- *      `VacancyDetailPage`) é idempotente: o publish SEMPRE chama o gancho pós-commit
- *      (`onVacancyLaunched`, DX-6.1) — mas na 2ª chamada o paciente já saiu do funil de
- *      admissão (está `SEARCHING`, não `ADMISSION`/`SOLICITANTE`/`PENDING_ADMISSION`), então
- *      `isAdmissionFunnelStatus` dá falso e o outcome é `patient: 'unchanged'` (P7,
- *      `VacancyLaunchHook.ts:372`): a trilha `vacancy_launch` continua com 1 linha (nenhuma
- *      nova), e o match que roda de novo NÃO ressuscita quem já saiu do estado de candidato do
- *      match — o rejeitado pela tela continua `REJECTED` (F53: o upsert de `saveMatchResults`
- *      não sobrescreve `application_funnel_stage`, mesmo molde do P19,
- *      `funil-vacante-compativeis-rematch.integration.e2e.ts`). O despublicar sozinho NÃO
- *      desfaz nada: o gancho só roda no publish, nunca no unpublish
- *      (`PublishVacancyToTalentumUseCase.unpublish` intocado pelo P8) — o paciente continua
- *      `SEARCHING` e a trilha continua 1 mesmo depois do DELETE.
+ *      `VacancyDetailPage`) é idempotente. estado-automatico-do-paciente (D1): o ENVIO à Talentum NÃO move o
+ *      paciente (o gancho do lançamento foi apagado; o foguete é o único gatilho de Búsqueda) — o paciente
+ *      devolvido ao funil por SQL continua `ADMISSION` depois do 1º lançamento, do despublicar e da republicação,
+ *      e a trilha `vacancy_launch` continua com 0 linhas. O match que roda de novo NÃO ressuscita quem já saiu do
+ *      estado de candidato do match — o rejeitado pela tela continua `REJECTED` (F53: o upsert de
+ *      `saveMatchResults` não sobrescreve `application_funnel_stage`, mesmo molde do P19,
+ *      `funil-vacante-compativeis-rematch.integration.e2e.ts`).
  *
  * Único mock de navegador: `/generate-ai-content` (Gemini custaria). `publish-talentum`
  * (POST) e o despublicar (DELETE no mesmo caminho) NUNCA são mockados: vão ao backend, que vai
@@ -87,7 +82,7 @@ test.describe('funil-vacante lancamento idempotente @integration', () => {
 
       // (1) Foguete → wizard (profissão AT, salário, meet) → /talentum → 1º lançamento.
       const vacancyId = await clickFoguete(page, patient.patientId, patient.serviceId);
-      // D469: o foguete já moveu o paciente; devolve ao funil para provar o gancho do ENVIO (vacancy_launch).
+      // D469: o foguete já moveu o paciente; devolve ao funil por SQL para provar que o ENVIO à Talentum não o move de novo (D1).
       devolverPacienteAoFunil(patient.patientId);
       await completeDraftViaWizard(page, vacancyId);
 
@@ -96,10 +91,10 @@ test.describe('funil-vacante lancamento idempotente @integration', () => {
       await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyId}$`), { timeout: 15_000 });
 
       const statusAfterLaunch = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
-      expect(statusAfterLaunch, 'paciente SEARCHING depois do 1º lançamento').toBe('SEARCHING');
+      expect(statusAfterLaunch, 'paciente continua ADMISSION depois do 1º lançamento (o envio não move — D1)').toBe('ADMISSION');
 
       const trailAfterLaunch = countLaunchTrail(patient.patientId);
-      expect(trailAfterLaunch, 'trilha vacancy_launch = 1 depois do 1º lançamento').toBe(1);
+      expect(trailAfterLaunch, 'trilha vacancy_launch = 0 depois do 1º lançamento').toBe(0);
 
       // D466 (main): o lançamento só move o paciente; o match roda pela rota.
       const match1 = await runMatchApi(request, token, vacancyId, { radiusKm: 1, topN: 200 });
@@ -190,13 +185,10 @@ test.describe('funil-vacante lancamento idempotente @integration', () => {
       expect(isDraftAfterUnpublish, 'is_draft = t depois do despublicar').toBe('t');
 
       const statusAfterUnpublish = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
-      expect(
-        statusAfterUnpublish,
-        'paciente continua SEARCHING depois do despublicar (o gancho não roda no unpublish)',
-      ).toBe('SEARCHING');
+      expect(statusAfterUnpublish, 'paciente continua ADMISSION depois do despublicar').toBe('ADMISSION');
 
       const trailAfterUnpublish = countLaunchTrail(patient.patientId);
-      expect(trailAfterUnpublish, 'trilha vacancy_launch continua 1 depois do despublicar').toBe(1);
+      expect(trailAfterUnpublish, 'trilha vacancy_launch continua 0 depois do despublicar').toBe(0);
 
       const deleteCallsToStub = stub.calls.filter(
         (c) => c.method === 'DELETE' && /^\/projects\/stub-proj-\d+$/.test(c.path),
@@ -230,12 +222,11 @@ test.describe('funil-vacante lancamento idempotente @integration', () => {
       );
 
       const trailAfterRepublish = countLaunchTrail(patient.patientId);
-      expect(
-        trailAfterRepublish,
-        'trilha vacancy_launch continua 1 depois de republicar (paciente já fora do funil → unchanged)',
-      ).toBe(1);
+      expect(trailAfterRepublish, 'trilha vacancy_launch continua 0 depois de republicar').toBe(0);
+      const statusAfterRepublish = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
+      expect(statusAfterRepublish, 'paciente continua ADMISSION depois de republicar (o envio nunca move)').toBe('ADMISSION');
 
-      // D466 (main): o lançamento só move o paciente; o match roda pela rota — o match que "roda de novo" (intenção do teste) é chamado pela rota depois de republicar.
+      // D466 (main): o match roda pela rota (o lançamento não move ninguém — D1) — o match que "roda de novo" (intenção do teste) é chamado pela rota depois de republicar.
       const match2 = await runMatchApi(request, token, vacancyId, { radiusKm: 1, topN: 200 });
       expect(match2.status, 'POST /match (2º, depois de republicar)').toBe(200);
 

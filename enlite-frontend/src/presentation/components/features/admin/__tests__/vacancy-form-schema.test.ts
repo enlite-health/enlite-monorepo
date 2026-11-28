@@ -1,14 +1,12 @@
 /**
  * vacancy-form-schema.test.ts
  *
- * Contrato de valores canônicos de STATUS_OPTIONS, DEFAULT_FORM_VALUES e
- * buildVacancyPayload — garante que ninguém reverta para valores legados que
- * violam o CHECK constraint job_postings_status_check (migration 148).
+ * semaforo-da-vaga F4: o wizard NÃO tem estado da vaga. O formulário não guarda `status` e o payload de criação/edição
+ * nunca o leva — o servidor responde 400 `VACANCY_STATUS_NOT_WRITABLE` a qualquer `status` no POST/PUT.
  */
 
 import { describe, it, expect } from 'vitest';
 import {
-  STATUS_OPTIONS,
   DEFAULT_FORM_VALUES,
   buildVacancyPayload,
   vacancyFormSchema,
@@ -16,35 +14,7 @@ import {
   buildScheduleFromVacancy,
   type VacancyFormData,
 } from '../vacancy-form-schema';
-
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
-
-const CANONICAL_VALUES = [
-  'SEARCHING',
-  'SEARCHING_REPLACEMENT',
-  'RAPID_RESPONSE',
-  'PENDING_ACTIVATION',
-  'ACTIVE',
-  'SUSPENDED',
-  'CLOSED',
-] as const;
-
-const CANONICAL = new Set<string>(CANONICAL_VALUES);
-
-const LEGACY_VALUES = [
-  'BUSQUEDA',
-  'REEMPLAZO',
-  'CUBIERTO',
-  'CANCELADO',
-  'draft',
-  'paused',
-  'ACTIVO',
-  'rta_rapida',
-  'searching',
-  'replacement',
-];
+import * as formSchemaModule from '../vacancy-form-schema';
 
 const minimalFormData: VacancyFormData = {
   title: 'Test',
@@ -52,71 +22,26 @@ const minimalFormData: VacancyFormData = {
   providers_needed: 1,
   patientAddressId: 'addr-1',
   schedule: [{ days: ['lun'], timeFrom: '08:00', timeTo: '16:00' }],
-  status: 'SEARCHING',
 };
 
-// ---------------------------------------------------------------------------
-// STATUS_OPTIONS — canonical values contract
-// ---------------------------------------------------------------------------
-
-describe('STATUS_OPTIONS — canonical values contract', () => {
-  it('contains only the 7 canonical DB values (no legacy values allowed)', () => {
-    expect(STATUS_OPTIONS).toHaveLength(7);
-    expect(STATUS_OPTIONS).toEqual(
-      expect.arrayContaining([
-        'SEARCHING',
-        'SEARCHING_REPLACEMENT',
-        'RAPID_RESPONSE',
-        'PENDING_ACTIVATION',
-        'ACTIVE',
-        'SUSPENDED',
-        'CLOSED',
-      ]),
-    );
+describe('wizard sem estado da vaga (semaforo-da-vaga F4)', () => {
+  it('o módulo não exporta lista de opções de estado', () => {
+    expect(Object.keys(formSchemaModule)).not.toContain('STATUS_OPTIONS');
   });
 
-  it('does not contain any legacy value that violates job_postings_status_check', () => {
-    for (const legacy of LEGACY_VALUES) {
-      expect(STATUS_OPTIONS).not.toContain(legacy);
-    }
+  it('DEFAULT_FORM_VALUES não tem a chave `status`', () => {
+    expect(Object.keys(DEFAULT_FORM_VALUES)).not.toContain('status');
   });
 
-  it('every element passes the canonical set check', () => {
-    for (const value of STATUS_OPTIONS) {
-      expect(CANONICAL.has(value)).toBe(true);
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// DEFAULT_FORM_VALUES — default status is canonical
-// ---------------------------------------------------------------------------
-
-describe('DEFAULT_FORM_VALUES — default status is canonical', () => {
-  it('status default is SEARCHING', () => {
-    expect(DEFAULT_FORM_VALUES.status).toBe('SEARCHING');
+  it('o payload de criação/edição não tem a chave `status`', () => {
+    expect(Object.keys(buildVacancyPayload(minimalFormData, null))).not.toContain('status');
   });
 
-  it('status default is in STATUS_OPTIONS', () => {
-    expect(STATUS_OPTIONS.includes(DEFAULT_FORM_VALUES.status as (typeof STATUS_OPTIONS)[number])).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// buildVacancyPayload — status in output is canonical
-// ---------------------------------------------------------------------------
-
-describe('buildVacancyPayload — status in output is canonical', () => {
-  it('passes status from form data through to payload', () => {
-    const result = buildVacancyPayload(minimalFormData, null);
-    expect(result.status).toBe('SEARCHING');
-  });
-
-  it('does not hardcode any legacy status value in output', () => {
-    for (const value of STATUS_OPTIONS) {
-      const data: VacancyFormData = { ...minimalFormData, status: value };
-      const result = buildVacancyPayload(data, null);
-      expect(result.status).toBe(value);
+  it('mesmo que o objeto do form traga `status` (resto de dado legado), o payload NÃO o devolve ao PUT', () => {
+    for (const legado of ['SEARCHING', 'ON_HOLD', 'CLOSED', 'PENDING_ACTIVATION', 'ACTIVE']) {
+      const comResto = { ...minimalFormData, status: legado } as VacancyFormData;
+      const result = buildVacancyPayload(comResto, null) as Record<string, unknown>;
+      expect('status' in result).toBe(false);
     }
   });
 });

@@ -8,7 +8,7 @@
  * é chamado direto e a rota interna roda no app de teste. Dados SINTÉTICOS; a transcrição leva um marcador que NUNCA pode aparecer em log.
  *
  * A achou → `done` (cofre + documento do EVENTO, nada nos documentos do paciente) · B não achou → `waiting`/`code_mismatch` ·
- * C conta errada → `blocked`/`wrong_account` (o serviço da admissão, intacto, bloqueia; `rejected` é o código certo fora da janela) ·
+ * C reunião não gravada → `expired`/`not_recorded` + aviso, vínculo `linked` (o serviço da admissão, intacto; `rejected` é o código certo fora da janela) ·
  * D sem vínculo do Tactiq → `blocked`/`no_link` e volta quando o vínculo existe · E gate de forma do enquadre · F lote próprio e fila ·
  * G rota interna · H log e trilha sem o texto, sem nome, sem e-mail (com controle positivo).
  */
@@ -25,6 +25,7 @@ import { capturingLogger } from '../../src/modules/matching/infrastructure/doubl
 import { AdmissionSummaryError } from '../../src/modules/matching/application/ports/AdmissionImportPorts';
 import type { TactiqMeetingItem, TactiqTranscriptPage } from '../../src/modules/matching/application/ports/TactiqPorts';
 import type { AdmissionImportService } from '../../src/modules/matching/application/AdmissionImportService';
+import type { EnquadreImportDeps } from '../../src/bootstrap/registerEnquadreInternalJobRoutes';
 import type { EnquadreImportSubject } from '../../src/modules/matching/infrastructure/EnquadreImportRepository';
 
 const DATABASE_URL =
@@ -69,6 +70,7 @@ describe('importação do Tactiq do enquadre — mesma lógica da admissão, fon
   let vault: InMemoryTranscriptVault;
   let admissionVault: InMemoryTranscriptVault;
   let service: AdmissionImportService<EnquadreImportSubject>;
+  let impDeps: EnquadreImportDeps;
   let logs: ReturnType<typeof capturingLogger>;
   const meet = new FakeMeetConference();
   const pdfs = new Map<string, Buffer>(); // o "bucket" de documentos: caminho -> PDF
@@ -116,7 +118,7 @@ describe('importação do Tactiq do enquadre — mesma lógica da admissão, fon
   async function vincular(host: string, uid: string, token: string): Promise<void> {
     const ins = await admin.query(
       `INSERT INTO tactiq_links (host_email, firebase_uid, status, status_changed_at, last_notified_status, created_at) VALUES ($1,$2,'linked',$3,'linked',$4) RETURNING id`,
-      [host, uid, clock, new Date(clock.getTime() - 24 * HOUR)], /* o vínculo precisa ser ANTERIOR ao fim da reunião: reunião terminada antes do 1º vínculo só expira (não vira wrong_account) */
+      [host, uid, clock, new Date(clock.getTime() - 24 * HOUR)], /* o vínculo precisa ser ANTERIOR ao fim da reunião: reunião terminada antes do 1º vínculo só expira (sem aviso `not_recorded`) */
     );
     await admin.query(`INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted) VALUES ($1,$2)`, [ins.rows[0].id, b64(token)]);
   }
@@ -207,6 +209,7 @@ describe('importação do Tactiq do enquadre — mesma lógica da admissão, fon
         };
         const store = new StoreAdmissionSummaryDocument(undefined, undefined, () => storage as never);
         const imp = { tokens: link, mcp, vault, summary: vertex, destination: { store }, log: logs.log, now: () => clock };
+        impDeps = imp;
         service = createEnquadreImportService(pool, imp);
         // a rota REAL (wiring de produção) com as mesmas fronteiras e o relógio de verdade
         const { EnquadrePresenceService } = await import('../../src/modules/matching/application/EnquadrePresenceService');
@@ -324,16 +327,33 @@ describe('importação do Tactiq do enquadre — mesma lógica da admissão, fon
   });
 
   // ── C ────────────────────────────────────────────────────────────────────────────────────────────
-  it('C: a conta do responsável NÃO enxerga a reunião (só outra conta): espera; depois de 3 h o serviço da admissão, intacto, bloqueia com `wrong_account`; fora da janela é `rejected`', async () => {
+  it('C (D10): a conta do responsável NÃO enxerga a reunião (só outra conta): espera; depois de 3 h o serviço da admissão, intacto, expira com `not_recorded` e avisa o host (vínculo segue `linked`); fora da janela é `rejected`', async () => {
     const e = await evento({ endedMinAgo: 60 });
     mcp.meetingsByToken.set('at-rt-de-outra-conta', [meeting(e, 'tq-c')]); // existe, mas na conta ERRADA
     mcp.meetingsByToken.set(e.token, []);
     expect(await service.importOne(e.id, clock)).toBe('waiting');
+    // o mesmo serviço, COM o aviso do sino ligado (o `service` do arquivo não o tem)
+    const { createEnquadreImportService } = await import('../../src/bootstrap/registerEnquadreInternalJobRoutes');
+    const { ImportNoticeRepository } = await import('../../src/modules/matching/infrastructure/ImportNoticeRepository');
+    const { ImportBlockNotifier } = await import('../../src/modules/matching/application/ImportBlockNotifier');
+    const { SystemNotificationPublisher } = await import('../../src/modules/inapp-notification/application/SystemNotificationPublisher');
+    const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
+    const pool = DatabaseConnection.getInstance().getPool();
+    const comAviso = createEnquadreImportService(pool, {
+      ...impDeps,
+      notices: new ImportBlockNotifier({ kind: 'enquadre', prefix: 'enquadre', publisher: new SystemNotificationPublisher(), recipients: new ImportNoticeRepository(pool), log: logs.log }),
+    });
     const later = new Date(clock.getTime() + 3 * HOUR);
-    expect(await service.importOne(e.id, later)).toBe('wrong_account');
-    expect(await linkStatus(e.host)).toBe('wrong_account');
-    expect(await row(e.id)).toMatchObject({ import_status: 'blocked', blocked_reason: 'wrong_account' });
-    expect((await trilha(e.id)).filter((t) => t.kind === 'import_blocked').map((t) => t.reason)).toEqual(['wrong_account']);
+    expect(await comAviso.importOne(e.id, later)).toBe('expired');
+    expect(await linkStatus(e.host)).toBe('linked'); // o vínculo NÃO cai por reunião não gravada
+    expect(await row(e.id)).toMatchObject({ import_status: 'expired', blocked_reason: null });
+    expect((await trilha(e.id)).filter((t) => t.kind === 'import_expired').map((t) => t.reason)).toEqual(['not_recorded']);
+    expect((await trilha(e.id)).filter((t) => t.kind === 'import_blocked')).toHaveLength(0);
+    const avisos = (await admin.query(
+      `SELECT ev.payload FROM notifications n JOIN notification_events ev ON ev.id = n.event_id
+        WHERE n.recipient_uid = $1 AND ev.type_code = 'ADMISSION_IMPORT_BLOCKED'`, [e.uid])).rows as Array<{ payload: Record<string, unknown> }>;
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0].payload).toMatchObject({ stage: 'expired', reason: 'not_recorded', audience: 'host', kind: 'enquadre' });
     expect(vault.objects.size).toBe(0);
     expect(await docs(e.id)).toHaveLength(0);
     expect(mcp.transcriptCalls).toHaveLength(0);

@@ -44,7 +44,8 @@ const MOCK_VACANCIES = [
   {
     id: 'v-f001',
     caseNumber: 300, caseOrdinal: 1,
-    status: 'Activo',
+    lifecycle: null,
+    patient_status: 'ACTIVE',
     statusRaw: 'ACTIVE',
     priority: 'NORMAL',
     diasAberto: '03',
@@ -230,7 +231,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
-    // Tipo é o 2º combobox da barra (0-indexed: 0=status, 1=type)
+    // Tipo é o 3º combobox da barra (0-indexed: 0=ciclo de vida, 1=estado del paciente, 2=type)
     const selects = filterBar(page).getByRole('combobox');
 
     const reqWait = page.waitForRequest((req) =>
@@ -239,7 +240,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
       !req.url().includes('stats') &&
       req.url().includes('worker_type=AT'),
     );
-    await escolherNoCombo(page, selects.nth(1), 'AT'); // AT = AT
+    await escolherNoCombo(page, selects.nth(2), 'AT'); // AT = AT
     const req = await reqWait;
     expect(req.url()).toContain('worker_type=AT');
   });
@@ -249,7 +250,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
-    // Sexo é o 5º combobox da barra (0=status,1=type,2=province,3=city,4=sex)
+    // Sexo é o 6º combobox da barra (0=ciclo,1=paciente,2=type,3=province,4=city,5=sex)
     const selects = filterBar(page).getByRole('combobox');
 
     const reqWait = page.waitForRequest((req) =>
@@ -258,7 +259,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
       !req.url().includes('stats') &&
       req.url().includes('required_sex=F'),
     );
-    await escolherNoCombo(page, selects.nth(4), 'Femenino'); // F = Femenino
+    await escolherNoCombo(page, selects.nth(5), 'Femenino'); // F = Femenino
     const req = await reqWait;
     expect(req.url()).toContain('required_sex=F');
   });
@@ -320,7 +321,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
-    // Apply Tipo = AT (2nd combobox)
+    // Apply Tipo = AT (3rd combobox)
     const selects = filterBar(page).getByRole('combobox');
     // Wait for filter request to complete
     const resposta = page.waitForResponse((res) =>
@@ -328,7 +329,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
       !res.url().includes('filter-options') &&
       !res.url().includes('stats'),
     );
-    await escolherNoCombo(page, selects.nth(1), 'AT'); // AT = AT
+    await escolherNoCombo(page, selects.nth(2), 'AT'); // AT = AT
     await resposta;
 
     // Small stable delay for any animations
@@ -345,9 +346,9 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
-    // Apply Tipo = AT (2nd combobox)
+    // Apply Tipo = AT (3rd combobox)
     const selects = filterBar(page).getByRole('combobox');
-    await escolherNoCombo(page, selects.nth(1), 'AT'); // AT = AT
+    await escolherNoCombo(page, selects.nth(2), 'AT'); // AT = AT
 
     // Limpiar button should appear
     const clearBtn = filterBar(page).getByText('Limpiar filtros');
@@ -356,6 +357,6 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await clearBtn.click();
 
     // After clear, the Tipo combobox should be back to the placeholder
-    await expect(selects.nth(1)).toHaveText('Todos');
+    await expect(selects.nth(2)).toHaveText('Todos');
   });
 });

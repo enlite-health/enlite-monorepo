@@ -7,6 +7,7 @@ import {
   authorizeVacancyUpdate,
   buildInsertQuery,
   buildInsertParams,
+  clientStatusRefusal,
   FULL_ALLOWED_UPDATE_FIELDS,
   OPERATIONAL_EDITABLE_FIELDS,
   withEffectiveFields,
@@ -22,9 +23,7 @@ import {
   type HumanActor,
 } from './vacancyCrudAuditHelpers';
 import { sendVacancyDeBajaRefusal } from './vacancyDeBajaGuard';
-import { EnsureVacancyShortLinkUseCase } from '../../application/EnsureVacancyShortLinkUseCase';
-import { PurgeVacancyShortLinksUseCase } from '../../application/PurgeVacancyShortLinksUseCase';
-import { ShortLinkService } from '../../infrastructure/shortlinks/ShortLinkService';
+import { tryEnsureShortLink, tryPurgeShortLinks } from '../../application/vacancyShortLinks';
 import { reportError, loggingAls } from '@shared/logging';
 import { withSystemDbContext } from '@shared/database/requestDbSession';
 import { vacancyRawColumnsSql } from '@shared/sql/vacancyEffectiveFieldsSql';
@@ -32,56 +31,13 @@ import { withActorContext } from '@shared/database/actorContext';
 import { countVigenteForVacancy } from '@modules/case';
 import { SyncVacancyContentToTalentumUseCase, TalentumDescriptionService } from '@modules/integration';
 import type { TalentumSyncResult } from '@modules/integration';
-import { VacancyTalentumPauseService } from '../../application/VacancyTalentumPauseService';
 import { propagateVacancyEditToTalentum } from '../../application/propagateVacancyEditToTalentum';
 import { deleteVacancyTalentumProject } from '../../application/deleteVacancyTalentumProject';
-
-const PUBLIC_STATUSES = new Set([
-  'ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE',
-]);
-
-// Inactive statuses whose short links should be purged from Short.io to free quota.
-const INACTIVE_STATUSES = new Set(['CLOSED', 'SUSPENDED']);
 
 // Guarda de vaga de teste/QA (migration 248) e is_draft de criação (só válido
 // junto com is_test=true, ver createVacancy). Opcional no body, default false
 // quando ausente/inválido — never blocks vacancy creation on a bad value.
 const OptionalBooleanSchema = z.boolean().optional();
-
-export async function tryEnsureShortLink(
-  pool: Pool,
-  vacancyId: string,
-  status: string | null | undefined,
-  isTest: boolean,
-): Promise<void> {
-  // Vaga is_test=true (fixture E2E/QA) NUNCA cria short link real: Short.io é
-  // terceiro sem teardown — o cleanup de fixtures apaga a vaga, mas o link
-  // órfão fica lá. Mesmo guard de PublicJobsQueryBuilder.ts (`jp.is_test = false`).
-  if (isTest) return;
-  if (!status || !PUBLIC_STATUSES.has(status)) return;
-  const svc = ShortLinkService.fromEnv();
-  if (!svc) {
-    return;
-  }
-  try {
-    const uc = new EnsureVacancyShortLinkUseCase(pool, svc);
-    await uc.execute(vacancyId, 'site');
-  } catch (err: unknown) {
-    reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryEnsureShortLink', vacancyId });
-  }
-}
-
-// Frees Short.io quota when a vacancy goes inactive. Fire-and-forget; errors are reported, never thrown.
-async function tryPurgeShortLinks(pool: Pool, vacancyId: string): Promise<void> {
-  const svc = ShortLinkService.fromEnv();
-  if (!svc) return;
-  try {
-    const uc = new PurgeVacancyShortLinksUseCase(pool, svc);
-    await uc.execute(vacancyId);
-  } catch (err: unknown) {
-    reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryPurgeShortLinks', vacancyId });
-  }
-}
 
 /**
  * Extracts the HumanActor from an authenticated admin request.
@@ -127,6 +83,14 @@ export class VacancyCrudController {
         status: bodyStatus, published_at, closes_at, updatePatient,
         is_test: bodyIsTest, is_draft: bodyIsDraft,
       } = req.body;
+
+      // semaforo-da-vaga F4: ninguém grava `status`; o default de criação (PENDING_ACTIVATION) é escrita de sistema.
+      const recusaDeStatus = clientStatusRefusal(bodyStatus);
+      if (recusaDeStatus) {
+        const { status: httpStatus, ...corpo } = recusaDeStatus;
+        res.status(httpStatus).json({ success: false, ...corpo });
+        return;
+      }
 
       const isTestParse = OptionalBooleanSchema.safeParse(bodyIsTest);
       if (!isTestParse.success) {
@@ -193,7 +157,6 @@ export class VacancyCrudController {
         worker_profile_sought, required_experience, worker_attributes,
         schedule, work_schedule, providers_needed, salary_text, payment_day,
         daily_obs, patient_address_id,
-        status: bodyStatus || undefined,
         published_at: published_at ?? null,
         closes_at: closes_at ?? null,
         is_test: isTest,
@@ -238,9 +201,7 @@ export class VacancyCrudController {
             const error = err instanceof Error ? err : new Error(String(err));
             reportError(error, { source: 'VacancyCrudController:domainEvent', jobPostingId: newVacancy.id });
           });
-
-          // try* nunca rejeita (auto-captura e reporta) — sem catch aqui.
-          await tryEnsureShortLink(this.db, newVacancy.id as string, newVacancy.status as string | undefined, newVacancy.is_test === true);
+          // Short link: a vaga nasce rascunho (fora do ar); o link nasce no publish e no PUT, quando ela é publicável.
         });
       });
 
@@ -258,18 +219,15 @@ export class VacancyCrudController {
     id: string,
     updated: Record<string, unknown>,
     scheduleChanged: boolean,
-    statusFrom: string | null,
-    statusTo: string | null,
     actor: HumanActor,
   ): Promise<TalentumSyncResult | null> {
     if (!updated.talentum_project_id) return null; // rascunho/não publicada: nada a construir, nada a chamar
     try {
       return await propagateVacancyEditToTalentum(
-        { vacancyId: id, published: Boolean(updated.talentum_project_id), scheduleChanged, statusFrom, statusTo, actor },
+        { vacancyId: id, published: Boolean(updated.talentum_project_id), scheduleChanged, actor },
         {
           describer: new TalentumDescriptionService(),
           content: new SyncVacancyContentToTalentumUseCase(this.db),
-          lifecycle: new VacancyTalentumPauseService(this.db),
         },
       );
     } catch (err) {
@@ -329,18 +287,6 @@ export class VacancyCrudController {
         return;
       }
 
-      // Spec 084 F5: "Retomar" devolve ao status de antes do "En espera". Guarda ao entrar, limpa ao sair.
-      const nextStatus = updates.status;
-      if (typeof nextStatus === 'string' && allowedFields.includes('status')) {
-        if (nextStatus === 'ON_HOLD' && auth.currentStatus !== 'ON_HOLD') {
-          setClause.push(`status_before_hold = $${paramIndex}`);
-          values.push(auth.currentStatus);
-          paramIndex++;
-        } else if (nextStatus !== 'ON_HOLD' && auth.currentStatus === 'ON_HOLD') {
-          setClause.push('status_before_hold = NULL');
-        }
-      }
-
       const actor = extractHumanActor(req);
 
       // Wrap UPDATE + audit in a transaction to guarantee atomicity.
@@ -393,17 +339,12 @@ export class VacancyCrudController {
       if (updated) {
         setImmediate(() => {
           void withSystemDbContext('job:vacancy-postupdate', async () => {
-            if (INACTIVE_STATUSES.has(updated!.status as string)) {
-              await tryPurgeShortLinks(this.db, id);
-            } else {
-              // try* nunca rejeita (auto-captura e reporta) — sem catch aqui.
-              await tryEnsureShortLink(this.db, id, updated!.status as string, updated!.is_test === true);
-            }
+            // try* nunca rejeita (auto-captura e reporta) — sem catch aqui. Só cria o link se a vaga é publicável.
+            await tryEnsureShortLink(this.db, id);
           });
         });
-        // Vaga publicada: o banco já gravou; o que mudou (horário/status) segue ao Talentum e o resultado volta aditivo.
-        const statusTo = typeof updates.status === 'string' && allowedFields.includes('status') ? updates.status : null;
-        const talentumSync = await this.propagateEditToTalentum(id, updated, scheduleChanged, auth.currentStatus, statusTo, actor);
+        // Vaga publicada: o banco já gravou; o que mudou (horário) segue ao Talentum e o resultado volta aditivo.
+        const talentumSync = await this.propagateEditToTalentum(id, updated, scheduleChanged, actor);
         res.status(200).json({
           success: true,
           data: await withEffectiveFields(this.db, updated),

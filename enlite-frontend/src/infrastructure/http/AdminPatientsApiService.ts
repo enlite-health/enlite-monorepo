@@ -13,13 +13,12 @@ import type {
   CreatePatientResult,
   PatientSectionName,
   PatientSectionPayload,
-  UpdatePatientStatusResult,
+  PatientStatusActions,
+  PatientStatusActionPayload,
+  PatientStatusActionResult,
   PatientKanbanItem,
   PatientFunnelData,
-  UpdatePatientStatusPayload,
   PatientStatusHistoryEntry,
-  PatientStatusOptions,
-  PatientStatusChangeSource,
   InsuranceProvider,
   PatientAddressLogisticsPayload,
   PatientChatIdsPayload,
@@ -328,23 +327,14 @@ export class AdminPatientsApiServiceClass {
     throw new PatientApiError(json.error || `HTTP ${response.status}`, response.status, json);
   }
 
-  /**
-   * PUT /api/admin/patients/:id/status — Kanban (funil) e select da ficha (estado v2, spec 012).
-   * Aceita a string legada ou o payload com motivo/nota/origem/motivo de saída. 422 com `code`
-   * (PATIENT_STATUS_TRANSITION_NOT_ALLOWED / ON_HOLD_REASON_REQUIRED /
-   * SUSPENSION_EXIT_REASON_REQUIRED, migration 486) sai como PatientApiError.
-   */
-  async updatePatientStatus(id: string, status: string | UpdatePatientStatusPayload): Promise<UpdatePatientStatusResult> {
-    const body: UpdatePatientStatusPayload = typeof status === 'string' ? { status } : status;
-    return this.writeJson<UpdatePatientStatusResult>('PUT', `/api/admin/patients/${id}/status`, body);
+  /** GET /api/admin/patients/:id/status-actions — as ações humanas que o SERVIDOR aceitaria agora (F3). */
+  async getPatientStatusActions(id: string): Promise<PatientStatusActions> {
+    return this.request<PatientStatusActions>('GET', `/api/admin/patients/${id}/status-actions`);
   }
 
-  /** GET /api/admin/patients/:id/status-options — os destinos que o SERVIDOR aceitaria (spec 051). */
-  async getPatientStatusOptions(id: string, changeSource: PatientStatusChangeSource): Promise<PatientStatusOptions> {
-    const r = await this.request<PatientStatusOptions>('GET', `/api/admin/patients/${id}/status-options?changeSource=${changeSource}`);
-    // A lista vale para a ORIGEM do PUT que vai sair: lista de outra origem nunca é usada (quem chamou trata como indisponível).
-    if (r.changeSource !== changeSource) throw new Error(`status-options: origem ${String(r.changeSource)} ≠ pedida ${changeSource}`);
-    return r;
+  /** POST /api/admin/patients/:id/status-actions — pausar/suspender/alta/baja/retomar/reativar. O corpo não leva destino (F3, D9). */
+  async performPatientStatusAction(id: string, payload: PatientStatusActionPayload): Promise<PatientStatusActionResult> {
+    return this.writeJson<PatientStatusActionResult>('POST', `/api/admin/patients/${id}/status-actions`, payload);
   }
 
   /** GET /api/admin/patients/:id/status-history — a aba Historial (spec 012). */

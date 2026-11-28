@@ -23,10 +23,11 @@ import {
 } from './helpers/permissionFamilyHarness';
 import { FakeTactiqMcp, FakeTactiqOAuth } from '../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import { capturingLogger } from '../../src/modules/matching/infrastructure/doubles/admissionTestKit';
-import { TactiqTransientError, TactiqUnauthorizedError } from '../../src/modules/matching/application/ports/TactiqPorts';
+import { TactiqTransientError, TactiqUnauthorizedError, type TactiqTokenSet } from '../../src/modules/matching/application/ports/TactiqPorts';
 import type { TactiqLinkService } from '../../src/modules/matching/application/TactiqLinkService';
 import { pkceChallenge } from '../../src/modules/matching/infrastructure/tactiq/pkce';
 import { insertInterviewHost, deleteInterviewHosts } from './helpers/interviewHostFixture';
+import { declareTactiqSeat } from './helpers/tactiqSeatFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -39,6 +40,20 @@ const b64 = (s: string): string => Buffer.from(s, 'utf8').toString('base64');
 const unb64 = (s: string): string => Buffer.from(s, 'base64').toString('utf8');
 const HOUR = 3_600_000;
 
+/** OAuth com rotação programada POR TOKEN: só a renovação daquele refresh devolve o novo, então a ordem do diário não importa. */
+class RotatingOAuth extends FakeTactiqOAuth {
+  private readonly rotations = new Map<string, string>();
+  rotateFor(token: string, novo: string): void {
+    this.rotations.set(token, novo);
+  }
+  async refresh(token: string): Promise<TactiqTokenSet> {
+    const base = await super.refresh(token);
+    const rotated = this.rotations.get(token);
+    if (rotated) this.rotations.delete(token); // uso único por token, como o dublê global
+    return { ...base, ...(rotated ? { refreshToken: rotated } : {}) };
+  }
+}
+
 const U = {
   linker: `tq049-linker-${RUN}`, // own_tactiq_link: read + create
   reader: `tq049-reader-${RUN}`, // own_tactiq_link: read
@@ -50,7 +65,7 @@ const emailOf = (uid: string): string => `${uid}@e2e.local`;
 describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049, F4)', () => {
   let admin: Pool;
   let app: AppDeFamilia;
-  let oauth: FakeTactiqOAuth;
+  let oauth: RotatingOAuth;
   let mcp: FakeTactiqMcp;
   let service: TactiqLinkService;
   let logs: ReturnType<typeof capturingLogger>;
@@ -138,7 +153,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     await grupoComCelulas(admin, { nome: GRUPOS.linker, uid: U.linker, celulas: [['own_tactiq_link', 'read'], ['own_tactiq_link', 'create']] });
     await grupoComCelulas(admin, { nome: GRUPOS.reader, uid: U.reader, celulas: [['own_tactiq_link', 'read']] });
 
-    oauth = new FakeTactiqOAuth();
+    oauth = new RotatingOAuth();
     mcp = new FakeTactiqMcp();
     logs = capturingLogger();
 
@@ -212,6 +227,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     const TOKEN = `rt-dublado-${RUN}`;
 
     it('POST /me/tactiq-link → authorizeUrl com state e desafio S256; o banco guarda o HASH do state e o verifier CIFRADO', async () => {
+      await declareTactiqSeat(admin, emailOf(U.linker)); // F5: sem linha prévia o início do vínculo exige a licença declarada (D16)
       const res = await http('POST', '/api/admin/me/tactiq-link', U.linker);
       expect(res.status).toBe(200);
       const url = new URL(res.body.data.authorizeUrl as string);
@@ -267,7 +283,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       const call = oauth.exchangeCalls[oauth.exchangeCalls.length - 1];
       expect(call.code).toBe(TOKEN);
       expect(pkceChallenge(call.codeVerifier)).toBe(challenge);
-      expect((await eventKinds(emailOf(U.linker))).map((e) => e.kind)).toEqual(['tactiq_link.linked']);
+      expect((await eventKinds(emailOf(U.linker))).map((e) => e.kind)).toEqual(['tactiq_link.seat_declared', 'tactiq_link.linked']);
     });
 
     it('A4-2: o MESMO state de novo (uso único) → 400 e o vínculo não muda', async () => {
@@ -315,6 +331,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       const t0 = new Date();
       clock = t0;
       // inicia o vínculo como a operadora de teste: usa o serviço direto (o POST HTTP está provado acima)
+      await declareTactiqSeat(admin, u.email);
       const { authorizeUrl } = await service.startLink({ uid: `tq049-exp-${RUN}`, email: u.email });
       const st = new URL(authorizeUrl).searchParams.get('state')!;
       clock = new Date(t0.getTime() + 10 * 60_000 + 1_000);
@@ -326,6 +343,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
 
     it('troca de código recusada pelo Tactiq (invalid_grant) → 502 com code estável, sem vínculo; o state foi gasto', async () => {
       const u = await newHost({ user: false });
+      await declareTactiqSeat(admin, u.email);
       const { authorizeUrl } = await service.startLink({ uid: `tq049-bad-${RUN}`, email: u.email });
       const st = new URL(authorizeUrl).searchParams.get('state')!;
       const res = await http('GET', `/api/admin/me/tactiq-link/callback?code=bad-code&state=${st}`, null);
@@ -353,6 +371,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       setEnv('TACTIQ_LINK_RETURN_URL', 'https://app.example.test/profile');
       try {
         const u = await newHost({ user: false });
+        await declareTactiqSeat(admin, u.email);
         const { authorizeUrl } = await service.startLink({ uid: `tq049-ret-${RUN}`, email: u.email });
         const st = new URL(authorizeUrl).searchParams.get('state')!;
         const res = await http('GET', `/api/admin/me/tactiq-link/callback?code=rt-ret-${RUN}&state=${st}`, null);
@@ -371,6 +390,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     const rejectedEvents = async (email: string) =>
       (await admin.query(`SELECT outcome, reason, ref FROM admission_events WHERE lower(host_email) = lower($1) AND kind = 'tactiq_link.link_rejected' ORDER BY at`, [email])).rows as Array<{ outcome: string; reason: string; ref: unknown }>;
     async function callback(email: string, code: string) {
+      if (!(await linkRow(email))) await declareTactiqSeat(admin, email); // F5 (D16): quem já tem linha nunca é travado, só quem nunca vinculou precisa da licença declarada
       const { authorizeUrl } = await service.startLink({ uid: `tq049-acc-${RUN}`, email });
       const st = new URL(authorizeUrl).searchParams.get('state')!;
       return http('GET', `/api/admin/me/tactiq-link/callback?code=${code}&state=${st}`, null);
@@ -378,8 +398,8 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     const hostsDoBloco: string[] = [];
     let seqBloco = 0;
     // NÃO usa `newHost`: ele avança `seq`, e os e-mails `opN` dos casos seguintes (A4-7 e vizinhos) mudam de ordem alfabética.
-    // O `listLinkedWithToken` ordena por e-mail e o `rotateTo` do dublê é de uso único: o A4-7 só passa se o host dele vier
-    // ANTES dos vínculos `linked` que os casos A4-6 deixam. Os hosts deste bloco têm prefixo próprio e não mexem em `seq`.
+    // A ordem dos e-mails deixou de importar: o A4-7 programa a rotação pelo token do PRÓPRIO host (`oauth.rotateFor`),
+    // então outro `linked` percorrido antes pelo `listLinkedWithToken` não a consome. Os hosts deste bloco têm prefixo próprio.
     const novoHost = async (opts: { linkedToken?: string }) => {
       seqBloco += 1;
       const email = `acc${seqBloco}.${RUN}@example.test`;
@@ -395,8 +415,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       }
       return { id: host.id, email };
     };
-    // Vínculo `linked` deixado por um caso daria ao `runDailyCheck` dos testes seguintes um host a mais, e o dublê
-    // `oauth.rotateTo` (uso único) seria gasto nele: os casos deste bloco não deixam linha viva atrás de si.
+    // Os casos deste bloco não deixam vínculo vivo atrás de si (o `runDailyCheck` seguinte não vê host a mais).
     afterEach(async () => {
       mcp.verdict = { kind: 'ready' }; mcp.pingError = null; oauth.exchangeScope = undefined; setEnv('TACTIQ_LINK_RETURN_URL', undefined);
       await admin.query(`DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)`, [hostsDoBloco.splice(0)]);
@@ -412,7 +431,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       expect(await linkRow(u.email)).toBeUndefined();
       expect(await tokensRows(u.email)).toBe(0);
       expect(await rejectedEvents(u.email)).toEqual([expect.objectContaining({ outcome: 'access_denied', reason: 'access_action:upgrade' })]);
-      expect((await eventKinds(u.email)).map((e) => e.kind)).toEqual(['tactiq_link.link_rejected']);
+      expect((await eventKinds(u.email)).map((e) => e.kind)).toEqual(['tactiq_link.seat_declared', 'tactiq_link.link_rejected']);
     });
 
     it('ping `ready` → `linked` como sempre, com o evento `linked`', async () => {
@@ -420,7 +439,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       const res = await callback(u.email, `rt-rdy-${RUN}`);
       expect(res.status).toBe(200);
       expect(await linkRow(u.email)).toMatchObject({ status: 'linked' });
-      expect((await eventKinds(u.email)).map((e) => e.kind)).toEqual(['tactiq_link.linked']);
+      expect((await eventKinds(u.email)).map((e) => e.kind)).toEqual(['tactiq_link.seat_declared', 'tactiq_link.linked']);
       expect(await rejectedEvents(u.email)).toEqual([]);
     });
 
@@ -491,15 +510,24 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       ]);
     });
 
-    it('A4-4: operadora do roster SEM vínculo (nunca teve linha) → 1 aviso `missing` por transição, não a cada rodada; o evento `missing` e o `notified` ficam na trilha', async () => {
+    it('A4-4 (F5, D16): operadora do roster SEM vínculo e SEM licença declarada → silêncio: 0 aviso `missing` ao host e nenhum carimbo `notified`; só o evento `missing` (relógio das 48 h)', async () => {
       const h = await newHost();
+      await service.runDailyCheck();
+      await service.runDailyCheck();
+      expect(await sino(h.uid)).toHaveLength(0);
+      expect(await eventKinds(h.email)).toEqual([{ kind: 'tactiq_link.missing', reason: null }]);
+    });
+
+    it('A4-4: operadora do roster SEM vínculo (nunca teve linha) e com a licença declarada → 1 aviso `missing` por transição, não a cada rodada; o evento `missing` e o `notified` ficam na trilha', async () => {
+      const h = await newHost();
+      await declareTactiqSeat(admin, h.email); // F5 (D16): sem licença declarada o aviso `missing` não sai
       await service.runDailyCheck();
       await service.runDailyCheck();
       await service.runDailyCheck();
       const n = await sino(h.uid);
       expect(n).toHaveLength(1);
       expect(n[0].payload).toEqual({ reason: 'missing' });
-      expect((await eventKinds(h.email)).map((e) => e.kind)).toEqual(['tactiq_link.missing', 'tactiq_link.notified']);
+      expect((await eventKinds(h.email)).map((e) => e.kind)).toEqual(['tactiq_link.seat_declared', 'tactiq_link.missing', 'tactiq_link.notified']);
     });
 
     it('A4-4: operadora do roster SEM USUÁRIO → nada no sino e NÃO carimba (avisa quando o usuário existir); o evento `missing` nasce (relógio das 48 h)', async () => {
@@ -507,6 +535,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       await service.runDailyCheck();
       expect(await eventKinds(h.email)).toEqual([{ kind: 'tactiq_link.missing', reason: null }]);
       // o usuário aparece depois → o próximo teste diário avisa (1×)
+      await declareTactiqSeat(admin, h.email); // F5 (D16): o aviso `missing` só sai com a licença declarada
       await admin.query(`INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES ($1,$2,'admin','ACTIVE',true,$3)`, [`tq049-late-${RUN}-${seq}`, h.email, TENANT_E2E]);
       hostUids.push(`tq049-late-${RUN}-${seq}`);
       await service.runDailyCheck();
@@ -553,7 +582,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       const old = `rt-old-${RUN}`;
       const novo = `rt-novo-${RUN}`;
       const h = await newHost({ link: { status: 'linked', token: old } });
-      oauth.rotateTo(novo);
+      oauth.rotateFor(old, novo);
       const pings = mcp.pingTokens.length;
       await service.runDailyCheck();
       const row = await linkRow(h.email);
@@ -577,24 +606,14 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       expect(await eventKinds(h.email)).toEqual(expect.arrayContaining([{ kind: 'tactiq_link.broken', reason: 'invalid_grant' }]));
     });
 
-    it('conta errada (autoverificação do passo 5, chamada pela importação): `linked → wrong_account` + 1 aviso `wrong_account`; repetir não repete', async () => {
-      const h = await newHost({ link: { status: 'linked' } });
-      expect(await service.markWrongAccount(h.email)).toBe(true);
-      expect(await service.markWrongAccount(h.email)).toBe(false);
-      expect(await linkRow(h.email)).toMatchObject({ status: 'wrong_account', last_notified_status: 'wrong_account' });
-      const n = await sino(h.uid);
-      expect(n).toHaveLength(1);
-      expect(n[0].payload).toEqual({ reason: 'wrong_account' });
-      await service.runDailyCheck();
-      expect(await sino(h.uid)).toHaveLength(1);
-      expect((await service.statesFor([h.email])).get(h.email)).toBe('wrong_account');
-    });
+    // O caso "conta errada" (`markWrongAccount`) SAIU (tactiq-vinculo-resiliente D8, F4): a importação não produz mais `wrong_account`.
+    // A linha `wrong_account` LEGADA (semeada por SQL) voltar a `linked` no teste diário é provada em `tactiq-recheck.e2e.test.ts` (T207, caso (b)).
 
     it('rota interna POST /api/internal/jobs/admission-tactiq-check → 200 só com contagens (nada de token, e-mail ou nome)', async () => {
       const h = await newHost({ link: { status: 'linked' } });
       const res = await http('POST', '/api/internal/jobs/admission-tactiq-check', null);
       expect(res.status).toBe(200);
-      expect(Object.keys(res.body.data).sort()).toEqual(['alarms', 'broken', 'notified', 'ok', 'pinged', 'rosterHosts', 'transient']);
+      expect(Object.keys(res.body.data).sort()).toEqual(['alarms', 'broken', 'notified', 'ok', 'pinged', 'reactivated', 'rechecked', 'rosterHosts', 'transient']);
       expect(res.body.data.pinged).toBeGreaterThanOrEqual(1);
       expect(JSON.stringify(res.body)).not.toContain(h.email);
       expect(JSON.stringify(res.body)).not.toContain('rt-');
@@ -739,6 +758,7 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (F4:
     expect(own.status).toBe(200);
     expect(own.body.data).toMatchObject({ status: 'missing' });
 
+    await declareTactiqSeat(pool, emailOf(uids.com)); // F5: a licença declarada libera o início do vínculo (D16)
     const started = await call('POST', '/api/admin/me/tactiq-link', uids.com);
     expect(started.status).toBe(200);
     const state = new URL(started.body.data.authorizeUrl as string).searchParams.get('state')!;
@@ -764,6 +784,6 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (F4:
     expect([401, 403]).toContain(denied.status);
     const ok = await call('POST', '/api/internal/jobs/admission-tactiq-check', null, { 'X-Internal-Secret': 'test-secret-for-e2e-only' });
     expect(ok.status).toBe(200);
-    expect(Object.keys(ok.body.data).sort()).toEqual(['alarms', 'broken', 'notified', 'ok', 'pinged', 'rosterHosts', 'transient']);
+    expect(Object.keys(ok.body.data).sort()).toEqual(['alarms', 'broken', 'notified', 'ok', 'pinged', 'reactivated', 'rechecked', 'rosterHosts', 'transient']);
   });
 });

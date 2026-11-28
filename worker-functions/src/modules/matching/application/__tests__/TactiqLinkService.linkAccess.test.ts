@@ -1,6 +1,6 @@
 /**
- * `completeLink`: o acesso é provado ANTES de gravar (change tactiq-vinculo-valida-acesso, F2). Recusa não deixa token nem linha;
- * só a trilha recebe `tactiq_link.link_rejected`. Dublês do Tactiq; nenhum e-mail, token ou corpo em evento ou log.
+ * `completeLink`: o acesso é provado ANTES de gravar (change tactiq-vinculo-valida-acesso, F2). Recusa não deixa linha `linked`;
+ * só a recusa por assento (F1) guarda o token numa linha `broken`, e a trilha recebe `tactiq_link.link_rejected`. Dublês do Tactiq; nenhum e-mail, token ou corpo em evento ou log.
  */
 import type { Pool } from 'pg';
 import type { TactiqLinkRepository } from '../../infrastructure/TactiqLinkRepository';
@@ -19,6 +19,8 @@ function build() {
   const repo = {
     consumeOAuthState: jest.fn().mockResolvedValue({ email: HOST, uid: 'uid-1', verifierEncrypted: 'venc' }),
     upsertLinked: jest.fn().mockResolvedValue(undefined),
+    insertBrokenFromRejection: jest.fn().mockResolvedValue(true),
+    seatDeclared: jest.fn().mockResolvedValue(false),
     appendEvent: jest.fn(async (e: Record<string, unknown>) => void events.push(e)),
   };
   const log = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -62,16 +64,31 @@ describe('completeLink — vínculo só com acesso provado', () => {
     expect(t.events[0]).not.toHaveProperty('ref');
   });
 
-  it('request_seat → nada gravado, nem cifrado; link_rejected access_denied / access_action:request_seat com ref.title', async () => {
+  it('request_seat → guarda o token numa linha broken (insertBrokenFromRejection 1×, upsertLinked 0×), com broken + link_rejected', async () => {
     const t = build();
+    t.oauth.exchangeScope = 'mcp:meetings:own';
     t.mcp.verdict = { kind: 'denied', action: 'request_seat', title: 'Ask your team admin for a seat' };
-    await expect(complete(t)).rejects.toBeInstanceOf(TactiqAccessDeniedError);
+    await expect(complete(t)).rejects.toMatchObject({ redirectReason: 'access_denied' });
     expect(t.repo.upsertLinked).not.toHaveBeenCalled();
-    expect(t.cipher.encrypt).not.toHaveBeenCalled();
+    expect(t.repo.insertBrokenFromRejection).toHaveBeenCalledTimes(1);
+    expect(t.repo.insertBrokenFromRejection).toHaveBeenCalledWith(expect.objectContaining({ email: HOST, uid: 'uid-1', tokenEncrypted: expect.stringMatching(/^enc:/) }));
+    expect(t.events.filter((e) => e.kind === 'tactiq_link.broken')).toEqual([
+      expect.objectContaining({ reason: 'access_action:request_seat', ref: { source: 'link', scope: 'mcp:meetings:own' } }),
+    ]);
     expect(rejected(t.events)).toEqual([
-      expect.objectContaining({ outcome: 'access_denied', reason: 'access_action:request_seat', ref: { title: 'Ask your team admin for a seat' } }),
+      expect.objectContaining({ outcome: 'access_denied', reason: 'access_action:request_seat', ref: { scope: 'mcp:meetings:own', title: 'Ask your team admin for a seat' } }),
     ]);
     expect(t.events.some((e) => e.kind === 'tactiq_link.linked')).toBe(false);
+  });
+
+  it('request_seat com linha prévia linked (ou queda que não é token morto) → repositório não grava → só link_rejected, sem evento broken', async () => {
+    const t = build();
+    t.repo.insertBrokenFromRejection.mockResolvedValue(false);
+    t.mcp.verdict = { kind: 'denied', action: 'request_seat', title: null };
+    await expect(complete(t)).rejects.toBeInstanceOf(TactiqAccessDeniedError);
+    expect(t.repo.insertBrokenFromRejection).toHaveBeenCalledTimes(1);
+    expect(t.repo.upsertLinked).not.toHaveBeenCalled();
+    expect(t.events.map((e) => e.kind)).toEqual(['tactiq_link.link_rejected']);
   });
 
   it('upgrade → o redirectReason é access_denied e reason access_action:upgrade', async () => {
@@ -79,6 +96,9 @@ describe('completeLink — vínculo só com acesso provado', () => {
     t.mcp.verdict = { kind: 'denied', action: 'upgrade', title: null };
     await expect(complete(t)).rejects.toMatchObject({ redirectReason: 'access_denied' });
     expect(t.repo.upsertLinked).not.toHaveBeenCalled();
+    expect(t.repo.insertBrokenFromRejection).not.toHaveBeenCalled();
+    expect(t.cipher.encrypt).not.toHaveBeenCalled();
+    expect(t.events.map((e) => e.kind)).toEqual(['tactiq_link.link_rejected']);
     expect(rejected(t.events)[0]).toMatchObject({ reason: 'access_action:upgrade' });
   });
 

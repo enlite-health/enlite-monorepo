@@ -15,6 +15,7 @@ import { Pool } from 'pg';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { reportError } from '@shared/logging';
+import { cicloDeVidaSql } from '../../domain/vacancyLifecycle';
 
 const inProgressQuerySchema = z.object({
   patient_id: z.string().uuid({ message: 'patient_id must be a valid UUID v4' }),
@@ -164,6 +165,7 @@ export class VacanciesAuxController {
           jp.title,
           jp.status,
           jp.is_draft,
+          ${cicloDeVidaSql('jp')} AS lifecycle,
           jp.talentum_published_at,
           jp.created_at
         FROM job_postings jp

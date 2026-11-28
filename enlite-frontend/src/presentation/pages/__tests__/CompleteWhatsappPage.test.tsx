@@ -136,7 +136,6 @@ describe('CompleteWhatsappPage', () => {
 
   it('abre ClaimOtpModal quando startClaim retorna candidate', async () => {
     mockStartClaim.mockResolvedValue({
-      candidateWorkerId: 'cand-1',
       phoneMasked: '+54 11 **** 5678',
       verificationSid: 'VS123',
     });
@@ -151,7 +150,6 @@ describe('CompleteWhatsappPage', () => {
 
   it('navega para / apos confirmacao do OTP no modal', async () => {
     mockStartClaim.mockResolvedValue({
-      candidateWorkerId: 'cand-1',
       phoneMasked: '+54 11 **** 5678',
       verificationSid: 'VS123',
     });
@@ -166,7 +164,6 @@ describe('CompleteWhatsappPage', () => {
 
   it('fecha modal ao cancelar sem navegar', async () => {
     mockStartClaim.mockResolvedValue({
-      candidateWorkerId: 'cand-1',
       phoneMasked: '+54 11 **** 5678',
       verificationSid: 'VS123',
     });

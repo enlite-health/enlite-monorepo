@@ -127,22 +127,8 @@ export const ACTIVATION_BLOCKING_CODES = [
 export const SCHEDULE_REQUIRED_STATUSES = ['ACTIVE', 'SEARCHING', 'REPLACEMENT'] as const;
 
 /**
- * Spec 051 (ponto 4, decisão do Gabriel 10/10/2026: "ir para Búsqueda precisa de serviço
- * contratado já completo"): na troca manual FORA do fluxo para SEARCHING, o serviço contratado tem
- * de estar completo — ao menos 1 serviço ativo, com endereço e com horário. O fluxo normal
- * (foguete, lançamento, ON_HOLD→SEARCHING…) continua cobrando só o horário. UM dono: o writer
- * (que barra o PUT) e a lista de destinos (`blockedBy`) leem esta constante via
- * `blockingCodesForStatusChange(…, foraDoFluxo)`.
- */
-export const SEARCHING_FORA_DO_FLUXO_CODES = [
-  'CONTRACTED_SERVICE',
-  'SERVICE_ADDRESS',
-  'SERVICE_SCHEDULE',
-] as const;
-
-/**
  * Quais códigos do checklist barram a ENTRADA em cada status, no `PUT /patients/:id/status`
- * (select da ficha e drop no Kanban — as duas telas chamam a mesma rota).
+ * (a rota e a derivação do itinerário chamam o mesmo escritor).
  *
  * - `ACTIVE`: o checklist bloqueante INTEIRO. Até 07/09 o drop na coluna "Activo" do Kanban
  *   ativava o paciente sem passar por checklist nenhum — nem por ADDRESS, que bloqueia o botão
@@ -155,16 +141,14 @@ export const SEARCHING_FORA_DO_FLUXO_CODES = [
  * - `fromStatus` (3º parâmetro): se for um estágio pré-atendimento (`ADMISSION_FUNNEL_STATUSES`) e o destino for de
  *   atendimento (`CARE_ENTRY_STATUSES`), soma `DIAGNOSIS`. Andar entre os estágios pré-atendimento, ALTA e
  *   DISCHARGED não cobram.
- * - `foraDoFluxo` (spec 051): só SEARCHING muda — ver `SEARCHING_FORA_DO_FLUXO_CODES`.
  */
 export function blockingCodesForStatusChange(
   toStatus: string,
-  foraDoFluxo = false,
   fromStatus: string | null = null,
 ): readonly PatientCompletenessCode[] {
   // `DIAGNOSIS` está em ACTIVATION_BLOCKING_CODES (a ficha o mostra como bloqueante), mas na TROCA DE STATUS ele só vale
   // por UM caminho — entrar em atendimento vindo do pré-atendimento (abaixo). Tirá-lo do alvo evita cobrá-lo de quem chega a ACTIVE de outro estado.
-  const base = blockingCodesForTarget(toStatus, foraDoFluxo).filter((c) => c !== 'DIAGNOSIS');
+  const base = blockingCodesForTarget(toStatus).filter((c) => c !== 'DIAGNOSIS');
   // Diagnóstico: ENTRAR em atendimento vindo de qualquer estágio pré-atendimento. `fromStatus` ausente = o
   // chamador não está perguntando por uma transição de origem pré-atendimento.
   const enteringCare =
@@ -172,14 +156,21 @@ export function blockingCodesForStatusChange(
   return enteringCare ? [...base, 'DIAGNOSIS'] : base;
 }
 
-function blockingCodesForTarget(toStatus: string, foraDoFluxo: boolean): readonly PatientCompletenessCode[] {
+function blockingCodesForTarget(toStatus: string): readonly PatientCompletenessCode[] {
   if (toStatus === 'ACTIVE') return ACTIVATION_BLOCKING_CODES;
-  if (foraDoFluxo && toStatus === 'SEARCHING') return SEARCHING_FORA_DO_FLUXO_CODES;
   if ((SCHEDULE_REQUIRED_STATUSES as readonly string[]).includes(toStatus)) {
     return ['SERVICE_SCHEDULE'];
   }
   return [];
 }
+
+/**
+ * Onde a completude de uma troca de estado é MEDIDA (estado-automatico-do-paciente, D2): o paciente inteiro
+ * (`paciente`: todos os serviços ativos, o que a troca manual e a derivação sempre fizeram) ou só o serviço
+ * contratado clicado (`servico`: o foguete) ou só os serviços com vaga viva (`servicos_com_vaga_viva`: a derivação pelo itinerário, item 19). Muda ONDE se mede, nunca O QUE se exige — os códigos continuam
+ * saindo de `blockingCodesForStatusChange`. Dono do conceito; o escritor e o adapter leem daqui.
+ */
+export type EscopoDaCompletude = { kind: 'paciente' } | { kind: 'servico'; serviceId: string } | { kind: 'servicos_com_vaga_viva' };
 
 /**
  * Status do paciente em que o checklist/botão "Activar paciente" fazem sentido. Fora daqui

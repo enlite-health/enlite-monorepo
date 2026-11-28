@@ -284,6 +284,58 @@ describe('GetNotificationsUseCase — aviso do vínculo do Tactiq (spec 049 F4):
     expect(a.payload).toBeNull();
     expect(b.payload).toBeNull();
   });
+
+  const payloadOfRow = async (payload: Record<string, unknown>) =>
+    (await new GetNotificationsUseCase(repoWith([tactiqRow(payload)])).execute({ recipientUid: 'me', limit: 20 }))[0].payload;
+
+  describe('falta de assento (tactiq-vinculo-resiliente, D11): leitura chave a chave', () => {
+    it('seat_missing ao host sai com audience, adminNotified e autoReactivates; chave extra (e-mail, token) não sai', async () => {
+      const p = await payloadOfRow({
+        reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: false, email: 'ana@example.test', token: 'rt-segredo',
+      });
+      expect(p).toEqual({ reason: 'seat_missing', audience: 'host', adminNotified: true, autoReactivates: false });
+      expect(JSON.stringify(p)).not.toContain('ana@example.test');
+      expect(JSON.stringify(p)).not.toContain('rt-segredo');
+    });
+
+    it('seat_missing ao master leva hostName; `hostName` em audience host NÃO sai', async () => {
+      expect(await payloadOfRow({ reason: 'seat_missing', audience: 'master', hostName: 'Fulana Fake', autoReactivates: true })).toEqual({
+        reason: 'seat_missing', audience: 'master', hostName: 'Fulana Fake', autoReactivates: true,
+      });
+      expect(await payloadOfRow({ reason: 'seat_missing', audience: 'host', hostName: 'Fulana Fake', adminNotified: false, autoReactivates: true })).toEqual({
+        reason: 'seat_missing', audience: 'host', adminNotified: false, autoReactivates: true,
+      });
+    });
+
+    it('broken ao master (token morto) sai com hostName; `master` com missing cai para o responsável (sem audience)', async () => {
+      expect(await payloadOfRow({ reason: 'broken', audience: 'master', hostName: 'Fulana Fake' })).toEqual({
+        reason: 'broken', audience: 'master', hostName: 'Fulana Fake',
+      });
+      expect(await payloadOfRow({ reason: 'missing', audience: 'master', hostName: 'Fulana Fake' })).toEqual({ reason: 'missing' });
+    });
+
+    it('seat_missing sem audience válida, ou com tipos errados nos booleanos, não vaza: sem payload / sem o campo', async () => {
+      expect(await payloadOfRow({ reason: 'seat_missing' })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_missing', audience: 'supervisor' })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_missing', audience: 'host', adminNotified: 'sim', autoReactivates: 1 })).toEqual({
+        reason: 'seat_missing', audience: 'host',
+      });
+    });
+
+    it('F5: seat_ready só ao host com firstLink boolean; seat_pending só ao master; fora disso, sem payload', async () => {
+      expect(await payloadOfRow({ reason: 'seat_ready', audience: 'host', firstLink: false, email: 'ana@example.test' })).toEqual({
+        reason: 'seat_ready', audience: 'host', firstLink: false,
+      });
+      expect(await payloadOfRow({ reason: 'seat_ready', audience: 'master', firstLink: true })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_ready', audience: 'host', firstLink: 'sim' })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_ready', audience: 'host' })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_pending', audience: 'master', hostName: 'Fulana Fake', firstLink: true })).toEqual({
+        reason: 'seat_pending', audience: 'master', hostName: 'Fulana Fake',
+      });
+      expect(await payloadOfRow({ reason: 'seat_pending', audience: 'host' })).toBeNull();
+      expect(await payloadOfRow({ reason: 'seat_pending' })).toBeNull();
+    });
+  });
 });
 
 describe('GetNotificationsUseCase — aviso diário do itinerário (spec 069 F4): payload só-ids', () => {
@@ -347,5 +399,56 @@ describe('GetNotificationsUseCase — importação bloqueada (spec 083): payload
       const [d] = await new GetNotificationsUseCase(repoWith([ib(p)])).execute({ recipientUid: 'me', limit: 20 });
       expect(d.payload).toBeNull();
     }
+  });
+});
+
+describe('GetNotificationsUseCase — alarme do webhook do Talentum (spec 095 §3.5): payload fechado', () => {
+  const tw = (payload: Record<string, unknown> | null): NotificationEventRow =>
+    row({ id: 'tw1', typeCode: 'TALENTUM_WEBHOOK_ALARM', actorUid: 'system:talentum-webhook', actorDisplayName: null, patientId: null, conversationId: null, messageId: null, patientCaseNumber: null, payload });
+  const ok = { alarme: 'inbox_falha', quantidade: 2, desde: '2026-11-25T12:00:00.000Z' };
+
+  it('payload completo é entregue; chave extra não é repassada', async () => {
+    const [a] = await new GetNotificationsUseCase(repoWith([tw({ ...ok, email: 'a@b.c', workerId: 'w1' })])).execute({ recipientUid: 'me', limit: 20 });
+    expect(a.payload).toEqual(ok);
+    expect(JSON.stringify(a)).not.toContain('a@b.c');
+  });
+
+  it('alarme fora do conjunto, quantidade inválida, desde ausente ou payload nulo viram null', async () => {
+    for (const p of [{ ...ok, alarme: 'x' }, { ...ok, quantidade: 0 }, { ...ok, quantidade: 1.5 }, { ...ok, quantidade: '2' }, { alarme: 'silencio', quantidade: 1 }, null]) {
+      const [d] = await new GetNotificationsUseCase(repoWith([tw(p)])).execute({ recipientUid: 'me', limit: 20 });
+      expect(d.payload).toBeNull();
+    }
+  });
+});
+
+describe('GetNotificationsUseCase — aviso de presença à coordenação (emenda 077 §5.5, T-806-54): payload só-ids', () => {
+  const ids = { occurrence_id: 'o1', slot_id: 's1', on_date: '2026-11-25', worker_id: 'w1', service_id: 'sv1' };
+  const win = { start_time: '2026-11-25T12:00:00.000Z', end_time: '2026-11-25T21:30:00.000Z' };
+  const pa = (typeCode: 'PRESENCE_OPEN_4H' | 'CHECK_IN_REFUSED_NO_ENTRY', payload: Record<string, unknown> | null): NotificationEventRow =>
+    row({ id: 'pa1', typeCode, actorUid: 'system:presence-alert', actorDisplayName: null, conversationId: null, messageId: null, payload });
+
+  it.each(['PRESENCE_OPEN_4H', 'CHECK_IN_REFUSED_NO_ENTRY'] as const)('%s: devolve as 5 chaves de id/data + a janela; chave extra (nome, endereço) não é repassada', async (code) => {
+    const [a] = await new GetNotificationsUseCase(repoWith([pa(code, { ...ids, ...win, worker_name: 'Fulana', address: 'Calle 1' })])).execute({ recipientUid: 'me', limit: 20 });
+    expect(a.payload).toEqual({ ...ids, ...win });
+    expect(JSON.stringify(a)).not.toMatch(/Fulana|Calle 1/);
+  });
+
+  it('aviso gravado sem janela (ou com instante inválido): devolve os ids e start_time/end_time null, nunca lança', async () => {
+    const [a] = await new GetNotificationsUseCase(repoWith([pa('PRESENCE_OPEN_4H', { ...ids, start_time: 'x' })])).execute({ recipientUid: 'me', limit: 20 });
+    expect(a.payload).toEqual({ ...ids, start_time: null, end_time: null });
+  });
+
+  it('payload nulo, id vazio ou data fora do formato viram null (o front cai no texto sem data)', async () => {
+    for (const p of [null, { ...ids, on_date: '25/11/2026' }, { ...ids, worker_id: '' }, { ...ids, slot_id: 7 }]) {
+      const [d] = await new GetNotificationsUseCase(repoWith([pa('PRESENCE_OPEN_4H', p)])).execute({ recipientUid: 'me', limit: 20 });
+      expect(d.payload).toBeNull();
+    }
+  });
+
+  it('o nome do paciente NUNCA é resolvido para o aviso de presença, nem para quem pode ler conversa (o nome só existe na tela da fila, sob a célula dela)', async () => {
+    const repo = repoWith([pa('PRESENCE_OPEN_4H', ids)], 'Ana Silva');
+    const [a] = await new GetNotificationsUseCase(repo, { canReadPatientConversation: jest.fn().mockResolvedValue(true) }).execute({ recipientUid: 'me', limit: 20 });
+    expect(a.patientDisplayName).toBeNull();
+    expect(repo.findPatientDisplayName).not.toHaveBeenCalled();
   });
 });

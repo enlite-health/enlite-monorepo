@@ -9,7 +9,8 @@
  *
  * Três casos:
  *   a) vaga DE_BAJA (serviço contratado ligado deu baixa) → a página ABRE com
- *      200 (não 404), mostra o badge "Dada de baja" e NÃO oferece candidatura —
+ *      200 (não 404), mostra o AVISO de `is_disabled` (nenhum selo de estado: a página
+ *      pública só tem esse aviso — semaforo-da-vaga F4) e NÃO oferece candidatura —
  *      mesmo com `talentum_whatsapp_url` preenchido de propósito (prova que o
  *      botão some pelo `is_disabled`, não por falta de link).
  *   b) vaga em status publicável (SEARCHING) → abre normal e OFERECE
@@ -71,7 +72,7 @@ test.describe('@integration Página pública da vaga — DE_BAJA continua servin
     for (const id of minimalVacancyIds) cleanupMinimalVacancy(id);
   });
 
-  test('a) vaga DE_BAJA abre (não 404), mostra o estado desativado e NÃO oferece candidatura', async ({ page }) => {
+  test('a) vaga DE_BAJA abre (não 404), mostra o aviso de is_disabled (sem selo) e NÃO oferece candidatura', async ({ page }) => {
     const { patientId, addressId } = insertTestPatient({ withAddress: true });
     patientIds.push(patientId);
     const caseNumber = Math.floor(Math.random() * 90000) + 10000; // >= 1000 → formatCaseNumber prefixa "EN"
@@ -87,7 +88,9 @@ test.describe('@integration Página pública da vaga — DE_BAJA continua servin
     await page.goto(`/vacantes/${vacancyId}`, { waitUntil: 'networkidle', timeout: 30_000 });
 
     await expect(page.getByText(new RegExp(`CASO EN${caseNumber}-\\d+`))).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('Dada de baja', { exact: true })).toBeVisible();
+    // semaforo-da-vaga F4: a página pública não tem selo de estado, só o aviso de `is_disabled`.
+    await expect(page.getByText('Dada de baja', { exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('vacancy-lifecycle-badge')).toHaveCount(0);
     await expect(page.getByText('Esta vacante fue dada de baja y ya no acepta postulaciones.')).toBeVisible();
     // O botão não é só invisível — não existe no DOM (o JSX condiciona a render inteira a `!is_disabled`).
     await expect(page.getByRole('button', { name: 'Postularse' })).toHaveCount(0);

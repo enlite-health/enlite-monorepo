@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { serviceWithoutScheduleSql } from '@shared/sql/serviceScheduleSql';
 import { activeDiagnosisCountSql } from '@shared/sql/patientDiagnosisSql';
+import { liveVacancySelect } from './liveVacancySql';
 import {
   computePatientCompleteness,
   type PatientCompletenessResult,
@@ -16,13 +17,24 @@ import {
  * usa as linhas para montar as vagas) e `PatientQueryRepository` as faz como subselects da
  * listagem.
  *
+ * `serviceId` (D2, escopo `servico` do foguete): a contagem de "serviço ativo sem horário" olha SÓ esse serviço
+ * (mesmo fragmento `serviceWithoutScheduleSql`); sem ele, todos os serviços ativos do paciente (o que sempre foi).
+ *
+ * `soComVagaViva` (item 19, escopo `servicos_com_vaga_viva` da derivação): endereço e horário só contam nos serviços com vaga viva —
+ * a MESMA condição de `liveVacancySelect` (`liveVacancySql.ts`, a de `temVacanteViva` na regra de horas). Combina com `serviceId` por AND.
+ *
  * Recebe o `PoolClient` de propósito: a guarda roda DENTRO da transação que já segurou a linha
  * do paciente com `FOR UPDATE`. Ler por fora abriria janela entre a checagem e o UPDATE.
  */
 export async function loadPatientCompleteness(
   client: PoolClient,
   patientId: string,
+  serviceId?: string,
+  soComVagaViva = false,
 ): Promise<PatientCompletenessResult> {
+  const servicoComVagaViva = `($3::boolean IS NOT TRUE OR pcs.id IN (SELECT live.contracted_service_id FROM (${liveVacancySelect(
+    'jp.contracted_service_id IN (SELECT id FROM patient_contracted_services WHERE patient_id = $1 AND active)',
+  )}) live))`;
   const res = await client.query<{
     birth_date: string | Date | null;
     has_consent: boolean | null;
@@ -51,11 +63,14 @@ export async function loadPatientCompleteness(
        (SELECT COUNT(*) FROM patient_contracted_services pcs
           LEFT JOIN patient_addresses pa
                  ON pa.id = pcs.address_id AND pa.archived_at IS NULL
-         WHERE pcs.patient_id = p.id AND pcs.active AND pa.id IS NULL)
+         WHERE pcs.patient_id = p.id AND pcs.active AND pa.id IS NULL
+           AND ${servicoComVagaViva})
                                                                      AS services_without_address_count,
        -- serviço ativo sem horário: nenhuma faixa vigente hoje (decisão do Gabriel 07/09; spec 056: fragmento único).
        (SELECT COUNT(*) FROM patient_contracted_services pcs
          WHERE pcs.patient_id = p.id AND pcs.active
+           AND ($2::uuid IS NULL OR pcs.id = $2::uuid)
+           AND ${servicoComVagaViva}
            AND ${serviceWithoutScheduleSql('pcs')})
                                                                      AS services_without_schedule_count,
        p.status,
@@ -65,7 +80,7 @@ export async function loadPatientCompleteness(
        ${activeDiagnosisCountSql('p.id')}                             AS active_diagnosis_count
      FROM patients p
     WHERE p.id = $1 AND p.deleted_at IS NULL`,
-    [patientId],
+    [patientId, serviceId ?? null, soComVagaViva],
   );
 
   const row = res.rows[0];

@@ -11,14 +11,3 @@ export function bajaErrorMessage(err: unknown, t: TFunction, namespace: 'admin.v
   }
   return t(`${namespace}.error`);
 }
-
-/** Mensagem localizada de um erro da API que traz `code` estável (409 do PUT da vaga: R17 e encerrar vaga de serviço ativo). */
-export function vacancyUpdateErrorMessage(err: unknown, t: TFunction): string {
-  const code = (err as { code?: string } | null)?.code;
-  if (code) {
-    const key = `admin.vacancyDetail.statusEditor.errors.${code}`;
-    const msg = t(key, { defaultValue: '' });
-    if (msg) return msg;
-  }
-  return err instanceof Error ? err.message : String(err);
-}

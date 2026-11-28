@@ -34,7 +34,7 @@ const call = async (fn: (rq: Request, rs: Response) => Promise<void>, req: Parti
 };
 
 describe('InterviewHostController', () => {
-  const service = { list: jest.fn(), candidates: jest.fn(), create: jest.fn(), update: jest.fn() };
+  const service = { list: jest.fn(), candidates: jest.fn(), create: jest.fn(), update: jest.fn(), setTactiqSeat: jest.fn() };
   const c = new InterviewHostController(service as never);
   beforeEach(() => jest.clearAllMocks());
 
@@ -75,6 +75,36 @@ describe('InterviewHostController', () => {
   it('PATCH com id inválido ou corpo vazio → 400', async () => {
     expect((await call(c.patch.bind(c), { params: { id: 'x' }, body: { doesEnquadre: true } })).status).toBe(400);
     expect((await call(c.patch.bind(c), { params: { id: ID }, body: {} })).status).toBe(400);
+  });
+
+  describe('POST /interview-hosts/:id/tactiq-seat (F5, D16)', () => {
+    it('{assigned:true|false} válido → 200 e o serviço recebe id, valor e o ator', async () => {
+      service.setTactiqSeat.mockResolvedValue(undefined);
+      const out = await call(c.tactiqSeat.bind(c), { params: { id: ID }, body: { assigned: true } });
+      expect(out).toMatchObject({ status: 200, body: { success: true, data: { id: ID, assigned: true } } });
+      expect(service.setTactiqSeat).toHaveBeenCalledWith(ID, true, 'staff-1');
+      await call(c.tactiqSeat.bind(c), { params: { id: ID }, body: { assigned: false } });
+      expect(service.setTactiqSeat).toHaveBeenLastCalledWith(ID, false, 'staff-1');
+    });
+
+    it.each([
+      ['assigned não booleano (string)', { id: ID }, { assigned: 'true' }],
+      ['assigned não booleano (número)', { id: ID }, { assigned: 1 }],
+      ['sem assigned', { id: ID }, {}],
+      ['campo a mais', { id: ID }, { assigned: true, email: 'x@y.z' }],
+      ['id que não é uuid', { id: 'x' }, { assigned: true }],
+    ])('%s → 400 sem tocar o serviço', async (_n, params, body) => {
+      const out = await call(c.tactiqSeat.bind(c), { params, body });
+      expect(out).toMatchObject({ status: 400, body: { code: 'INVALID_REQUEST' } });
+      expect(service.setTactiqSeat).not.toHaveBeenCalled();
+    });
+
+    it('linha inexistente → 404 com code estável', async () => {
+      service.setTactiqSeat.mockRejectedValueOnce(new InterviewHostNotFoundError());
+      expect(await call(c.tactiqSeat.bind(c), { params: { id: ID }, body: { assigned: true } })).toMatchObject({
+        status: 404, body: { code: 'INTERVIEW_HOST_NOT_FOUND' },
+      });
+    });
   });
 
   it('candidates exige q', async () => {

@@ -188,7 +188,7 @@ describe('PatientService.moveStatus — rowCount ?? 0 nullish branch', () => {
     _queryImpl = async (sql: string) =>
       sql.startsWith('SELECT status FROM patients') ? { rows: [] } : { rows: [], rowCount: 0 };
 
-    await expect(service.moveStatus('pid-rowcount', 'ACTIVE')).rejects.toThrow(/not found/i);
+    await expect(service.moveStatus('pid-rowcount', 'DISCHARGED')).rejects.toThrow(/not found/i);
   });
 });
 

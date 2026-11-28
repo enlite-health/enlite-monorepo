@@ -12,7 +12,7 @@ jest.mock('@shared/logging', () => ({
 import type { Pool } from 'pg';
 import { AccountLinkService } from '../AccountLinkService';
 import { AccountLinkError } from '../AccountLinkTypes';
-import { OTP_RATE_LIMITED } from '../../auth/ports/OtpChallengePort';
+import { OTP_COUNTRY_NOT_SUPPORTED, OTP_RATE_LIMITED } from '../../auth/ports/OtpChallengePort';
 
 const LOGGED = 'aaaaaaaa-0000-0000-0000-000000000001';
 const OWNER = 'bbbbbbbb-0000-0000-0000-000000000002';
@@ -42,6 +42,17 @@ describe('AccountLinkService sobre o port', () => {
   it('start: o RATE_LIMITED do port sai como AccountLinkError RATE_LIMITED (nunca 500 genérico)', async () => {
     const otp = { start: jest.fn().mockRejectedValue(new Error(OTP_RATE_LIMITED)), check: jest.fn() };
     await expect(build(otp).start('FirebaseNew', '1133336012')).rejects.toMatchObject({ name: 'AccountLinkError', code: 'RATE_LIMITED' });
+  });
+
+  it('start: requesterUid = uid do token que pediu o vínculo', async () => {
+    const otp = { start: jest.fn().mockResolvedValue({ challengeId: 'ch-9' }), check: jest.fn() };
+    await build(otp).start('FirebaseNew', '1133336012');
+    expect(otp.start).toHaveBeenCalledWith(expect.objectContaining({ requesterUid: 'FirebaseNew' }));
+  });
+
+  it('start: PHONE_COUNTRY_NOT_SUPPORTED do port sai como AccountLinkError com o mesmo código', async () => {
+    const otp = { start: jest.fn().mockRejectedValue(new Error(OTP_COUNTRY_NOT_SUPPORTED)), check: jest.fn() };
+    await expect(build(otp).start('FirebaseNew', '1133336012')).rejects.toMatchObject({ name: 'AccountLinkError', code: 'PHONE_COUNTRY_NOT_SUPPORTED' });
   });
 
   it('start: outro erro do port NÃO é mascarado como RATE_LIMITED', async () => {

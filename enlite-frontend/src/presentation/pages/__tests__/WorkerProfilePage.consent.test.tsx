@@ -30,7 +30,7 @@ describe('WorkerProfilePage (perfil após login com Google) — aceite no claim'
   beforeEach(() => { vi.clearAllMocks(); });
 
   it('o código só confirma com a caixa do aceite marcada, e o confirm leva lgpdOptIn: true', async () => {
-    initWorker.mockResolvedValue({ status: 'claim_pending', candidateWorkerId: 'c-1', phoneMasked: '•••1243', verificationSid: 'VE1' });
+    initWorker.mockResolvedValue({ status: 'claim_pending', phoneMasked: '•••1243', verificationSid: 'VE1' });
     render(<WorkerProfilePage />);
     await expectConsentRequiredAndSent();
   });

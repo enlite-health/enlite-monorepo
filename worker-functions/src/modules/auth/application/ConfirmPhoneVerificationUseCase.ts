@@ -5,7 +5,7 @@ import { generatePhoneCandidates, normalizePhoneAR } from '@shared/utils/phoneNo
 import { maskPhone } from '@shared/utils/phoneMask';
 import { isClaimableWorker } from '@modules/worker/application/isClaimableWorker';
 import type { OtpChallengePort } from '../ports/OtpChallengePort';
-import type { IPhoneVerificationRepository, SqlRunner } from '../ports/IPhoneVerificationRepository';
+import type { IPhoneVerificationRepository, MarkPhoneVerifiedInput, SqlRunner } from '../ports/IPhoneVerificationRepository';
 import type { ConfirmClaimUseCase } from './ConfirmClaimUseCase';
 import { CLAIM_CONFLICT } from './ClaimShellAbsorber';
 import { buildHandoffUrl, newConflictRef } from './phoneVerificationHandoff';
@@ -36,9 +36,6 @@ const validPhone = (phone: string): boolean => {
   const n = normalizePhoneAR(phone);
   return n.length >= 10 && n.length <= 15;
 };
-
-const PG_UNIQUE_VIOLATION = '23505';
-const PHONE_UNIQUE_INDEXES = new Set(['idx_workers_phone_unique', 'uq_workers_phone_verified_now', 'uq_workers_phone_verified_otp_challenge']);
 
 /**
  * `POST /api/workers/me/phone-verification/confirm` (emenda 077 §2.4, D777 item 2). Identidade SÓ do token. A finalidade vem do
@@ -123,6 +120,7 @@ export class ConfirmPhoneVerificationUseCase {
       checked = await this.challenges.check({
         challengeId: input.challengeId,
         workerId: own.id,
+        purpose: 'phone_verify',
         phoneOnRecord: `+${normalized}`,
         code: input.code,
         ctx: { workerId: own.id, tokenEmail: input.email, fichaIsTest: async () => own.isTest === true },
@@ -136,18 +134,17 @@ export class ConfirmPhoneVerificationUseCase {
       return { ok: false, code: checked.code };
     }
 
+    let written: Awaited<ReturnType<IPhoneVerificationRepository['markPhoneVerified']>>;
     try {
       const proof = await this.verification.methodFor(input.challengeId);
-      await this.verification.markPhoneVerified(this.db, { workerId: own.id, phoneNormalized: normalized, ...proof });
+      written = await this.verification.markPhoneVerified(this.db, { workerId: own.id, phoneNormalized: normalized, ...proof });
     } catch (err: unknown) {
-      // DT-51: a mensagem do Postgres ecoa a linha (PII): só o código e o nome do índice; nada disso vai à resposta.
-      const pg = err as { code?: string; constraint?: string };
-      if (pg.code === PG_UNIQUE_VIOLATION && pg.constraint && PHONE_UNIQUE_INDEXES.has(pg.constraint)) {
-        log.warn({ msg: 'phone_verification_confirm', code: 'PHONE_IN_USE' });
-        return { ok: false, code: 'PHONE_IN_USE' };
-      }
       log.error({ ...safeErrorFields(err), msg: 'phone_verification_confirm_failed', code: 'PHONE_VERIFICATION_NOT_WRITTEN' });
       return { ok: false, code: 'PHONE_VERIFICATION_NOT_WRITTEN' };
+    }
+    if (written === 'PHONE_IN_USE') {
+      log.warn({ msg: 'phone_verification_confirm', code: 'PHONE_IN_USE' });
+      return { ok: false, code: 'PHONE_IN_USE' };
     }
     return this.verified(own.id, 'VERIFIED', log);
   }
@@ -177,9 +174,9 @@ export class ConfirmPhoneVerificationUseCase {
       { verificationSid: input.challengeId, otp: input.code, authUid: input.authUid, email: input.email, candidateWorkerId: candidateId, consentAt },
       {
         // A prova entra na sobrevivente (a conta do token) DENTRO da transação da união: falhou aqui, a união inteira desfaz.
-        afterAbsorb: (tx) => this.verification.markPhoneVerified(tx, { workerId: ownId ?? candidateId, ...proof }),
+        afterAbsorb: (tx) => this.proveInTx(tx, { workerId: ownId ?? candidateId, ...proof }),
         // Sem ficha própria (D797): a ficha reclamada É a conta; a prova entra nela na transação do `auth_uid`.
-        afterAdopt: (tx) => this.verification.markPhoneVerified(tx, { workerId: candidateId, ...proof }),
+        afterAdopt: (tx) => this.proveInTx(tx, { workerId: candidateId, ...proof }),
       },
     );
     if (result.isFailure) {
@@ -193,6 +190,11 @@ export class ConfirmPhoneVerificationUseCase {
       return { ok: false, code: code.startsWith('TWILIO_ERROR') ? 'OTP_CHECK_FAILED' : code };
     }
     return this.verified(ownId ?? candidateId, 'VERIFIED', log);
+  }
+
+  /** Dentro da transação da união, telefone já verificado em outra conta desfaz a união inteira (a exceção sobe como sempre subiu). */
+  private async proveInTx(tx: SqlRunner, input: MarkPhoneVerifiedInput): Promise<void> {
+    if ((await this.verification.markPhoneVerified(tx, input)) === 'PHONE_IN_USE') throw new Error('PHONE_IN_USE');
   }
 
   private async verified(workerId: string, status: 'VERIFIED', log: Log): Promise<ConfirmPhoneVerificationOutcome> {

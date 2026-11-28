@@ -1,6 +1,6 @@
 /**
  * vagas-antigas-084-baixa.integration.e2e.ts @integration — spec 084: dar baixa em vaga antiga (uma e em lote), "mostrar baixadas",
- * "En espera" no seletor e o #NN. Stack real (Vite + API docker + Postgres), SEM `page.route`; identidade por `loginAs`
+ * a ficha sem seletor de estado e o #NN. Stack real (Vite + API docker + Postgres), SEM `page.route`; identidade por `loginAs`
  * (mock token) com as células que a tela exige (ABAC). Régua HUMANA: click + keyboard.type + texto lido da tela; nada de
  * `fill()`/`evaluate`. Nenhum canal externo: as vagas NÃO têm projeto no Talentum (o pause pós-baixa não tem o que chamar).
  *
@@ -9,8 +9,8 @@
  *      alt 2  — vaga de serviço ativo: sem checkbox na lista e sem "Dar de baja" na ficha.
  *      alt 3  — vaga baixada: nenhum botão de reativar.
  *  F2  feliz  — ligar "Mostrar dadas de baja", ver o selo e abrir a vaga em leitura (sem Match, sem arrasto).
- *      alt 1  — com o filtro desligado a baixada não aparece.   alt 2 — filtro de status "Dada de baja".
- *  F5  feliz  — "En espera" pelo seletor e "Reanudar".  alt 1 — vaga de serviço ativo sem "Cerrado".  alt 2 — vaga sem serviço encerra.
+ *      alt 1  — com o filtro desligado a baixada não aparece.   alt 2 — não há filtro de ciclo de vida (semaforo-da-vaga F4).
+ *  F5  (F4 do semáforo) feliz — a ficha não tem seletor de estado nem "Reanudar".  alt 1 — vaga de serviço ativo.  alt 2 — vaga sem serviço.
  *  F6  feliz  — paciente com 3 serviços mostra #01, #02, #03.  alt 1 — a vaga antiga baixada fica SEM número.  alt 2 — serviço novo, #04.
  */
 import { test, expect, type Page } from '@playwright/test';
@@ -18,7 +18,6 @@ import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper
 import {
   seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, safeSql, scalar, type MockUser,
 } from '../helpers/patient-conversation-helper';
-import { escolherNoCombo } from '../helpers/combobox';
 
 const RUN = Date.now();
 const CASE = 946100 + (RUN % 500);
@@ -177,41 +176,41 @@ test.describe('Spec 084 — vagas antigas: baixa, só consulta, En espera e #NN 
     expect(estado(S.vBaixada)).toBe('DE_BAJA'); // abrir não mexe em nada
   });
 
-  test('F2 alt 2 — filtro de status "Dada de baja" mostra as baixadas', async ({ page }) => {
+  test('F2 alt 2 (semaforo-da-vaga F4) — NÃO há filtro de "Ciclo de vida": a baixada só vem com "Mostrar dadas de baja"', async ({ page }) => {
     await abrirLista(page, `baixada ${RUN}`);
-    // o Combobox de status é o 1º botão `aria-haspopup=listbox` da página (o de itens por página vem depois)
-    await escolherNoCombo(page, page.locator('button[aria-haspopup="listbox"]').first(), 'Dada de baja');
+    await expect(page.getByTestId('vacancies-table-region')).toBeVisible();
+    await expect(page.getByTestId('vacancy-filter-lifecycle')).toHaveCount(0);
+    await expect(page.getByText('Ciclo de vida', { exact: true })).toHaveCount(0);
+    await expect(page.getByTestId(`vacancy-row-${S.vBaixada}`)).toHaveCount(0);
+    await page.getByText('Mostrar dadas de baja', { exact: true }).click();
     await expect(page.getByTestId(`vacancy-row-${S.vBaixada}`)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId(`vacancy-baja-badge-${S.vBaixada}`)).toBeVisible();
   });
 
-  test('F5 feliz — pausar com "En espera" pelo seletor e reanudar', async ({ page }) => {
+  test('F5 feliz (semaforo-da-vaga F4) — a ficha NÃO tem seletor de estado nem "Reanudar", e a vaga no ar não tem selo "Abierta"', async ({ page }) => {
+    const antes = estado(S.vHold);
     await abrirFicha(page, S.vHold);
-    await page.getByTestId('vacancy-status-editor-trigger').click();
-    await page.getByTestId('vacancy-status-option-ON_HOLD').click();
-    await expect(page.getByTestId('vacancy-status-editor-trigger')).toContainText('En espera', { timeout: 15_000 });
-    expect(estado(S.vHold)).toBe('ON_HOLD');
-
-    await page.getByTestId('vacancy-status-editor-trigger').click();
-    await page.getByTestId('vacancy-status-option-RESUME').click();
-    await expect(page.getByTestId('vacancy-status-editor-trigger')).toContainText('En búsqueda', { timeout: 15_000 });
-    expect(estado(S.vHold)).toBe('SEARCHING');
+    const card = page.getByTestId('vacancy-case-card');
+    await expect(card.getByTestId('patient-status-pill')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Reanudar/ })).toHaveCount(0);
+    await expect(card.getByTestId('vacancy-lifecycle-badge')).toHaveCount(0);
+    await expect(card.getByText('Abierta', { exact: true })).toHaveCount(0);
+    expect(estado(S.vHold)).toBe(antes); // abrir não mexe em nada
   });
 
-  test('F5 alt 1 — vaga de serviço ATIVO não oferece "Cerrado" (só pausar)', async ({ page }) => {
+  test('F5 alt 1 — vaga de serviço ATIVO: sem seletor de estado; o caminho é pausar/suspender o paciente ou desativar o serviço', async ({ page }) => {
     await abrirFicha(page, S.vServico);
-    await page.getByTestId('vacancy-status-editor-trigger').click();
-    await expect(page.getByTestId('vacancy-status-option-ON_HOLD')).toBeVisible();
-    await expect(page.getByTestId('vacancy-status-option-CLOSED')).toHaveCount(0);
+    await expect(page.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
+    await expect(page.getByTestId('vacancy-baja-button')).toHaveCount(0); // vaga de serviço não recebe baixa manual
   });
 
-  test('F5 alt 2 — a ficha de uma vaga SEM serviço ainda oferece e aplica "Cerrado"', async ({ page }) => {
+  test('F5 alt 2 — a ficha de uma vaga SEM serviço não tem seletor de estado; só "Dar de baja" muda o que ela mostra', async ({ page }) => {
     const livre = vaga(S.patientId, { title: `084E2E livre ${RUN}` });
     await abrirFicha(page, livre);
-    await page.getByTestId('vacancy-status-editor-trigger').click();
-    await page.getByTestId('vacancy-status-option-CLOSED').click();
-    await expect(page.getByTestId('vacancy-status-editor-trigger')).toContainText('Cerrado', { timeout: 15_000 });
-    expect(estado(livre)).toBe('CLOSED');
+    await expect(page.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
+    await expect(page.getByTestId('vacancy-baja-button')).toBeVisible();
+    expect(estado(livre)).not.toBe('CLOSED');
   });
 
   test('F6 feliz / alt 1 / alt 2 — #01..#04 seguem os serviços; a vaga antiga baixada fica sem número', async ({ page }) => {

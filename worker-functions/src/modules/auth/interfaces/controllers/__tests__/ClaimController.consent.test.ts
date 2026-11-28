@@ -7,11 +7,11 @@ jest.mock('@shared/logging', () => {
   return { logger: { child: () => l }, reportError: jest.fn() };
 });
 
-const body = { verificationSid: 'VE_X', otp: '123456', candidateWorkerId: 'w-imp' };
+const body = { verificationSid: 'VE_X', otp: '123456' };
 const res = () => ({ status: jest.fn().mockReturnThis(), json: jest.fn() }) as unknown as Response;
 async function confirmWith(extra: Record<string, unknown>) {
   const confirmClaim = { execute: jest.fn().mockResolvedValue(Result.ok({ id: 'w' })) };
-  await new ClaimController({} as never, confirmClaim as never).confirm(
+  await new ClaimController({} as never, confirmClaim as never, { execute: jest.fn().mockResolvedValue('w-imp') } as never).confirm(
     { body: { ...body, ...extra }, user: { uid: 'u', email: 'a@exemplo.test' }, headers: {}, ip: '127.0.0.1' } as unknown as Request,
     res(),
   );

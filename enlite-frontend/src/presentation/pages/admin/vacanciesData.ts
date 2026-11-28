@@ -1,5 +1,7 @@
 import { TFunction } from 'i18next';
 import type { ComboboxOption } from '@presentation/components/atoms/Combobox';
+import { SEMAPHORE_COLORS } from '@domain/value-objects/vacancySemaphore';
+import { PATIENT_STATUSES } from '@domain/entities/patientEnums';
 
 export const getStatsData = (t: TFunction) => [
   { label: t('admin.vacancies.stats.moreThan7Days'), value: '2', icon: 'clock' as const },
@@ -8,15 +10,10 @@ export const getStatsData = (t: TFunction) => [
   { label: t('admin.vacancies.stats.totalVacancies'), value: '4,5h', icon: 'user-search' as const },
 ];
 
-export const getStatusOptions = (t: TFunction): ComboboxOption[] => [
-  { value: 'SEARCHING',             label: t('admin.vacancies.statusOptions.searching') },
-  { value: 'SEARCHING_REPLACEMENT', label: t('admin.vacancies.statusOptions.searchingReplacement') },
-  { value: 'RAPID_RESPONSE',        label: t('admin.vacancies.statusOptions.rapidResponse') },
-  { value: 'PENDING_ACTIVATION',    label: t('admin.vacancies.statusOptions.pendingActivation') },
-  { value: 'ACTIVE',                label: t('admin.vacancies.statusOptions.active') },
-  { value: 'ON_HOLD',               label: t('admin.vacancies.statusOptions.onHold') },
-  { value: 'SUSPENDED',             label: t('admin.vacancies.statusOptions.suspended') },
-  { value: 'CLOSED',                label: t('admin.vacancies.statusOptions.closed') },
-  // Spec 084 F2: filtrar por "Dada de baja" mostra SÓ as baixadas (só consulta).
-  { value: 'DE_BAJA',               label: t('admin.vacancies.statusOptions.deBaja') },
-];
+/** E7: filtro "Estado del paciente" — os estados do paciente, com os rótulos das colunas do Kanban de pacientes. */
+export const getPatientStatusOptions = (t: TFunction): ComboboxOption[] =>
+  PATIENT_STATUSES.map((s) => ({ value: s, label: t(`admin.patients.kanban.columns.${s}`) }));
+
+/** semaforo-da-vaga F3: filtro "Semáforo" (lista de vagas e Kanban de pacientes) — as 3 cores do contrato, rótulo por i18n. */
+export const getSemaphoreOptions = (t: TFunction): ComboboxOption[] =>
+  SEMAPHORE_COLORS.map((c) => ({ value: c, label: t(`admin.semaphore.colors.${c}`) }));

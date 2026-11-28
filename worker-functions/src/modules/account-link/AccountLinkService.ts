@@ -16,11 +16,7 @@ import { logger } from '@shared/logging';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId } from '@shared/database/resolveCanonicalWorkerId';
-import { OTP_RATE_LIMITED, type OtpChallengePort } from '../auth/ports/OtpChallengePort';
-import type { ITwilioVerifyService } from '../auth/infrastructure/TwilioVerifyService';
-import { TwilioVerifyOtpAdapter } from '../auth/infrastructure/TwilioVerifyOtpAdapter';
-import { createOtpChallengePort } from '../../bootstrap/createOtpChallengePort';
-import { IsTestOtpGuardedVerify } from '../auth/application/IsTestOtpGuard';
+import { OTP_COUNTRY_NOT_SUPPORTED, OTP_RATE_LIMITED, type OtpChallengePort } from '../auth/ports/OtpChallengePort';
 import { PgPhoneVerificationRepository } from '../worker/infrastructure/PgPhoneVerificationRepository';
 import type { IPhoneVerificationRepository } from '../auth/ports/IPhoneVerificationRepository';
 import { ExecuteAdminMergeUseCase } from '../../application/dedup/ExecuteAdminMergeUseCase';
@@ -59,22 +55,19 @@ export class AccountLinkService {
 
   constructor(
     private readonly pool: Pool,
-    deps?: {
+    deps: {
       encryption?: KMSEncryptionService;
-      otp?: OtpChallengePort;
-      /** Semente de teste do plano B: um Twilio Verify (dublê) embrulhado no adapter + guarda de ficha de teste. */
-      twilio?: ITwilioVerifyService;
+      /** Port do OTP já montado (a montagem é de `bootstrap/createAccountLinkService`). */
+      otp: OtpChallengePort;
       adminMerge?: ExecuteAdminMergeUseCase;
       verification?: IPhoneVerificationRepository;
     },
   ) {
-    this.encryption = deps?.encryption ?? new KMSEncryptionService();
+    this.encryption = deps.encryption ?? new KMSEncryptionService();
     // Ponto único de envio do código: o port (a guarda de OTP de teste vive no adapter, FR-95/DP-23).
-    this.otp =
-      deps?.otp ??
-      (deps?.twilio ? new TwilioVerifyOtpAdapter(new IsTestOtpGuardedVerify(deps.twilio)) : createOtpChallengePort());
-    this.adminMerge = deps?.adminMerge ?? new ExecuteAdminMergeUseCase(pool);
-    this.verification = deps?.verification ?? new PgPhoneVerificationRepository(pool);
+    this.otp = deps.otp;
+    this.adminMerge = deps.adminMerge ?? new ExecuteAdminMergeUseCase(pool);
+    this.verification = deps.verification ?? new PgPhoneVerificationRepository(pool);
   }
 
   // ── lookup — SEM SMS, SÓ mascarados ─────────────────────────────────────
@@ -113,10 +106,12 @@ export class AccountLinkService {
         workerId: owner.id,
         purpose: 'link',
         phoneE164,
+        requesterUid: authUid,
         ctx: { workerId: owner.id, fichaIsTest: owner.is_test === true, tokenEmail },
       }));
     } catch (err) {
       if (err instanceof Error && err.message === OTP_RATE_LIMITED) throw new AccountLinkError('RATE_LIMITED');
+      if (err instanceof Error && err.message === OTP_COUNTRY_NOT_SUPPORTED) throw new AccountLinkError('PHONE_COUNTRY_NOT_SUPPORTED');
       throw err;
     }
     const verificationSid = challengeId; // o fio do vínculo segue chamando de verificationSid; carrega o id do desafio
@@ -149,6 +144,7 @@ export class AccountLinkService {
     const check = await this.otp.check({
       challengeId: verificationSid,
       workerId: owner.id,
+      purpose: 'link',
       phoneOnRecord: ownerPhone.startsWith('+') ? ownerPhone : `+${normalizePhoneAR(ownerPhone) ?? ownerPhone}`,
       code: otp,
       // `owner` acabou de ser lido do banco por resolvePhoneOwner (inclui is_test) nesta mesma requisição.

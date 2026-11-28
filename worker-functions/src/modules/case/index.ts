@@ -287,3 +287,7 @@ export {
 export type { PublicLeadBody, LeadServiceSlug } from './interfaces/validators/publicLeadSchema';
 export { ServiceHoursSummaryReader } from './infrastructure/ServiceHoursSummaryReader';
 export { countVigenteForVacancy } from './infrastructure/VacancyAllocationProbe';
+export { PresenceAlertsInternalController } from './interfaces/controllers/PresenceAlertsInternalController';
+export { createPresenceAlertsInternalRoutes } from './interfaces/routes/presenceAlertsInternalRoutes';
+export { PresenceReviewController } from './interfaces/controllers/PresenceReviewController';
+export { createAdminPresenceReviewRoutes } from './interfaces/routes/adminPresenceReviewRoutes';

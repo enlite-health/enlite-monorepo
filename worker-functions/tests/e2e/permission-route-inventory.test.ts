@@ -196,6 +196,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PUT /api/admin/patients/:id/chat-ids → patient_chat:update',
         'PUT /api/admin/patients/:id/emergency-contact → patient_family:update',
         'PUT /api/admin/patients/:id/status → patient:update',
+        'POST /api/admin/patients/:id/status-actions → patient:update',
         // ── admin.workers (31) — a 3ª, espalhada em 4 arquivos
         // Spec 024 (D1/D401, 21/09): as 4 rotas de catálogo (`/worker-tags`) migram para `tag:*` —
         // dado diferente do perfil do prestador. `:tags/:tagId` (atribuir/remover DE UM prestador)
@@ -347,8 +348,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/patients/:id/contracted-services → patient_services:read',
         'GET /api/admin/patients/:id/diagnoses → patient_clinical:read',
         'GET /api/admin/patients/:id/status-history → patient:read',
-        // Spec 051 (F3): a lista de destinos de estado — a MESMA célula do PUT /status.
-        'GET /api/admin/patients/:id/status-options → patient:update',
+        // F3 (estado-automatico-do-paciente): as ações dos estados humanos — a MESMA célula do PUT /status.
+        'GET /api/admin/patients/:id/status-actions → patient:update',
         'GET /api/admin/presentation-invite/last → messaging:read',
         'GET /api/admin/presentation-invite/settings → messaging:read',
         'GET /api/admin/presentation-invite/stats → messaging:read',
@@ -520,6 +521,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/interview-hosts/candidates → interview_host:update',
         'POST /api/admin/interview-hosts → interview_host:update',
         'PATCH /api/admin/interview-hosts/:id → interview_host:update',
+        // tactiq-vinculo-resiliente F5 (D16): "Licencia asignada", mesma célula de escrita (nenhuma célula nova).
+        'POST /api/admin/interview-hosts/:id/tactiq-seat → interview_host:update',
         // acesso-do-cliente F1 (T111, `adminAreaMembershipRoutes.ts`): família admin.users, células area_membership:read|write.
         'GET /api/admin/area-memberships → area_membership:read',
         'GET /api/admin/area-memberships/people → area_membership:read',
@@ -538,6 +541,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/assistants/escalations → assistant_escalation:register',
         // spec 086 (Luz prueba, `adminLuzPruebaRoutes.ts`): família admin.integrations, célula luz_prueba:chat (só Acesso Master).
         'POST /api/admin/luz-prueba/turn → luz_prueba:chat',
+        // emenda 077 §6 (fila de revisão de presença, `adminPresenceReviewRoutes.ts`): família admin.patients, célula presence_exception:review (Master recebe pelo sync D338).
+        'GET /api/admin/presence/review-queue → presence_exception:review',
+        'POST /api/admin/presence/exceptions/:eventId/decision → presence_exception:review',
         // spec 082 (painel de custos, `adminCostsRoutes.ts`): família admin.integrations, célula platform_costs:read (só Acesso Master).
         'GET /api/admin/costs/overview → platform_costs:read',
       ].sort(),

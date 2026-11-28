@@ -35,7 +35,6 @@ export function WorkerInitOutcomePanel({ outcome, authUid, email, lgpdOptIn, onR
         open
         phoneMasked={outcome.phoneMasked}
         verificationSid={outcome.verificationSid}
-        candidateWorkerId={outcome.candidateWorkerId}
         authUid={authUid}
         email={email}
         lgpdOptIn={lgpdOptIn}

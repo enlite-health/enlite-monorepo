@@ -63,7 +63,7 @@ describe('fastAfterImport', () => {
     expect(fastAfterImport('not_ready')).toBe('count_read');
     expect([fastAfterImport('transient'), fastAfterImport('skipped_locked')]).toEqual(['release', 'release']);
     expect([fastAfterImport('done'), fastAfterImport('summary_failed'), fastAfterImport('vault_failed')]).toEqual(['fired', 'fired', 'fired']);
-    for (const o of ['already_done', 'blocked', 'skipped_test', 'not_eligible', 'expired', 'rejected', 'ambiguous', 'waiting', 'wrong_account', 'too_early'] as const) {
+    for (const o of ['already_done', 'blocked', 'skipped_test', 'not_eligible', 'expired', 'rejected', 'ambiguous', 'waiting', 'too_early'] as const) {
       expect(fastAfterImport(o)).toBe('cancel');
     }
   });

@@ -14,6 +14,7 @@
 
 import { Pool } from 'pg';
 import { createApiClient, createPatientFixture, getMockToken, waitForBackend } from './helpers';
+import { postTalentumAndDrain } from './helpers/talentumWebhook';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -101,7 +102,7 @@ describe('Vacancy Audit Log — Onda B', () => {
     beforeAll(async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { patient_id: patientId, case_number: 88801, status: 'SEARCHING' },
+        { patient_id: patientId, case_number: 88801 },
         auth(),
       );
       expect(res.status).toBe(201);
@@ -140,7 +141,7 @@ describe('Vacancy Audit Log — Onda B', () => {
     beforeAll(async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { patient_id: patientId, case_number: 88802, status: 'PENDING_ACTIVATION' },
+        { patient_id: patientId, case_number: 88802 },
         auth(),
       );
       expect(res.status).toBe(201);
@@ -148,22 +149,19 @@ describe('Vacancy Audit Log — Onda B', () => {
       createdVacancyIds.push(vacancyId);
     });
 
-    it('PUT with status change produces STATUS_CHANGED row with before/after', async () => {
+    it('PUT with status is refused (400 VACANCY_STATUS_NOT_WRITABLE): no STATUS_CHANGED row, status untouched', async () => {
       const res = await api.put(
         `/api/admin/vacancies/${vacancyId}`,
         { status: 'SEARCHING' },
         auth(),
       );
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(400);
+      expect(res.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
 
       const rows = await getAuditRows(pool, vacancyId);
-      const statusRow = rows.find(r => r.event_type === 'STATUS_CHANGED');
-      expect(statusRow).toBeDefined();
-      expect(statusRow!.field_name).toBe('status');
-      expect(statusRow!.changes.before).toBe('PENDING_ACTIVATION');
-      expect(statusRow!.changes.after).toBe('SEARCHING');
-      expect(statusRow!.actor_type).toBe('HUMAN');
-      expect(statusRow!.actor_user_id).toBe(ADMIN_UID);
+      expect(rows.find(r => r.event_type === 'STATUS_CHANGED')).toBeUndefined();
+      const { rows: db } = await pool.query(`SELECT status FROM job_postings WHERE id = $1`, [vacancyId]);
+      expect(db[0].status).toBe('PENDING_ACTIVATION');
     });
 
     it('PUT with non-status field produces UPDATED row', async () => {
@@ -190,7 +188,7 @@ describe('Vacancy Audit Log — Onda B', () => {
     beforeAll(async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { patient_id: patientId, case_number: 88803, status: 'PENDING_ACTIVATION' },
+        { patient_id: patientId, case_number: 88803 },
         auth(),
       );
       expect(res.status).toBe(201);
@@ -225,7 +223,7 @@ describe('Vacancy Audit Log — Onda B', () => {
     beforeAll(async () => {
       const res = await api.post(
         '/api/admin/vacancies',
-        { patient_id: patientId, case_number: 88804, status: 'SEARCHING' },
+        { patient_id: patientId, case_number: 88804 },
         auth(),
       );
       expect(res.status).toBe(201);
@@ -259,7 +257,8 @@ describe('Vacancy Audit Log — Onda B', () => {
     beforeAll(async () => {
       // In E2E, USE_MOCK_AUTH=true bypasses Google token verification.
       // Talentum PRESCREENING.CREATED payload format from talentumPrescreeningSchema.ts
-      const res = await api.post('/api/webhooks/talentum/prescreening', {
+      // Ack assíncrono (spec 095): POST + drain (a vaga nasce no processador); o id da vaga sai do BANCO, não do corpo.
+      const res = await postTalentumAndDrain(api, {
         action: 'PRESCREENING',
         subtype: 'CREATED',
         data: {
@@ -267,12 +266,14 @@ describe('Vacancy Audit Log — Onda B', () => {
           name: `CASO 88805-${Math.floor(Math.random() * 9000 + 1000)}`,
         },
       });
-      // 200 = handled (created, linked, or skipped)
-      expect(res.status).toBe(200);
-      createdJobPostingId = (res.data as Record<string, unknown>).jobPostingId as string | undefined;
+      expect(res.ack.status).toBe(200);
+      expect(res.drain).toMatchObject({ selected: 1, processed: 1, failed: 0 });
+      createdJobPostingId = (
+        await pool.query<{ id: string }>(`SELECT id FROM job_postings WHERE talentum_project_id = $1`, [talentumProjectId])
+      ).rows[0]?.id;
     });
 
-    it('returns jobPostingId in the response', () => {
+    it('the processor created the job posting (id read from the database)', () => {
       expect(createdJobPostingId).toBeTruthy();
       if (createdJobPostingId) createdVacancyIds.push(createdJobPostingId);
     });

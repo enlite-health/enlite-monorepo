@@ -7,7 +7,7 @@
  *   2. todo `UPDATE job_postings ... status` do código de produção está num arquivo da allowlist e, onde a
  *      linha pode sair de DE_BAJA, a saída é só a do gatilho do serviço (motivo SERVICE), a volta pelo VÍNCULO da vaga
  *      a um serviço (D633) ou está guardada; e só 3 arquivos citam o SET compartilhado `RESTORE_FROM_BAJA_SET`;
- *   3. o PUT é recusado com 409 para qualquer vaga em DE_BAJA (`authorizeVacancyUpdate`).
+ *   3. o PUT de qualquer CAMPO é recusado com 409 numa vaga em DE_BAJA (`authorizeVacancyUpdate`); `status` no corpo dá 400 antes de buscar a vaga.
  */
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://unit:unit@127.0.0.1:1/unit';
 
@@ -174,15 +174,24 @@ describe('R17 — todo UPDATE que escreve job_postings.status está numa allowli
 describe('R17 — PUT /vacancies/:id em vaga DE_BAJA', () => {
   const dbCom = (row: Record<string, unknown>) => ({ query: jest.fn(async () => ({ rows: [row] })) }) as never;
 
-  it.each(['SEARCHING', 'ON_HOLD', 'ACTIVE', 'CLOSED'])('mudar status para %s → 409 e a vaga segue baixada', async (status) => {
+  it.each([{ title: 'x' }, { daily_obs: 'x' }, { schedule: [] }])('PUT de campo (não-status) %j em vaga baixada → 409 e ela segue baixada', async (corpo) => {
+    const out = await authorizeVacancyUpdate(
+      dbCom({ status: 'DE_BAJA', is_draft: false, patient_id: 'p', contracted_service_id: null, service_active: null }),
+      'v1',
+      corpo,
+    );
+    expect(out).toMatchObject({ kind: 'error', status: 409, code: 'VACANCY_DE_BAJA_NO_REACTIVATION' });
+    expect((out as { messages: { es: string; 'pt-BR': string } }).messages.es).toMatch(/no se reactiva/);
+    expect((out as { messages: { es: string; 'pt-BR': string } }).messages['pt-BR']).toMatch(/não é reativada/);
+  });
+
+  it.each(['SEARCHING', 'ON_HOLD', 'CLOSED', 'ACTIVE'])('um status (%s) no corpo → 400 VACANCY_STATUS_NOT_WRITABLE (o corpo é validado ANTES de buscar a vaga); a vaga segue baixada, nada muda', async (status) => {
     const out = await authorizeVacancyUpdate(
       dbCom({ status: 'DE_BAJA', is_draft: false, patient_id: 'p', contracted_service_id: null, service_active: null }),
       'v1',
       { status },
     );
-    expect(out).toMatchObject({ kind: 'error', status: 409, code: 'VACANCY_DE_BAJA_NO_REACTIVATION' });
-    expect((out as { messages: { es: string; 'pt-BR': string } }).messages.es).toMatch(/no se reactiva/);
-    expect((out as { messages: { es: string; 'pt-BR': string } }).messages['pt-BR']).toMatch(/não é reativada/);
+    expect(out).toMatchObject({ kind: 'error', status: 400, code: 'VACANCY_STATUS_NOT_WRITABLE' });
   });
 
   it('nem outros campos mudam numa vaga baixada (só consulta)', async () => {

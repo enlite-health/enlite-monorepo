@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import { Pool, PoolClient } from 'pg';
+import { txBoundPool } from '@shared/database/txBoundPool';
 import { TalentumPrescreeningRepository } from '../infrastructure/TalentumPrescreeningRepository';
 import type { TalentumDivergenceKind } from '../domain/TalentumPrescreening';
 import { TalentumPrescreeningResponseParsed } from '@modules/integration';
@@ -7,10 +8,15 @@ import { PubSubClient } from '@shared/events/PubSubClient';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId, MAX_MERGE_DEPTH } from '@shared/database/resolveCanonicalWorkerId';
 import { resolveLiveCanonicalWorkerIds } from '@shared/database/resolveLiveCanonicalWorkerIds';
-import { reportError } from '@shared/logging';
+import { reportError, logger } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { maskEmailForLog } from '@shared/utils/emailMask';
-import { deriveFunnelStage, toPersistedFunnelStage, applyNotQualifiedTransition, revertAutoRejectionOnPositiveVerdict, insertTalentumWorker } from './talentumFunnel';
+import {
+  deriveFunnelStage, toPersistedFunnelStage, applyNotQualifiedTransition, applyExpiredTransition, revertAutoRejectionOnPositiveVerdict, insertTalentumWorker,
+  detectManualChange, evaluateFunnelGuard, TALENTUM_MANUAL_ACTOR_ID, TALENTUM_EXPIRED_REASON,
+} from './talentumFunnel';
+import { TalentumWebhookAlarmNotifier } from './TalentumWebhookAlarmNotifier';
+import { stampActorOnClient } from '@shared/database/actorContext';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
 import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
 import { formatCaseNumberTitle } from '@shared/utils/caseNumberFormat';
@@ -34,6 +40,13 @@ export type WebhookEnvironment = 'production' | 'test';
 export interface ProcessTalentumPrescreeningOptions {
   environment?: WebhookEnvironment;
   dryRun?: boolean;
+  /**
+   * T-095-30: transação que o chamador (processador da inbox) já segura. Com ela, TODO acesso a banco do evento roda
+   * nessa conexão (`txBoundPool`: BEGIN/COMMIT internos viram SAVEPOINT) — nenhuma 2ª conexão do pool. Sem ela, como antes.
+   */
+  client?: PoolClient;
+  /** Com `client`: efeitos externos (Pub/Sub) só depois do COMMIT do chamador, não no meio da transação dele. */
+  afterCommit?: (effect: () => Promise<void>) => void;
 }
 
 export interface ProcessTalentumPrescreeningResult {
@@ -68,6 +81,8 @@ export interface IWorkerLookup {
    */
   findByPhoneCandidates(candidates: string[], opts?: LookupOpts): Promise<{ getValue(): { id: string } | null; ids?: string[] } | { isSuccess: boolean; getValue(): { id: string } | null; ids?: string[] }>;
   findByCuit(cuit: string): Promise<{ getValue(): { id: string } | null } | { isSuccess: boolean; getValue(): { id: string } | null }>;
+  /** Mesma porta sobre outro pool (a conexão de uma transação já aberta). Ausente = não rebindável. */
+  withPool?(pool: Pool): IWorkerLookup;
 }
 
 export interface IJobPostingLookup {
@@ -75,6 +90,17 @@ export interface IJobPostingLookup {
   findByTalentumPrescreeningId(prescreeningId: string): Promise<{ id: string } | null>;
   /** Fallback por título: prefere a oficial; 2+ sem desempate oficial → null. */
   findByTitleILike(name: string): Promise<{ id: string } | null>;
+  /** Mesma porta sobre outro pool (a conexão de uma transação já aberta). Ausente = não rebindável. */
+  withPool?(pool: Pool): IJobPostingLookup;
+}
+
+/**
+ * Aviso `CONFLITO_HUMANO` (spec 095 §3.4/§13.6): mudança manual do Talentum contra movimento humano nosso na mesma
+ * candidatura. O default é o sino (`TalentumWebhookAlarmNotifier`, T-095-42), que escreve num SAVEPOINT do MESMO `client`: a falha
+ * do sino não aborta a transação nem faz a linha da inbox virar FAILED. Só ids, sem PII.
+ */
+export interface ITalentumConflictNotifier {
+  notify(client: PoolClient, conflict: { workerId: string; jobPostingId: string; talentumPrescreeningId: string }): Promise<void>;
 }
 
 export class ProcessTalentumPrescreening {
@@ -86,6 +112,8 @@ export class ProcessTalentumPrescreening {
     private readonly jobPostingLookup: IJobPostingLookup,
     private readonly pool: Pool,
     private readonly pubsub: PubSubClient,
+    private readonly conflictNotifier: ITalentumConflictNotifier = new TalentumWebhookAlarmNotifier(),
+    private readonly deferEffect?: (effect: () => Promise<void>) => void,
   ) {
     this.questionsWriter = new PrescreeningQuestionsWriter(prescreeningRepo);
   }
@@ -94,6 +122,8 @@ export class ProcessTalentumPrescreening {
     payload: TalentumPrescreeningResponseParsed,
     options?: ProcessTalentumPrescreeningOptions,
   ): Promise<ProcessTalentumPrescreeningResult> {
+    if (options?.client) return this.bindTo(options.client, options.afterCommit).execute(payload, { environment: options.environment, dryRun: options.dryRun });
+
     const environment = options?.environment ?? 'production';
     const dryRun = options?.dryRun ?? false;
 
@@ -104,6 +134,9 @@ export class ProcessTalentumPrescreening {
     if (dryRun) {
       return this.buildResult(payload.data.prescreening.id, payload.data.prescreening.id, workerId, jobPostingId);
     }
+
+    // Mudança manual do Talentum = decisão humana (spec 095 §3.4). Lê o status JÁ gravado ANTES do upsert do espelho.
+    const manual = detectManualChange(payload, await this.readStoredStatus(payload));
 
     const prescreening = await this.persistPrescreening(payload, workerId, job, environment, emailAmbiguous);
 
@@ -119,10 +152,36 @@ export class ProcessTalentumPrescreening {
       return this.buildResult(prescreening.id, prescreening.talentumPrescreeningId, prescreening.workerId, prescreening.jobPostingId);
     }
 
-    await this.syncFunnelAndEncuadre(prescreening, payload);
+    await this.syncFunnelAndEncuadre(prescreening, payload, manual);
     await this.questionsWriter.persist(prescreening.id, payload);
 
     return this.buildResult(prescreening.id, prescreening.talentumPrescreeningId, prescreening.workerId, prescreening.jobPostingId);
+  }
+
+  /**
+   * Mesma instância, mas TODO banco (repositório, lookups, helpers, transações próprias) na conexão `client`, sem 2ª
+   * conexão do pool (T-095-30). Colaborador que não sabe se rebindar (dublê) fica como está.
+   */
+  private bindTo(client: PoolClient, deferEffect?: (effect: () => Promise<void>) => void): ProcessTalentumPrescreening {
+    const pool = txBoundPool(client);
+    return new ProcessTalentumPrescreening(
+      this.prescreeningRepo.withPool(pool),
+      this.workerLookup.withPool?.(pool) ?? this.workerLookup,
+      this.jobPostingLookup.withPool?.(pool) ?? this.jobPostingLookup,
+      pool,
+      this.pubsub,
+      this.conflictNotifier,
+      deferEffect,
+    );
+  }
+
+  /** `talentum_prescreenings.status` gravado antes deste evento (null se o card é novo). */
+  private async readStoredStatus(payload: TalentumPrescreeningResponseParsed): Promise<string | null> {
+    const r = await this.pool.query(
+      `SELECT status FROM talentum_prescreenings WHERE talentum_prescreening_id = $1 AND talentum_profile_id = $2`,
+      [payload.data.prescreening.id, payload.data.profile.id],
+    );
+    return (r.rows[0]?.status as string | undefined) ?? null;
   }
 
   // ── Worker resolution ────────────────────────────────────────────
@@ -366,6 +425,17 @@ export class ProcessTalentumPrescreening {
       }, client);
       prescreening = upserted.prescreening;
 
+      // Trava de ordem (spec 095 §3.1): `prescreening.status` é o status FINAL gravado. Se difere do enviado,
+      // o upsert segurou a regressão. Só ids e os dois enums, sem PII.
+      if (prescreening.status != null && prescreening.status !== effectiveStatus) {
+        logger.info({
+          talentumPrescreeningId: payload.data.prescreening.id,
+          talentumProfileId:      payload.data.profile.id,
+          kept:                   prescreening.status,
+          incoming:               effectiveStatus,
+        }, 'talentum_status_regression_blocked');
+      }
+
       divergences.push(...this.collectDivergences(workerId, job, upserted.previousJobPostingId ?? null, emailAmbiguous));
       for (const d of divergences) {
         await this.recordDivergence(client, payload, prescreening.id, workerId, d, environment);
@@ -457,8 +527,9 @@ export class ProcessTalentumPrescreening {
   // ── Funnel stage sync + encuadre ─────────────────────────────────
 
   private async syncFunnelAndEncuadre(
-    prescreening: { id: string; workerId: string | null; jobPostingId: string | null; talentumPrescreeningId: string },
+    prescreening: { id: string; workerId: string | null; jobPostingId: string | null; talentumPrescreeningId: string; status?: string | null },
     payload: TalentumPrescreeningResponseParsed,
+    manual: boolean,
   ): Promise<void> {
     if (!prescreening.workerId || !prescreening.jobPostingId) {
       // O alarme (linha em talentum_webhook_divergences + reportError) já saiu em persistPrescreening.
@@ -470,6 +541,27 @@ export class ProcessTalentumPrescreening {
     }
 
     const funnelStage = this.deriveFunnelStage(payload);
+
+    // EXPIRED atrasado depois de um veredito (spec 095 §3.1/§3.4, T-095-11): a trava de ordem segurou o espelho no veredito
+    // (`prescreening.status` é o FINAL gravado), então a candidatura também não é rejeitada por expiração.
+    if (funnelStage === 'EXPIRED' && prescreening.status != null && prescreening.status !== 'EXPIRED') {
+      console.log(`${TAG} syncFunnel SKIPPED — EXPIRED atrasado, o espelho manteve ${prescreening.status}: WJA/encuadre intactos | prescreeningId=${prescreening.id}`);
+      return;
+    }
+
+    // A última movimentação da candidatura decide se WJA/encuadre podem mudar (decisão 6; "manual não é revertido";
+    // expiração não desfaz movimento humano nosso).
+    const guard = await evaluateFunnelGuard(this.pool, prescreening.workerId, prescreening.jobPostingId, manual, funnelStage);
+    if (guard === 'HUMAN_CONFLICT') {
+      await this.notifyHumanConflict(prescreening.workerId, prescreening.jobPostingId, prescreening.talentumPrescreeningId);
+      console.log(`${TAG} syncFunnel SKIPPED — mudança manual do Talentum × movimento humano nosso: só o espelho muda | prescreeningId=${prescreening.id}`);
+      return;
+    }
+    if (guard === 'AFTER_MANUAL' || guard === 'HUMAN_LAST') {
+      console.log(`${TAG} syncFunnel SKIPPED — evento automático depois de movimentação humana (${guard}): só o espelho muda | prescreeningId=${prescreening.id}`);
+      return;
+    }
+
     console.log(`${TAG} syncFunnel | subtype=${payload.subtype} | statusLabel=${payload.data.response.statusLabel ?? 'none'} → funnelStage=${funnelStage} | score=${payload.data.response.score ?? 0}`);
 
     await this.ensureEncuadre(prescreening.workerId, prescreening.jobPostingId, payload);
@@ -481,6 +573,7 @@ export class ProcessTalentumPrescreening {
         funnelStage,
         payload.data.response.score ?? 0,
         prescreening.id,
+        manual,
       );
     } else {
       console.log(`${TAG} syncFunnel: skipped WJA upsert (ANALYZED without statusLabel)`);
@@ -504,6 +597,7 @@ export class ProcessTalentumPrescreening {
     funnelStage: string,
     matchScore: number,
     prescreeningId?: string,
+    manual = false,
   ): Promise<void> {
     // F3 (mig 191): NOT_QUALIFIED não existe mais no enum — converter pra REJECTED antes do upsert.
     const effectiveFunnelStage = toPersistedFunnelStage(funnelStage);
@@ -513,6 +607,11 @@ export class ProcessTalentumPrescreening {
 
     try {
       await client.query('BEGIN');
+      // Mudança manual: o ator vira `changed_by` na trilha (gatilho lê `app.current_uid`, LOCAL a esta transação).
+      if (manual) await stampActorOnClient(client, { source: 'sync_import', id: TALENTUM_MANUAL_ACTOR_ID });
+      // Expiração: o gatilho da trilha (migration 478) lê o `reason_category` de `app.move_reason`, LOCAL a esta transação
+      // (mesmo molde de `moveApplicationStage`). A transição NQ não carimba motivo; a expiração sim (TALENTUM_EXPIRED).
+      if (funnelStage === 'EXPIRED') await client.query(`SELECT set_config('app.move_reason', $1, true)`, [TALENTUM_EXPIRED_REASON]);
 
       const { previousStage } = await this.prescreeningRepo.upsertWorkerJobApplicationFromTalentum(
         { workerId, jobPostingId, applicationFunnelStage: effectiveFunnelStage, matchScore },
@@ -529,6 +628,9 @@ export class ProcessTalentumPrescreening {
       // Passa o funnelStage ORIGINAL (NOT_QUALIFIED) para handleNotQualifiedTransition identificar a transição,
       // mas o upsert já gravou REJECTED — handleNotQualifiedTransition só cuida do encuadre + domain events agora.
       await this.handleNotQualifiedTransition(client, workerId, jobPostingId, funnelStage, previousStage, prescreeningId);
+      if (await applyExpiredTransition(client, workerId, jobPostingId, funnelStage, previousStage, prescreeningId)) {
+        console.log(`${TAG} EXPIRED auto-reject complete → WJA stage=REJECTED | worker=${workerId} | job=${jobPostingId}`);
+      }
 
       await client.query('COMMIT');
     } catch (err) {
@@ -539,6 +641,21 @@ export class ProcessTalentumPrescreening {
     }
 
     await this.publishQualifiedEvent(qualifiedEventId);
+  }
+
+  /** Aviso `CONFLITO_HUMANO` numa transação própria curta: o espelho já foi gravado; WJA/encuadre não mudam. */
+  private async notifyHumanConflict(workerId: string, jobPostingId: string, talentumPrescreeningId: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await this.conflictNotifier.notify(client, { workerId, jobPostingId, talentumPrescreeningId });
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   private async handleQualifiedTransition(
@@ -568,6 +685,16 @@ export class ProcessTalentumPrescreening {
 
   private async publishQualifiedEvent(eventId: string | null): Promise<void> {
     if (!eventId) return;
+    // Dentro da transação do processador o domain_event ainda não está commitado: publicar agora faria o consumidor
+    // do Pub/Sub não achá-lo. O chamador roda o efeito depois do COMMIT (e o descarta se a linha desfizer).
+    if (this.deferEffect) {
+      this.deferEffect(() => this.publishNow(eventId));
+      return;
+    }
+    await this.publishNow(eventId);
+  }
+
+  private async publishNow(eventId: string): Promise<void> {
     try {
       await this.pubsub.publish('talentum-prescreening-qualified', { eventId });
       console.log(`${TAG} Pub/Sub published talentum-prescreening-qualified eventId=${eventId}`);

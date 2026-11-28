@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Clock } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
+import { VacancySemaphoreDot } from '@presentation/components/atoms/VacancySemaphoreDot';
 import { toDisplayName } from '@domain/value-objects/displayName';
 import type { PatientKanbanItem } from '@domain/entities/PatientDetail';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
@@ -87,10 +88,18 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
             </Text>
           </span>
         </button>
-        {patient.caseNumber != null && (
-          <span className="shrink-0 inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-700">
-            {t('admin.patients.kanban.caseNumber', { defaultValue: 'Caso' })} #{formatCaseNumber(patient.caseNumber)}
-          </span>
+        {(patient.worstSemaphore || patient.caseNumber != null) && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            {/* semaforo-da-vaga F3: a PIOR cor do paciente (do servidor, sem n); sem vaga viva = nada (o subcard diz "sin vacante"). */}
+            {patient.worstSemaphore && (
+              <VacancySemaphoreDot value={{ color: patient.worstSemaphore }} testId={`patient-kanban-card-${patient.id}-semaphore`} />
+            )}
+            {patient.caseNumber != null && (
+              <span className="shrink-0 inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-700">
+                {t('admin.patients.kanban.caseNumber', { defaultValue: 'Caso' })} #{formatCaseNumber(patient.caseNumber)}
+              </span>
+            )}
+          </div>
         )}
       </div>
       {!mostraContatoNoTitulo && !fullName && responsibleName && (

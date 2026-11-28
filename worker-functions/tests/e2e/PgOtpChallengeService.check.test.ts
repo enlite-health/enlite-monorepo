@@ -27,7 +27,7 @@ describe('PgOtpChallengeService.check', () => {
     return rows[0].id;
   }
   async function emitir(workerId: string, phone = PHONE_A) {
-    const { challengeId } = await service().start({ workerId, purpose: 'claim', phoneE164: phone });
+    const { challengeId } = await service().start({ workerId, purpose: 'claim', phoneE164: phone, requesterUid: 'uid-teste-1' });
     return { challengeId, code: lastCode };
   }
 
@@ -40,7 +40,7 @@ describe('PgOtpChallengeService.check', () => {
   it('T-F3c-110 o código certo vale 1 vez: duas conferências simultâneas dão 1 ok', async () => {
     const w = await novaFicha();
     const { challengeId, code } = await emitir(w);
-    const input = { challengeId, workerId: w, phoneOnRecord: PHONE_A, code };
+    const input = { challengeId, workerId: w, purpose: 'claim' as const, phoneOnRecord: PHONE_A, code };
 
     const results = await Promise.all([service().check(input), service().check(input)]);
 
@@ -51,7 +51,7 @@ describe('PgOtpChallengeService.check', () => {
   it('T-F3c-110 o segundo uso do mesmo código é OTP_ALREADY_USED', async () => {
     const w = await novaFicha();
     const { challengeId, code } = await emitir(w);
-    const input = { challengeId, workerId: w, phoneOnRecord: PHONE_A, code };
+    const input = { challengeId, workerId: w, purpose: 'claim' as const, phoneOnRecord: PHONE_A, code };
 
     expect(await service().check(input)).toEqual({ ok: true });
     expect(await service().check(input)).toEqual({ ok: false, code: 'OTP_ALREADY_USED' });
@@ -62,7 +62,7 @@ describe('PgOtpChallengeService.check', () => {
     const { challengeId, code } = await emitir(w);
     await pool.query(`UPDATE otp_challenges SET expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1`, [challengeId]);
 
-    expect(await service().check({ challengeId, workerId: w, phoneOnRecord: PHONE_A, code })).toEqual({ ok: false, code: 'EXPIRED_OTP' });
+    expect(await service().check({ challengeId, workerId: w, purpose: 'claim' as const, phoneOnRecord: PHONE_A, code })).toEqual({ ok: false, code: 'EXPIRED_OTP' });
   });
 
   it('T-F3c-110 código errado é INVALID_OTP e conta a tentativa; o certo ainda vale depois', async () => {
@@ -70,17 +70,26 @@ describe('PgOtpChallengeService.check', () => {
     const { challengeId, code } = await emitir(w);
     const errado = code === '000000' ? '000001' : '000000';
 
-    expect(await service().check({ challengeId, workerId: w, phoneOnRecord: PHONE_A, code: errado })).toEqual({ ok: false, code: 'INVALID_OTP' });
+    expect(await service().check({ challengeId, workerId: w, purpose: 'claim' as const, phoneOnRecord: PHONE_A, code: errado })).toEqual({ ok: false, code: 'INVALID_OTP' });
     const { rows } = await pool.query<{ attempts: number }>(`SELECT attempts FROM otp_challenges WHERE id = $1`, [challengeId]);
     expect(rows[0].attempts).toBe(1);
-    expect(await service().check({ challengeId, workerId: w, phoneOnRecord: PHONE_A, code })).toEqual({ ok: true });
+    expect(await service().check({ challengeId, workerId: w, purpose: 'claim' as const, phoneOnRecord: PHONE_A, code })).toEqual({ ok: true });
+  });
+
+  it('B9 desafio emitido como link, conferido como claim: INVALID_OTP e attempts não sobe', async () => {
+    const w = await novaFicha();
+    const { challengeId, code } = await service().start({ workerId: w, purpose: 'link', phoneE164: PHONE_A, requesterUid: 'uid-teste-1' }).then((r) => ({ challengeId: r.challengeId, code: lastCode }));
+
+    expect(await service().check({ challengeId, workerId: w, purpose: 'claim', phoneOnRecord: PHONE_A, code })).toEqual({ ok: false, code: 'INVALID_OTP' });
+    const { rows } = await pool.query<{ attempts: number }>(`SELECT attempts FROM otp_challenges WHERE id = $1`, [challengeId]);
+    expect(rows[0].attempts).toBe(0);
   });
 
   it('T-F3c-110 DP-21: o código emitido para o telefone A não vale para a ficha cujo telefone é B', async () => {
     const w = await novaFicha();
     const { challengeId, code } = await emitir(w, PHONE_A);
 
-    expect(await service().check({ challengeId, workerId: w, phoneOnRecord: PHONE_B, code })).toEqual({ ok: false, code: 'INVALID_OTP' });
+    expect(await service().check({ challengeId, workerId: w, purpose: 'claim' as const, phoneOnRecord: PHONE_B, code })).toEqual({ ok: false, code: 'INVALID_OTP' });
     const { rows } = await pool.query<{ status: string }>(`SELECT status FROM otp_challenges WHERE id = $1`, [challengeId]);
     expect(rows[0].status).toBe('pending');
   });

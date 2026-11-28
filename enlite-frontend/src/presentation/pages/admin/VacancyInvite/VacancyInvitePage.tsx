@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft } from 'lucide-react';
@@ -18,6 +18,7 @@ import { InviteMapPane } from './InviteMapPane';
 import { InviteListHeader } from './InviteListHeader';
 import { InviteListFooter } from './InviteListFooter';
 import { InviteRow } from './InviteRow';
+import { PanelErrorAlert } from '@presentation/components/features/access/PanelErrorAlert';
 import { InviteConfirmDialog } from './InviteConfirmDialog';
 import { InviteFinishDialog } from './InviteFinishDialog';
 import { InviteNoServiceCase, InviteNobodyCard } from './InviteSpecialCase';
@@ -143,6 +144,28 @@ export default function VacancyInvitePage(): JSX.Element {
     [ctx, localMessaged, sentByStep, sentVacante],
   );
 
+  // O desenho do passo (linhas, pinos, anéis) é custo O(n): só recalcula quando o contexto ou o passo mudam,
+  // não a cada render provocado pelo patch da fila.
+  const rawView = useMemo(
+    () => (viewCtx && step && board.status === 'ready' ? buildBoardView(viewCtx, step) : null),
+    [viewCtx, step, board.status],
+  );
+  const view = useMemo(
+    () =>
+      rawView && !canExecute
+        ? { ...rawView, steps: rawView.steps.filter((c) => c.step === 'vacante'), footer: { ...rawView.footer, more: null, mode: rawView.footer.mode === 'after' ? ('last' as const) : rawView.footer.mode } }
+        : rawView,
+    [rawView, canExecute],
+  );
+  // F6 direita (E8): ninguém até 50 km (fora do passo "vacante", que continua útil com os já na vacante).
+  const nobodyNear = !!viewCtx && !!view && canExecute && step !== 'vacante' && matchResult(viewCtx.candidates, currentIds).length === 0;
+  const vacanteView = useMemo(() => (nobodyNear && viewCtx ? buildBoardView(viewCtx, 'vacante') : null), [nobodyNear, viewCtx]);
+  const mapView = useMemo(() => (vacanteView ? { ...vacanteView, pins: [], vacanteNote: null } : view), [vacanteView, view]);
+
+  // Callbacks estáveis: `InviteRow` é memoizado e só redesenha a linha que mudou.
+  const onToggleRow = useCallback((wid: string) => setUnselected((cur) => toggleOne(cur, wid)), []);
+  const onNameClickRow = useCallback((wid: string) => setSelectedPin((cur) => (cur === wid ? null : wid)), []);
+
   const goBack = (): void => {
     const from = (location.state as { from?: string } | null)?.from;
     if (from) navigate(-1);
@@ -192,13 +215,6 @@ export default function VacancyInvitePage(): JSX.Element {
   if (!noPermission && isDraft) return <Navigate to={`/admin/vacancies/${id}/borrador`} replace />;
 
   const address: string | null = vacancy?.patient_address_formatted ?? vacancy?.patient_address_raw ?? null;
-  const rawView = viewCtx && step && board.status === 'ready' ? buildBoardView(viewCtx, step) : null;
-  const view = rawView && !canExecute
-    ? { ...rawView, steps: rawView.steps.filter((c) => c.step === 'vacante'), footer: { ...rawView.footer, more: null, mode: rawView.footer.mode === 'after' ? ('last' as const) : rawView.footer.mode } }
-    : rawView;
-  // F6 direita (E8): ninguém até 50 km (fora do passo "vacante", que continua útil com os já na vacante).
-  const nobodyNear = !!viewCtx && !!view && canExecute && step !== 'vacante' && matchResult(viewCtx.candidates, currentIds).length === 0;
-  const vacanteView = nobodyNear && viewCtx ? buildBoardView(viewCtx, 'vacante') : null;
   const fixHref = vacancy?.patient_id
     ? `/admin/patients/${vacancy.patient_id}?tab=itinerary${vacancy.contracted_service_id ? `&serviceId=${vacancy.contracted_service_id}` : ''}`
     : null;
@@ -270,7 +286,7 @@ export default function VacancyInvitePage(): JSX.Element {
             {view && service && service.lat != null && service.lng != null ? (
               <InviteMapPane
                 nobody={nobodyNear}
-                view={vacanteView ? { ...vacanteView, pins: [], vacanteNote: null } : view}
+                view={mapView ?? view}
                 center={{ lat: service.lat, lng: service.lng }}
                 height={mapHeight}
                 hoveredId={hoveredId}
@@ -309,6 +325,8 @@ export default function VacancyInvitePage(): JSX.Element {
                     setUnselected(next.unselected);
                   }}
                 />
+                {/* O GET pós-envio falhou: a lista pode estar defasada. Aviso não bloqueante; os dados na tela continuam. */}
+                {board.error && <div className="px-6 pb-2" data-testid="invite-refresh-error"><PanelErrorAlert keyName="admin.vacancyInvite.error.refresh" /></div>}
                 <div className="min-h-0 flex-1 overflow-y-auto" data-testid="invite-rows">
                   {view.rows.map((row) => (
                     <InviteRow
@@ -317,8 +335,8 @@ export default function VacancyInvitePage(): JSX.Element {
                       focused={selectedPin === row.candidate.workerId}
                       highlighted={hoveredId === row.candidate.workerId}
                       send={rowSend(row.candidate.workerId)}
-                      onToggle={(wid) => setUnselected(toggleOne(unselected, wid))}
-                      onNameClick={(wid) => setSelectedPin((cur) => (cur === wid ? null : wid))}
+                      onToggle={onToggleRow}
+                      onNameClick={onNameClickRow}
                       onHover={setHoveredId}
                     />
                   ))}

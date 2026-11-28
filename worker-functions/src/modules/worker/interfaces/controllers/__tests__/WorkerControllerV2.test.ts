@@ -316,7 +316,7 @@ describe('WorkerControllerV2', () => {
     });
 
     it.each([
-      ['claim_pending (abriu OTP) → marca otpStarted', { status: 'claim_pending' as const, candidateWorkerId: 'c1', phoneMasked: '••••1243', verificationSid: 'VE1' }, true],
+      ['claim_pending (abriu OTP) → marca otpStarted', { status: 'claim_pending' as const, phoneMasked: '••••1243', verificationSid: 'VE1' }, true],
       ['ok (sem OTP) → não marca', { status: 'ok' as const, worker: mockWorker }, undefined],
     ])('DP-20 rate limit do init: %s', async (_c, saida, esperado) => {
       jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.fail('Worker not found'));
@@ -427,7 +427,7 @@ describe('WorkerControllerV2', () => {
     it('T-F0b-42 claim_pending (OTP da ficha importada) não grava claim: a ficha ainda não é do uid', async () => {
       jest.spyOn(controller['getProgressUseCase'], 'execute').mockResolvedValue(Result.fail('Worker not found'));
       jest.spyOn(controller['initWorkerUseCase'], 'execute').mockResolvedValue(Result.ok({
-        status: 'claim_pending' as const, candidateWorkerId: WORKER_ID, phoneMasked: '+54 ***', verificationSid: 'VE1',
+        status: 'claim_pending' as const, phoneMasked: '+54 ***', verificationSid: 'VE1',
       }));
       const claimSpy = jest.spyOn(controller['provisionCountryClaim'], 'execute');
       const [req, res] = mockReqRes({ phone: '+5491100000000' }, {}, { uid: AUTH_UID, email: WORKER_EMAIL });
@@ -436,6 +436,11 @@ describe('WorkerControllerV2', () => {
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect(claimSpy).not.toHaveBeenCalled();
+      const corpo = (res.json as jest.Mock).mock.calls[0][0] as { data: Record<string, unknown> };
+      expect(corpo.data).not.toHaveProperty('candidateWorkerId');
+      expect(corpo.data).toEqual({
+        status: 'claim_pending', phoneMasked: '+54 ***', verificationSid: 'VE1', challengeId: 'VE1', code: 'CLAIM_PENDING',
+      });
     });
   });
 

@@ -31,9 +31,10 @@ jest.mock('@shared/logging', () => ({
     info: jest.fn(),
   },
   reportError: jest.fn(),
+  safeErrorFields: (e: unknown) => ({ errorName: e instanceof Error ? e.name : typeof e, code: (e as { code?: string } | null)?.code ?? null }),
 }));
 
-import { logger } from '@shared/logging';
+import { logger, reportError } from '@shared/logging';
 import { TwilioVerifyService, otpCheckIsForPhone } from '../TwilioVerifyService';
 
 describe('TwilioVerifyService', () => {
@@ -111,6 +112,20 @@ describe('TwilioVerifyService', () => {
       expect(logChild.info).toHaveBeenCalledWith(
         expect.objectContaining({ msg: 'otp_started' }),
       );
+    });
+
+    it('B8: a mensagem do Twilio (com telefone) não vai ao log nem ao reportError', async () => {
+      const logChild = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+      (logger.child as jest.Mock).mockReturnValue(logChild);
+      mockVerificationsCreate.mockRejectedValue(Object.assign(new Error('Invalid To +5491100000000'), { code: 21211 }));
+
+      await expect(new TwilioVerifyService().startVerification('+5491155261243')).rejects.toThrow();
+
+      expect(JSON.stringify(logChild.error.mock.calls)).not.toContain('5491100000000');
+      expect(logChild.error).toHaveBeenCalledWith(expect.objectContaining({ msg: 'otp_start_failed', errorName: 'Error', code: 21211 }));
+      const reported = (reportError as jest.Mock).mock.calls[0][0] as Error;
+      expect(reported.message).toBe('twilio_verify_start_failed');
+      expect(JSON.stringify((reportError as jest.Mock).mock.calls)).not.toContain('5491100000000');
     });
 
     it('loga otp_start_failed quando SDK Twilio falha', async () => {

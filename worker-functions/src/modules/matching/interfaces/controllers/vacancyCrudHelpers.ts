@@ -47,8 +47,6 @@ export interface VacancyInsertParams {
   payment_day: any;
   daily_obs: any;
   patient_address_id: any;
-  /** Default: 'PENDING_ACTIVATION' when not provided. */
-  status?: string;
   /** ISO date (YYYY-MM-DD) or full timestamp. Defaults to NOW() in the SQL when null. */
   published_at?: string | null;
   /** ISO date (YYYY-MM-DD) or full timestamp. Optional — left NULL when not provided. */
@@ -76,20 +74,36 @@ export interface VacancyInsertParams {
   contracted_service_id?: string | null;
 }
 
-export const CANONICAL_STATUSES = new Set([
-  'SEARCHING',
-  'SEARCHING_REPLACEMENT',
-  'RAPID_RESPONSE',
-  'PENDING_ACTIVATION',
-  'ACTIVE',
-  // Spec 084 F5 (R18): "En espera" — a pausa da vaga de serviço ativo. DE_BAJA fica FORA de propósito (R17): ninguém
-  // põe vaga em baixa nem a tira dela por este endpoint.
-  'ON_HOLD',
-  'SUSPENDED',
-  'CLOSED',
-]);
+/**
+ * Ninguém grava `job_postings.status` pela API: "no ar" é `vacancyPublication.ts` e o estado do paciente é automático
+ * (semaforo-da-vaga F4, D1). `POST`/`PUT` com `status` recusam com 400 `VACANCY_STATUS_NOT_WRITABLE`, es + pt-BR.
+ * Escritores de sistema (default de criação, baja por serviço, corte legado) não passam por aqui e não mudam (E10).
+ */
+export const VACANCY_STATUS_NOT_WRITABLE_MESSAGES = {
+  es: 'El estado de la vacante no se edita: la vacante sale al aire sola al lanzarse, y pausa con el paciente. Para darla de baja usá "Dar de baja".',
+  'pt-BR': 'O estado da vaga não é editável: a vaga vai ao ar sozinha ao ser lançada e pausa junto com o paciente. Para encerrá-la use "Dar de baixa".',
+} as const;
 
-export const OPERATIONAL_EDITABLE_FIELDS = new Set(['schedule', 'status']);
+export interface ClientStatusRefusal {
+  status: 400;
+  code: 'VACANCY_STATUS_NOT_WRITABLE';
+  error: string;
+  messages: typeof VACANCY_STATUS_NOT_WRITABLE_MESSAGES;
+}
+
+/** `undefined` = o cliente não mandou status (nada a validar). Qualquer outro valor, inclusive `null`, é recusa. */
+export function clientStatusRefusal(status: unknown): ClientStatusRefusal | null {
+  return status === undefined
+    ? null
+    : {
+        status: 400,
+        code: 'VACANCY_STATUS_NOT_WRITABLE',
+        error: VACANCY_STATUS_NOT_WRITABLE_MESSAGES['pt-BR'],
+        messages: VACANCY_STATUS_NOT_WRITABLE_MESSAGES,
+      };
+}
+
+export const OPERATIONAL_EDITABLE_FIELDS = new Set(['schedule']);
 
 export const FULL_ALLOWED_UPDATE_FIELDS = [
   'title', 'case_number', 'patient_id', 'patient_address_id',
@@ -98,7 +112,7 @@ export const FULL_ALLOWED_UPDATE_FIELDS = [
   'worker_profile_sought', 'required_experience', 'worker_attributes',
   'schedule', 'work_schedule',
   'providers_needed', 'salary_text', 'payment_day',
-  'daily_obs', 'status',
+  'daily_obs',
   'published_at', 'closes_at',
 ];
 
@@ -172,7 +186,7 @@ export type UpdateAuthorizationResult =
 
 /**
  * Validates that a PUT /api/admin/vacancies/:id is allowed:
- *   - status (when present) must be canonical
+ *   - status (when present) is refused: 400 VACANCY_STATUS_NOT_WRITABLE
  *   - vacancy must exist
  *   - when is_draft=false: only OPERATIONAL_EDITABLE_FIELDS are allowed
  *   - when is_draft=true and patient_id is changing: new patient must exist
@@ -180,21 +194,18 @@ export type UpdateAuthorizationResult =
  *     belong to the (current or new) patient AND be active (archived_at IS NULL)
  *
  * is_draft is the canonical "incomplete publication" flag (migration 168).
- * Decoupled from status — operator may pick a public status on Step 1 and
- * still have is_draft=true until Talentum publish flips it.
+ * Decoupled from status — a vaga fica fora do ar enquanto is_draft=true,
+ * até o publish no Talentum virar a flag.
  */
 export async function authorizeVacancyUpdate(
   db: Pool,
   vacancyId: string,
   updates: Record<string, unknown>,
 ): Promise<UpdateAuthorizationResult> {
-  if (updates.status !== undefined && !CANONICAL_STATUSES.has(updates.status as string)) {
-    return {
-      kind: 'error',
-      status: 400,
-      error: `Invalid status value "${updates.status}". Must be one of: ${[...CANONICAL_STATUSES].join(', ')}`,
-    };
-  }
+  // semaforo-da-vaga F4: ninguém grava `status` (400 `VACANCY_STATUS_NOT_WRITABLE`). O corpo é validado ANTES de buscar a vaga (como no
+  // main): o PUT com status dá 400 existindo a vaga ou não. R17 (vaga baixada, 409) vale para os demais campos.
+  const recusa = clientStatusRefusal(updates.status);
+  if (recusa) return { kind: 'error', ...recusa };
 
   const currentRow = await db.query<{
     status: string | null;
@@ -214,8 +225,8 @@ export async function authorizeVacancyUpdate(
   }
   const currentStatus = currentRow.rows[0].status;
 
-  // Spec 084 R17 (REGRA DURA): vaga baixada é só consulta. NENHUM campo — e muito menos o status — muda por aqui; a
-  // única volta é a reativação do serviço que a baixou. Roda antes de qualquer outra regra.
+  // Spec 084 R17 (REGRA DURA): vaga baixada é só consulta. NENHUM campo muda por aqui (o `status` já foi recusado acima, 400); a
+  // única volta é a reativação do serviço que a baixou. Roda antes de qualquer outra regra de campo.
   if (currentStatus === DE_BAJA_STATUS) {
     return {
       kind: 'error',
@@ -271,7 +282,7 @@ export async function authorizeVacancyUpdate(
       return {
         kind: 'error',
         status: 403,
-        error: `Forbidden fields for vacancy in status "${currentStatus}": ${forbidden.join(', ')}. Only schedule and status can be edited.`,
+        error: `Forbidden fields for vacancy in status "${currentStatus}": ${forbidden.join(', ')}. Only schedule can be edited.`,
       };
     }
   }
@@ -435,8 +446,8 @@ export function captureVacancyDiff(
 }
 
 export function buildInsertParams(p: VacancyInsertParams): unknown[] {
-  const status =
-    p.status && CANONICAL_STATUSES.has(p.status) ? p.status : 'PENDING_ACTIVATION';
+  // Escrita de sistema: a vaga nasce PENDING_ACTIVATION e fica fora do ar até ser lançada (`is_draft`); ninguém escolhe status.
+  const status = 'PENDING_ACTIVATION';
 
   // Vaga real SEMPRE nasce is_draft=true (mesmo comportamento de sempre — só
   // o publish no Talentum destrava). A exceção é restrita a is_test=true:

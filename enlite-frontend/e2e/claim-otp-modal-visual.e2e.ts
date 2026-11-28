@@ -5,9 +5,10 @@
  *
  * Cenários cobertos:
  *   1. /complete-whatsapp renderiza correctamente (screenshot)
- *   2. ClaimOtpModal aparece ao simular POST /api/auth/claim/start com candidate
- *   3. /register exibe botão Google reabilitado (screenshot — baseline Onda 2)
- *   4. /login — screenshot de regressão (nao muda)
+ *   2. /register exibe botão Google reabilitado (screenshot — baseline Onda 2)
+ *   3. /login — screenshot de regressão (nao muda)
+ *
+ * O modal do código (claim/start) mora em `integration/claim-otp-modal.integration.e2e.ts`, com a API real.
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -18,43 +19,6 @@ async function gotoAndWait(page: Page, path: string, awaitSelector: string): Pro
   await page.goto(path);
   await expect(page.locator(awaitSelector)).toBeVisible({ timeout: 10_000 });
   await page.evaluate(() => document.fonts.ready);
-}
-
-// ── Mock helpers ──────────────────────────────────────────────────────────────
-
-/**
- * Intercepta POST /api/auth/claim/start e responde com candidate data.
- * Simula o cenário em que o backend encontrou uma ficha com o phone informado.
- */
-async function mockStartClaimWithCandidate(page: Page): Promise<void> {
-  await page.route('**/api/auth/claim/start', (route) => {
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        success: true,
-        data: {
-          candidateWorkerId: 'cand-mock-001',
-          phoneMasked: '+54 11 **** 5678',
-          verificationSid: 'VE_mock_sid',
-        },
-      }),
-    });
-  });
-}
-
-/**
- * Intercepta qualquer chamada de autenticação Firebase para não depender do emulador.
- */
-async function mockFirebaseAuth(page: Page): Promise<void> {
-  // Intercepta token refresh — retorna um token mock
-  await page.route('**/identitytoolkit.googleapis.com/**', (route) => {
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ idToken: 'mock-id-token', localId: 'mock-uid' }),
-    });
-  });
 }
 
 // ── Testes ────────────────────────────────────────────────────────────────────
@@ -99,64 +63,5 @@ test.describe('Onda 2 — ClaimOtpModal e CompleteWhatsappPage', () => {
     await expect(googleBtn).toBeVisible({ timeout: 5_000 });
 
     await expect(page.locator('form')).toHaveScreenshot('login-form-onda2-regression.png');
-  });
-
-  // ── Teste 4: ClaimOtpModal abre em /complete-whatsapp após submit do form ────
-
-  test('4. ClaimOtpModal aparece quando startClaim retorna candidate (mock)', async ({ page }) => {
-    // Mock das rotas de auth para simular usuário autenticado
-    await mockFirebaseAuth(page);
-    await mockStartClaimWithCandidate(page);
-
-    // Mock do endpoint de worker/me para simular auth state
-    await page.route('**/api/workers/me', (route) => {
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          data: { id: 'w1', email: 'user@example.com', authUid: 'uid-1', country: 'AR', timezone: 'America/Buenos_Aires', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        }),
-      });
-    });
-
-    // Navega para /register para ter o modal disponível via formulário email/senha
-    // (que também pode gerar claim_pending via initWorker)
-    await page.route('**/api/workers/init', (route) => {
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          data: {
-            status: 'claim_pending',
-            candidateWorkerId: 'cand-mock-001',
-            phoneMasked: '+54 11 **** 5678',
-            verificationSid: 'VE_mock_sid',
-          },
-        }),
-      });
-    });
-
-    await gotoAndWait(page, '/register', 'form');
-
-    // Preenche o formulário minimamente para disparar o submit
-    await page.fill('input#email', 'test@example.com');
-    await page.fill('input#password', 'Senha123!');
-    await page.fill('input#confirmPassword', 'Senha123!');
-
-    // Marca o checkbox de LGPD
-    const lgpdCheckbox = page.locator('input[type="checkbox"]').first();
-    await lgpdCheckbox.check();
-
-    // Submete
-    await page.locator('button[type="submit"]').click();
-
-    // Aguarda o modal aparecer
-    const modal = page.locator('[role="dialog"]');
-    await expect(modal).toBeVisible({ timeout: 8_000 });
-
-    // Screenshot do modal aberto
-    await expect(modal).toHaveScreenshot('claim-otp-modal-open.png');
   });
 });

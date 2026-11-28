@@ -85,6 +85,20 @@ export default function InterviewHostsPage() {
     }
   }
 
+  // F5 (D16): declarar/retirar a licença de Tactiq. Só confiança declarada; o back grava o evento e avisa.
+  async function setSeat(row: InterviewHost, assigned: boolean) {
+    setBusyId(row.id);
+    setRowError(null);
+    try {
+      await AdminInterviewHostApiService.setTactiqSeat(row.id, assigned);
+      await load();
+    } catch (err) {
+      setRowError(interviewHostErrorMessage(err, t));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function confirmQuit() {
     if (!toQuit) return;
     setQuitBusy(true);
@@ -173,6 +187,7 @@ export default function InterviewHostsPage() {
               <TableHead align="center">{t('admin.interviewHosts.table.encuadre')}</TableHead>
               <TableHead align="center">{t('admin.interviewHosts.table.admission')}</TableHead>
               <TableHead>{t('admin.interviewHosts.table.tactiq')}</TableHead>
+              {!updateGate.denied && <TableHead>{t('admin.interviewHosts.table.seat')}</TableHead>}
               <TableHead align="right">{t('admin.interviewHosts.table.actions')}</TableHead>
             </TableHeader>
             <TableBody>
@@ -218,6 +233,23 @@ export default function InterviewHostsPage() {
                       />
                     </TableCell>
                     <TableCell unwrapped><TactiqChip linked={r.tactiq === 'linked'} id={r.id} /></TableCell>
+                    {!updateGate.denied && (
+                      <TableCell unwrapped>
+                        {!r.userMissing && !r.userInactive && (
+                          <label className="inline-flex items-center gap-2 text-sm text-slate-900 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={r.tactiqSeatDeclared === true}
+                              disabled={busyId === r.id}
+                              onChange={(e) => void setSeat(r, e.target.checked)}
+                              aria-label={t('admin.interviewHosts.seatLabel', { name: nameOf(r) })}
+                              data-testid={`licencia-${r.id}`}
+                            />
+                            {t('admin.interviewHosts.seatAssigned')}
+                          </label>
+                        )}
+                      </TableCell>
+                    )}
                     <TableCell align="right" unwrapped>
                       {!updateGate.denied && (
                         <>

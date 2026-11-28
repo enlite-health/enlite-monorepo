@@ -157,7 +157,6 @@ export class WorkerControllerV2 {
           success: true,
           data: {
             status: 'claim_pending',
-            candidateWorkerId: output.candidateWorkerId,
             phoneMasked: output.phoneMasked,
             verificationSid: output.verificationSid,
             // D797: o app confirma por `phone/confirm` com este id (o mesmo do `verificationSid`; nunca o telefone inteiro).

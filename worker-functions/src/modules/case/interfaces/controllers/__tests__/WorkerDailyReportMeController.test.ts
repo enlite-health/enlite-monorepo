@@ -7,6 +7,7 @@ jest.mock('@shared/logging', () => ({
 import type { Request, Response } from 'express';
 import { logger, reportError } from '@shared/logging';
 import { AccountInactiveError } from '../../../application/GetWorkerItineraryUseCase';
+import { PresenceUnavailableError } from '../../../application/ports/PresenceReaderPort';
 import { InvalidTemplateWindowError } from '../../../application/dailyReport/GetReportTemplatesUseCase';
 import { DailyReportConflictError, DailyReportError } from '../../../domain/DailyReport';
 import { WorkerDailyReportMeController } from '../WorkerDailyReportMeController';
@@ -140,6 +141,9 @@ describe('WorkerDailyReportMeController', () => {
       for (const [err, st, code] of [
         [new DailyReportConflictError('daily_report_conflict'), 409, 'daily_report_conflict'],
         [new DailyReportConflictError('daily_report_exists'), 409, 'daily_report_exists'],
+        [new DailyReportConflictError('daily_report_presence_open'), 409, 'daily_report_presence_open'],
+        [new DailyReportConflictError('daily_report_template_outdated'), 409, 'daily_report_template_outdated'],
+        [new PresenceUnavailableError('timeout'), 503, 'UPSTREAM_UNAVAILABLE'],
         [new DailyReportError('reason_required'), 422, 'reason_required'],
         [new AccountInactiveError(), 403, 'ACCOUNT_INACTIVE'],
       ] as const) {

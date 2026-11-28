@@ -12,11 +12,12 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { envelope } from '../fixtures/talentumPayload';
+import { postTalentumAndDrain, TALENTUM_WEBHOOK } from './helpers/talentumWebhook';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
   'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
-const ENDPOINT = '/api/webhooks/talentum/prescreening';
+const ENDPOINT = TALENTUM_WEBHOOK;
 
 const M2 = {
   psc: 'espelho-m2-psc', prof: 'espelho-m2-prof', email: 'espelho.m2@test.local', phone: '+5491177710001',
@@ -75,16 +76,19 @@ describe('Talentum webhook — o card espelha o Talentum', () => {
       profile: { id: M2.prof, email: M2.email, phoneNumber: M2.phone, firstName: 'Ana', lastName: 'Espelho' },
     });
 
-    const first = await api.post(ENDPOINT, event('INITIATED'));
-    expect(first.status).toBe(200);
-    expect(first.data.jobPostingId).toBe(titleJobId); // só o título resolve ainda
+    const first = await postTalentumAndDrain(api, event('INITIATED'), ENDPOINT);
+    expect(first.ack.status).toBe(200);
+    expect(first.drain).toMatchObject({ selected: 1, processed: 1, failed: 0 });
+    const afterFirst = await pool.query<{ job_posting_id: string }>(
+      `SELECT job_posting_id FROM talentum_prescreenings WHERE talentum_prescreening_id = $1`, [M2.psc]);
+    expect(afterFirst.rows[0].job_posting_id).toBe(titleJobId); // só o título resolve ainda
 
     // O prescreening passa a ter DONA (vaga com o `_id` gravado, como o publish/sync/backfill fazem)
     await pool.query(`UPDATE job_postings SET talentum_prescreening_id = $1 WHERE id = $2`, [M2.psc, ownerJobId]);
 
-    const second = await api.post(ENDPOINT, event('IN_PROGRESS'));
-    expect(second.status).toBe(200);
-    expect(second.data.jobPostingId).toBe(ownerJobId);
+    const second = await postTalentumAndDrain(api, event('IN_PROGRESS'), ENDPOINT);
+    expect(second.ack.status).toBe(200);
+    expect(second.drain).toMatchObject({ selected: 1, processed: 1, failed: 0 });
 
     const { rows } = await pool.query<{ job_posting_id: string }>(
       `SELECT job_posting_id FROM talentum_prescreenings WHERE talentum_prescreening_id = $1`, [M2.psc]);
@@ -101,14 +105,17 @@ describe('Talentum webhook — o card espelha o Talentum', () => {
   });
 
   it('[ALARME] worker não resolvível → 200 inalterado e UMA linha WORKER_NULL em talentum_webhook_divergences', async () => {
-    const res = await api.post(ENDPOINT, envelope({
+    const res = await postTalentumAndDrain(api, envelope({
       subtype: 'INITIATED',
       prescreening: { id: AL.psc, name: 'CASO INEXISTENTE ESPELHO 99999' },
       profile: { id: AL.prof, email: AL.email, phoneNumber: AL.phone, firstName: 'Bia', lastName: 'Alarme' },
-    }));
+    }), ENDPOINT);
 
-    expect(res.status).toBe(200); // o status HTTP ao Talentum não muda
-    expect(res.data.workerId).toBeNull();
+    expect(res.ack.status).toBe(200); // o status HTTP ao Talentum não muda
+    expect(res.drain).toMatchObject({ selected: 1, processed: 1, failed: 0 });
+    const mirrorRow = await pool.query<{ worker_id: string | null }>(
+      `SELECT worker_id FROM talentum_prescreenings WHERE talentum_prescreening_id = $1`, [AL.psc]);
+    expect(mirrorRow.rows[0].worker_id).toBeNull();
 
     const { rows } = await pool.query<{ kind: string; worker_id: string | null; prescreening_id: string }>(
       `SELECT kind, worker_id, prescreening_id FROM talentum_webhook_divergences

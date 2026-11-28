@@ -138,6 +138,16 @@ export function patientContainerReadsOf(cells: readonly string[] | null | undefi
   return out;
 }
 
+/**
+ * O container `patient` (o operacional: id, ESTADO, funil, caso — acima) não é um dos `PATIENT_CONTAINERS` da ficha: a célula
+ * dele é a da lista/Kanban, `patient:read`. É o que decide se o estado do paciente aparece FORA da ficha (na vaga, D3/E6).
+ * `null`/`undefined` = engine não decidiu → lê (D113).
+ */
+export const PATIENT_OPERATIONAL_READ_CELL = 'patient:read';
+export function canReadPatientOperational(cells: readonly string[] | null | undefined): boolean {
+  return cells === null || cells === undefined || cells.includes(PATIENT_OPERATIONAL_READ_CELL);
+}
+
 export const ALL_PATIENT_CONTAINERS_READABLE: PatientContainerReads = patientContainerReadsOf(null);
 
 function redact<T extends Record<string, unknown>>(

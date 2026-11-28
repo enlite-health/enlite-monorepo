@@ -89,12 +89,14 @@ const FABRICAS = [
   'modules/case/interfaces/routes/adminItineraryChangesRoutes',
   'modules/case/interfaces/routes/adminItineraryWriteRoutes',
   'modules/case/interfaces/routes/adminPatientPhotoRoutes',
+  'modules/case/interfaces/routes/adminPresenceReviewRoutes',
   'modules/case/interfaces/routes/adminPatientsRoutes',
   'modules/case/interfaces/routes/adminServiceTeamContactRoutes',
   'modules/case/interfaces/routes/adminServiceTeamRoutes',
   'modules/case/interfaces/routes/adminSubstitutionRequestRoutes',
   'modules/case/interfaces/routes/adminTherapeuticProjectsRoutes',
   'modules/case/interfaces/routes/itineraryDailyInternalRoutes',
+  'modules/case/interfaces/routes/presenceAlertsInternalRoutes',
   'modules/case/interfaces/routes/therapeuticContactRemindersInternalRoutes',
   'modules/conversation/interfaces/routes/adminConversationRoutes',
   'modules/custos/interfaces/routes/adminCostsRoutes',
@@ -114,6 +116,7 @@ const FABRICAS = [
   'modules/inapp-notification/interfaces/routes/adminNotificationRoutes',
   'modules/integration/interfaces/routes/adminAiPromptRoutes',
   'modules/integration/interfaces/routes/adminIntegrationsRoutes',
+  'modules/integration/interfaces/routes/talentumInboxInternalRoutes',
   'modules/integration/interfaces/webhooks/routes/webhookRoutes',
   'modules/matching/interfaces/routes/adminAdmissionRoutes',
   'modules/matching/interfaces/routes/adminEnquadreEventListRoutes',
@@ -214,6 +217,6 @@ describe('T313 — cobertura de classe sobre os routers reais', () => {
       sem.push(...unclassifiedRoutes(rotas).map((r) => `${arquivo}: ${r.method} ${r.path}`));
     }
     expect(sem).toEqual([]);
-    expect(total).toBe(456);
+    expect(total).toBe(463); // 458 (main) + 2 (095: talentum inbox) + 1 (077: alerta de presenca) + 2 (077: fila de revisao)
   });
 });

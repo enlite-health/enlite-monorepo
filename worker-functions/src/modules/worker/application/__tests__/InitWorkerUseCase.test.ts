@@ -10,6 +10,7 @@ import { Result } from '@shared/utils/Result';
 import { Worker } from '../../domain/Worker';
 import { logger } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
+import { resourceIdHash } from '@shared/audit/resourceAccessLog';
 
 // ─── Dados de teste realistas ────────────────────────────────────────────────
 
@@ -258,7 +259,6 @@ describe('InitWorkerUseCase', () => {
       expect(result.isSuccess).toBe(true);
       expect(result.getValue()).toEqual({
         status: 'claim_pending',
-        candidateWorkerId: fichaImportadaComTelefone.id,
         phoneMasked: expect.any(String),
         verificationSid: 'VE_TEST_SID',
       });
@@ -424,7 +424,7 @@ describe('InitWorkerUseCase', () => {
         const output = result.getValue();
         expect(output.status).toBe('claim_pending');
         if (output.status === 'claim_pending') {
-          expect(output.candidateWorkerId).toBe(importedWorker.id);
+          expect(output).not.toHaveProperty('candidateWorkerId');
           expect(output.verificationSid).toBe('VE_TEST_SID');
           expect(output.phoneMasked).toBeTruthy();
         }
@@ -515,9 +515,9 @@ describe('InitWorkerUseCase', () => {
       expect(infoArgs).not.toContain(SENTINEL_PHONE);
       expect(infoArgs).not.toContain('1199990000');
       expect(infoArgs).toContain(maskPhoneForLog(SENTINEL_PHONE));
-      // candidateWorkerId e fromAuthUid identificam o REGISTRO (não são PII de
-      // terceiro) — permanecem crus, prova que não sumiram do log por engano.
-      expect(infoArgs).toContain(importedWorkerSentinel.id);
+      // O id da ficha sai do log como hash (B4); fromAuthUid segue cru, prova que não sumiu por engano.
+      expect(infoArgs).not.toContain(importedWorkerSentinel.id);
+      expect(infoArgs).toContain(resourceIdHash(importedWorkerSentinel.id));
       expect(infoArgs).toContain(IMPORTED_AUTH_UID_ANACARE);
     });
   });
@@ -856,6 +856,37 @@ describe('InitWorkerUseCase', () => {
       const repo = makeRepository();
       await new InitWorkerUseCase(repo as any).execute({ ...makeCreateDTO({ phone: undefined }), allowCreate: true });
       expect(repo.create).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('requesterUid e recusas do port no claim por telefone', () => {
+    const fichaImportada: Worker = {
+      ...mockWorker, id: 'a1b2c3d4-0000-4000-8000-0000000000dd', authUid: IMPORTED_AUTH_UID_ANACARE,
+      email: 'importado@anacareimport.invalid', phone: '+5491155261243',
+    };
+    const repoComFicha = () => makeRepository({
+      findByAuthUid: jest.fn().mockResolvedValue(Result.ok(null)),
+      findByEmail: jest.fn().mockResolvedValue(Result.ok(null)),
+      findByPhoneCandidates: jest.fn().mockResolvedValue(Result.ok(fichaImportada)),
+    });
+    const portDuble = (start: jest.Mock) => ({ start, check: jest.fn(), cancel: jest.fn() });
+
+    it('requesterUid = uid do token no otp.start', async () => {
+      const start = jest.fn().mockResolvedValue({ challengeId: 'ch-1' });
+      await new InitWorkerUseCase(repoComFicha() as any, portDuble(start) as any).execute(makeCreateDTO({ authUid: 'uid-teste-init' }));
+      expect(start).toHaveBeenCalledWith(expect.objectContaining({ requesterUid: 'uid-teste-init' }));
+    });
+
+    it('o port que lança PHONE_COUNTRY_NOT_SUPPORTED vira Result.fail com esse código (não TWILIO_ERROR)', async () => {
+      const start = jest.fn().mockRejectedValue(new Error('PHONE_COUNTRY_NOT_SUPPORTED'));
+      const result = await new InitWorkerUseCase(repoComFicha() as any, portDuble(start) as any).execute(makeCreateDTO());
+      expect(result.error).toBe('PHONE_COUNTRY_NOT_SUPPORTED');
+    });
+
+    it.each(['RATE_LIMITED', 'OTP_CHANNEL_UNAVAILABLE'])('%s do port segue como antes', async (code) => {
+      const start = jest.fn().mockRejectedValue(new Error(code));
+      const result = await new InitWorkerUseCase(repoComFicha() as any, portDuble(start) as any).execute(makeCreateDTO());
+      expect(result.error).toBe(code);
     });
   });
 });

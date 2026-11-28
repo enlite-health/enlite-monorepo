@@ -34,7 +34,9 @@ const MOCK_VACANCY = {
   case_number: 226,
   vacancy_number: 1,
   title: 'Caso 226-1 — Acompañante Terapéutico',
-  status: 'ACTIVO',
+  status: 'SEARCHING',
+  lifecycle: null,
+  patient_status: 'SEARCHING',
   country: 'ARG',
   patient_first_name: 'Santiago',
   patient_last_name: 'Claiman Soto',
@@ -495,7 +497,7 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     ).toBeVisible();
   });
 
-  test('A2 — VacancyCaseCard exibe badge "Activo" com classe blue-yonder', async ({
+  test('A2 — VacancyCaseCard exibe o estado do paciente "Búsqueda" e NENHUM selo/seletor de estado da vaga (semaforo-da-vaga F4)', async ({
     page,
   }) => {
     await loginAsAdmin(page);
@@ -506,12 +508,11 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       timeout: 15_000,
     });
 
-    // Badge status "Activo"
-    const badge = page.locator('text=Activo').first();
-    await expect(badge).toBeVisible();
-    // Classe bg-blue-yonder no badge (inline ou parent)
-    const badgeEl = page.locator('.bg-blue-yonder').first();
-    await expect(badgeEl).toBeVisible();
+    const card = page.getByTestId('vacancy-case-card');
+    await expect(card.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
+    await expect(card.getByTestId('vacancy-lifecycle-badge')).toHaveCount(0);
+    await expect(card.getByText('Abierta', { exact: true })).toHaveCount(0);
+    await expect(card.getByTestId('patient-status-pill')).toContainText('Búsqueda');
   });
 
   test('A3 — VacancyProfessionCard exibe botão "Editar" e sex "Mujer"', async ({
@@ -525,9 +526,9 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       timeout: 15_000,
     });
 
-    // Triggers de edição (status + horarios) — o card de profissão não tem
-    // mais botão "Editar" próprio; era stub removido em refactor anterior.
-    await expect(page.getByTestId('vacancy-status-editor-trigger')).toBeVisible();
+    // Trigger de edição (horarios) — o card de profissão não tem mais botão "Editar"
+    // próprio; o seletor de estado saiu na F4 do semáforo.
+    await expect(page.getByTestId('vacancy-status-editor-trigger')).toHaveCount(0);
     await expect(page.getByTestId('vacancy-edit-schedule-trigger')).toBeVisible();
 
     // Sexo requerido

@@ -232,7 +232,7 @@ describe('PatientService — native write path (migration 251)', () => {
 
     const result = await service.moveStatus('nat-004', 'PENDING_ADMISSION');
 
-    expect(result).toEqual({ id: 'nat-004', status: 'PENDING_ADMISSION' });
+    expect(result).toMatchObject({ id: 'nat-004', status: 'PENDING_ADMISSION' });
     const update = seen.find(s => /^UPDATE patients/.test(s.sql));
     expect(update).toBeDefined();
     expect(update!.sql).not.toContain('origin');
@@ -244,7 +244,7 @@ describe('PatientService — native write path (migration 251)', () => {
     _queryImpl = async (sql: string) =>
       sql.startsWith('SELECT status FROM patients') ? { rowCount: 0, rows: [] } : { rows: [], rowCount: 0 };
 
-    await expect(service.moveStatus('missing', 'ACTIVE')).rejects.toThrow(/not found/i);
+    await expect(service.moveStatus('missing', 'DISCHARGED')).rejects.toThrow(/not found/i);
   });
 
   // ── c. moveStatus validation ──────────────────────────────────────────────

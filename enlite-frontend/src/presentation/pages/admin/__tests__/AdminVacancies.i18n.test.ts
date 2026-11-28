@@ -45,7 +45,6 @@ const REQUIRED_KEYS = [
   'searchPlaceholder',
   'noVacancies',
   // Filter labels
-  'statusLabel',
   'priorityLabel',
   // Table headers
   'table.case',
@@ -57,16 +56,8 @@ const REQUIRED_KEYS = [
   'table.missing',
   'table.view',
   'table.edit',
-  // Status options — 8 valores canônicos do banco
-  'statusOptions.all',
-  'statusOptions.searching',
-  'statusOptions.searchingReplacement',
-  'statusOptions.rapidResponse',
-  'statusOptions.pendingActivation',
-  'statusOptions.active',
-  'statusOptions.onHold',
-  'statusOptions.suspended',
-  'statusOptions.closed',
+  // Filtro de estado do paciente (E7)
+  'filters.patientStatus.label',
   // Priority options
   'priorityOptions.all',
   'priorityOptions.urgent',

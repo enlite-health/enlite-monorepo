@@ -1,15 +1,20 @@
 import * as functions from 'firebase-functions';
-import type { PoolClient } from 'pg';
-import { inPatientTransaction } from './patientTransaction';
 import { isPatientStatus, isClinicalPatientStatus, isFunnelToSearchingTransition, type PatientStatus } from '../domain/enums/PatientStatus';
-import { isManualChangeSource, type PatientChangeSource } from '../domain/enums/PatientChangeSource';
+import {
+  escopoDaCompletudeDe,
+  isManualChangeSource,
+  origemPodePedirDestino,
+  saiDoFunilParaSearching,
+  type PatientChangeSource,
+} from '../domain/enums/PatientChangeSource';
 import { recordedChangeSource } from '../domain/enums/PatientChangeSourceOverride';
 import type { OnHoldReason } from '../domain/enums/OnHoldReason';
 import type { SuspensionExitReason } from '../domain/enums/SuspensionExitReason';
 import { blockingCodesForStatusChange } from '../domain/PatientCompleteness';
 import { decidirTrocaForaDoFluxo } from '../domain/trocaForaDoFluxo';
-import { loadPatientCompleteness } from '../infrastructure/PatientCompletenessLoader';
-import { countVivasForPatient } from '../infrastructure/VacancyAllocationProbe';
+import { acaoTalentumDaTransicao, type AcaoTalentum } from '../domain/talentumPausaDoPaciente';
+import type { EscopoDaCompletude } from '../domain/PatientCompleteness';
+import type { PatientStatusPorts, StatusTx } from './ports/patientStatusPorts';
 
 /**
  * PatientStatusWriter — a TRANSIÇÃO DE ESTADO do paciente, e só ela.
@@ -18,6 +23,10 @@ import { countVivasForPatient } from '../infrastructure/VacancyAllocationProbe';
  * mesmo motivo, e o mesmo molde, de `PatientRelatedWriter`. Nada de comportamento mudou de
  * lugar: mesma transação, mesma trava `FOR UPDATE`, mesma consulta a
  * `patient_status_transitions`, mesmo SET montado, mesma linha de log sem a nota.
+ *
+ * Por ports (estado-automatico-do-paciente, D7): `createPatientStatusWriter(ports)` recebe a transação, a leitura de
+ * completude (com escopo) e a sonda de alocação viva; este arquivo não importa infraestrutura. A composição
+ * (`interfaces/composition/patientStatusComposition.ts`) monta o escritor real com os adapters Pg.
  *
  * `PatientService.moveStatus` continua sendo a porta (é ela que o controller e o Kanban
  * conhecem) e é lá que mora o `changeSource` padrão — repetir o default aqui criaria um ramo
@@ -98,20 +107,27 @@ export class PatientStatusLockedByAllocationError extends Error {
   }
 }
 
-/** Origens que podem tirar o paciente do funil de admissão para SEARCHING (D469). */
-const FUNNEL_TO_SEARCHING_SOURCES: ReadonlyArray<PatientChangeSource> = [
-  'vacancy_launch',
-  'recruitment_activation',
-  'kanban',
-];
+/**
+ * O estado pedido é definido pelo fluxo automático, não por quem pediu (F5, D6/D9): a origem não tem o destino na coluna `destinos`
+ * da tabela (`POLITICA_POR_ORIGEM`) — `admin_panel` não pede SEARCHING/REPLACEMENT/ACTIVE e `kanban` não pede nada. O controller
+ * devolve 422 `PATIENT_STATUS_NOT_MANUAL`. Só código e nomes de estado, nenhum texto clínico.
+ */
+export class PatientStatusNotManualError extends Error {
+  readonly code = 'PATIENT_STATUS_NOT_MANUAL';
+  constructor(readonly to: PatientStatus, readonly changeSource: PatientChangeSource) {
+    super(`Patient status ${to} is defined by the automatic flow and cannot be requested by ${changeSource}`);
+    this.name = 'PatientStatusNotManualError';
+  }
+}
 
 /**
- * Guarda D469 (02/10/2026; antes D434/DX-6.4): funil→SEARCHING é ato intencional — foguete, envio à
- * Talentum ou arrasto no Kanban. O PUT /status do select da ficha (admin_panel) e a derivação
- * (system) continuam recusados com o 422. Não depende da FSM: o writer a checa ANTES de consultá-la.
+ * Guarda D469 (02/10/2026; antes D434/DX-6.4): funil→SEARCHING é ato intencional. QUEM pode é a tabela de origem
+ * (`POLITICA_POR_ORIGEM.saiDoFunilParaSearching`, dono único): só o foguete. O lançamento
+ * da vaga NÃO move (D1); o select da ficha (admin_panel) e a derivação (system) continuam recusados com o 422. Não depende
+ * da FSM: o writer a checa ANTES de consultá-la.
  */
 function funilParaSearchingBarrado(from: PatientStatus | null, to: PatientStatus, changeSource: PatientChangeSource): boolean {
-  return isFunnelToSearchingTransition(from, to) && !FUNNEL_TO_SEARCHING_SOURCES.includes(changeSource);
+  return isFunnelToSearchingTransition(from, to) && !saiDoFunilParaSearching(changeSource);
 }
 
 /**
@@ -134,9 +150,9 @@ export type AvaliacaoDaTroca =
 
 /**
  * O ÚNICO lugar que responde "esta troca de estado passa pela guarda de transição/permissão?".
- * O writer (PUT /status) e a lista de destinos (GET /status-options) chamam esta função — a lista
- * e o PUT nunca têm duas implementações da regra (spec 051, A6). Ordem preservada de antes: D469
- * primeiro, depois a FSM, e só então a célula.
+ * O writer (PUT /status) e a lista de ações (F3, `ListPatientStatusActionsUseCase`) chamam esta função — a lista
+ * e a escrita nunca têm duas implementações da regra (spec 051, A6). Ordem preservada de antes: D469
+ * primeiro, depois a FSM, e só então a célula. (A lista de destinos `GET /status-options` saiu na F5.)
  */
 export function avaliarTroca(e: {
   from: PatientStatus | null;
@@ -192,6 +208,11 @@ export interface MoveStatusOptions {
    * (troca fora da FSM → 422). `[]` ≠ `null`: ator conhecido sem célula → 403. Nunca `?? []`.
    */
   cells?: readonly string[] | null;
+  /**
+   * Serviço contratado clicado (só o foguete passa: `{ kind: 'servico', serviceId }`). Só vale quando a tabela de origem
+   * manda medir por serviço (`escopoDaCompletude: 'servico'`); ausente = o paciente inteiro.
+   */
+  escopo?: EscopoDaCompletude;
 }
 
 /**
@@ -211,133 +232,170 @@ export interface MoveStatusOptions {
  * derivação, dentro do escritor do itinerário) — sem `BEGIN`/`COMMIT` próprio; `withActorContext`
  * reusaria o client fixado na request e comitaria no meio. Sem ele, a transação própria de sempre.
  */
-export async function movePatientStatus(
+const PACIENTE_INTEIRO: EscopoDaCompletude = { kind: 'paciente' };
+const SERVICOS_COM_VAGA_VIVA: EscopoDaCompletude = { kind: 'servicos_com_vaga_viva' };
+
+/**
+ * Onde medir a completude desta troca. QUEM manda é a tabela de origem (`escopoDaCompletudeDe`); o `serviceId` só viaja em
+ * `opts.escopo` e só vale quando a tabela diz `servico` — o chamador não escolhe o escopo, só informa o serviço (D2).
+ * Sem serviço informado, mede o paciente inteiro (o mais estrito).
+ */
+export const escopoDaTroca = (opts: Pick<MoveStatusOptions, 'changeSource' | 'escopo'>): EscopoDaCompletude => {
+  const escopoDaOrigem = escopoDaCompletudeDe(opts.changeSource);
+  if (escopoDaOrigem === 'servicos_com_vaga_viva') return SERVICOS_COM_VAGA_VIVA;
+  return escopoDaOrigem === 'servico' && opts.escopo?.kind === 'servico' ? opts.escopo : PACIENTE_INTEIRO;
+};
+
+/**
+ * O que o escritor devolve. `talentum` (P6): as vagas que a transição marcou PENDING_PAUSE/PENDING_RESUME na mesma transação
+ * (`null` = a transição não cruza o conjunto que pausa). Quem chama o escritor ENVIA ao Talentum depois do COMMIT
+ * (`dispatchTalentumPause`); se o envio se perder, a marcação segue visível na lista manual.
+ */
+export interface PatientStatusMoved {
+  id: string;
+  status: PatientStatus;
+  talentum: { acao: AcaoTalentum; vacancyIds: string[] } | null;
+}
+
+export type MovePatientStatus = (
   patientId: string,
   status: PatientStatus,
   opts: MoveStatusOptions,
-  txClient?: PoolClient,
-): Promise<{ id: string; status: PatientStatus }> {
-  if (!isPatientStatus(status)) {
-    throw new Error(`Invalid patient status: ${String(status)}`);
-  }
-  const goingOnHold = status === 'ON_HOLD';
-  if (goingOnHold && !opts.onHoldReason) {
-    throw new OnHoldReasonRequiredError();
-  }
+  txClient?: StatusTx,
+) => Promise<PatientStatusMoved>;
 
-  const body = async (client: PoolClient): Promise<{ id: string; status: PatientStatus }> => {
-    const current = await client.query<{ status: PatientStatus | null }>(
-      'SELECT status FROM patients WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
-      [patientId],
-    );
-    if ((current.rowCount ?? 0) === 0 || current.rows.length === 0) {
-      throw new Error(`Patient not found: ${patientId}`);
+/** Monta o escritor sobre os ports (E2: a composição na borda entrega o real; os testes entregam dublês). */
+export function createPatientStatusWriter(ports: PatientStatusPorts): MovePatientStatus {
+  return async (patientId, status, opts, txClient) => {
+    if (!isPatientStatus(status)) {
+      throw new Error(`Invalid patient status: ${String(status)}`);
     }
-    const from = current.rows[0].status;
-
-    // D489/D530: troca MANUAL (admin_panel/kanban) é recusada com alocação VIVA no itinerário. Mesma
-    // transação e mesmo lock `FOR UPDATE` acima (sem corrida com a derivação). Origem interna
-    // (`system` da derivação, funil, ativação) não passa por aqui. Reenviar o estado atual não é troca.
-    if (from !== status && isManualChangeSource(opts.changeSource)) {
-      const vivas = await countVivasForPatient(client, patientId);
-      if (vivas > 0) throw new PatientStatusLockedByAllocationError(vivas);
+    // F5: a tabela de origem diz quem pode pedir o destino — antes de abrir transação, da trava de alocação e da FSM.
+    if (!origemPodePedirDestino(opts.changeSource, status)) {
+      throw new PatientStatusNotManualError(status, opts.changeSource);
+    }
+    const goingOnHold = status === 'ON_HOLD';
+    if (goingOnHold && !opts.onHoldReason) {
+      throw new OnHoldReasonRequiredError();
     }
 
-    let foraDoFluxo = false;
-    // A tabela decide sempre que UMA DAS PONTAS é clínica — não só o alvo. Validar só o alvo
-    // deixava a DEMOÇÃO passar sem 422 (arrastar o card de ACTIVE para a coluna de admissão),
-    // e o mesmo UPDATE ainda apagava motivo e nota. Movimento DENTRO do funil (as duas pontas
-    // em SOLICITANTE/ADMISSION/PENDING_ADMISSION) continua livre, como sempre foi.
-    if (trocaPassaPelaGuarda(from, status)) {
-      // D469 antes de qualquer consulta (não precisa da FSM); depois FSM + célula do destino
-      // (spec 051), tudo em `avaliarTroca` — a mesma função que a lista de destinos usa.
-      if (funilParaSearchingBarrado(from, status, opts.changeSource)) {
-        throw new PatientStatusTransitionError(from, status);
-      }
-      const allowed = await client.query(
-        'SELECT 1 FROM patient_status_transitions WHERE from_status = $1 AND to_status = $2',
-        [from, status],
+    const body = async (client: StatusTx): Promise<PatientStatusMoved> => {
+      const current = await client.query<{ status: PatientStatus | null }>(
+        'SELECT status FROM patients WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
+        [patientId],
       );
-      const avaliacao = avaliarTroca({
-        from, to: status, naFsm: allowed.rows.length > 0, cells: opts.cells ?? null, changeSource: opts.changeSource,
-      });
-      if (avaliacao.resultado === 'recusa_por_permissao') {
-        throw new PatientStatusPermissionError(from, status, avaliacao.celula);
+      if ((current.rowCount ?? 0) === 0 || current.rows.length === 0) {
+        throw new Error(`Patient not found: ${patientId}`);
       }
-      if (avaliacao.resultado === 'recusa_de_transicao') {
-        throw new PatientStatusTransitionError(from, status);
+      const from = current.rows[0].status;
+
+      // D489/D530: troca MANUAL (admin_panel/kanban) é recusada com alocação VIVA no itinerário. Mesma
+      // transação e mesmo lock `FOR UPDATE` acima (sem corrida com a derivação). Origem interna
+      // (`system` da derivação, funil, ativação) não passa por aqui. Reenviar o estado atual não é troca.
+      if (from !== status && isManualChangeSource(opts.changeSource)) {
+        const vivas = await ports.allocation.countLive(client, patientId);
+        if (vivas > 0) throw new PatientStatusLockedByAllocationError(vivas);
       }
-      foraDoFluxo = avaliacao.resultado === 'fora_do_fluxo_permitida';
-    }
 
-    // Saída MANUAL de SUSPENDED exige motivo (decisão do Gabriel 29/09/2026). Roda DEPOIS da FSM
-    // (mesma ordem do bloco de completude logo abaixo, e pelo mesmo motivo: uma transição que nem
-    // existe diz "não existe", não "falta motivo") e SÓ para admin_panel/kanban — chamada de
-    // SISTEMA (derivação) nunca sai de SUSPENDED hoje, do mesmo jeito que `changeSource: 'system'`
-    // nunca disparou OnHoldReasonRequiredError.
-    const leavingSuspendedManually =
-      from === 'SUSPENDED' && status !== 'SUSPENDED' &&
-      isManualChangeSource(opts.changeSource);
-    if (leavingSuspendedManually && !opts.suspensionExitReason) {
-      throw new SuspensionExitReasonRequiredError();
-    }
-    // Motivo mandado fora da saída de SUSPENDED é IGNORADO na trilha (não grava motivo solto) —
-    // mesmo padrão de `onHoldReason`, que a UPDATE abaixo zera quando `status !== 'ON_HOLD'`.
-    const statusReasonToRecord = from === 'SUSPENDED' && status !== 'SUSPENDED' ? (opts.suspensionExitReason ?? null) : null;
+      let foraDoFluxo = false;
+      // A tabela decide sempre que UMA DAS PONTAS é clínica — não só o alvo. Validar só o alvo
+      // deixava a DEMOÇÃO passar sem 422 (arrastar o card de ACTIVE para a coluna de admissão),
+      // e o mesmo UPDATE ainda apagava motivo e nota. Movimento DENTRO do funil (as duas pontas
+      // em SOLICITANTE/ADMISSION/PENDING_ADMISSION) continua livre, como sempre foi.
+      if (trocaPassaPelaGuarda(from, status)) {
+        // D469 antes de qualquer consulta (não precisa da FSM); depois FSM + célula do destino
+        // (spec 051), tudo em `avaliarTroca` — a mesma função que a lista de destinos usa.
+        if (funilParaSearchingBarrado(from, status, opts.changeSource)) {
+          throw new PatientStatusTransitionError(from, status);
+        }
+        const allowed = await client.query(
+          'SELECT 1 FROM patient_status_transitions WHERE from_status = $1 AND to_status = $2',
+          [from, status],
+        );
+        const avaliacao = avaliarTroca({
+          from, to: status, naFsm: allowed.rows.length > 0, cells: opts.cells ?? null, changeSource: opts.changeSource,
+        });
+        if (avaliacao.resultado === 'recusa_por_permissao') {
+          throw new PatientStatusPermissionError(from, status, avaliacao.celula);
+        }
+        if (avaliacao.resultado === 'recusa_de_transicao') {
+          throw new PatientStatusTransitionError(from, status);
+        }
+        foraDoFluxo = avaliacao.resultado === 'fora_do_fluxo_permitida';
+      }
 
-    // Pré-condição de COMPLETUDE (decisão do Gabriel 07/09). Roda DEPOIS da FSM de propósito:
-    // uma transição que nem existe deve dizer "não existe", não "falta horário".
-    //
-    // Só quando o status MUDA — reenviar o status atual (a tela salva o select sem alterar nada)
-    // não pode virar erro por um dado que já estava faltando antes.
-    //
-    // ACTIVE cobra o checklist bloqueante inteiro: até aqui, arrastar o card para a coluna
-    // "Activo" no Kanban ativava sem checklist NENHUM, furando inclusive o ADDRESS que barra o
-    // botão "Activar" desde a D255. SEARCHING/REPLACEMENT cobram só o horário.
-    if (from !== status) {
-      const required = blockingCodesForStatusChange(status, foraDoFluxo, from);
-      if (required.length > 0) {
-        const { missing } = await loadPatientCompleteness(client, patientId);
-        const faltando = required.filter((code) => missing.includes(code));
-        if (faltando.length > 0) {
-          throw new PatientStatusNotReadyError(status, faltando);
+      // Saída MANUAL de SUSPENDED exige motivo (decisão do Gabriel 29/09/2026). Roda DEPOIS da FSM
+      // (mesma ordem do bloco de completude logo abaixo, e pelo mesmo motivo: uma transição que nem
+      // existe diz "não existe", não "falta motivo") e SÓ para admin_panel/kanban — chamada de
+      // SISTEMA (derivação) nunca sai de SUSPENDED hoje, do mesmo jeito que `changeSource: 'system'`
+      // nunca disparou OnHoldReasonRequiredError.
+      const leavingSuspendedManually =
+        from === 'SUSPENDED' && status !== 'SUSPENDED' &&
+        isManualChangeSource(opts.changeSource);
+      if (leavingSuspendedManually && !opts.suspensionExitReason) {
+        throw new SuspensionExitReasonRequiredError();
+      }
+      // Motivo mandado fora da saída de SUSPENDED é IGNORADO na trilha (não grava motivo solto) —
+      // mesmo padrão de `onHoldReason`, que a UPDATE abaixo zera quando `status !== 'ON_HOLD'`.
+      const statusReasonToRecord = from === 'SUSPENDED' && status !== 'SUSPENDED' ? (opts.suspensionExitReason ?? null) : null;
+
+      // Pré-condição de COMPLETUDE (decisão do Gabriel 07/09). Roda DEPOIS da FSM de propósito:
+      // uma transição que nem existe deve dizer "não existe", não "falta horário".
+      //
+      // Só quando o status MUDA — reenviar o status atual (a tela salva o select sem alterar nada)
+      // não pode virar erro por um dado que já estava faltando antes.
+      //
+      // ACTIVE cobra o checklist bloqueante inteiro: até aqui, arrastar o card para a coluna
+      // "Activo" no Kanban ativava sem checklist NENHUM, furando inclusive o ADDRESS que barra o
+      // botão "Activar" desde a D255. SEARCHING/REPLACEMENT cobram só o horário.
+      if (from !== status) {
+        const required = blockingCodesForStatusChange(status, from);
+        if (required.length > 0) {
+          const missing = await ports.completeness.missingFor(client, patientId, escopoDaTroca(opts));
+          const faltando = required.filter((code) => missing.includes(code));
+          if (faltando.length > 0) {
+            throw new PatientStatusNotReadyError(status, faltando);
+          }
         }
       }
-    }
 
-    // SET montado (mesmo molde de `updatePatientSection` acima): a nota só entra no UPDATE
-    // quando o chamador a MANDOU, ou quando o paciente SAI de ON_HOLD (limpeza, lex C7.1-e).
-    // Sem isto, reordenar o motivo de um ON_HOLD já existente destruía o texto clínico.
-    // `onHoldReason` é garantido em ON_HOLD (OnHoldReasonRequiredError lá em cima) — nenhum
-    // `?? null` aqui, que seria um ramo inalcançável.
-    const values: unknown[] = [patientId, status, goingOnHold ? opts.onHoldReason : null];
-    const sets = ['status = $2', 'on_hold_reason = $3'];
-    if (!goingOnHold || opts.onHoldNote !== undefined) {
-      values.push(goingOnHold ? opts.onHoldNote ?? null : null);
-      sets.push(`on_hold_note = $${values.length}`);
-    }
+      // SET montado (mesmo molde de `updatePatientSection` acima): a nota só entra no UPDATE
+      // quando o chamador a MANDOU, ou quando o paciente SAI de ON_HOLD (limpeza, lex C7.1-e).
+      // Sem isto, reordenar o motivo de um ON_HOLD já existente destruía o texto clínico.
+      // `onHoldReason` é garantido em ON_HOLD (OnHoldReasonRequiredError lá em cima) — nenhum
+      // `?? null` aqui, que seria um ramo inalcançável.
+      const values: unknown[] = [patientId, status, goingOnHold ? opts.onHoldReason : null];
+      const sets = ['status = $2', 'on_hold_reason = $3'];
+      if (!goingOnHold || opts.onHoldNote !== undefined) {
+        values.push(goingOnHold ? opts.onHoldNote ?? null : null);
+        sets.push(`on_hold_note = $${values.length}`);
+      }
 
-    // Troca fora do fluxo (spec 051 §4): o SERVIDOR marca `*_override` — o corpo da rota nunca
-    // aceita esse valor (zod), então o cliente não se declara override.
-    const changeSourceGravado = recordedChangeSource(opts.changeSource, foraDoFluxo);
-    await client.query("SELECT set_config('app.change_source', $1, true)", [changeSourceGravado]);
-    // Motivo de saída de SUSPENDED e ator: mesmo molde do change_source acima, GUCs próprios que
-    // os triggers da 254/255 leem via NULLIF(…, '') — string vazia = ausente = NULL na history
-    // (migration 486). Duas queries próprias (não uma combinada) para não mudar o formato que os
-    // testes já conferem em `set_config('app.change_source'`.
-    await client.query("SELECT set_config('app.status_reason', $1, true)", [statusReasonToRecord ?? '']);
-    await client.query("SELECT set_config('app.actor_uid', $1, true)", [opts.actorUid ?? '']);
-    await client.query(
-      `UPDATE patients SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $1`,
-      values,
-    );
-    // Trilha SEM a nota: from/to/motivo/origem. O texto é clínico restrito (D211.2). NUNCA o
-    // actorUid (nem aqui) — ele só viaja pelo set_config acima, direto para a history.
-    functions.logger.info('patient_status.moved', {
-      patientId, from, to: status, onHoldReason: goingOnHold ? opts.onHoldReason : null, changeSource: changeSourceGravado,
-      suspensionExitReason: statusReasonToRecord,
-    });
-    return { id: patientId, status };
+      // Troca fora do fluxo (spec 051 §4): o SERVIDOR marca `*_override` — o corpo da rota nunca
+      // aceita esse valor (zod), então o cliente não se declara override.
+      const changeSourceGravado = recordedChangeSource(opts.changeSource, foraDoFluxo);
+      await client.query("SELECT set_config('app.change_source', $1, true)", [changeSourceGravado]);
+      // Motivo de saída de SUSPENDED e ator: mesmo molde do change_source acima, GUCs próprios que
+      // os triggers da 254/255 leem via NULLIF(…, '') — string vazia = ausente = NULL na history
+      // (migration 486). Duas queries próprias (não uma combinada) para não mudar o formato que os
+      // testes já conferem em `set_config('app.change_source'`.
+      await client.query("SELECT set_config('app.status_reason', $1, true)", [statusReasonToRecord ?? '']);
+      await client.query("SELECT set_config('app.actor_uid', $1, true)", [opts.actorUid ?? '']);
+      await client.query(
+        `UPDATE patients SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $1`,
+        values,
+      );
+      // Trilha SEM a nota: from/to/motivo/origem. O texto é clínico restrito (D211.2). NUNCA o
+      // actorUid (nem aqui) — ele só viaja pelo set_config acima, direto para a history.
+      functions.logger.info('patient_status.moved', {
+        patientId, from, to: status, onHoldReason: goingOnHold ? opts.onHoldReason : null, changeSource: changeSourceGravado,
+        suspensionExitReason: statusReasonToRecord,
+      });
+      // P6: a pausa/retomada no Talentum acompanha a transição, na MESMA transação (o feed segue o paciente por join).
+      const acao = acaoTalentumDaTransicao(from, status);
+      const vacancyIds = acao ? await ports.talentum.mark(client, patientId, acao) : [];
+      return { id: patientId, status, talentum: acao ? { acao, vacancyIds } : null };
+    };
+    return txClient ? body(txClient) : ports.transaction.run(body);
   };
-  return txClient ? body(txClient) : inPatientTransaction(body);
 }

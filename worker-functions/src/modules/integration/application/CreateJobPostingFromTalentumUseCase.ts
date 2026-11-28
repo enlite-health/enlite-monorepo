@@ -37,6 +37,11 @@ export interface CreateJobPostingFromTalentumInput {
   name: string;
 }
 
+/** Resultado da busca externa feita antes da transação (`prefetch`). */
+export interface CreateJobPostingFromTalentumPrefetch {
+  prescreeningId: string | null;
+}
+
 export interface CreateJobPostingFromTalentumResult {
   created: boolean;
   skipped: boolean;
@@ -81,9 +86,20 @@ export class CreateJobPostingFromTalentumUseCase {
     this.auditRepo = new JobPostingAuditRepository();
   }
 
+  /**
+   * Busca externa (Secret Manager + API do Talentum) para rodar ANTES de abrir a transação do processador da inbox.
+   * Mesma chamada de antes (T-095-30): só muda de lugar. Se a vaga já existe, nem chama (o `execute` sai no anti-loop).
+   */
+  async prefetch(data: CreateJobPostingFromTalentumInput): Promise<CreateJobPostingFromTalentumPrefetch> {
+    const existing = await this.pool.query<{ id: string }>('SELECT id FROM job_postings WHERE talentum_project_id = $1', [data._id]);
+    if (existing.rows.length > 0) return { prescreeningId: null };
+    return { prescreeningId: await this.resolvePrescreeningId(data._id) };
+  }
+
   async execute(
     data: CreateJobPostingFromTalentumInput,
     environment: string,
+    prefetched?: CreateJobPostingFromTalentumPrefetch,
   ): Promise<CreateJobPostingFromTalentumResult> {
     console.log(
       `[CreateJobPostingFromTalentum] Received event — talentum_project_id=${data._id} ` +
@@ -105,7 +121,8 @@ export class CreateJobPostingFromTalentumUseCase {
     }
 
     // ── 1b. `_id` do prescreening: o webhook de resposta só traz ele (≠ talentum_project_id em 98%) ──
-    const prescreeningId = await this.resolvePrescreeningId(data._id);
+    // Com `prefetched` (processador da inbox) NÃO há HTTP aqui: a transação só grava.
+    const prescreeningId = prefetched ? prefetched.prescreeningId : await this.resolvePrescreeningId(data._id);
 
     // ── 2. Extrair case_number e vacancy_number do título Talentum ───
     // T063: parser compartilhado — tolera "CASO N[-M]" (legado) e "EN N#M" / "N#M" (novo).

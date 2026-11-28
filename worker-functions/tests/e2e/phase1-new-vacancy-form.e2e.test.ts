@@ -358,28 +358,33 @@ describe('Phase1 — New Vacancy Form', () => {
       expect(rows[0]!.status).toBe('PENDING_ACTIVATION');
     });
 
-    it('creates vacancy with PENDING_ACTIVATION when status is empty string', async () => {
+    it('status vazio no corpo → 400 VACANCY_STATUS_NOT_WRITABLE (ninguém grava status; nada é criado)', async () => {
+      const antes = (await pool.query(`SELECT count(*)::int AS n FROM job_postings WHERE case_number = 77201`)).rows[0].n;
       const res = await api.post(
         '/api/admin/vacancies',
         { patient_id: patientForStatusTests, case_number: 77201, status: '' },
         auth(),
       );
 
-      expect(res.status).toBe(201);
-      expect(res.data.data.status).toBe('PENDING_ACTIVATION');
-      vacancyIds.push(res.data.data.id);
+      expect(res.status).toBe(400);
+      expect(res.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
+      const depois = (await pool.query(`SELECT count(*)::int AS n FROM job_postings WHERE case_number = 77201`)).rows[0].n;
+      expect(depois).toBe(antes);
     });
 
-    it('respects explicit status when provided and valid', async () => {
+    it('status explícito e válido no corpo → 400 VACANCY_STATUS_NOT_WRITABLE com es + pt-BR (antes: era respeitado)', async () => {
       const res = await api.post(
         '/api/admin/vacancies',
         { patient_id: patientForStatusTests, case_number: 77202, status: 'SEARCHING' },
         auth(),
       );
 
-      expect(res.status).toBe(201);
-      expect(res.data.data.status).toBe('SEARCHING');
-      vacancyIds.push(res.data.data.id);
+      expect(res.status).toBe(400);
+      expect(res.data.code).toBe('VACANCY_STATUS_NOT_WRITABLE');
+      expect(res.data.messages.es).toBeTruthy();
+      expect(res.data.messages['pt-BR']).toBeTruthy();
+      const { rows } = await pool.query(`SELECT 1 FROM job_postings WHERE case_number = 77202`);
+      expect(rows).toHaveLength(0);
     });
   });
 

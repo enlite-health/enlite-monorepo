@@ -69,6 +69,7 @@ export { JobsController } from './interfaces/controllers/JobsController';
 export { WorkerDocumentsMeController } from './interfaces/controllers/WorkerDocumentsMeController';
 export { AdminWorkerDocumentsController } from './interfaces/controllers/AdminWorkerDocumentsController';
 export { WorkerAdditionalDocsMeController } from './interfaces/controllers/WorkerAdditionalDocsMeController';
+export { WorkerProfilePhotoMeController } from './interfaces/controllers/WorkerProfilePhotoMeController';
 export { AdminAdditionalDocsController } from './interfaces/controllers/AdminAdditionalDocsController';
 export { createWorkerDocumentsRoutes } from './interfaces/routes/workerDocumentsRoutes';
 export { createAdminWorkerDocumentsRoutes } from './interfaces/routes/adminWorkerDocumentsRoutes';
