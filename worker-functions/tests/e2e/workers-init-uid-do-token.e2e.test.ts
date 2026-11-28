@@ -172,13 +172,13 @@ describe('POST /api/workers/init — uid/email só do token (H2/D650)', () => {
 
     expect(init.status).toBe(200);
     expect(init.data.data.status).toBe('claim_pending');
-    expect(init.data.data.candidateWorkerId).toBe(hId);
+    expect(init.data.data).not.toHaveProperty('candidateWorkerId'); // B4: o id interno da ficha não sai; o confirm a acha pelo desafio do uid
     expect(init.data.data.verificationSid).toMatch(/^TEST_/); // bypass: nenhum SMS real
     expect(await authUidOf(hId)).toBe(fichaUidH); // nada religado sem o código
 
     const confirm = await api.post(
       '/api/auth/claim/confirm',
-      { verificationSid: init.data.data.verificationSid, otp: OTP, candidateWorkerId: hId },
+      { verificationSid: init.data.data.verificationSid, otp: OTP },
       auth,
     );
     expect(confirm.status).toBe(200);

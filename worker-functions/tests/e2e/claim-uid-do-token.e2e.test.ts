@@ -91,7 +91,7 @@ describe('POST /api/auth/claim/{start,confirm} — token obrigatório, uid/email
     expect(JSON.stringify(start.data)).not.toContain('verificationSid');
 
     const confirm = await api.post('/api/auth/claim/confirm', {
-      verificationSid: 'TEST_nao-importa', otp: OTP, authUid: uidA, email: emailA, candidateWorkerId: fichaId,
+      verificationSid: 'TEST_nao-importa', otp: OTP, authUid: uidA, email: emailA,
     }, anon());
     expect(confirm.status).toBe(401);
     expect(await ficha()).toEqual({ auth_uid: fichaUid, email: fichaEmail });
@@ -119,7 +119,7 @@ describe('POST /api/auth/claim/{start,confirm} — token obrigatório, uid/email
 
     const confirm = await api.post(
       '/api/auth/claim/confirm',
-      { verificationSid: 'TEST_nao-importa', otp: OTP, authUid: uidB, email: emailA, candidateWorkerId: fichaId },
+      { verificationSid: 'TEST_nao-importa', otp: OTP, authUid: uidB, email: emailA },
       await bearer(uidA, emailA),
     );
     expect(confirm.status).toBe(403);
@@ -129,16 +129,16 @@ describe('POST /api/auth/claim/{start,confirm} — token obrigatório, uid/email
   it('(d) feliz: start (sid TEST_, sem canal real) → confirm grava o uid/email do TOKEN; e-mail forjado do body é ignorado', async () => {
     const start = await api.post('/api/auth/claim/start', { ...bodyUid(uidA), email: emailA, phone: `+${phoneFicha}` }, await bearer(uidA, emailA));
     expect(start.status).toBe(200);
-    const { candidateWorkerId, verificationSid } = start.data.data as {
-      candidateWorkerId: string; verificationSid: string; phoneMasked: string;
-    };
-    expect(candidateWorkerId).toBe(fichaId);
+    const { verificationSid } = start.data.data as { verificationSid: string; phoneMasked: string };
+    // B4: a resposta não entrega o id interno da ficha; o confirm a acha pelo desafio do mesmo uid.
+    expect(JSON.stringify(start.data)).not.toContain('candidateWorkerId');
+    expect(JSON.stringify(start.data)).not.toContain(fichaId);
     // PROVA de canal: sid sintético do bypass. Um sid real do Twilio começa com "VE".
     expect(verificationSid).toMatch(/^TEST_/);
 
     const confirm = await api.post(
       '/api/auth/claim/confirm',
-      { ...bodyUid(uidA), verificationSid, otp: OTP, email: `forjado-${stamp}@exemplo.test`, candidateWorkerId: fichaId },
+      { ...bodyUid(uidA), verificationSid, otp: OTP, email: `forjado-${stamp}@exemplo.test` },
       await bearer(uidA, emailA),
     );
     expect(confirm.status).toBe(200);
@@ -148,12 +148,12 @@ describe('POST /api/auth/claim/{start,confirm} — token obrigatório, uid/email
     if (!EMULATOR) expect(row.auth_uid).toBe(uidA);
   });
 
-  it('(e) DP-21: código do telefone da ficha Z não reivindica a ficha Y → 400 INVALID_OTP e Y intacta', async () => {
+  it('(e) DP-21: código do telefone da ficha Z não reivindica a ficha Y, mesmo com o id de Y no corpo (ignorado) → Y intacta', async () => {
     const uidY = `anacareimport_dp21y_${stamp}`;
     const emailY = `ficha-y-${stamp}@exemplo.test`;
     const fichaY = await fichaImportada(uidY, emailY, `54914${digits8}`);
     const phoneZ = `54913${digits8}`; // o telefone que o atacante controla
-    await fichaImportada(`anacareimport_dp21z_${stamp}`, `ficha-z-${stamp}@exemplo.test`, phoneZ);
+    const fichaZ = await fichaImportada(`anacareimport_dp21z_${stamp}`, `ficha-z-${stamp}@exemplo.test`, phoneZ);
     const uidAtacante = `uid-atacante-${stamp}`;
     const emailAtacante = `atacante-${stamp}@exemplo.test`;
 
@@ -167,8 +167,10 @@ describe('POST /api/auth/claim/{start,confirm} — token obrigatório, uid/email
       { ...bodyUid(uidAtacante), verificationSid, otp: OTP, candidateWorkerId: fichaY },
       await bearer(uidAtacante, emailAtacante),
     );
-    expect(confirm.status).toBe(400);
-    expect(confirm.data.error).toBe('INVALID_OTP');
+    // B4: a ficha sai do desafio do uid (telefone Z), não do corpo: o id de Y é ignorado, quem muda é Z e Y segue intacta.
+    expect(confirm.status).toBe(200);
+    const z = (await pool.query('SELECT auth_uid FROM workers WHERE id = $1', [fichaZ])).rows[0];
+    if (!EMULATOR) expect(z.auth_uid).toBe(uidAtacante);
     const y = (await pool.query('SELECT auth_uid, email FROM workers WHERE id = $1', [fichaY])).rows[0];
     expect(y).toEqual({ auth_uid: uidY, email: emailY });
   });
