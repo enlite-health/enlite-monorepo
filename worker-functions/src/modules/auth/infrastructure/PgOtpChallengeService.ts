@@ -16,6 +16,7 @@ import type { TwilioAuthTemplateSender } from './TwilioAuthTemplateSender';
 /** Tentativas erradas por desafio; a N-ésima cancela. O quadro completo de limites é do cartão de limites (T-F3c-111). */
 const MAX_ATTEMPTS = 5;
 const MIN_PEPPER_LENGTH = 32;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Limites de ENVIO de código, contados NO BANCO (`otp_challenges`): sobrevivem a reinício e valem para N instâncias. Não
@@ -155,6 +156,8 @@ export class PgOtpChallengeService implements OtpChallengePort {
 
   async check(input: OtpCheckInput): Promise<OtpCheckOutcome> {
     this.assertPepper();
+    // Id torto não chega ao Postgres (22P02): INVALID_OTP, sem dizer se o id existe.
+    if (!UUID_RE.test(input.challengeId)) return { ok: false, code: 'INVALID_OTP' };
 
     // 1. A tentativa é CONTADA ANTES de comparar, num único UPDATE atômico com o teto na própria condição: N conferências
     //    paralelas não passam de MAX_ATTEMPTS (compare-depois-incrementa deixaria todas passarem). O telefone da ficha (DP-21)
