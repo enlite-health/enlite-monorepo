@@ -8,7 +8,7 @@ vi.mock('@infrastructure/http/AuthClaimApiService', () => ({
 }));
 
 async function confirmWith(lgpdOptIn?: boolean) {
-  const { result } = renderHook(() => useClaimConfirm('VE_1', 'cand-1', 'uid-1', 'a@exemplo.test', lgpdOptIn));
+  const { result } = renderHook(() => useClaimConfirm('VE_1', 'uid-1', 'a@exemplo.test', lgpdOptIn));
   await act(async () => { await result.current.confirm(' 123456 '); });
   return mockConfirmClaim.mock.calls[0][0] as Record<string, unknown>;
 }
@@ -20,7 +20,11 @@ describe('useClaimConfirm: aceite explícito', () => {
   });
 
   it('caixa marcada: o corpo do confirm leva lgpdOptIn:true', async () => {
-    expect(await confirmWith(true)).toMatchObject({ verificationSid: 'VE_1', otp: '123456', candidateWorkerId: 'cand-1', lgpdOptIn: true });
+    expect(await confirmWith(true)).toMatchObject({ verificationSid: 'VE_1', otp: '123456', lgpdOptIn: true });
+  });
+
+  it('o corpo do confirm leva só os campos do requisitante (a ficha o servidor acha pelo desafio)', async () => {
+    expect(Object.keys(await confirmWith(true)).sort()).toEqual(['authUid', 'email', 'lgpdOptIn', 'otp', 'verificationSid']);
   });
 
   it('sem caixa (login Google, perfil): o corpo NÃO leva lgpdOptIn', async () => {

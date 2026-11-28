@@ -18,7 +18,7 @@ describe('WorkerAccountCheckPage (1º login com Google) — aceite no claim', ()
   beforeEach(() => { vi.clearAllMocks(); clearInitOutcome(); });
 
   it('o código só confirma com a caixa do aceite marcada, e o confirm leva lgpdOptIn: true', async () => {
-    handOffInitOutcome({ kind: 'claim_pending', candidateWorkerId: 'c-1', phoneMasked: '•••1243', verificationSid: 'VE1' });
+    handOffInitOutcome({ kind: 'claim_pending', phoneMasked: '•••1243', verificationSid: 'VE1' });
     render(<WorkerAccountCheckPage />);
     await expectConsentRequiredAndSent();
   });

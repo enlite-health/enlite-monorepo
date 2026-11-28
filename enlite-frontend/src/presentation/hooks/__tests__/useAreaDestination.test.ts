@@ -62,9 +62,9 @@ describe('useAreaDestination', () => {
     });
 
     it('claim_pending → WORKER_ACCOUNT_CHECK_ROUTE e o resultado (sid, máscara) entregue à tela, sem reler áreas', async () => {
-      initWorker.mockResolvedValue({ status: 'claim_pending', candidateWorkerId: 'w-9', phoneMasked: '•••1243', verificationSid: 'VE1' });
+      initWorker.mockResolvedValue({ status: 'claim_pending', phoneMasked: '•••1243', verificationSid: 'VE1' });
       expect(await resolve()).toBe(WORKER_ACCOUNT_CHECK_ROUTE);
-      expect(readInitOutcome()).toEqual({ kind: 'claim_pending', candidateWorkerId: 'w-9', phoneMasked: '•••1243', verificationSid: 'VE1' });
+      expect(readInitOutcome()).toEqual({ kind: 'claim_pending', phoneMasked: '•••1243', verificationSid: 'VE1' });
       expect(getMyAreas).toHaveBeenCalledTimes(1);
     });
 

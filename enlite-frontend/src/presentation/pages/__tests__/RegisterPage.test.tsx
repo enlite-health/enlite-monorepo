@@ -355,7 +355,6 @@ describe('RegisterPage', () => {
     it('abre ClaimOtpModal quando initWorker retorna claim_pending', async () => {
       mockInitWorker.mockResolvedValue({
         status: 'claim_pending',
-        candidateWorkerId: 'cand-001',
         phoneMasked: '+54 11 **** 5678',
         verificationSid: 'VS_abc',
       });
@@ -371,7 +370,6 @@ describe('RegisterPage', () => {
     it('a caixa do aceite marcada no cadastro chega ao modal do claim (o OTP não presume aceite)', async () => {
       mockInitWorker.mockResolvedValue({
         status: 'claim_pending',
-        candidateWorkerId: 'cand-001',
         phoneMasked: '+54 11 **** 5678',
         verificationSid: 'VS_abc',
       });
@@ -385,7 +383,6 @@ describe('RegisterPage', () => {
     it('navega para / quando OTP confirmado no modal', async () => {
       mockInitWorker.mockResolvedValue({
         status: 'claim_pending',
-        candidateWorkerId: 'cand-001',
         phoneMasked: '+54 11 **** 5678',
         verificationSid: 'VS_abc',
       });
@@ -402,7 +399,6 @@ describe('RegisterPage', () => {
     it('fecha modal sem navegar ao clicar em cancelar', async () => {
       mockInitWorker.mockResolvedValue({
         status: 'claim_pending',
-        candidateWorkerId: 'cand-001',
         phoneMasked: '+54 11 **** 5678',
         verificationSid: 'VS_abc',
       });
