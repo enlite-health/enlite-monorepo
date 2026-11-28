@@ -30,8 +30,11 @@ export interface MarkPhoneVerifiedInput {
 export interface IPhoneVerificationRepository {
   /** Lê o estado pela função derivada; `null` se a ficha não existe. */
   readState(workerId: string): Promise<PhoneVerificationReadModel | null>;
-  /** Grava a prova (e, se vier, o telefone) num UPDATE só, no `db` recebido (a transação de quem chama). */
-  markPhoneVerified(db: SqlRunner, input: MarkPhoneVerifiedInput): Promise<void>;
+  /**
+   * Grava a prova (e, se vier, o telefone) num UPDATE só, no `db` recebido (a transação de quem chama).
+   * `'PHONE_IN_USE'`: o número já pertence a outra conta (violação dos índices únicos de telefone); qualquer outro erro sobe.
+   */
+  markPhoneVerified(db: SqlRunner, input: MarkPhoneVerifiedInput): Promise<'ok' | 'PHONE_IN_USE'>;
   /** O `challengeId` existe como desafio próprio (`otp_challenges`)? Decide o método gravado (plano B não tem linha). */
   methodFor(challengeId: string): Promise<{ method: PhoneVerificationMethod; challengeId: string | null }>;
   /**

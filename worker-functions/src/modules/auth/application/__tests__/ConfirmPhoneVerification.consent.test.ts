@@ -88,3 +88,12 @@ describe('phone/confirm com aceite explícito', () => {
     }
   });
 });
+
+describe('phone/confirm — número já verificado em outra conta', () => {
+  it("markPhoneVerified devolve 'PHONE_IN_USE': o confirm responde PHONE_IN_USE", async () => {
+    const h = build(null);
+    h.verification.markPhoneVerified.mockResolvedValue('PHONE_IN_USE');
+    expect(await h.uc.execute(input)).toEqual({ ok: false, code: 'PHONE_IN_USE' });
+  });
+});
+

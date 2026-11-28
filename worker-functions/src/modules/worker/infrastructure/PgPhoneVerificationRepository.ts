@@ -8,6 +8,9 @@ import type {
   SqlRunner,
 } from '@modules/auth/ports/IPhoneVerificationRepository';
 
+const PG_UNIQUE_VIOLATION = '23505';
+const PHONE_UNIQUE_INDEXES = new Set(['idx_workers_phone_unique', 'uq_workers_phone_verified_now', 'uq_workers_phone_verified_otp_challenge']);
+
 /**
  * Único repositório que lê e grava `workers.phone_verified_*` no fluxo do celular verificado (AC-13). O estado sai SEMPRE da
  * função derivada do banco; aqui não existe regra própria de "verificado".
@@ -28,8 +31,10 @@ export class PgPhoneVerificationRepository implements IPhoneVerificationReposito
     return { state: row.state, phone: row.phone, verifiedAt: row.state === 'verified' ? row.verified_at : null };
   }
 
-  async markPhoneVerified(db: SqlRunner, input: MarkPhoneVerifiedInput): Promise<void> {
-    const res = await db.query(
+  async markPhoneVerified(db: SqlRunner, input: MarkPhoneVerifiedInput): Promise<'ok' | 'PHONE_IN_USE'> {
+    let res: Awaited<ReturnType<SqlRunner['query']>>;
+    try {
+      res = await db.query(
       `UPDATE workers
           SET phone = COALESCE($2, phone),
               phone_verified_normalized = public.normalize_phone_ar(COALESCE($2, phone)),
@@ -38,8 +43,15 @@ export class PgPhoneVerificationRepository implements IPhoneVerificationReposito
               phone_verified_otp_challenge_id = $4
         WHERE id = $1 AND merged_into_id IS NULL AND COALESCE($2, phone) IS NOT NULL`,
       [input.workerId, input.phoneNormalized ?? null, input.method, input.challengeId],
-    );
+      );
+    } catch (err: unknown) {
+      // DT-51: a mensagem do Postgres ecoa a linha (PII): só o código e o nome do índice decidem; nada disso sobe como mensagem.
+      const pg = err as { code?: string; constraint?: string };
+      if (pg.code === PG_UNIQUE_VIOLATION && pg.constraint && PHONE_UNIQUE_INDEXES.has(pg.constraint)) return 'PHONE_IN_USE';
+      throw err;
+    }
     if (res.rowCount !== 1) throw new Error('PHONE_VERIFICATION_NOT_WRITTEN');
+    return 'ok';
   }
 
   async methodFor(challengeId: string): Promise<{ method: PhoneVerificationMethod; challengeId: string | null }> {
