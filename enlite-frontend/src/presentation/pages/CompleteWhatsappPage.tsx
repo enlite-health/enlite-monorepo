@@ -13,7 +13,6 @@ import { ClaimOtpModal } from '@presentation/components/features/auth/ClaimOtpMo
 // ── Claim pending state ────────────────────────────────────────────────────
 
 interface ClaimPendingState {
-  candidateWorkerId: string;
   phoneMasked: string;
   verificationSid: string;
 }
@@ -65,7 +64,6 @@ export function CompleteWhatsappPage(): JSX.Element {
       // Candidate found — show OTP modal
       const claimResponse = response as Exclude<StartClaimResponse, { noCandidate: true }>;
       setClaimPending({
-        candidateWorkerId: claimResponse.candidateWorkerId,
         phoneMasked: claimResponse.phoneMasked,
         verificationSid: claimResponse.verificationSid,
       });
@@ -150,7 +148,6 @@ export function CompleteWhatsappPage(): JSX.Element {
           open={true}
           phoneMasked={claimPending.phoneMasked}
           verificationSid={claimPending.verificationSid}
-          candidateWorkerId={claimPending.candidateWorkerId}
           authUid={user.id}
           email={user.email}
           onConfirmed={() => navigate('/')}

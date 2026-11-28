@@ -20,12 +20,11 @@ interface UseClaimConfirmReturn extends UseClaimConfirmState {
 
 /**
  * Encapsulates the POST /api/auth/claim/confirm call.
- * Bound to a specific (verificationSid, candidateWorkerId, authUid, email) tuple
+ * Bound to a specific (verificationSid, authUid, email) tuple
  * so the modal doesn't need to pass them on every submit.
  */
 export function useClaimConfirm(
   verificationSid: string,
-  candidateWorkerId: string,
   authUid: string,
   email: string,
   lgpdOptIn?: boolean,
@@ -45,7 +44,6 @@ export function useClaimConfirm(
         otp: otp.trim(),
         authUid,
         email,
-        candidateWorkerId,
         ...(lgpdOptIn === true ? { lgpdOptIn: true } : {}),
       };
 
@@ -65,7 +63,7 @@ export function useClaimConfirm(
         setIsLoading(false);
       }
     },
-    [verificationSid, candidateWorkerId, authUid, email, lgpdOptIn],
+    [verificationSid, authUid, email, lgpdOptIn],
   );
 
   return { isLoading, errorCode, confirm, clearError };

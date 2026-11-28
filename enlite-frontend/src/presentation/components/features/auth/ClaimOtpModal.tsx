@@ -15,7 +15,6 @@ export interface ClaimOtpModalProps {
   open: boolean;
   phoneMasked: string;
   verificationSid: string;
-  candidateWorkerId: string;
   authUid: string;
   email: string;
   /**
@@ -50,7 +49,6 @@ export function ClaimOtpModal({
   open,
   phoneMasked,
   verificationSid,
-  candidateWorkerId,
   authUid,
   email,
   lgpdOptIn,
@@ -65,7 +63,6 @@ export function ClaimOtpModal({
 
   const { isLoading, errorCode, confirm, clearError } = useClaimConfirm(
     verificationSid,
-    candidateWorkerId,
     authUid,
     email,
     consentGiven ? true : undefined,
