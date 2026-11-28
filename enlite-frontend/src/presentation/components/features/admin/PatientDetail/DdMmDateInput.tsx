@@ -14,9 +14,9 @@ interface DdMmDateInputProps {
 
 /**
  * Campo de data em dd/mm/aaaa (es-AR) com UM só ícone de calendário: o texto formatado por
- * baixo e o `<input type="date">` nativo transparente por cima (clicar abre o seletor do
- * navegador; o indicador nativo do Chrome fica invisível). Mesma técnica do painel do prestador
- * do encuadre — a `<input type="date">` crua mostra mm/dd/yyyy conforme o locale do navegador.
+ * baixo e o `<input type="date">` nativo transparente por cima. O calendário NÃO abre por clique no corpo do
+ * input (só no indicador nativo, invisível e ~12 px à direita do ícone): por isso o `onClick` chama `showPicker()`.
+ * A `<input type="date">` crua mostra mm/dd/yyyy conforme o locale do navegador.
  */
 export function DdMmDateInput({ value, onChange, ariaLabel, 'data-testid': testId }: DdMmDateInputProps): JSX.Element {
   return (
@@ -30,6 +30,13 @@ export function DdMmDateInput({ value, onChange, ariaLabel, 'data-testid': testI
         lang="es-AR"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onClick={(e) => {
+          try {
+            e.currentTarget.showPicker?.();
+          } catch {
+            /* sem showPicker ou NotAllowedError: segue o foco nativo */
+          }
+        }}
         aria-label={ariaLabel}
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         data-testid={testId}
