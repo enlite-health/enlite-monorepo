@@ -9,7 +9,7 @@ import type { DedupFieldComparison } from '@domain/entities/DedupGroup';
  */
 export type InitWorkerResponse =
   | { status: 'ok'; worker: WorkerProgressResponse }
-  | { status: 'claim_pending'; candidateWorkerId: string; phoneMasked: string; verificationSid: string };
+  | { status: 'claim_pending'; phoneMasked: string; verificationSid: string };
 
 /** Shape returned by GET /api/workers/me */
 export interface WorkerProgressResponse {

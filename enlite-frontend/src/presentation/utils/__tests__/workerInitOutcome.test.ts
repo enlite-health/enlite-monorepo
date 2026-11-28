@@ -11,8 +11,8 @@ describe('runWorkerInit — o resultado do init num lugar só (DP-20)', () => {
   });
 
   it('claim_pending → os dados do modal do código', async () => {
-    const out = await runWorkerInit(async () => ({ status: 'claim_pending', candidateWorkerId: 'w-2', phoneMasked: '•••1243', verificationSid: 'VE2' }));
-    expect(out).toEqual({ kind: 'claim_pending', candidateWorkerId: 'w-2', phoneMasked: '•••1243', verificationSid: 'VE2' });
+    const out = await runWorkerInit(async () => ({ status: 'claim_pending', phoneMasked: '•••1243', verificationSid: 'VE2' }));
+    expect(out).toEqual({ kind: 'claim_pending', phoneMasked: '•••1243', verificationSid: 'VE2' });
   });
 
   it('400 EMAIL_NOT_VERIFIED → email_not_verified', async () => {

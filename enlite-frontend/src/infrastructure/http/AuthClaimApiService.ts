@@ -12,14 +12,13 @@ export interface StartClaimInput {
 
 export type StartClaimResponse =
   | { noCandidate: true }
-  | { candidateWorkerId: string; phoneMasked: string; verificationSid: string };
+  | { phoneMasked: string; verificationSid: string };
 
 export interface ConfirmClaimInput {
   verificationSid: string;
   otp: string;
   authUid: string;
   email: string;
-  candidateWorkerId: string;
   /** A caixa do aceite foi marcada (cadastro web). O OTP prova o telefone, não o aceite: sem isto o servidor não grava consentimento. */
   lgpdOptIn?: boolean;
 }
@@ -100,7 +99,7 @@ class AuthClaimApiServiceClass {
    * POST /api/auth/claim/start
    * Called after Google login to associate a WhatsApp phone with the account.
    * Returns { noCandidate: true } when no pre-existing ficha matches the phone.
-   * Returns { candidateWorkerId, phoneMasked, verificationSid } when a match is found
+   * Returns { phoneMasked, verificationSid } when a match is found
    * — the frontend must then prompt the user to confirm via OTP (ClaimOtpModal).
    */
   async startClaim(input: StartClaimInput): Promise<StartClaimResponse> {

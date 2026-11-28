@@ -12,7 +12,7 @@ vi.mock('@infrastructure/services/FirebaseAuthService', () => ({
 
 import { AuthClaimApiService } from '../AuthClaimApiService';
 
-const input = { verificationSid: 'VE1', otp: '123456', authUid: 'u', email: 'a@b.c', candidateWorkerId: 'w' };
+const input = { verificationSid: 'VE1', otp: '123456', authUid: 'u', email: 'a@b.c' };
 const resposta = (status: number, body: unknown) =>
   vi.fn().mockResolvedValue({ status, ok: status < 400, json: async () => body });
 
@@ -24,6 +24,14 @@ describe('AuthClaimApiService.confirmClaim', () => {
   it('200 { success, data: { worker } } → { success: true, worker }', async () => {
     globalThis.fetch = resposta(200, { success: true, data: { worker: { id: 'w' } } }) as never;
     expect(await AuthClaimApiService.confirmClaim(input)).toEqual({ success: true, worker: { id: 'w' } });
+  });
+
+  it('o corpo do confirm leva só os campos do requisitante (o servidor acha a ficha pelo desafio)', async () => {
+    const fetchMock = resposta(200, { success: true, data: { worker: { id: 'w' } } });
+    globalThis.fetch = fetchMock as never;
+    await AuthClaimApiService.confirmClaim(input);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body);
+    expect(Object.keys(body).sort()).toEqual(['authUid', 'email', 'otp', 'verificationSid']);
   });
 
   it.each(['INVALID_OTP', 'EXPIRED_OTP', 'CANDIDATE_NOT_FOUND', 'NOT_IMPORTABLE'])('400 %s → { success: false, error } (o código certo, não CANDIDATE_NOT_FOUND)', async (code) => {
